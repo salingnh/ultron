@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capabilities/dns/enumerate-subdomains.v1.schema.json",
+  "title": "dns.enumerate_subdomains v1",
+  "type": "object",
+  "required": ["targets"],
+  "additionalProperties": false,
+  "properties": {
+    "targets": {"type": "array", "items": {"type": "string", "pattern": "^(dns:)?[a-z0-9.-]+$"}, "minItems": 1, "maxItems": 100},
+    "sources": {"description": "Tập nguồn thụ động; vắng = mặc định của provider.", "type": "array", "items": {"type": "string", "pattern": "^[a-z0-9_-]+$"}, "uniqueItems": true},
+    "recursive": {"type": "boolean", "default": false},
+    "max_results": {"type": "integer", "minimum": 1, "maximum": 100000, "default": 10000}
+  }
+}

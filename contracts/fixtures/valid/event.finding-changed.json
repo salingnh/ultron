@@ -1,0 +1,23 @@
+{
+  "event_id": "01934f6a-0000-7000-8000-0000000ee001",
+  "type": "finding.changed.v1",
+  "occurred_at": "2026-11-15T04:00:00Z",
+  "producer": "M20",
+  "dedup_key": "01934f6a-0000-7000-8000-0000000f0001:2",
+  "trace": {"trace_id": "6bf92f3577b34da6a3ce929d0e0e4738"},
+  "payload": {
+    "finding_id": "01934f6a-0000-7000-8000-0000000f0001",
+    "transition_seq": 2,
+    "asset_id": "01934f6a-0000-7000-8000-0000000a0001",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "old_status": "CANDIDATE",
+    "new_status": "CORROBORATED",
+    "old_severity": "UNRATED",
+    "new_severity": "HIGH",
+    "reason": "CVE-2021-23337 được Trivy và Grype cùng báo; KEV chưa liệt kê; EPSS 0.02",
+    "evidence_ref": "01934f6a-0000-7000-8000-0000000e0001",
+    "changed_by": {"kind": "module", "id": "M20"},
+    "cause": "scan",
+    "changed_at": "2026-11-15T04:00:00Z"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capability/approved-task.v1.schema.json",
+  "title": "ApprovedTask v1",
+  "description": "Đầu ra của M05, đầu vào của M06. Chỉ M05 tạo được (ký HMAC bằng service credential). M06 từ chối task không có chữ ký hợp lệ.",
+  "type": "object",
+  "required": ["task_id", "decision_id", "campaign_id", "scope_id", "policy_version", "capability", "provider", "provider_version", "image_digest", "input", "targets", "impact_tier", "profile", "idempotency_key", "requested_by", "rationale", "trace", "signature"],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "decision_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "campaign_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "scope_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "policy_version": {"$ref": "../common/ids.v1.schema.json#/$defs/PolicyVersion"},
+    "capability": {"$ref": "../common/ids.v1.schema.json#/$defs/CapabilityId"},
+    "provider": {"type": "string"},
+    "provider_version": {"type": "string"},
+    "adapter_version": {"$ref": "../common/ids.v1.schema.json#/$defs/SemVer"},
+    "image_digest": {"$ref": "../common/ids.v1.schema.json#/$defs/ImageDigest"},
+    "input": {"description": "Đã validate, đã ghép tham số profile.", "type": "object"},
+    "targets": {"description": "Mục tiêu đã chuẩn hóa thành khóa chuẩn.", "type": "array", "items": {"$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"}, "minItems": 1},
+    "impact_tier": {"$ref": "../common/ids.v1.schema.json#/$defs/ImpactTier"},
+    "profile": {"$ref": "../campaign/roe-policy.v1.schema.json#/$defs/ScanProfile"},
+    "idempotency_key": {"type": "string", "maxLength": 256},
+    "requested_by": {"$ref": "../common/ids.v1.schema.json#/$defs/Actor"},
+    "rationale": {"type": "string"},
+    "parent_job_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "trace": {"$ref": "../common/ids.v1.schema.json#/$defs/TraceContext"},
+    "signature": {"type": "string", "pattern": "^hmac-sha256:[0-9a-f]{64}$"}
+  }
+}

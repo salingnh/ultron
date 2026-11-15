@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/agent/hypothesis-update.v1.schema.json",
+  "title": "HypothesisUpdate v1",
+  "description": "Analyst ghi sổ giả thuyết. Mỗi cập nhật là một revision mới (chỉ ghi thêm). Giả thuyết không bao giờ tự thành finding; chỉ M20 tạo finding.",
+  "type": "object",
+  "required": ["claim", "status", "confidence", "supporting", "refuting"],
+  "additionalProperties": false,
+  "properties": {
+    "hypothesis_id": {"description": "Vắng = tạo mới.", "$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "claim": {"type": "string", "minLength": 5, "maxLength": 2000},
+    "subjects": {"type": "array", "items": {"$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"}, "maxItems": 50},
+    "status": {"$ref": "#/$defs/HypothesisStatus"},
+    "confidence": {"$ref": "../common/ids.v1.schema.json#/$defs/Confidence"},
+    "supporting": {"type": "array", "items": {"type": "string", "description": "evidence_id, observation_id hoặc finding_id"}, "maxItems": 50},
+    "refuting": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+    "next_check": {"description": "Capability đề xuất để kiểm giả thuyết.", "$ref": "../common/ids.v1.schema.json#/$defs/CapabilityId"}
+  },
+  "$defs": {
+    "HypothesisStatus": {"type": "string", "enum": ["OPEN", "SUPPORTED", "REFUTED", "INCONCLUSIVE", "ABANDONED"]},
+    "HypothesisView": {
+      "type": "object", "required": ["hypothesis_id", "claim", "status", "confidence"],
+      "properties": {
+        "hypothesis_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+        "claim": {"type": "string"}, "status": {"$ref": "#/$defs/HypothesisStatus"},
+        "confidence": {"$ref": "../common/ids.v1.schema.json#/$defs/Confidence"},
+        "revision": {"type": "integer"}
+      }
+    }
+  }
+}

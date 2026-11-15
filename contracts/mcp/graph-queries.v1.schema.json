@@ -1,0 +1,602 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/mcp/graph-queries.v1.schema.json",
+  "title": "Sáu truy vấn đồ thị đã đăng ký của M23 v1",
+  "description": "Mỗi mục là một công cụ MCP chỉ đọc (tên graph.<name>). Giới hạn cứng nằm ở mã M23: tối đa 2 bước nhảy, 200 bản ghi, timeout 2 giây, luôn lọc theo campaign_id. Vượt giới hạn thì cắt và truncated=true. Dùng chung cho Web UI qua REST.",
+  "$defs": {
+    "get_asset_neighbors": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": [
+            "campaign_id",
+            "canonical_key"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "canonical_key": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+            },
+            "max_hops": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2,
+              "default": 1
+            },
+            "relationship_types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "as_of": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "nodes",
+            "edges",
+            "truncated"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "asset_id",
+                  "canonical_key",
+                  "kind"
+                ],
+                "properties": {
+                  "asset_id": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+                  },
+                  "canonical_key": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+                  },
+                  "kind": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/AssetKind"
+                  },
+                  "first_seen": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+                  },
+                  "last_seen": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "from",
+                  "to",
+                  "valid_from",
+                  "source_job_id",
+                  "confidence"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "from": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+                  },
+                  "to": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+                  },
+                  "observed_at": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+                  },
+                  "valid_from": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+                  },
+                  "valid_to": {
+                    "oneOf": [
+                      {
+                        "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "source_job_id": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+                  },
+                  "confidence": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Confidence"
+                  }
+                }
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "limits_applied": {
+              "type": "object",
+              "properties": {
+                "max_hops": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "timeout_ms": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "Vùng lân cận của một tài sản, tối đa 2 bước nhảy, lọc theo chiến dịch."
+    },
+    "get_recent_observations": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": [
+            "campaign_id",
+            "since_revision"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "since_revision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "subject": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+            },
+            "predicates": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "observations",
+            "revision",
+            "truncated"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "observations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "observation_id",
+                  "subject",
+                  "predicate",
+                  "observed_at"
+                ],
+                "properties": {
+                  "observation_id": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+                  },
+                  "subject": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+                  },
+                  "predicate": {
+                    "type": "string"
+                  },
+                  "value_summary": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "polarity": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Confidence"
+                  },
+                  "observed_at": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+                  },
+                  "evidence_id": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+                  }
+                }
+              }
+            },
+            "revision": {
+              "type": "integer"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "limits_applied": {
+              "type": "object",
+              "properties": {
+                "max_hops": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "timeout_ms": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "Observation mới từ một revision, có tóm tắt và độ tin cậy, không log thô."
+    },
+    "get_unverified_hypotheses": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": [
+            "campaign_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "min_confidence": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Confidence"
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "hypotheses",
+            "truncated"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "hypotheses": {
+              "type": "array",
+              "items": {
+                "$ref": "../agent/hypothesis-update.v1.schema.json#/$defs/HypothesisView"
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "limits_applied": {
+              "type": "object",
+              "properties": {
+                "max_hops": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "timeout_ms": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "Giả thuyết OPEN hoặc INCONCLUSIVE của chiến dịch."
+    },
+    "get_package_cve_matches": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": [
+            "campaign_id",
+            "canonical_key"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "canonical_key": {
+              "description": "purl:..., oci:... hoặc artifact:...",
+              "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+            },
+            "include_kev_only": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "matches",
+            "truncated"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "matches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "package",
+                  "vulnerability_id",
+                  "match_method"
+                ],
+                "properties": {
+                  "package": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"
+                  },
+                  "vulnerability_id": {
+                    "type": "string"
+                  },
+                  "match_method": {
+                    "type": "string"
+                  },
+                  "affected_range": {
+                    "type": "string"
+                  },
+                  "kev": {
+                    "type": "boolean"
+                  },
+                  "epss": {
+                    "type": "number"
+                  },
+                  "cvss_base": {
+                    "type": "number"
+                  },
+                  "finding_id": {
+                    "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+                  }
+                }
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "limits_applied": {
+              "type": "object",
+              "properties": {
+                "max_hops": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "timeout_ms": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "Ứng viên AFFECTED_BY cho package hoặc artifact (chưa phải finding)."
+    },
+    "summarize_campaign_delta": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": [
+            "campaign_id",
+            "from_revision"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "from_revision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "to_revision": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "from_revision",
+            "to_revision",
+            "counts",
+            "highlights",
+            "truncated"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "from_revision": {
+              "type": "integer"
+            },
+            "to_revision": {
+              "type": "integer"
+            },
+            "counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "highlights": {
+              "type": "array",
+              "maxItems": 30,
+              "items": {
+                "type": "object",
+                "required": [
+                  "ref",
+                  "summary"
+                ],
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "limits_applied": {
+              "type": "object",
+              "properties": {
+                "max_hops": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "timeout_ms": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "Tóm tắt thay đổi giữa hai revision: số tài sản, quan hệ, finding mới, đóng, đổi."
+    },
+    "get_evidence_excerpt": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": [
+            "campaign_id",
+            "evidence_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "evidence_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "max_bytes": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 8192,
+              "default": 4096
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "evidence_id",
+            "sha256",
+            "excerpt",
+            "total_bytes",
+            "truncated"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "evidence_id": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+            },
+            "sha256": {
+              "$ref": "../common/ids.v1.schema.json#/$defs/Sha256"
+            },
+            "media_type": {
+              "type": "string"
+            },
+            "excerpt": {
+              "description": "Bọc <UNTRUSTED_TOOL_OUTPUT> khi dựng prompt.",
+              "type": "string"
+            },
+            "total_bytes": {
+              "type": "integer"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "limits_applied": {
+              "type": "object",
+              "properties": {
+                "max_hops": {
+                  "type": "integer"
+                },
+                "limit": {
+                  "type": "integer"
+                },
+                "timeout_ms": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "Đoạn trích có giới hạn của một bằng chứng. Nội dung trả về luôn là UNTRUSTED."
+    }
+  }
+}

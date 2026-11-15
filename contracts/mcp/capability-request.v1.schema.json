@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/mcp/capability-request.v1.schema.json",
+  "title": "Đối số chung của công cụ MCP capability v1",
+  "description": "arguments của tools/call cho mọi công cụ capability (tên công cụ = capability id). input hợp lệ theo inputSchemaRef của capability. trace_id và idempotency_key đi trong params._meta (xem mcp/README.md).",
+  "type": "object",
+  "required": ["input", "rationale", "objective_id"],
+  "additionalProperties": false,
+  "properties": {
+    "capability": {"description": "Chỉ dùng khi đề xuất nằm ngoài lời gọi MCP (proposals).", "$ref": "../common/ids.v1.schema.json#/$defs/CapabilityId"},
+    "input": {"type": "object"},
+    "profile": {"$ref": "../campaign/roe-policy.v1.schema.json#/$defs/ScanProfile"},
+    "rationale": {"description": "Lý do chọn mục tiêu và capability; ghi vào audit (FR-002).", "type": "string", "minLength": 10, "maxLength": 2000},
+    "objective_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "hypothesis_ids": {"type": "array", "items": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"}, "maxItems": 10},
+    "expected_signal": {"description": "Agent mong thấy gì; dùng để đánh giá novelty.", "type": "string", "maxLength": 1000}
+  }
+}

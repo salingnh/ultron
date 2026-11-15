@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capabilities/network/discover-services.v1.schema.json",
+  "title": "network.discover_services v1",
+  "description": "Nhận diện dịch vụ trên cổng đã biết mở. Không chạy script NSE nhóm intrusive/exploit/brute/dos.",
+  "type": "object",
+  "required": ["targets"],
+  "additionalProperties": false,
+  "properties": {
+    "targets": {"description": "Khóa service:<ip>:<port>/<transport> hoặc ip:<ip> kèm ports.", "type": "array", "items": {"type": "string", "pattern": "^(service|ip):"}, "minItems": 1, "maxItems": 4096},
+    "ports": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 65535}, "maxItems": 1000, "uniqueItems": true},
+    "version_intensity": {"type": "integer", "minimum": 0, "maximum": 7, "default": 5},
+    "packets_per_second": {"type": "integer", "minimum": 1, "maximum": 10000}
+  }
+}

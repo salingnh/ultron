@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/common/ids.v1.schema.json",
+  "title": "Định danh dùng chung v1",
+  "description": "Định nghĩa ID, khóa định danh chuẩn và thời điểm. Mọi schema khác $ref vào đây; không định nghĩa lại.",
+  "$defs": {
+    "Id": {
+      "description": "UUIDv7 dạng chuỗi chữ thường (sắp theo thời gian, sinh ở phía dịch vụ). Đề xuất D2.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "Timestamp": {
+      "description": "RFC 3339, luôn UTC, có hậu tố Z.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ImageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "PolicyVersion": {
+      "description": "Bản chụp RoE bất biến. Tăng toàn cục, không tái sử dụng.",
+      "type": "string",
+      "pattern": "^roe-[1-9][0-9]*$"
+    },
+    "ModuleCode": {
+      "type": "string",
+      "pattern": "^M(0[1-9]|1[0-9]|2[0-8])$"
+    },
+    "CapabilityId": {
+      "description": "Capability cấp nghiệp vụ: <nhóm>.<động_từ_danh_từ>, vd dns.enumerate_subdomains.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*\\.[a-z][a-z0-9_]*$"
+    },
+    "SemVer": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "Confidence": {
+      "description": "Độ tin cậy 0..1 do adapter hoặc module gán; không phải điểm nghiêm trọng.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "Classification": {
+      "type": "string",
+      "enum": ["PUBLIC", "INTERNAL", "RESTRICTED"]
+    },
+    "ImpactTier": {
+      "description": "T0 thụ động, T1 tác động thấp, T2 chủ động có giới hạn, T3 xâm nhập, T4 cấm. MVP chỉ T0-T2.",
+      "type": "string",
+      "enum": ["T0", "T1", "T2", "T3", "T4"]
+    },
+    "AssetKind": {
+      "type": "string",
+      "enum": ["domain", "ip", "service", "application", "url", "email", "oci_image", "repo", "repo_snapshot", "artifact", "package", "cloud_resource", "k8s_workload"]
+    },
+    "CanonicalKey": {
+      "description": "Khóa định danh chuẩn (tab Dữ liệu mục 2). Mỗi tiền tố ứng với một AssetKind. M07 là nơi duy nhất sinh khóa; adapter dùng thư viện chuẩn hóa chung.",
+      "type": "string",
+      "maxLength": 2048,
+      "oneOf": [
+        {"title": "domain", "pattern": "^dns:(?=.{1,253}$)([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?\\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"},
+        {"title": "ip", "pattern": "^ip:([0-9.]+|[0-9a-f:]+)$"},
+        {"title": "service", "pattern": "^service:([0-9.]+|\\[[0-9a-f:]+\\]):[0-9]{1,5}/(tcp|udp)$"},
+        {"title": "application", "pattern": "^app:(http|https)://[^/?#\\s]+:[0-9]{1,5}$"},
+        {"title": "url", "pattern": "^url:(http|https)://[^/?#\\s]+:[0-9]{1,5}/[^#\\s]*$"},
+        {"title": "email", "pattern": "^email:[^@\\s]+@[a-z0-9.-]+$"},
+        {"title": "oci_image", "pattern": "^oci:sha256:[0-9a-f]{64}$"},
+        {"title": "repo", "pattern": "^repo:[^@\\s]+$"},
+        {"title": "repo_snapshot", "pattern": "^git:[^@\\s]+@[0-9a-f]{40}$"},
+        {"title": "artifact", "pattern": "^artifact:sha256:[0-9a-f]{64}$"},
+        {"title": "package", "pattern": "^purl:pkg:[a-z0-9.+-]+/.+$"},
+        {"title": "cloud_resource", "pattern": "^cloud:[a-z0-9-]+:[^:\\s]+:[^:\\s]*:[^/\\s]+/.+$"},
+        {"title": "k8s_workload", "pattern": "^k8s:[^/\\s]+/[^/\\s]+/[A-Za-z]+/[^/\\s]+$"}
+      ]
+    },
+    "TraceContext": {
+      "description": "Bộ ID truy vết bắt buộc (RULES mục 3). Trường không áp dụng thì bỏ qua, không gửi chuỗi rỗng.",
+      "type": "object",
+      "required": ["trace_id"],
+      "additionalProperties": false,
+      "properties": {
+        "trace_id": {"description": "W3C trace-id, 32 hex.", "type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "campaign_id": {"$ref": "#/$defs/Id"},
+        "session_id": {"$ref": "#/$defs/Id"},
+        "objective_id": {"$ref": "#/$defs/Id"},
+        "job_id": {"$ref": "#/$defs/Id"},
+        "capability_id": {"$ref": "#/$defs/CapabilityId"},
+        "provider_version": {"type": "string", "maxLength": 128},
+        "policy_version": {"$ref": "#/$defs/PolicyVersion"},
+        "evidence_id": {"$ref": "#/$defs/Id"}
+      }
+    },
+    "Actor": {
+      "description": "Ai thực hiện thao tác. MVP chưa đăng nhập: kind=operator và id do người vận hành khai báo; kind=module cho thao tác tự động.",
+      "type": "object",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"type": "string", "enum": ["operator", "module", "agent"]},
+        "id": {"type": "string", "minLength": 1, "maxLength": 200}
+      }
+    },
+    "EvidenceRef": {
+      "description": "Tham chiếu bằng chứng trong cùng envelope (local_ref) hoặc bằng chứng đã lưu (evidence_id).",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "local_ref": {"type": "string", "pattern": "^[a-z0-9_-]{1,64}$"},
+        "evidence_id": {"$ref": "#/$defs/Id"}
+      }
+    }
+  }
+}

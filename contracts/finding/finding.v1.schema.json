@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/finding/finding.v1.schema.json",
+  "title": "Finding v1 (đọc)",
+  "description": "Response của GET /api/v1/findings và GET /api/v1/findings/{id}. Secret hiển thị dạng rõ (chốt 13/11).",
+  "type": "object",
+  "required": ["finding_id", "fingerprint", "asset_id", "asset_key", "rule_id", "title", "status", "severity", "first_seen", "last_seen", "evidence"],
+  "additionalProperties": false,
+  "properties": {
+    "finding_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "fingerprint": {"$ref": "../common/ids.v1.schema.json#/$defs/Sha256"},
+    "asset_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "asset_key": {"$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"},
+    "rule_id": {"type": "string"},
+    "category": {"type": "string"},
+    "title": {"type": "string"},
+    "vulnerability_ids": {"type": "array", "items": {"type": "string"}},
+    "location": {"type": "object"},
+    "status": {"$ref": "finding-status.v1.schema.json"},
+    "severity": {"$ref": "severity-assessment.v1.schema.json#/$defs/Severity"},
+    "severity_assessment": {"$ref": "severity-assessment.v1.schema.json"},
+    "match_method": {"type": "string", "enum": ["purl_range", "cpe_range", "scanner_direct", "template_match", "cross_tool"]},
+    "confidence": {"$ref": "../common/ids.v1.schema.json#/$defs/Confidence"},
+    "providers": {"description": "Các provider đã báo finding này.", "type": "array", "items": {"type": "string"}},
+    "secret": {"type": "object", "properties": {"value": {"type": "string"}, "fingerprint": {"type": "string"}, "detector": {"type": "string"}}},
+    "first_seen": {"$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"},
+    "last_seen": {"$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"},
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["evidence_id", "sha256"], "additionalProperties": false,
+        "properties": {
+          "evidence_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+          "sha256": {"$ref": "../common/ids.v1.schema.json#/$defs/Sha256"},
+          "source_tool": {"type": "string"},
+          "media_type": {"type": "string"},
+          "download_url": {"description": "Signed URL ngắn hạn, sinh theo yêu cầu.", "type": "string", "format": "uri"}
+        }
+      }
+    }
+  }
+}

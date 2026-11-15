@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/job.completed.v1.schema.json",
+  "title": "Payload job.completed.v1",
+  "description": "Bên phát: M06. Khóa khử trùng của consumer: job_id.",
+  "type": "object",
+  "required": [
+    "job_id",
+    "campaign_id",
+    "status",
+    "evidence_refs",
+    "finished_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "SUCCEEDED",
+        "FAILED",
+        "CANCELLED"
+      ]
+    },
+    "envelope_event_id": {
+      "description": "event_id của ResultEnvelope đã nộp M27 (vắng nếu FAILED trước khi collect).",
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+      }
+    },
+    "error": {
+      "$ref": "../common/error.v1.schema.json"
+    },
+    "finished_at": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+    }
+  }
+}

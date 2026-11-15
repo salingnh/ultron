@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capabilities/dns/resolve.v1.schema.json",
+  "title": "dns.resolve v1",
+  "type": "object",
+  "required": ["targets"],
+  "additionalProperties": false,
+  "properties": {
+    "targets": {"type": "array", "items": {"type": "string", "pattern": "^(dns:)?[a-z0-9._-]+$"}, "minItems": 1, "maxItems": 10000},
+    "record_types": {"type": "array", "items": {"type": "string", "enum": ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "PTR", "SOA", "CAA"]}, "uniqueItems": true, "default": ["A", "AAAA", "CNAME"]},
+    "resolvers": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f.:]+$"}, "maxItems": 10}
+  }
+}

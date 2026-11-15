@@ -1,0 +1,15 @@
+# Bảng chuyển trạng thái finding hợp lệ (đề xuất S1). M20/M21/M24 và API transitions kiểm theo bảng này.
+# requires: điều kiện bắt buộc khi chuyển. evidence = phải kèm evidence_id có sha256 (cổng G3).
+apiVersion: aegis.io/v1
+kind: FindingTransitions
+transitions:
+  - {from: null,           to: CANDIDATE,      by: [M20],              requires: [evidence]}
+  - {from: CANDIDATE,      to: CORROBORATED,   by: [M20, M21],         requires: [evidence], note: "Từ 2 provider độc lập trở lên hoặc khớp phiên bản"}
+  - {from: CANDIDATE,      to: VERIFIED,       by: [M21],              requires: [evidence]}
+  - {from: CORROBORATED,   to: VERIFIED,       by: [M21],              requires: [evidence]}
+  - {from: [CANDIDATE, CORROBORATED, VERIFIED, REGRESSED], to: FALSE_POSITIVE, by: [M21, operator], requires: [reason]}
+  - {from: [CANDIDATE, CORROBORATED, VERIFIED, REGRESSED], to: ACCEPTED_RISK,  by: [operator],      requires: [reason]}
+  - {from: [CANDIDATE, CORROBORATED, VERIFIED, REGRESSED], to: FIXED,          by: [M20, M21],      requires: [evidence], note: "Bằng chứng mới (rescan hoặc phiên bản ngoài dải ảnh hưởng); seen=false một mình KHÔNG đủ"}
+  - {from: FIXED,          to: REGRESSED,      by: [M20],              requires: [evidence]}
+  - {from: [FALSE_POSITIVE, ACCEPTED_RISK], to: CANDIDATE, by: [operator, M20], requires: [reason], note: "Mở lại khi bằng chứng mới mâu thuẫn hoặc người vận hành hủy quyết định"}
+  - {from: REGRESSED,      to: VERIFIED,       by: [M21],              requires: [evidence]}

@@ -1,0 +1,14 @@
+{
+  "name": "Internal baseline",
+  "objective": "Kiểm kê tài sản và xác định lỗ hổng mà không gây gián đoạn dịch vụ",
+  "targets": {"domains": ["internal.example"], "ips": ["10.20.0.0/24"], "keywords": ["acme corp"]},
+  "policy": {
+    "scan_profile": "low-impact",
+    "max_parallel_jobs": 10,
+    "max_duration_hours": 168,
+    "rate_limits": {"requests_per_second_per_host": 5, "packets_per_second": 500},
+    "blackout_windows": [{"days": ["mon", "tue", "wed", "thu", "fri"], "start": "08:00", "end": "10:00", "timezone": "Asia/Ho_Chi_Minh"}],
+    "budget": {"max_llm_cost_usd": 50, "max_jobs": 2000, "idle_cycles_before_pause": 3}
+  },
+  "actor": {"kind": "operator", "id": "soc-analyst-1"}
+}

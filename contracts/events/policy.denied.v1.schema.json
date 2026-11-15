@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/policy.denied.v1.schema.json",
+  "title": "Payload policy.denied.v1",
+  "description": "Bên phát: M05. Khóa khử trùng của consumer: decision_id.",
+  "type": "object",
+  "required": [
+    "decision_id",
+    "campaign_id",
+    "capability",
+    "policy_version",
+    "error",
+    "rule",
+    "requested_by",
+    "denied_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "decision_id": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "job_id": {
+      "description": "Có nếu đã cấp job_id trước khi từ chối.",
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "capability": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/CapabilityId"
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policy_version": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/PolicyVersion"
+    },
+    "error": {
+      "$ref": "../common/error.v1.schema.json"
+    },
+    "rule": {
+      "description": "Luật policy đã từ chối, vd schema, rate_limit, blackout_window, impact_tier, capability_unknown.",
+      "type": "string"
+    },
+    "requested_by": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Actor"
+    },
+    "denied_at": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+    }
+  }
+}
