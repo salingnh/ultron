@@ -1,0 +1,1 @@
+{"name": "x", "objective": "y", "targets": {"domains": ["a.example"]}, "policy": {"scan_profile": "aggressive", "max_parallel_jobs": 10, "max_duration_hours": 200}, "actor": {"kind": "operator", "id": "a"}}

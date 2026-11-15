@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/artifact.ready.v1.schema.json",
+  "title": "Payload artifact.ready.v1",
+  "description": "Bên phát: M28. Khóa khử trùng của consumer: digest.",
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "digest",
+    "kind",
+    "storage_uri",
+    "campaign_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "artifact_id": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "oci_image",
+        "archive",
+        "binary",
+        "js_bundle",
+        "source_tree",
+        "sbom",
+        "other"
+      ]
+    },
+    "storage_uri": {
+      "type": "string"
+    },
+    "origin_uri": {
+      "type": "string"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    },
+    "causal_job_id": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Id"
+    }
+  }
+}

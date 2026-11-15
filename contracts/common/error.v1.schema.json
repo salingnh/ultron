@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/common/error.v1.schema.json",
+  "title": "Lỗi chuẩn v1",
+  "description": "Dùng chung cho REST, ResultEnvelope.errors, kết quả công cụ MCP và job.completed.v1. 14 mã lỗi theo tab Tổng quan đặc tả mục 3.3. Không module nào tự chuyển FAILED thành SUCCEEDED.",
+  "type": "object",
+  "required": ["code", "message", "next_action"],
+  "additionalProperties": false,
+  "properties": {
+    "code": {"$ref": "#/$defs/ErrorCode"},
+    "message": {"description": "Mô tả dễ đọc cho người vận hành.", "type": "string", "maxLength": 2000},
+    "technical_cause": {"description": "Nguyên nhân kỹ thuật (exit code, stderr rút gọn...). Là dữ liệu không tin cậy, không đưa vào prompt như chỉ dẫn.", "type": "string", "maxLength": 8000},
+    "next_action": {"$ref": "#/$defs/NextAction"},
+    "next_action_detail": {"type": "string", "maxLength": 2000},
+    "retry_after_seconds": {"type": "integer", "minimum": 0},
+    "retryable": {"type": "boolean"},
+    "field": {"description": "JSON Pointer tới trường sai khi code=INPUT_INVALID.", "type": "string"},
+    "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}
+  },
+  "$defs": {
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "INPUT_INVALID", "OUT_OF_SCOPE", "APPROVAL_REQUIRED", "POLICY_DENIED", "RATE_LIMITED",
+        "TOOL_UNAVAILABLE", "DEPENDENCY_MISSING", "NETWORK_TIMEOUT", "EXECUTION_TIMEOUT", "RESOURCE_LIMIT",
+        "OUTPUT_INVALID", "EVIDENCE_INCOMPLETE",
+        "CANCELLED", "INTERNAL_ERROR"
+      ]
+    },
+    "NextAction": {
+      "description": "Bước tiếp theo máy đọc được (đề xuất mới). Giao diện hiển thị kèm next_action_detail.",
+      "type": "string",
+      "enum": ["RETRY", "RETRY_LATER", "FIX_INPUT", "WAIT_APPROVAL", "WAIT_WINDOW", "CHECK_PROVIDER", "REVIEW_QUARANTINE", "ESCALATE", "NONE"]
+    }
+  }
+}

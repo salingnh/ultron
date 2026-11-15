@@ -1,0 +1,1 @@
+{"event_id": "01934f6a-0000-7000-8000-0000000ee009", "type": "job.completed.v1", "occurred_at": "2026-11-15T05:00:00Z", "producer": "M06", "dedup_key": "x", "trace": {"trace_id": "7bf92f3577b34da6a3ce929d0e0e4739"}, "payload": {"job_id": "01934f6a-0000-7000-8000-00000000d001", "status": "SUCCEEDED_MAYBE"}}

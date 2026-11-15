@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/mcp/capability-response.v1.schema.json",
+  "title": "Kết quả công cụ MCP capability v1",
+  "description": "structuredContent của tools/call. Không đồng bộ: trả ngay job_id; kết quả đến sau qua knowledge.delta.v1. Bị từ chối thì isError=true và error theo mã lỗi chuẩn.",
+  "type": "object",
+  "required": ["decision"],
+  "additionalProperties": false,
+  "properties": {
+    "decision": {"type": "string", "enum": ["approved", "denied", "duplicate"]},
+    "job_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
+    "job_status": {"type": "string", "enum": ["QUEUED", "VALIDATING", "DISPATCHED", "RUNNING", "COLLECTING", "SUCCEEDED", "FAILED", "CANCELLED"]},
+    "provider": {"type": "string"},
+    "policy_version": {"$ref": "../common/ids.v1.schema.json#/$defs/PolicyVersion"},
+    "error": {"$ref": "../common/error.v1.schema.json"}
+  },
+  "allOf": [
+    {"if": {"properties": {"decision": {"const": "denied"}}}, "then": {"required": ["error"]}},
+    {"if": {"properties": {"decision": {"enum": ["approved", "duplicate"]}}}, "then": {"required": ["job_id", "job_status", "provider", "policy_version"]}}
+  ]
+}

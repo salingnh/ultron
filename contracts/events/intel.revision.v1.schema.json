@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/intel.revision.v1.schema.json",
+  "title": "Payload intel.revision.v1",
+  "description": "Bên phát: M18. Khóa khử trùng của consumer: feed+version.",
+  "type": "object",
+  "required": [
+    "feed",
+    "version",
+    "snapshot_at",
+    "impacted_ids"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "feed": {
+      "type": "string",
+      "enum": [
+        "nvd",
+        "osv",
+        "kev",
+        "epss",
+        "ghsa"
+      ]
+    },
+    "version": {
+      "description": "Phiên bản/snapshot của feed (vd ngày EPSS, catalogVersion KEV).",
+      "type": "string"
+    },
+    "snapshot_at": {
+      "$ref": "../common/ids.v1.schema.json#/$defs/Timestamp"
+    },
+    "impacted_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 100000
+    },
+    "change_kinds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "new_vuln",
+          "kev_added",
+          "kev_removed",
+          "epss_changed",
+          "cvss_changed",
+          "affected_range_changed",
+          "withdrawn"
+        ]
+      },
+      "uniqueItems": true
+    }
+  }
+}

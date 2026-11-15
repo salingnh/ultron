@@ -24,14 +24,16 @@ Không viết mã sản phẩm ở GĐ0. Đầu ra là văn bản kết luận t
 Thứ tự: tuần 1 chốt S1; tuần 2–4 chạy song song S2, S3, S4, S8a; tuần cuối tích hợp và demo. **S1 là điểm nghẽn: Product Team phải duyệt trong tuần đầu.**
 
 ### S1 Hợp đồng (M01, M05, M27)
+
+> 2026-11-15: bản nháp T1.2–T1.8 và T1.19 đã có trong `contracts/` theo chỉ đạo Product Team (kéo sớm trong GĐ0), chờ duyệt. Xem [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md).
 - [ ] **T1.1** Khung repo theo ARCHITECTURE.md mục 6; CI chạy lint + test.
-- [ ] **T1.2** JSON Schema chiến dịch + RoE với năm loại đầu vào (IP, domain, URL, email, từ khóa).
-- [ ] **T1.3** Schema manifest `CapabilityProvider` v1.
-- [ ] **T1.4** Schema `ResultEnvelope` v1 + mã lỗi chuẩn.
-- [ ] **T1.5** Schema chín sự kiện `.v1`.
-- [ ] **T1.6** Schema công cụ MCP (capability cấp nghiệp vụ + truy vấn đồ thị chỉ đọc).
-- [ ] **T1.7** OpenAPI v1 cho 12 endpoint REST.
-- [ ] **T1.8** Bộ fixture + bộ conformance test cho adapter. *Xong khi:* schema test chạy trong CI; Product Team duyệt S1.
+- [~] **T1.2** JSON Schema chiến dịch + RoE với năm loại đầu vào (IP, domain, URL, email, từ khóa).
+- [~] **T1.3** Schema manifest `CapabilityProvider` v1.
+- [~] **T1.4** Schema `ResultEnvelope` v1 + mã lỗi chuẩn.
+- [~] **T1.5** Schema chín sự kiện `.v1`.
+- [~] **T1.6** Schema công cụ MCP (capability cấp nghiệp vụ + truy vấn đồ thị chỉ đọc).
+- [~] **T1.7** OpenAPI v1 cho 12 endpoint REST.
+- [~] **T1.8** Bộ fixture + bộ conformance test cho adapter. *Xong khi:* schema test chạy trong CI; Product Team duyệt S1.
 
 ### S2 Engine bền vững (M01–M04)
 - [ ] **T1.9** Temporal worker + `CampaignWorkflow` với pause, resume, cancel; Activity idempotent; Continue-As-New.
@@ -48,7 +50,7 @@ Thứ tự: tuần 1 chốt S1; tuần 2–4 chạy song song S2, S3, S4, S8a; t
 - [ ] **T1.18** Adapter mẫu Subfinder (M08), thêm **chỉ bằng manifest + parser**. *Xong khi:* không sửa mã lõi; container không vào được mạng dữ liệu.
 
 ### S4 Dữ liệu và đồ thị (M07, M23, M27, M28)
-- [ ] **T1.19** Khóa định danh chuẩn cho domain, IP, service, URL, email, image, repo, package.
+- [~] **T1.19** Khóa định danh chuẩn cho domain, IP, service, URL, email, image, repo, package.
 - [ ] **T1.20** Ingestion API `POST /api/v1/ingestion/results` với bảy cổng chất lượng G1–G7; inbox + dead-letter queue.
 - [ ] **T1.21** Evidence Store: SHA-256, signed URL, đoạn trích có giới hạn cho agent.
 - [ ] **T1.22** Projector Neo4j (`MERGE` theo khóa chuẩn, tham số hóa); dựng lại được từ PostgreSQL.
