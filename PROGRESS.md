@@ -7,7 +7,7 @@
 - **Giai đoạn đang mở:** GĐ0 Chuẩn bị (chưa bắt đầu; chưa chốt ngày bắt đầu).
 - **Cổng gần nhất đã qua:** chưa có.
 - **Mã sản phẩm:** chưa có. Repo mới chứa tài liệu.
-- **Quyết định còn mở:** D1, D3, D4 (backend Python, đường tải bằng chứng, cấu trúc thư mục; D2 UUIDv7 đã chốt 2026-11-15) và D5–D13 mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4, chờ Product Team duyệt.
+- **Quyết định còn mở:** D1, D4 (backend Python, cấu trúc thư mục; đã chốt 2026-11-15: D2 UUIDv7, D3 collector M06 tải bằng chứng) và D5–D13 mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4, chờ Product Team duyệt.
 
 ## Đã hoàn thành
 
@@ -24,7 +24,7 @@
 | --- | --- | --- | --- |
 | 2026-11-14 | Ba sơ đồ nhúng (kiến trúc tổng thể, hai lộ trình) không xuất được sang Markdown trong `docs/living/` | Thiếu hình minh họa; nội dung chữ vẫn đủ | Product Team (xuất ảnh từ Claude Docs nếu cần) |
 | 2026-11-14 | Ngôn ngữ backend và cấu trúc thư mục mới là đề xuất | Cần khóa ở epic S1 trước khi subagent viết mã | Agent review kiến trúc + Product Team |
-| 2026-11-15 | Đặc tả mâu thuẫn: scanner "tải bằng chứng lên MinIO qua signed URL" nhưng mạng thực thi không được vào mạng dữ liệu (nơi có MinIO) | Đề xuất D3: collector M06 ở mạng điều khiển tải lên thay | Product Team |
+| 2026-11-15 | Đặc tả mâu thuẫn: scanner "tải bằng chứng lên MinIO qua signed URL" nhưng mạng thực thi không được vào mạng dữ liệu (nơi có MinIO) | Đã chốt D3 (2026-11-15): collector M06 ở mạng điều khiển tải lên; cần sửa câu "signed URL" trong `docs/living/` khi gộp S1 | Agent review kiến trúc |
 | 2026-11-14 | Giấy phép Nerva và dnstwist chưa xác minh | Chặn đóng gói adapter tương ứng | T0.7 |
 
 ## Bước tiếp theo
