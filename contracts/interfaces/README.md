@@ -56,7 +56,7 @@ Container **không** chạm MinIO (mạng thực thi không vào được mạng
 2. Chạy parser của adapter → `ParsedResults`.
 3. Dựng `ResultEnvelope` và `POST /api/v1/ingestion/results` với `event_id` = UUIDv5(job_id, "envelope") để retry không nhân bản.
 
-(Đây là đề xuất D3, thay cho cách "scanner tải lên qua signed URL" trong đặc tả.)
+(Đã chốt D3 ngày 2026-11-15, thay cho cách "scanner tải lên qua signed URL" trong đặc tả.)
 
 ## 4. EvidenceStore (M28)
 
