@@ -7,7 +7,7 @@
 - **Giai đoạn đang mở:** GĐ0 Chuẩn bị (chưa bắt đầu; chưa chốt ngày bắt đầu).
 - **Cổng gần nhất đã qua:** chưa có.
 - **Mã sản phẩm:** chưa có. Repo mới chứa tài liệu.
-- **Quyết định còn mở:** D1–D4 (backend Python, định dạng ID, đường tải bằng chứng, cấu trúc thư mục) và D5–D13 mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4, chờ Product Team duyệt.
+- **Quyết định còn mở:** D1, D3, D4 (backend Python, đường tải bằng chứng, cấu trúc thư mục; D2 UUIDv7 đã chốt 2026-11-15) và D5–D13 mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4, chờ Product Team duyệt.
 
 ## Đã hoàn thành
 

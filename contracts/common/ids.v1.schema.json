@@ -5,7 +5,7 @@
   "description": "Định nghĩa ID, khóa định danh chuẩn và thời điểm. Mọi schema khác $ref vào đây; không định nghĩa lại.",
   "$defs": {
     "Id": {
-      "description": "UUIDv7 dạng chuỗi chữ thường (sắp theo thời gian, sinh ở phía dịch vụ). Đề xuất D2.",
+      "description": "UUIDv7 dạng chuỗi chữ thường (sắp theo thời gian, sinh ở phía dịch vụ). Đã chốt D2 (2026-11-15).",
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },

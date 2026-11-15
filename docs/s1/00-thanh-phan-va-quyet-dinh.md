@@ -82,7 +82,7 @@ Bốn quyết định đầu đổi cách các agent làm việc nên cần Prod
 | Mã | Câu hỏi | Khuyến nghị (đã áp dụng trong bản nháp) | Lý do | Ảnh hưởng nếu đổi |
 | --- | --- | --- | --- | --- |
 | **D1** | Ngôn ngữ backend | Python 3.12 cho mọi dịch vụ; web TypeScript | LangGraph và Temporal Python SDK là lõi; một ngôn ngữ giúp sinh kiểu từ schema một lần | Interface trong `interfaces/README.md` viết lại chữ ký; schema giữ nguyên |
-| **D2** | Định dạng ID | UUIDv7 ở mọi nơi (kiểu `uuid` trong PG) | Sắp theo thời gian, index tốt, sinh phân tán không đụng nhau | Ví dụ đặc tả dùng `camp-0001`; nếu muốn tiền tố dễ đọc (`cmp_...`) thì đổi `ids.v1#/$defs/Id` và kiểu cột |
+| **D2** | Định dạng ID | **Đã chốt 2026-11-15:** UUIDv7 ở mọi nơi (kiểu `uuid` trong PG) | Sắp theo thời gian, index tốt, sinh phân tán không đụng nhau | Ví dụ đặc tả dùng `camp-0001`; nếu muốn tiền tố dễ đọc (`cmp_...`) thì đổi `ids.v1#/$defs/Id` và kiểu cột |
 | **D3** | Ai tải bằng chứng lên MinIO | Collector của M06 (mạng điều khiển) băm SHA-256 và tải lên, container chỉ ghi `/out` | Đặc tả vừa nói "scanner tải lên qua signed URL" vừa cấm mạng thực thi vào mạng dữ liệu (nơi có MinIO). Hai điều này mâu thuẫn; cách này giữ nguyên cách ly mạng | Nếu giữ signed URL thì phải mở đường mạng thực thi → MinIO và bỏ một phần cách ly |
 | **D4** | Cấu trúc thư mục | Monorepo theo ARCHITECTURE.md mục 6, thêm `contracts/` ở gốc như bản nháp này | Hợp đồng dùng chung cần một nơi; CI một chỗ | Đổi đường dẫn trong gói việc mục 3 |
 | D5 | Xác thực giữa dịch vụ ở MVP | Service token qua header `X-Aegis-Service-Token`; `ApprovedTask` ký HMAC; mTLS để sau | Một máy, một mạng điều khiển; mTLS tốn công cấu hình ở GĐ1 | Thêm mTLS không đổi schema |
