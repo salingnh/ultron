@@ -2,7 +2,7 @@
 -- Nguồn: docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md. PostgreSQL là nguồn sự thật; Neo4j dựng lại được từ đây.
 --
 -- Quy ước
---   * Mọi ID là UUIDv7 do dịch vụ sinh (quyết định D2). Thời gian là timestamptz, UTC.
+--   * Mọi ID là UUIDv7 do dịch vụ sinh (đã chốt D2, 2026-11-15). Thời gian là timestamptz, UTC.
 --   * KHÔNG DELETE ở bất kỳ bảng nào (trigger aegis.forbid_delete).
 --   * Bảng "append-only" cấm cả UPDATE (trigger aegis.forbid_update).
 --   * Bảng "trạng thái hiện tại" (campaign, agent_session, scan_job, asset, finding, ingestion_inbox, alert_delivery)
