@@ -7,7 +7,7 @@
 - **Giai đoạn đang mở:** GĐ0 Chuẩn bị (chưa bắt đầu; chưa chốt ngày bắt đầu).
 - **Cổng gần nhất đã qua:** chưa có.
 - **Mã sản phẩm:** chưa có. Repo mới chứa tài liệu.
-- **Quyết định còn mở:** D1, D4 (backend Python, cấu trúc thư mục; đã chốt 2026-11-15: D2 UUIDv7, D3 collector M06 tải bằng chứng) và D5–D13 mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4, chờ Product Team duyệt.
+- **Quyết định còn mở:** D5–D13 (mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4), chấp nhận khi Product Team duyệt PR hợp đồng S1. D1–D4 đã chốt 2026-11-15: Python 3.12, UUIDv7, collector M06 tải bằng chứng, monorepo + `contracts/`.
 
 ## Đã hoàn thành
 
@@ -17,6 +17,7 @@
 | 2026-11-13 | Chốt toàn bộ quyết định Product Team (phạm vi quét, secret dạng rõ, agent đánh giá mức nghiêm trọng, không đo precision/recall, lưu vĩnh viễn, Podman, MCP, Telegram) | `docs/living/02-ke-hoach-trien-khai.md` mục 10 |
 | 2026-11-14 | Đưa tài liệu vào repo (`docs/living`, `docs/source`) và thêm bộ file hướng dẫn cho AI agent (PRD, ARCHITECTURE, DESIGN, RULES, TASKS, PROGRESS, AGENTS, CLAUDE) | PR đầu tiên |
 | 2026-11-15 | Bản nháp hợp đồng S1: JSON Schema (ID, lỗi, RoE, manifest, ResultEnvelope, 9 sự kiện, MCP, agent, finding), OpenAPI v1, DDL PostgreSQL, mô hình Neo4j, interface nội bộ, fixture và bộ kiểm tra; phân 8 gói việc cho agent dev | `contracts/`, `docs/s1/` |
+| 2026-11-15 | Product Team chốt D1 Python 3.12, D2 UUIDv7, D3 collector M06 tải bằng chứng, D4 monorepo + `contracts/` | `docs/s1/` mục 4 |
 
 ## Đang lỗi hoặc bị chặn
 

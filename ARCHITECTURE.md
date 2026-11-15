@@ -17,7 +17,7 @@
 | Quan sát | **OpenTelemetry** (Prometheus, Loki tùy chọn) | Đã chốt |
 | Giao diện | **React + TypeScript + Vite**, **React Flow** (ELK/dagre) cho luồng quét, **Cytoscape.js** cho đồ thị (Sigma.js nếu quá lớn), SSE cho thời gian thực | Đã chốt |
 | Cảnh báo | Telegram Bot API | Đã chốt |
-| Ngôn ngữ backend | **Python** (vì LangGraph và Temporal Python SDK) | *Đề xuất, khóa ở epic S1* |
+| Ngôn ngữ backend | **Python 3.12** (vì LangGraph và Temporal Python SDK) | Đã chốt 2026-11-15 (D1) |
 | Bus sự kiện | Bảng outbox trong PostgreSQL + Temporal signal; chưa cần message broker | Đã chốt cho MVP |
 
 ## 2. Ba mặt phẳng và bốn vùng mạng
@@ -86,9 +86,9 @@ Bản đồ trực quan: [docs/living/04-ban-do-module.html](docs/living/04-ban-
 - **Vòng đời finding**: CANDIDATE → CORROBORATED → VERIFIED → FALSE_POSITIVE / ACCEPTED_RISK / FIXED → REGRESSED.
 - **REST** dưới `/api/v1`, POST tạo tài nguyên bắt buộc `Idempotency-Key`, phân trang theo cursor. Danh sách endpoint: tab Dữ liệu, API và sự kiện, mục 4.
 
-## 6. Cấu trúc thư mục (đề xuất, khóa ở S1)
+## 6. Cấu trúc thư mục (đã chốt 2026-11-15, D4)
 
-Repo hiện mới có tài liệu. Cấu trúc dưới là đề xuất ban đầu để các subagent làm song song theo năm luồng việc; thay đổi phải qua agent review kiến trúc.
+Monorepo, `contracts/` ở gốc là nguồn sự thật cho mọi hợp đồng (xem [contracts/README.md](contracts/README.md)). Các subagent làm song song theo năm luồng việc; thay đổi cấu trúc phải qua agent review kiến trúc.
 
 ```
 /
