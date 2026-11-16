@@ -5,8 +5,10 @@
 --   * Mọi ID là UUIDv7 do dịch vụ sinh (đã chốt D2, 2026-11-15). Thời gian là timestamptz, UTC.
 --   * KHÔNG DELETE ở bất kỳ bảng nào (trigger aegis.forbid_delete).
 --   * Bảng "append-only" cấm cả UPDATE (trigger aegis.forbid_update).
---   * Bảng "trạng thái hiện tại" (campaign, agent_session, scan_job, asset, finding, ingestion_inbox, alert_delivery)
---     chỉ cho UPDATE các cột trạng thái/bộ đệm; mọi thay đổi đồng thời ghi một dòng vào bảng lịch sử tương ứng.
+--   * Bảng "trạng thái hiện tại" (campaign, agent_session, scan_job, asset, finding, ingestion_inbox,
+--     alert_delivery, consumer_cursor) chỉ cho UPDATE các cột trạng thái/bộ đệm liệt kê ở trigger
+--     aegis.forbid_value_update (D26); cột giá trị/định danh như secret_value, targets, input là bất biến.
+--     Mọi thay đổi đồng thời ghi một dòng vào bảng lịch sử tương ứng.
 --   * relationship chỉ cho UPDATE một lần: valid_to từ NULL sang có giá trị.
 --   * Mỗi bảng ghi module sở hữu trong COMMENT. Module khác chỉ đọc, hoặc ghi qua API của module sở hữu.
 --   * Checkpoint LangGraph do thư viện langgraph-checkpoint-postgres tạo trong schema riêng "langgraph".
@@ -36,6 +38,18 @@ BEGIN
      OR NEW.valid_to < OLD.valid_from
      OR (to_jsonb(NEW) - 'valid_to' - 'closed_by_job_id') IS DISTINCT FROM (to_jsonb(OLD) - 'valid_to' - 'closed_by_job_id') THEN
     RAISE EXCEPTION 'relationship chỉ được đóng khoảng hiệu lực một lần (valid_to NULL -> giá trị)'
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+
+-- D26 (2026-11-16): bảng "trạng thái hiện tại" chỉ cho UPDATE các cột trạng thái
+-- liệt kê trong TG_ARGV; mọi cột giá trị/định danh khác là bất biến.
+CREATE OR REPLACE FUNCTION aegis.forbid_value_update() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF (to_jsonb(NEW) - TG_ARGV) IS DISTINCT FROM (to_jsonb(OLD) - TG_ARGV) THEN
+    RAISE EXCEPTION 'UPDATE chỉ được đổi cột trạng thái (%) trên %.%; cột giá trị/định danh là bất biến (D26)',
+      array_to_string(TG_ARGV, ', '), TG_TABLE_SCHEMA, TG_TABLE_NAME
       USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN NEW;
@@ -795,4 +809,15 @@ DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY[
 DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY[
   'campaign','agent_session','scan_job','ingestion_inbox','asset','finding','alert_delivery','consumer_cursor','relationship'
 ] LOOP PERFORM aegis.protect(t::regclass, false); END LOOP; END $$;
+
+-- D26: giới hạn cột được UPDATE trên các bảng trạng thái (cột giá trị/định danh bất biến).
+CREATE TRIGGER cols_only BEFORE UPDATE ON campaign        FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','status_reason','current_policy_version','labels','started_at','ended_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON agent_session   FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','decision','stop_reason','steps_used','result','finished_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON scan_job        FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','error','envelope_event_id','started_at','finished_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON ingestion_inbox FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','receipt','revision','processed_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON asset           FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('owner','exposure','criticality','last_seen');
+CREATE TRIGGER cols_only BEFORE UPDATE ON finding         FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','severity','current_assessment','transition_seq','confidence','last_seen');
+CREATE TRIGGER cols_only BEFORE UPDATE ON consumer_cursor FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('last_seq','updated_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON alert_delivery  FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','sent_at');
+-- relationship: chỉ được đóng khoảng hiệu lực một lần (chặt hơn danh sách cột).
 CREATE TRIGGER close_only BEFORE UPDATE ON relationship FOR EACH ROW EXECUTE FUNCTION aegis.relationship_close_only();

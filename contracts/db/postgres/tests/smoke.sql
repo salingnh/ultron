@@ -46,6 +46,11 @@ BEGIN
     INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,scan_cycle,job_fingerprint,policy_version,scope_id,impact_tier,profile,input,targets,requested_by,rationale,trace_id)
       SELECT '01900000-0000-7000-8000-0000000000d2',campaign_id,'01900000-0000-7000-8000-0000000000c2',capability,provider,provider_version,adapter_version,image_digest,scan_cycle,job_fingerprint,policy_version,scope_id,impact_tier,profile,input,targets,requested_by,rationale,trace_id FROM scan_job WHERE job_id='01900000-0000-7000-8000-0000000000d1';
   EXCEPTION WHEN unique_violation THEN ok := ok + 1; END;
-  IF ok <> 7 THEN RAISE EXCEPTION 'smoke: chỉ % / 7 kiểm tra bảo vệ đạt', ok; END IF;
-  RAISE NOTICE 'smoke: 7/7 kiểm tra bảo vệ đạt';
+  -- D26: UPDATE cột giá trị/định danh bị chặn trên bảng trạng thái
+  BEGIN UPDATE scan_job SET targets = '{dns:evil.example}' WHERE job_id='01900000-0000-7000-8000-0000000000d1'; EXCEPTION WHEN insufficient_privilege THEN ok := ok + 1; END;
+  BEGIN UPDATE asset SET canonical_key = 'dns:evil.example' WHERE asset_id='01900000-0000-7000-8000-0000000000f1'; EXCEPTION WHEN insufficient_privilege THEN ok := ok + 1; END;
+  -- D26: UPDATE cột trạng thái phải thành công (không ném lỗi)
+  UPDATE scan_job SET status='RUNNING', started_at=now() WHERE job_id='01900000-0000-7000-8000-0000000000d1';
+  IF ok <> 9 THEN RAISE EXCEPTION 'smoke: chỉ % / 9 kiểm tra bảo vệ đạt', ok; END IF;
+  RAISE NOTICE 'smoke: 9/9 kiểm tra bảo vệ đạt';
 END $$;
