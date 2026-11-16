@@ -2,15 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/campaign/roe-policy.v1.schema.json",
   "title": "Quy tắc tham chiến (RoE) v1",
-  "description": "Do người vận hành khai báo. M01 lưu thành bản chụp bất biến có policy_version. Không có allowlist phạm vi (chốt 13/11).",
+  "description": "Do người vận hành khai báo. M01 lưu thành bản chụp bất biến có policy_version. Không có allowlist phạm vi (chốt 13/11). Hành vi T3 (xâm nhập) bắt buộc đối chiếu denylist cưỡng chế bằng mã (D16, 2026-11-16).",
   "type": "object",
   "required": ["scan_profile", "max_parallel_jobs", "max_duration_hours"],
   "additionalProperties": false,
   "properties": {
     "scan_profile": {"$ref": "#/$defs/ScanProfile"},
     "max_impact_tier": {
-      "description": "Tầng tác động cao nhất được phép. Mặc định theo scan_profile (passive=T0, low-impact=T1, standard=T2). MVP không vượt T2.",
-      "type": "string", "enum": ["T0", "T1", "T2"]
+      "description": "Tầng tác động cao nhất được phép. Mặc định theo scan_profile (passive=T0, low-impact=T1, standard=T2). MVP cho tới T3 (D15); T4 cấm mặc định.",
+      "type": "string", "enum": ["T0", "T1", "T2", "T3"]
+    },
+    "t3_approval_mode": {
+      "description": "Chế độ duyệt hành vi T3 (D15): 'operator' = người duyệt tay từng job; 'auto' = policy/agent tự duyệt, BẮT BUỘC có target_denylist khác rỗng (xem allOf). Bắt buộc khi max_impact_tier=T3.",
+      "type": "string", "enum": ["operator", "auto"]
+    },
+    "target_denylist": {
+      "description": "Denylist mục tiêu cho hành vi T3 (D16). Mẫu CIDR, domain glob hoặc canonical_key bị cấm tấn công. Đây là cấu hình bổ sung; M05 LUÔN cưỡng chế thêm một denylist tự bảo vệ cố định trong mã (hạ tầng nền tảng, loopback, 169.254.0.0/16) không phụ thuộc trường này.",
+      "type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true, "maxItems": 10000
     },
     "max_parallel_jobs": {"type": "integer", "minimum": 1, "maximum": 50},
     "max_duration_hours": {"type": "integer", "minimum": 1, "maximum": 168},
@@ -32,8 +40,8 @@
       "type": "array", "items": {"$ref": "#/$defs/TimeWindow"}, "maxItems": 50
     },
     "approval_required_tiers": {
-      "description": "Tùy chọn (mặc định rỗng). Tầng tác động cần người duyệt trước khi chạy.",
-      "type": "array", "items": {"type": "string", "enum": ["T1", "T2"]}, "uniqueItems": true
+      "description": "Tùy chọn (mặc định rỗng). Tầng tác động cần người duyệt trước khi chạy. T3 duyệt theo t3_approval_mode.",
+      "type": "array", "items": {"type": "string", "enum": ["T1", "T2", "T3"]}, "uniqueItems": true
     },
     "budget": {
       "type": "object",
@@ -51,6 +59,18 @@
       "type": "array", "items": {"$ref": "../common/ids.v1.schema.json#/$defs/CapabilityId"}, "uniqueItems": true
     }
   },
+  "allOf": [
+    {
+      "$comment": "D15/D16: bật T3 thì bắt buộc khai báo chế độ duyệt.",
+      "if": {"properties": {"max_impact_tier": {"const": "T3"}}, "required": ["max_impact_tier"]},
+      "then": {"required": ["t3_approval_mode"]}
+    },
+    {
+      "$comment": "D16: T3 tự duyệt bắt buộc có denylist khác rỗng, nếu không M05 từ chối chạy.",
+      "if": {"properties": {"t3_approval_mode": {"const": "auto"}}, "required": ["t3_approval_mode"]},
+      "then": {"required": ["target_denylist"], "properties": {"target_denylist": {"minItems": 1}}}
+    }
+  ],
   "$defs": {
     "ScanProfile": {"type": "string", "enum": ["passive", "low-impact", "standard"]},
     "TimeWindow": {

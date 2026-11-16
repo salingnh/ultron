@@ -26,7 +26,7 @@ Thiếu `_meta` thì server trả lỗi JSON-RPC `-32602` kèm `INPUT_INVALID`.
 ## Luồng một lời gọi capability
 
 1. M05 kiểm `input` theo schema capability (fail-closed `INPUT_INVALID`).
-2. Chuẩn hóa mục tiêu (IDNA, dạng IP thay thế), kiểm tầng tác động, tốc độ, khung giờ nếu có, `approval_required_tiers` nếu có.
+2. Chuẩn hóa mục tiêu (IDNA, dạng IP thay thế), kiểm tầng tác động, tốc độ, khung giờ nếu có, `approval_required_tiers` nếu có. **Với job T3 (D15/D16):** đối chiếu `target_denylist` của RoE và denylist tự bảo vệ cố định trong mã (hạ tầng nền tảng, loopback, `169.254.0.0/16`) — trúng denylist thì từ chối `POLICY_DENIED`; chế độ `t3_approval_mode=operator` cần duyệt tay, `auto` mà denylist rỗng thì fail-closed; ghi người kích hoạt/duyệt vào audit (D19).
 3. Ghi `policy_decision` (mục tiêu, lý do `rationale`, `policy_version`) vào audit; từ chối thì phát `policy.denied.v1` và trả `decision=denied`.
 4. Chọn provider (sức khỏe, tương thích, xếp hạng) → gọi M06 `submit(ApprovedTask)`; M06 tính `job_fingerprint = sha256(campaign, policy_version, provider, targets, input, profile, scan_cycle)`, trùng thì trả job cũ với `decision=duplicate`. Lần quét mới (scan_cycle mới) không trùng job cũ dù input giống hệt (D21).
 5. Trả ngay `job_id`. Agent không chờ; kết quả về sau qua `knowledge.delta.v1` ở chu kỳ kế.

@@ -35,9 +35,7 @@ Cần Python 3.11+ với `jsonschema>=4.23`, `referencing`, `PyYAML`; PostgreSQL
 
 ## Quy tắc đổi hợp đồng
 
-1. Schema dùng `additionalProperties: false`, nên bên nhận cũ sẽ từ chối dữ liệu có trường mới. Mọi thay đổi đi qua PR có agent review kiến trúc, theo hai mức:
-   - Thêm trường tùy chọn hoặc thêm giá trị enum: giữ tên file, ghi chú trong `description`, và triển khai **bên nhận trước, bên phát sau**.
-   - Đổi nghĩa, đổi kiểu, bỏ trường, thêm trường bắt buộc: tạo file mới `.v2`, chạy song song với `.v1` cho tới khi mọi bên chuyển xong.
+1. **Schema theo version là bất biến (D24, 2026-11-16, khớp RULES.md).** Schema dùng `additionalProperties: false`, nên thêm bất kỳ trường nào cũng phá bên nhận cũ. Vì vậy **mọi thay đổi nội dung schema — kể cả thêm trường tùy chọn hay thêm giá trị enum — đều tạo file version mới** (`.v1` → `.v2`), không sửa file version đang có (trừ sửa lỗi chính tả/`description` không đổi hình dạng dữ liệu). `.v1` và `.v2` chạy song song tới khi mọi bên chuyển xong; ma trận tương thích producer/consumer ghi trong PR. Mọi thay đổi đi qua PR có agent review kiến trúc.
 2. Tên module, sự kiện, endpoint, trạng thái finding, mã lỗi giữ đúng đặc tả (RULES mục 2).
 3. Thêm predicate, capability, loại cạnh: thêm vào registry tương ứng trong cùng PR với adapter dùng nó.
 4. DDL: chỉ thêm migration mới (`0002_...sql`), không sửa migration đã chạy.

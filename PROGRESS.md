@@ -61,3 +61,11 @@
 - Một máy không đủ tải ở GĐ3–GĐ4 → theo dõi tải từ GĐ2; Kubernetes là thay bộ chạy.
 - Không giới hạn phạm vi khi chạy công cụ thật ở GĐ2 → chấp nhận theo quyết định 13/11; bắt buộc ghi nguồn gốc và audit.
 - **(2026-11-16, cao) Tái định vị pentest chủ động + không giới hạn phạm vi + T3 tự duyệt:** hệ thống có thể tự động tấn công bên thứ ba không đồng thuận nếu agent bị prompt injection; rủi ro pháp lý. Giảm thiểu bằng denylist bắt buộc (D16); theo dõi sát và cân nhắc thêm `origin_ref`/phạm vi ủy quyền cho T3 nếu sự cố xảy ra.
+
+## Rà soát tính nhất quán 2026-11-16
+
+- **Đã hoàn thành:** review SSE tài liệu hiện tại, phát hiện 18 nhóm lệch rule/phạm vi/lịch giao và mô tả tính năng không triển khai. Dẫn chứng và hướng xử lý: [báo cáo](docs/reviews/2026-11-16-document-consistency.md).
+- **Vấn đề:** bộ tài liệu chưa nhất quán; đặc biệt M05/denylist, T3 và severity tại MVP, phân loại TruffleHog, runtime v1, đường ghi bằng chứng, version schema và SeaweedFS. M22 vẫn có đặc tả triển khai dù ngoài phạm vi.
+- **Trạng thái khắc phục:** chưa sửa thiết kế hay contract trong lượt review; thay đổi contract có sẵn được giữ nguyên. Không chạy runtime test.
+- **Bước tiếp theo:** DOC-R2 xử lý từng R01–R18; chốt lịch giao/ràng buộc còn thiếu, sau đó đồng bộ tài liệu và kiểm tra lại. Các ghi chú tiến độ cũ ở trên là lịch sử, không phải bằng chứng mọi vấn đề vẫn còn hoặc đã sửa.
+- **Kiểm tra cuối lượt:** luồng khác đã commit contract tại `2e6100b` và sửa quy tắc version trong `contracts/README.md`; xung đột chính R08 đã được cập nhật, không phải thay đổi do lượt review này thực hiện.

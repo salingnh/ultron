@@ -99,3 +99,8 @@ Nếu GĐ2 vượt 6 tuần, lùi sang GĐ3 trước: Grype, cdncheck, urlfinder
 ## Để sau (chưa lập lịch, KHÔNG làm)
 
 M22 sub-agent Strix và Decepticon; red-team, C2; PR nháp bản vá (FR-022); đăng nhập, SSO, RBAC; Kubernetes; GUAC, DefectDojo, Dependency-Track.
+
+## Rà soát tài liệu theo yêu cầu Product Team (2026-11-16)
+
+- [x] **DOC-R1** Review SSE: đối chiếu rule và tính năng giữa các phần; ghi cặp dẫn chứng, tác động và hướng xử lý tại [báo cáo](docs/reviews/2026-11-16-document-consistency.md). Hoàn tất review, chưa hoàn tất khắc phục.
+- [ ] **DOC-R2** Xử lý R01–R18 trong báo cáo; đồng bộ phạm vi, đặc tả, task, cổng nghiệm thu và bản đồ HTML. Chốt các ranh giới/lịch giao còn thiếu trước khi sửa cam kết tương ứng.
