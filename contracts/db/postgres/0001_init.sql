@@ -376,7 +376,7 @@ CREATE TABLE graph_revision (
   envelope_event_id uuid        REFERENCES ingestion_inbox,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE graph_revision IS 'M27 cấp, M23 phát knowledge.delta.v1. Một envelope được nhận = một revision. Append-only.';
+COMMENT ON TABLE graph_revision IS 'M27 cấp, M23 phát knowledge.delta.v1. Một envelope được nhận = một revision. Append-only. D25: projector M23 đọc revision cũng theo quy tắc watermark/tiền tố liền mạch như outbox (revision bigserial có thể commit không theo thứ tự).';
 
 -- ---------------------------------------------------------------------------
 -- M07 Asset Inventory
@@ -696,14 +696,14 @@ CREATE TABLE outbox_event (
   UNIQUE (type, dedup_key)
 );
 CREATE INDEX outbox_event_type_seq ON outbox_event (type, seq);
-COMMENT ON TABLE outbox_event IS 'Ghi trong cùng giao dịch với thay đổi dữ liệu; dispatcher đọc theo seq (LISTEN/NOTIFY để đánh thức). Append-only; giữ vĩnh viễn, là event log để dựng lại Neo4j.';
+COMMENT ON TABLE outbox_event IS 'Ghi trong cùng giao dịch với thay đổi dữ liệu; MỘT dispatcher mỗi consumer đọc theo seq (LISTEN/NOTIFY để đánh thức). Append-only; giữ vĩnh viễn, là event log để dựng lại Neo4j. D25 (2026-11-16): seq (bigserial) được cấp lúc INSERT nhưng commit có thể không theo thứ tự seq, nên con trỏ KHÔNG được nhảy qua khoảng trống — chỉ vượt tiền tố seq liền mạch đã commit, hoặc giới hạn đọc tới watermark = pg_snapshot_xmin(pg_current_snapshot()) để không bỏ sót giao dịch seq thấp commit muộn. An toàn at-least-once nhờ consumer_inbox khử trùng.';
 
 CREATE TABLE consumer_cursor (
   consumer     text        PRIMARY KEY,              -- vd 'm23-projector', 'm24-alerts', 'm02-signal'
   last_seq     bigint      NOT NULL DEFAULT 0,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE consumer_cursor IS 'Vị trí đọc outbox của từng consumer. Bảng trạng thái (cho UPDATE).';
+COMMENT ON TABLE consumer_cursor IS 'Vị trí đọc outbox của từng consumer. Bảng trạng thái (cho UPDATE). last_seq chỉ tiến qua tiền tố liền mạch đã commit (xem outbox_event, D25); không nhảy qua khoảng trống seq.';
 
 CREATE TABLE consumer_inbox (
   consumer     text        NOT NULL,
@@ -712,7 +712,7 @@ CREATE TABLE consumer_inbox (
   processed_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (consumer, dedup_key)
 );
-COMMENT ON TABLE consumer_inbox IS 'Khử trùng phía consumer (at-least-once). Append-only.';
+COMMENT ON TABLE consumer_inbox IS 'Khử trùng phía consumer (at-least-once). Append-only. Dựng lại Neo4j: dùng một consumer id thế hệ mới (vd ''m23-projector#g2'') để inbox khử trùng bắt đầu sạch thay vì bỏ qua sự kiện đã xử lý; dòng inbox cũ vẫn giữ. Checkpoint cursor chỉ sau khi commit Neo4j.';
 
 -- ---------------------------------------------------------------------------
 -- M25 Audit, M04 Model usage

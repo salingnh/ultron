@@ -1,6 +1,8 @@
 # Mô hình đồ thị Neo4j v1 (bản chiếu của PostgreSQL)
 
-Neo4j là **bản chiếu dựng lại được**: projector M23 đọc `outbox_event` theo `seq` (consumer `m23-projector`) và các bảng PostgreSQL tương ứng, rồi `MERGE` bằng Cypher tham số hóa (`projector-upserts.cypher`). Không module nào khác ghi Neo4j. Dựng lại toàn bộ = xóa database Neo4j, đặt `consumer_cursor.last_seq = 0`, chạy lại projector; kết quả phải giống hệt (tiêu chí nghiệm thu tab Dữ liệu mục 6).
+Neo4j là **bản chiếu dựng lại được**: projector M23 đọc `outbox_event` theo `seq` (consumer `m23-projector`) và các bảng PostgreSQL tương ứng, rồi `MERGE` bằng Cypher tham số hóa (`projector-upserts.cypher`). Không module nào khác ghi Neo4j. Projector đọc theo quy tắc watermark/tiền tố liền mạch (D25) và chỉ checkpoint cursor sau khi commit Neo4j.
+
+**Dựng lại toàn bộ (D25, 2026-11-16):** xóa database Neo4j rồi chạy projector dưới một **consumer thế hệ mới** (vd `m23-projector#g2`) bắt đầu từ `last_seq = 0`. Không tái dùng consumer cũ, vì `consumer_inbox` khử trùng vĩnh viễn (append-only, không xóa) sẽ khiến replay bỏ qua sự kiện đã xử lý. Dòng inbox/cursor cũ vẫn giữ; kết quả phải giống hệt (tiêu chí nghiệm thu tab Dữ liệu mục 6).
 
 ## Nút
 
