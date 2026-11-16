@@ -20,8 +20,12 @@
 | 2026-11-15 | Bản nháp hợp đồng S1: JSON Schema (ID, lỗi, RoE, manifest, ResultEnvelope, 9 sự kiện, MCP, agent, finding), OpenAPI v1, DDL PostgreSQL, mô hình Neo4j, interface nội bộ, fixture và bộ kiểm tra; phân 8 gói việc cho agent dev | `contracts/`, `docs/s1/` |
 | 2026-11-15 | Product Team chốt D1 Python 3.12, D2 UUIDv7, D3 collector M06 tải bằng chứng, D4 monorepo + `contracts/` | `docs/s1/` mục 4 |
 | 2026-11-16 | Review độc lập contract/thiết kế S1 từ ba vai trò (AI engineer, SE, security); Product Team chốt D14–D28 tái định vị pentest chủ động + sửa contract | `docs/s1/` mục 7 |
+| 2026-11-16 | Viết lại tài liệu quản trị theo định hướng pentest chủ động (AGENTS, PRD, RULES, README, docs/living, bảng tầng tác động → T3) | nhánh `redesign/pentest-repositioning-s1` (8be1b5d) |
+| 2026-11-16 | Sửa contract/DDL: D21 scan_cycle, D22 ApprovedTask container-only, D23 event_id v7 + dedup_key, D24 versioning, D15/D16 denylist+T3, D26 trigger cột, D27 sandbox collector/parser, D18 severity kind, D25 outbox watermark + rebuild thế hệ, D28 SeaweedFS. Validator xanh (33 schema) | nhánh trên (2e6100b…408dc68) |
 
 ## Đang lỗi hoặc bị chặn
+
+> Các phát hiện P0/P1 ngày 2026-11-16 dưới đây đã được xử lý bằng D15–D28 trên nhánh `redesign/pentest-repositioning-s1` (validator xanh; DDL/smoke chưa chạy vì chưa có PostgreSQL). Còn mở: hoàn thiện `ModelClient` (P1), vòng đời job kết quả một phần/đến muộn/cancel (P1), và schema input đầy đủ cho `cred.test` (GĐ3) — chưa làm trong đợt này.
 
 | Ngày | Vấn đề | Ảnh hưởng | Người xử lý |
 | --- | --- | --- | --- |
