@@ -102,7 +102,7 @@
           "required": ["entrypoint", "outputFormat"],
           "additionalProperties": false,
           "properties": {
-            "entrypoint": {"description": "Đường dẫn module parser trong repo, vd adapters.m08.subfinder.parser:parse.", "type": "string"},
+            "entrypoint": {"description": "Đường dẫn module parser trong repo, vd adapters.m08.subfinder.parser:parse. Chỉ cho import dưới gói adapters.* (D27).", "type": "string", "pattern": "^adapters\\.[a-z0-9_]+(\\.[a-z0-9_]+)+:[a-z_][a-z0-9_]*$"},
             "outputFormat": {"type": "string", "enum": ["jsonl", "json", "sarif", "cyclonedx", "spdx", "xml", "text"]}
           }
         },

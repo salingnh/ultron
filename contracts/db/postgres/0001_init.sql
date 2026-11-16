@@ -651,10 +651,12 @@ CREATE TABLE severity_assessment (
   finding_id     uuid        NOT NULL REFERENCES finding,
   severity       text        NOT NULL CHECK (severity IN ('CRITICAL','HIGH','MEDIUM','LOW','INFO','UNRATED')),
   assessment     jsonb       NOT NULL,              -- severity-assessment.v1 đầy đủ (reasons, source_refs, uncertainty...)
+  kind           text        NOT NULL CHECK (kind IN ('agent','rule','operator')),  -- D18
   trigger        text        NOT NULL CHECK (trigger IN ('scan','intel_revision','operator_request','verification')),
   session_id     uuid        REFERENCES agent_session,
-  model          text        NOT NULL,
-  created_at     timestamptz NOT NULL DEFAULT now()
+  model          text,                             -- chỉ bắt buộc khi kind='agent'
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  CHECK (kind <> 'agent' OR (model IS NOT NULL AND session_id IS NOT NULL))  -- D18
 );
 CREATE INDEX severity_assessment_finding ON severity_assessment (finding_id, created_at DESC);
 ALTER TABLE finding ADD CONSTRAINT finding_assessment_fk FOREIGN KEY (current_assessment) REFERENCES severity_assessment DEFERRABLE INITIALLY DEFERRED;

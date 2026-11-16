@@ -44,9 +44,18 @@ class ContainerSpec:
     network: Literal["exec", "none"]                           # chỉ mạng thực thi hoặc không mạng
     raw_socket: bool = False                                   # NET_RAW, chỉ khi manifest cho phép
     read_only_rootfs: bool = True; user: str = "65534:65534"
+    pids_limit: int = 512                                      # chống fork bomb
+    max_output_bytes: int = 1073741824                         # trần tổng kích thước output_dir (D27)
+    max_output_files: int = 50000                              # trần số file output (D27)
+    seccomp_profile: str = "default"                           # hồ sơ seccomp bắt buộc
 ```
 
-Bản cài đặt GĐ1: `PodmanRunner` (rootless, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--read-only`, không mount socket). Kubernetes sau này chỉ là `K8sJobRunner`.
+Bản cài đặt GĐ1: `PodmanRunner` (rootless, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--read-only`, `--pids-limit`, seccomp, không mount socket, mỗi job một mạng riêng). Kubernetes sau này chỉ là `K8sJobRunner`.
+
+**Sandbox collector/parser (D27, 2026-11-16).** Output của scanner là dữ liệu thù địch. Collector M06:
+- Chỉ xử lý **file thường**; **không đi theo symlink**, bỏ qua FIFO/socket/thiết bị. Từ chối job nếu `output_dir` vượt `max_output_bytes`/`max_output_files`.
+- Chạy `parse()` trong **tiến trình con tách biệt, không mạng, không credential, không biến môi trường kế thừa**, có trần CPU/RAM/thời gian riêng; lỗi parser không được làm sập tiến trình lõi.
+- `parser.entrypoint` của manifest phải khớp mẫu `adapters.<module>.<tool>:<func>` (không import tùy ý).
 
 ## 3. Evidence collector (M06 → M28)
 

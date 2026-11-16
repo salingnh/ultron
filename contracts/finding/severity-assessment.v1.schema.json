@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/finding/severity-assessment.v1.schema.json",
   "title": "Đánh giá mức nghiêm trọng v1",
-  "description": "Do agent đánh giá (chốt 13/11), không có công thức trọng số. Mỗi lần đánh giá lại là một bản ghi mới. Output LLM phải hợp lệ theo schema này, nếu không M20 giữ mức cũ và ghi lỗi OUTPUT_INVALID.",
+  "description": "Đánh giá mức nghiêm trọng (chốt 13/11: agent đánh giá, không công thức trọng số; D18 2026-11-16: thêm kind agent|rule|operator). Mỗi lần đánh giá lại là một bản ghi mới. CHỈ các trường severity/reasons/uncertainty/recommended_actions do LLM sinh; assessed_by và inputs do MÃ điền (không để LLM tự khai), M20 ghép lại (P1-C). Output LLM không hợp lệ thì M20 giữ mức cũ và ghi OUTPUT_INVALID. Khi LLM lỗi/không chạy được, finding mang severity UNRATED (assessed_by.kind=rule hoặc operator) và cảnh báo vẫn gửi kèm tín hiệu thô (D18). Ngân sách và trigger của job đánh giá nằm ở RoE budget và chu kỳ M20, không ở đây.",
   "type": "object",
   "required": ["severity", "reasons", "source_refs", "uncertainty", "recommended_actions", "assessed_by", "inputs"],
   "additionalProperties": false,
@@ -37,13 +37,20 @@
       }
     },
     "assessed_by": {
-      "type": "object", "required": ["session_id", "model", "profile"], "additionalProperties": false,
+      "description": "Do MÃ điền. kind=agent cần đủ session_id/model/profile/prompt_version để tái lập; kind=rule (gán nhãn từ tín hiệu thô khi không có LLM, không phải công thức trọng số) và kind=operator (người đánh giá) không cần các trường model.",
+      "type": "object", "required": ["kind"], "additionalProperties": false,
       "properties": {
+        "kind": {"type": "string", "enum": ["agent", "rule", "operator"]},
         "session_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
         "model": {"type": "string"},
         "profile": {"type": "string", "enum": ["LOW", "MID", "HIGH"]},
-        "prompt_version": {"type": "string"}
-      }
+        "prompt_version": {"type": "string"},
+        "actor": {"description": "Bắt buộc khi kind=operator.", "$ref": "../common/ids.v1.schema.json#/$defs/Actor"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "agent"}}}, "then": {"required": ["session_id", "model", "profile", "prompt_version"]}},
+        {"if": {"properties": {"kind": {"const": "operator"}}}, "then": {"required": ["actor"]}}
+      ]
     }
   },
   "$defs": {
