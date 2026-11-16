@@ -34,8 +34,8 @@ M02 là workflow Temporal giữ vòng đời chiến dịch nhiều ngày và l�
 | Dữ liệu sở hữu | Temporal Event History; campaign ledger (PostgreSQL) |
 | Phụ thuộc | M01, M03, M05, M06, M27 |
 | Quy tắc bắt buộc | History chỉ giữ ID và URI. Mọi Activity idempotent. Không busy polling. Nếu 3 đến 5 chu kỳ liên tiếp không có bằng chứng mới hữu ích thì giảm cấp hoặc tạm dừng và ghi lý do. Pause giữ job theo policy; cancel phát tín hiệu tới worker |
-| Nghiệm thu | FR-006: kill worker giữa chừng không mất tiến độ, không sinh job trùng. GĐ4: 7 ngày, từ 10.000 bước điều phối |
-| Giai đoạn | GĐ1; kiểm thử độ bền ở GĐ4 |
+| Nghiệm thu | FR-006: kill worker giữa chừng không mất tiến độ, không sinh job trùng. **Soak 7 ngày từ 10.000 bước điều phối đạt ở G2 (MVP, quyết định 2026-11-16); lặp lại ở quy mô lớn tại GĐ4** |
+| Giai đoạn | GĐ1; soak 7 ngày mức MVP ở cuối GĐ2; soak lặp quy mô lớn ở GĐ4 |
 
 ### M03 Agent Harness
 
@@ -52,7 +52,7 @@ M03 là đồ thị LangGraph chạy các phiên suy luận ngắn: đọc tri t
 | Phụ thuộc | M04, M05, M23 |
 | Quy tắc bắt buộc | Không shell, không Cypher tự do, không credential mục tiêu. Mỗi phiên bắt đầu với ngữ cảnh sạch, 10 đến 30 quan sát, khoảng 30 bước. Không nạp log thô vào prompt. Output được kiểm bằng JSON Schema. Output công cụ là dữ liệu không tin cậy. Điều kiện dừng nằm trong mã |
 | Nghiệm thu | FR-005: resume sau restart, không mất sổ nhiệm vụ. Kiểm thử prompt injection: chỉ dẫn cài trong output công cụ không tạo ra job trái phép |
-| Giai đoạn | GĐ1: khung, một đường Planner chạy trọn vẹn. GĐ2: context builder, sổ giả thuyết, bộ đánh giá delta. GĐ4: Verifier đầy đủ |
+| Giai đoạn | GĐ1: khung, một đường Planner chạy trọn vẹn. GĐ2: context builder, sổ giả thuyết, bộ đánh giá delta, **và Verifier T3 cho finding CVE/dịch vụ (FR-016)**. GĐ4: Verifier đầy đủ cho các họ finding GĐ3 |
 
 ### M04 LLM Gateway
 
@@ -78,7 +78,7 @@ M05 là điểm cưỡng chế: nó biết hệ thống có năng lực gì và 
 
 | Mục | Đặc tả |
 | --- | --- |
-| Trách nhiệm | Lưu manifest provider và schema có phiên bản. Tìm provider theo capability và kiểu đầu vào. Theo dõi sức khỏe provider. Chạy như một lớp mỏng trong MCP server: mỗi công cụ MCP ứng với một capability. Kiểm schema đầu vào, tốc độ, tầng tác động và ghi nguồn gốc mục tiêu. Cho qua mọi mục tiêu ở mọi giai đoạn (chốt 13/11); khung giờ và yêu cầu duyệt là cấu hình tùy chọn |
+| Trách nhiệm | Lưu manifest provider và schema có phiên bản. Tìm provider theo capability và kiểu đầu vào. Theo dõi sức khỏe provider. Chạy như một lớp mỏng trong MCP server: mỗi công cụ MCP ứng với một capability. Kiểm schema đầu vào, tốc độ, tầng tác động và ghi nguồn gốc mục tiêu. Cho qua mọi mục tiêu theo phạm vi — không dùng allowlist phạm vi (chốt 13/11); khung giờ và yêu cầu duyệt là cấu hình tùy chọn. **Riêng tầng T3: bắt buộc đối chiếu denylist cưỡng chế bằng mã (D16), không phải tùy chọn; chế độ T3 tự duyệt mà denylist trống hoặc không nạp được thì từ chối chạy** |
 | Đầu vào | Kế hoạch của agent hoặc yêu cầu job: capability, input, mục tiêu, profile |
 | Đầu ra | Danh sách ApprovedTask kèm provider đã chọn và `policy_version`; hoặc từ chối kèm mã lỗi |
 | Giao diện | `GET /api/v1/capabilities`; công cụ MCP cho agent (tools/list, tools/call); API validate nội bộ; phát `policy.denied.v1` |
@@ -155,7 +155,7 @@ M23 chiếu dữ liệu sang Neo4j, theo dõi thay đổi tri thức theo revisi
 | Phụ thuộc | M27, M07 |
 | Quy tắc bắt buộc | Mỗi truy vấn có giới hạn số bước nhảy, số bản ghi, timeout và điều kiện theo chiến dịch. Cạnh không còn thấy được đặt valid\_to, không xóa. Không Cypher tự do trong production. Xung đột ghi được retry với exponential backoff. Dữ liệu quá hạn được gắn nhãn stale trước khi dùng để suy luận. Đồ thị dựng lại được từ event log |
 | Nghiệm thu | Benchmark upsert đồng thời 100 worker không sinh nút trùng. Truy vấn vượt giới hạn bị cắt và báo rõ |
-| Giai đoạn | GĐ1: projector và ràng buộc. GĐ2: delta và tập truy vấn cho agent |
+| Giai đoạn | GĐ1: projector, ràng buộc, và **tập truy vấn chỉ-đọc tối thiểu** cho agent/giao diện (T1.23). GĐ2: theo dõi delta theo revision và mở rộng tập truy vấn |
 
 ### M28 Evidence Store
 
@@ -163,7 +163,7 @@ M28 lưu bằng chứng thô bất biến để mọi finding truy được về
 
 | Mục | Đặc tả |
 | --- | --- |
-| Trách nhiệm | Cấp signed URL để scanner tải lên. Lưu object theo SHA-256. Phân loại để phân quyền xem; dữ liệu lưu vĩnh viễn. Không che dữ liệu (chốt 13/11). Trả đoạn trích có giới hạn cho agent |
+| Trách nhiệm | Cấp signed URL cho **collector M06 (mạng điều khiển)** tải lên; scanner không tải trực tiếp — scanner chỉ ghi `/out`, collector băm và tải (D3, D27). Lưu object theo SHA-256. Phân loại để phân quyền xem; dữ liệu lưu vĩnh viễn. Không che dữ liệu (chốt 13/11). Trả đoạn trích có giới hạn cho agent |
 | Đầu vào | Output thô của scanner, artifact, báo cáo |
 | Đầu ra | `evidence_id`, `sha256`, `storage_uri`, phân loại |
 | Giao diện | Signed URL; đọc qua `get_evidence_excerpt` |
@@ -222,7 +222,7 @@ M20 khớp lỗ hổng đã biết với tài sản thật, sinh finding ứng v
 | Luật ưu tiên | Finding chỉ được coi là lỗ hổng khi có bằng chứng xác nhận và dẫn chứng để người dùng tự kiểm lại. AI agent đánh giá mức nghiêm trọng dựa trên CVSS, KEV, EPSS, mức phơi nhiễm và bằng chứng, ghi rõ lý do; không dùng công thức trọng số (chốt 13/11) |
 | Quy tắc bắt buộc | Fingerprint finding tính từ `asset_id`, `rule_id`, vị trí và ngữ cảnh bằng chứng; không dùng ID riêng của scanner. Không cộng thô EPSS với CVSS. Không trả về con số thiếu giải thích. LLM không tạo finding trực tiếp |
 | Nghiệm thu | Cùng package từ Trivy, OSV, Grype cho một finding với ba tham chiếu bằng chứng. Mỗi finding có bằng chứng xác nhận, dẫn chứng và mức nghiêm trọng kèm lý do. Mỗi lần chạy ghi một dòng FindingRun, kể cả khi không còn thấy lỗ hổng. Nâng cấp ra ngoài dải ảnh hưởng thì rescan đóng finding bằng bằng chứng mới |
-| Giai đoạn | GĐ2: khớp CVE, khử trùng, luật KEV, đánh giá lại theo feed. GĐ4: agent đánh giá mức nghiêm trọng kèm lý do (FR-018) |
+| Giai đoạn | GĐ2: khớp CVE, khử trùng, luật KEV, đánh giá lại theo feed, **và agent đánh giá mức nghiêm trọng kèm lý do (FR-018)** — thuộc MVP theo quyết định 2026-11-16. GĐ4: hoàn thiện severity cho các họ finding mới của GĐ3 |
 
 ### M21 Evidence Verification
 
@@ -238,7 +238,7 @@ M21 nâng một finding từ ứng viên lên đã xác minh. Từ D14 (2026-11-
 | Phụ thuộc | M20, M05, M06, M28 |
 | Quy tắc bắt buộc | Dùng thao tác tầng T0 đến **T3** (T3 qua policy M05 + denylist bắt buộc, ghi người kích hoạt/duyệt); không chạm T4. Không VERIFIED nếu thiếu bằng chứng có checksum. Verifier dùng LLM chỉ khi cần diễn giải, và phải trả khẳng định kèm tham chiếu bằng chứng và độ tin cậy. Mọi thay đổi trạng thái ghi nguồn, thời điểm, bằng chứng |
 | Nghiệm thu | FR-016: tách rõ verified, corroborated, unknown. Có đối chứng âm cho finding mức cao |
-| Giai đoạn | GĐ4 |
+| Giai đoạn | **GĐ2 (thuộc MVP, quyết định 2026-11-16)**: xác minh động T3 cho finding CVE/dịch vụ. GĐ4: mở rộng xác minh cho các họ finding mới của GĐ3 |
 
 ## 5. Nhóm giao diện và vận hành
 

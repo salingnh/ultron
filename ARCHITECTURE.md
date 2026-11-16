@@ -79,7 +79,7 @@ Bản đồ trực quan: [docs/living/04-ban-do-module.html](docs/living/04-ban-
 
 - **CapabilityProvider manifest** (`apiVersion: aegis.io/v1`): capability, image digest, input/output schema ref, permissions, safety profile, budget, handlers `validate/execute/status/cancel/collect`.
 - **ResultEnvelope**: `schema_version`, `job_id`, `campaign_id`, `capability`, `provider`, `policy_version`, `status`, `results{assets, observations, relationships, findings}`, `evidence[{sha256, uri, classification}]`, `errors`, `provenance`.
-- **Adapter SDK**: `describe, validate, start, status, cancel, collect, health`. Năm cấp tích hợp L0 import file → L1 CLI trong container → L2 REST → L3 MCP whitelist → L4 sub-agent (để sau). MVP dùng L0–L2.
+- **Adapter SDK**: `describe, validate, start, status, cancel, collect, health`. Năm cấp tích hợp L0 import file → L1 CLI trong container → L2 REST → L3 MCP whitelist → L4 sub-agent (để sau). **Runtime thực thi job v1 chỉ hỗ trợ container (D22): `ApprovedTask` v1 không nhận `rest`/`import` — dời sang v2.** L0/L2/L3 như *runtime provider riêng* là v2+; adapter container gọi HTTP ra nguồn ngoài vẫn là hành vi trong container, không phải runtime REST riêng.
 - **Khóa định danh chuẩn**: `dns:<fqdn>`, `ip:<ip>`, `service:<ip>:<port>/<transport>`, `url:<…>`, `oci:sha256:<digest>`, `git:<repo>@<sha>`, `purl:<purl>`, `cloud:<provider>:<account>:<region>:<type>/<id>`, `k8s:<cluster>/<ns>/<kind>/<name>`. Tag và branch chỉ là alias.
 - **Sự kiện v1**: `job.started.v1`, `job.completed.v1`, `policy.denied.v1`, `asset.discovered.v1`, `observation.changed.v1`, `artifact.ready.v1`, `knowledge.delta.v1`, `intel.revision.v1`, `finding.changed.v1`. Consumer idempotent, at-least-once.
 - **Mã lỗi chuẩn**: INPUT_INVALID, OUT_OF_SCOPE, APPROVAL_REQUIRED, POLICY_DENIED, RATE_LIMITED, TOOL_UNAVAILABLE, DEPENDENCY_MISSING, NETWORK_TIMEOUT, EXECUTION_TIMEOUT, RESOURCE_LIMIT, OUTPUT_INVALID, EVIDENCE_INCOMPLETE, CANCELLED, INTERNAL_ERROR.
@@ -121,4 +121,4 @@ Luồng việc và quyền sửa: điều phối và agent (M01–M04); cổng c
 | Neo4j | Đồ thị tài sản, quan hệ có thời gian | RPO 1 giờ; dựng lại được từ PostgreSQL |
 | SeaweedFS | Bằng chứng `evidence/{campaign_id}/{job_id}/{sha256}` | RPO 1 giờ; kiểm hash sau phục hồi |
 
-Mọi dữ liệu lưu vĩnh viễn, chỉ ghi thêm. Mỗi cạnh mang `observed_at`, `valid_from`, `valid_to`, `source_job_id`, `confidence`.
+Dữ liệu quét và tri thức lưu vĩnh viễn, lịch sử bất biến và chỉ ghi thêm; cột trạng thái "hiện tại" (ở ~8 bảng như campaign/job/asset/finding) được UPDATE kèm dòng lịch sử, cạnh chỉ đặt `valid_to` một lần, không DELETE (D13). Mỗi cạnh mang `observed_at`, `valid_from`, `valid_to`, `source_job_id`, `confidence`.

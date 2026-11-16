@@ -87,7 +87,7 @@ p{margin:0}
   <header style="display:flex;flex-direction:column;gap:10px">
     <h1>Bản đồ module AEGIS–Vanguard</h1>
     <p class="lead">Nền tảng pentest chủ động nội bộ (khai thác và kiểm chứng động tới T3; T4 cấm mặc định), do agent điều phối. Sơ đồ đọc từ trên xuống theo đường đi của một chiến dịch, mỗi module ghi rõ OSS đứng sau.</p>
-    <div class="stats"><span><b>28</b> module: <b>17</b> lõi và <b>11</b> kết nối</span><span><b>4</b> giai đoạn sau GĐ0, MVP ở tuần 9 đến 13</span><span>Tình trạng ngày 13/11/2026</span></div>
+    <div class="stats"><span><b>28</b> module: <b>17</b> lõi và <b>11</b> kết nối</span><span><b>4</b> giai đoạn sau GĐ0, MVP ở tuần 9 đến 17 (T3/severity/soak thuộc G2)</span><span>Tình trạng ngày 16/11/2026</span></div>
   </header>
 
   <div class="legend" role="list" aria-label="Chú giải">
@@ -241,7 +241,7 @@ p{margin:0}
       <article class="mod"><div class="top"><span class="id">M20</span><h4>Correlation và Scoring</h4><span class="ph">GĐ2, GĐ4</span></div>
         <p>Khớp CVE với tài sản, sinh finding có bằng chứng; agent đánh giá mức nghiêm trọng kèm lý do. Ghi FindingRun cho mỗi lần chạy.</p>
         <div class="chips"><span class="oss k-own">Tự dựng</span></div></article>
-      <article class="mod"><div class="top"><span class="id">M21</span><h4>Evidence Verification</h4><span class="ph">GĐ4</span></div>
+      <article class="mod"><div class="top"><span class="id">M21</span><h4>Evidence Verification</h4><span class="ph">GĐ2, GĐ4</span></div>
         <p>Xác nhận finding bằng khai thác/kiểm chứng động tới T3 (qua policy M05 + denylist, D14) và trình bày dẫn chứng để người dùng kiểm lại; không chạy PoC không tin cậy từ Internet (T4).</p>
         <div class="chips"><span class="oss k-own">Tự dựng</span></div></article>
       <article class="mod"><div class="top"><span class="id">M24</span><h4>Reporting và Remediation</h4><span class="ph">GĐ2, GĐ4</span></div>

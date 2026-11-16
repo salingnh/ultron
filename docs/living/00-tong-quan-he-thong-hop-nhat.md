@@ -150,7 +150,7 @@ Dự án chỉ viết lớp hợp nhất; mọi scanner là OSS được gọi q
 | REA | Adapter dịch ngược tĩnh, chạy theo yêu cầu trong sandbox | Không coi pseudocode là mã nguồn gốc; không coi call graph tĩnh là bằng chứng runtime | MIT |
 | Strix | Tham khảo pattern báo cáo, ngân sách, kiểm soát phạm vi | Không chạy khai thác động trên production | Apache-2.0 |
 
-**Năm cấp tích hợp.** L0 nhập file JSON, SARIF, SBOM xuất sẵn. L1 bọc CLI trong container. L2 gọi dịch vụ REST. L3 gọi qua MCP có whitelist. L4 chạy cả một phiên sub-agent như một job. MVP dùng L0 đến L2; L3 dành cho REA ở V1; L4 để sau.
+**Năm cấp tích hợp.** L0 nhập file JSON, SARIF, SBOM xuất sẵn. L1 bọc CLI trong container. L2 gọi dịch vụ REST. L3 gọi qua MCP có whitelist. L4 chạy cả một phiên sub-agent như một job. **Runtime thực thi job v1 chỉ container (D22): `ApprovedTask` v1 không nhận `rest`/`import`, dời sang v2.** L0/L2 như runtime provider riêng là v2+ (adapter container gọi HTTP ra nguồn ngoài vẫn là trong container); L3 dành cho REA ở V1; L4 để sau.
 
 **Giấy phép cần rà trước khi đóng gói.** Nmap dùng giấy phép NPSL có hạn chế phân phối lại. TruffleHog v3 là AGPL-3.0. Opengrep là LGPL-2.1. Ba công cụ này nên chạy như tiến trình ngoài, tách biệt, và cần được pháp chế xem xét nếu hệ thống được phân phối ra ngoài.
 
@@ -225,7 +225,7 @@ Truy cập UI và API chỉ qua private ingress hoặc VPN, có allowlist mức 
 
 ## 11. Lộ trình triển khai
 
-Lộ trình gồm GĐ0 chuẩn bị, bốn giai đoạn giao hàng từ GĐ1 tới GĐ4, và một nhánh nâng cao để sau nghiệm thu. Tổng cộng khoảng 19 đến 27 tuần; MVP xong ở cổng G2, khoảng tuần 9 đến 13. Agent harness có mặt ngay từ GĐ1.
+Lộ trình gồm GĐ0 chuẩn bị, bốn giai đoạn giao hàng từ GĐ1 tới GĐ4, và một nhánh nâng cao để sau nghiệm thu. Tổng cộng khoảng 22 đến 31 tuần; MVP xong ở cổng G2, khoảng tuần 9 đến 17 (mở rộng từ ước tính cũ 9–13 do kéo xác minh động T3, kiểm thử credential, severity-do-agent và soak 7 ngày vào MVP — quyết định Product Team 2026-11-16). Agent harness có mặt ngay từ GĐ1.
 
 &#91;embedded content: Lộ trình · 4 giai đoạn giao hàng, 1 nhánh để sau\]
 

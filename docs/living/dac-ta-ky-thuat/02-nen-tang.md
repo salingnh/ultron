@@ -96,7 +96,7 @@ Mỗi ranh giới giữa hai vùng có một danh sách cho phép và một danh
 | Agent tới MCP server | Gọi capability theo contract | Không shell trực tiếp, không tự mở container |
 | Gateway tới scanner | Container Podman theo image allowlist | Không mount socket, không privileged, không mạng máy chủ |
 | Scanner tới mục tiêu | Mọi mục tiêu, ghi nguồn gốc vào audit; có trần tốc độ; khung giờ là cấu hình tùy chọn | Tài sản agent lần ra: quét được thì coi như thuộc tổ chức, ghi quan hệ và nguồn gốc trong đồ thị (chốt 13/11) |
-| Scanner tới dữ liệu | Tải lên qua signed URL, gọi Ingestion API | Không truy cập trực tiếp Neo4j hay PostgreSQL |
+| Scanner tới dữ liệu | Scanner **không** tải lên trực tiếp: chỉ ghi `/out`. Collector M06 (mạng điều khiển) băm SHA-256, tải lên qua M28, parser cô lập chuẩn hóa rồi gọi Ingestion (D3, D27) | Container scanner không chạm mạng dữ liệu; không truy cập trực tiếp SeaweedFS, Neo4j hay PostgreSQL |
 | Ingestion tới đồ thị | Upsert tham số hóa, có khử trùng | Không Cypher thô do LLM sinh |
 | Feed ngoài tới AI | Metadata đã parse, gắn nhãn không tin cậy | Không coi nội dung web hay README là chỉ dẫn |
 

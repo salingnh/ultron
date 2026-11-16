@@ -30,14 +30,17 @@ Kịch bản điển hình: một CVE mới vào danh mục KEV → hệ thống
 - **Đầu vào chiến dịch:** IP, domain, URL, email, từ khóa (GĐ3 thêm repo, tài khoản cloud, cluster). Kèm quy tắc tham chiến (RoE): scan profile, số job song song, khung giờ cấm, thời lượng tối đa.
 - **Đầu ra:** đồ thị tài sản (domain, IP, dịch vụ, endpoint, image, repo, package), danh sách finding có bằng chứng, mức nghiêm trọng do agent đánh giá kèm lý do, cảnh báo Telegram, báo cáo JSON (GĐ2), SARIF và HTML (GĐ4).
 
-## 4. Mục tiêu MVP (cổng G2, khoảng tuần 9 đến 13)
+## 4. Mục tiêu MVP (cổng G2, khoảng tuần 9 đến 17)
+
+> Cập nhật 2026-11-16: theo quyết định Product Team, MVP bao gồm cả năng lực T3 (xác minh động, kiểm thử credential), mức nghiêm trọng do agent và soak 7 ngày. Việc kéo các năng lực này vào G2 mở rộng cửa sổ MVP từ ước tính cũ 9–13 tuần (xem [kế hoạch](docs/living/02-ke-hoach-trien-khai.md)).
 
 1. Khám phá tài sản theo black-box, gray-box, white-box, xuất phát từ mục tiêu khai báo, ghi nguồn gốc cho mọi tài sản tìm thêm.
-2. Chiến dịch chạy bền tới 7 ngày, có tạm dừng, tiếp tục, retry an toàn.
+2. Chiến dịch chạy bền tới 7 ngày, có tạm dừng, tiếp tục, retry an toàn; **soak 7 ngày đạt ở cổng G2**.
 3. Agent harness lập kế hoạch nhiều vòng, có checkpoint và ngân sách.
 4. Đồ thị tri thức và kho bằng chứng truy vết được từ domain tới finding.
 5. Đối chiếu lỗ hổng với CVE, OSV, KEV, EPSS; đánh giá lại khi feed đổi; cảnh báo sớm qua Telegram.
-6. Giao diện web nội bộ cho thấy agent đã làm gì, lỗi ở đâu, còn gì chưa làm.
+6. **Kiểm chứng động tới T3 (M21) nâng finding CVE/dịch vụ lên `VERIFIED`; kiểm thử credential (M17) qua policy M05 + denylist; mức nghiêm trọng do agent đánh giá kèm lý do (M20), fallback `UNRATED`.**
+7. Giao diện web nội bộ cho thấy agent đã làm gì, lỗi ở đâu, còn gì chưa làm.
 
 ## 5. Không làm (phi mục tiêu)
 

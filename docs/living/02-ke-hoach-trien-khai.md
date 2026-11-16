@@ -2,7 +2,7 @@
 
 Nov 12, 2026 · @T
 
-Kế hoạch chia việc xây AEGIS–Vanguard thành năm giai đoạn nối tiếp, mỗi giai đoạn kết thúc bằng một buổi demo và một cổng nghiệm thu đo được. MVP hoàn thành ở cuối GĐ2, khoảng 9 đến 13 tuần kể từ khi bắt đầu chuẩn bị. Toàn bộ lộ trình đến V1.5 mất khoảng 19 đến 27 tuần.
+Kế hoạch chia việc xây AEGIS–Vanguard thành năm giai đoạn nối tiếp, mỗi giai đoạn kết thúc bằng một buổi demo và một cổng nghiệm thu đo được. MVP hoàn thành ở cuối GĐ2, khoảng 9 đến 17 tuần kể từ khi bắt đầu chuẩn bị (mở rộng do kéo năng lực T3, severity và soak 7 ngày vào MVP — quyết định 2026-11-16). Toàn bộ lộ trình đến V1.5 mất khoảng 22 đến 31 tuần.
 
 **Bản chốt ngày 13/11/2026.** Kế hoạch này đã gồm mọi quyết định của Product Team ngày 12 và 13/11, kể cả mười hai điểm trong [bản đánh giá OSS](03-danh-gia-oss.md). Danh sách quyết định ở mục 10. Bốn thay đổi lớn so với bản trước: giao diện luồng quét và đồ thị tri thức có ngay ở GĐ1; agent gọi công cụ qua MCP; mỗi công cụ chạy trong một container trên một máy, chưa cần Kubernetes; không giới hạn phạm vi quét. Chiều 13/11 chốt thêm: không che secret, không đo precision và recall mà yêu cầu mỗi finding có bằng chứng, AI agent đánh giá mức nghiêm trọng, và mọi dữ liệu lưu vĩnh viễn kèm lịch sử theo từng lần chạy.
 
@@ -14,14 +14,14 @@ Kế hoạch này triển khai [bản tổng quan hệ thống hợp nhất](00-
 | --- | --- | --- | --- | --- |
 | GĐ0 Chuẩn bị | 1 đến 2 tuần | Tuần 1 đến 2 | Năm spike có kết luận, máy chạy và kho dữ liệu sẵn sàng, backlog GĐ1 được khóa | Chưa có |
 | GĐ1 Nền tảng | 4 đến 5 tuần | Tuần 5 đến 7 | Bộ khung chạy trọn vòng nhìn thấy được trên giao diện: luồng quét, đồ thị tri thức; cắm thêm công cụ không sửa mã lõi | 12 module lõi, hai adapter mẫu |
-| GĐ2 MVP Khám phá | 4 đến 6 tuần | Tuần 9 đến 13 | Từ IP, domain, URL, email hoặc từ khóa tới finding có bằng chứng; cảnh báo sớm theo KEV và EPSS qua Telegram | 15 module lõi, 5 module kết nối |
-| GĐ3 V1 Làm giàu | 6 đến 8 tuần | Tuần 15 đến 21 | Thêm mã nguồn, secret, cloud, Kubernetes, JS và nhị phân; tri thức mới tự sinh việc tiếp theo | Thêm 1 module lõi, 5 module kết nối |
-| GĐ4 V1.5 Bảo đảm | 4 đến 6 tuần | Tuần 19 đến 27 | Xác minh finding, agent đánh giá mức nghiêm trọng, báo cáo đầy đủ, chạy bền 7 ngày | Thêm 1 module lõi, hoàn thiện 4 module |
+| GĐ2 MVP Khám phá + Xác minh T3 | 6 đến 9 tuần | Tuần 9 đến 17 | Từ IP, domain, URL, email hoặc từ khóa tới finding có bằng chứng; có finding **`VERIFIED` qua khai thác/kiểm chứng động T3 (M21) và kiểm thử credential (M17)**; **mức nghiêm trọng do agent (M20)**; cảnh báo sớm KEV/EPSS qua Telegram; **soak 7 ngày đạt** | 15 module lõi + M20, M21, 5 module kết nối |
+| GĐ3 V1 Làm giàu | 6 đến 8 tuần | Tuần 18 đến 25 | Thêm mã nguồn, secret, cloud, Kubernetes, JS và nhị phân; tri thức mới tự sinh việc tiếp theo | Thêm 1 module lõi, 5 module kết nối |
+| GĐ4 V1.5 Bảo đảm | 4 đến 6 tuần | Tuần 24 đến 31 | Mở rộng xác minh và đánh giá severity cho các họ finding GĐ3; báo cáo SARIF/HTML đầy đủ; soak 7 ngày lặp lại ở quy mô lớn; gia cố và diễn tập phục hồi | Hoàn thiện 4 module |
 | Để sau | Chưa lập lịch | Sau nghiệm thu | Sub-agent Strix và Decepticon, red-team, C2, PR nháp | M22 |
 
 Ba điều cần biết trước khi đọc tiếp:
 
-- **Thời lượng là ước lượng, chưa phải cam kết.** Phần lớn mã do nhiều subagent viết song song, nên nút thắt nằm ở review, tích hợp và cổng nghiệm thu, không nằm ở số người viết mã. GĐ1 dài hơn bản trước khoảng một tuần vì có thêm giao diện; con số này là ước tính của mình. Chưa có ngày bắt đầu, nên mọi mốc tính theo tuần tương đối, với tuần 1 là tuần đầu của GĐ0. Tổng cộng 19 đến 27 tuần.
+- **Thời lượng là ước lượng, chưa phải cam kết.** Phần lớn mã do nhiều subagent viết song song, nên nút thắt nằm ở review, tích hợp và cổng nghiệm thu, không nằm ở số người viết mã. GĐ1 dài hơn bản trước khoảng một tuần vì có thêm giao diện; con số này là ước tính của mình. Chưa có ngày bắt đầu, nên mọi mốc tính theo tuần tương đối, với tuần 1 là tuần đầu của GĐ0. Tổng cộng **khoảng 22 đến 31 tuần**. **Cập nhật 2026-11-16 (quyết định Product Team): kiểm thử credential và khai thác/kiểm chứng động T3 (M21), mức nghiêm trọng do agent (M20) và soak 7 ngày được kéo vào MVP/cổng G2. Điều này mở rộng cửa sổ MVP (ước tính cũ 9–13 tuần không còn giữ): soak 7 ngày chiếm trọn một tuần lịch sau khi đóng băng tính năng, và bước xác minh T3 phụ thuộc chuỗi khám phá đã có ở G2. Đây là đánh đổi phạm vi–lịch đã được Product Team chấp nhận.**
 - **Bộ khung là trọng tâm của GĐ1.** Mọi chuẩn (hợp đồng dữ liệu, mô tả công cụ, công cụ MCP, sự kiện) được chốt ở GĐ1 để các giai đoạn sau chỉ cắm thêm, không sửa lõi.
 - **Phạm vi (cập nhật D14, 2026-11-16).** Hệ thống nội bộ, **pentest chủ động tới T3** (gồm kiểm thử credential). Agent harness có mặt từ GĐ1. T4 — C2, persistence, lateral movement, post-exploitation, sub-agent red-team, PoC không tin cậy từ Internet — nằm ngoài kế hoạch này.
 
@@ -37,7 +37,7 @@ Các dải có bề rộng bằng nhau và không theo tỷ lệ thời gian. M�
 | --- | --- | --- | --- |
 | G0, cuối GĐ0 | Năm spike có kết luận bằng văn bản. Có máy chạy container, registry image nội bộ, PostgreSQL, Neo4j, SeaweedFS, Temporal và quyền gọi model. Bảng pin phiên bản và giấy phép cho công cụ của GĐ1, GĐ2. Backlog GĐ1 được khóa | Trình bày kết quả spike | Product Team |
 | G1, cuối GĐ1 | Một chiến dịch chạy trọn vòng với công cụ mẫu và hiện trên màn hình luồng quét theo thời gian thực. Kết quả hiện trên màn hình đồ thị và agent truy vấn được đồ thị qua MCP. Thêm một công cụ thật chỉ bằng tệp mô tả và bộ đọc kết quả, không sửa mã lõi. Tắt worker giữa chừng không mất tiến độ và không sinh job trùng. 100% lệnh đi qua điểm kiểm duy nhất và có audit kèm nguồn gốc mục tiêu. Container không vào được mạng dữ liệu | Tạo chiến dịch, xem luồng chạy và đồ thị lớn dần, cắm thêm Subfinder, tắt worker giữa chừng | Product Team |
-| G2, cuối GĐ2, mốc MVP | Đủ chuỗi domain, IP, dịch vụ, endpoint, package, CVE, finding; không trùng; mỗi finding có bằng chứng. KEV vào hệ thống dưới 2 giờ, EPSS dưới 24 giờ. Feed đổi thì agent đánh giá lại finding và có tin Telegram mà không cần quét lại. Mỗi lần chạy đều ghi lịch sử trạng thái của finding, kể cả khi không còn thấy. Giao diện hiện 100% job lỗi kèm phân loại. Agent tự dừng khi hết ngân sách hoặc hết tri thức mới. Đủ năm loại đầu vào | Từ một domain và một từ khóa tới danh sách finding có bằng chứng; giả lập một CVE vừa vào KEV và nhận tin Telegram | Product Team |
+| G2, cuối GĐ2, mốc MVP | Đủ chuỗi domain, IP, dịch vụ, endpoint, package, CVE, finding; không trùng; mỗi finding có bằng chứng. **Có finding được nâng lên `VERIFIED` bằng khai thác/kiểm chứng động T3 (M21), không VERIFIED nếu thiếu bằng chứng có checksum. Kiểm thử credential chạy ở T3 qua policy M05 + denylist bắt buộc, ghi người kích hoạt/duyệt; T3 tự duyệt mà denylist trống thì từ chối chạy. Mỗi finding có mức nghiêm trọng do agent đánh giá kèm lý do, hoặc `UNRATED` kèm tín hiệu thô. Soak 7 ngày liên tục từ 10.000 bước điều phối không mất trạng thái.** KEV vào hệ thống dưới 2 giờ, EPSS dưới 24 giờ. Feed đổi thì agent đánh giá lại finding và có tin Telegram mà không cần quét lại. Mỗi lần chạy đều ghi lịch sử trạng thái của finding, kể cả khi không còn thấy. Giao diện hiện 100% job lỗi kèm phân loại. Agent tự dừng khi hết ngân sách hoặc hết tri thức mới. Đủ năm loại đầu vào | Từ một domain và một từ khóa tới danh sách finding có bằng chứng, có finding `VERIFIED` và mức nghiêm trọng do agent; giả lập một CVE vừa vào KEV và nhận tin Telegram; báo cáo soak 7 ngày | Product Team |
 | G3, cuối GĐ3 | Từ một artifact JS tìm ra endpoint mới và hệ thống tự lên lịch việc tiếp theo. Token cài sẵn trong fixture được phát hiện, lưu kèm vị trí và bằng chứng. Bộ giải nén nhị phân chạy trong container không mạng. Thêm một công cụ CLI mới trong tối đa 2 ngày công | Từ artifact tới endpoint mới tới việc tiếp theo; diễn tập thêm công cụ có bấm giờ | Product Team |
 | G4, cuối GĐ4 | Chạy 7 ngày liên tục, từ 10.000 bước điều phối, từ 50 job đồng thời, không mất trạng thái. Diễn tập phục hồi đạt RPO và RTO. Kiểm thử prompt injection không sinh job trái phép. Mọi finding đã xác nhận có bằng chứng và dẫn chứng để người dùng tự kiểm lại. Báo cáo SARIF, JSON, HTML hợp lệ | Báo cáo soak test, buổi diễn tập phục hồi, báo cáo delta giữa hai thời điểm | Product Team |
 
@@ -87,7 +87,7 @@ Mục tiêu của GĐ1 là dựng bộ khung mà mọi thứ về sau cắm vào
 
 ## 4. GĐ2 MVP Khám phá
 
-GĐ2 kéo dài 4 đến 6 tuần và kết thúc bằng mốc MVP. Mục tiêu là hệ thống tự đi từ đầu vào tới danh sách finding có bằng chứng, và cảnh báo khi tình hình thay đổi. Bộ công cụ ProjectDiscovery được làm trước vì đã được kiểm chứng rộng rãi.
+GĐ2 kéo dài 6 đến 9 tuần và kết thúc bằng mốc MVP (mở rộng từ 4–6 tuần do kéo xác minh T3, kiểm thử credential, severity-do-agent và soak 7 ngày vào MVP, quyết định 2026-11-16). Mục tiêu là hệ thống tự đi từ đầu vào tới danh sách finding có bằng chứng, và cảnh báo khi tình hình thay đổi. Bộ công cụ ProjectDiscovery được làm trước vì đã được kiểm chứng rộng rãi.
 
 | Epic | Đầu ra bàn giao | Module | Tiêu chí hoàn thành |
 | --- | --- | --- | --- |
@@ -97,8 +97,12 @@ GĐ2 kéo dài 4 đến 6 tuần và kết thúc bằng mốc MVP. Mục tiêu l
 | S8b Findings và báo cáo | Màn hình findings và job lỗi; xuất JSON; endpoint GET /findings | M24, M26 | Người vận hành thấy lỗi và việc còn dang dở |
 | Cảnh báo sớm | Chuỗi intel.revision.v1 tới đánh giá lại có chọn lọc tới finding.changed.v1 tới tin Telegram; cảnh báo khi có tài sản mới; template và group id cấu hình được, ngưỡng gửi chốt ở giai đoạn sau | M18, M20, M24 | KEV dưới 2 giờ, EPSS dưới 24 giờ; finding được đánh giá lại mà không quét lại |
 | Chất lượng | Lab thử bản đầu; thuộc tính chủ sở hữu, phơi nhiễm, độ quan trọng của tài sản; bảng FindingRun và lịch sử theo từng lần chạy | M07, M20, M23 | Mỗi finding xác nhận có bằng chứng và dẫn chứng |
+| Xác minh động T3 | Khai thác/kiểm chứng có kiểm soát để nâng finding CVE/dịch vụ lên `VERIFIED`; đối chứng âm; qua policy M05 + denylist bắt buộc; không chạm T4 (D14, FR-016) | M03, M21 | Không VERIFIED nếu thiếu bằng chứng có checksum |
+| Kiểm thử credential | Module mật khẩu sinh ứng viên từ OSINT/breach + endpoint đăng nhập và thử đăng nhập; T3 qua policy M05 + denylist, ghi người kích hoạt/duyệt (D16, D17, D19) | M17 | T3 tự duyệt mà denylist trống thì từ chối chạy |
+| Mức nghiêm trọng | Agent đánh giá kèm lý do, nguồn, điểm chưa chắc; `assessed_by.kind = agent\|rule\|operator`; fallback `UNRATED` (D18, FR-018) | M20 | Mỗi finding có đánh giá hoặc `UNRATED` kèm tín hiệu thô |
+| Gia cố mức MVP | Chaos test; bộ prompt injection; backup/restore; **soak 7 ngày** chạy sau khi đóng băng tính năng; hiệu năng cơ bản | M02, M06, M25 | 7 ngày liên tục từ 10.000 bước điều phối, không mất trạng thái |
 
-Nếu GĐ2 vượt 6 tuần, phần lùi sang GĐ3 trước tiên là Grype, cdncheck và urlfinder, vì chúng bổ sung chứ không mở chuỗi mới.
+Phần có thể lùi sang GĐ3 nếu thiếu thời gian là Grype, cdncheck và urlfinder (bổ sung, không mở chuỗi mới). **Soak 7 ngày và bước xác minh T3 không rút ngắn và không được lùi khỏi cổng G2** (quyết định Product Team 2026-11-16: T3, severity và bền-7-ngày thuộc MVP).
 
 **Demo cuối GĐ2.** Khai báo một domain gốc và một từ khóa thương hiệu trong lab. Agent điều phối khám phá, quét dịch vụ và image, rồi trình bày danh sách finding, mỗi finding mở được bằng chứng và dẫn chứng để tự kiểm lại. Sau đó giả lập một CVE vừa được thêm vào KEV, xem agent đánh giá lại finding cùng tin Telegram. Cuối cùng chạy lại chiến dịch và xem dòng thời gian của một finding qua hai lần chạy.
 
@@ -109,7 +113,9 @@ Nếu GĐ2 vượt 6 tuần, phần lùi sang GĐ3 trước tiên là Grype, cdn
 - Nhận danh sách finding có bằng chứng, ưu tiên theo KEV và EPSS.
 - Nhận tin Telegram khi xuất hiện tài sản mới hoặc khi một CVE mới ảnh hưởng tài sản đã biết.
 
-**Chưa có sau GĐ2.** Chưa phân tích mã nguồn, secret, cloud, Kubernetes và nhị phân. Finding chưa qua bước xác minh của M21 nên mới dừng ở `CANDIDATE` hoặc `CORROBORATED`. Agent chưa đánh giá mức nghiêm trọng. Chưa xuất SARIF và HTML.
+**Đã có ở G2 (cập nhật 2026-11-16).** Finding CVE/dịch vụ được nâng lên `VERIFIED` qua khai thác/kiểm chứng động T3 (M21); kiểm thử credential (M17) chạy ở T3 qua policy M05 + denylist; agent đánh giá mức nghiêm trọng (M20); soak 7 ngày đạt.
+
+**Chưa có sau GĐ2.** Chưa phân tích mã nguồn, secret, cloud, Kubernetes, JS và nhị phân (các họ finding này và việc mở rộng xác minh/severity cho chúng thuộc GĐ3–GĐ4). Chưa xuất SARIF và HTML.
 
 ## 5. GĐ3 V1 Làm giàu, GĐ4 V1.5 Bảo đảm và nhánh để sau
 
@@ -120,7 +126,7 @@ Mục tiêu của GĐ3 là mở rộng nguồn tri thức và khép vòng phản
 | Epic | Đầu ra bàn giao | Module | Tiêu chí hoàn thành |
 | --- | --- | --- | --- |
 | S9 Phân tích artifact | Adapter webcrack và jsluice; bộ giải nén tự dựng cho APK, Electron, image và nhị phân (JADX, asar, Syft hoặc Trivy, strings, Ghidra headless); REA là tùy chọn; chuỗi artifact.ready.v1 tới phân tích tới endpoint mới tới việc tiếp theo | M15, M16, M28 | Demo từ artifact tới endpoint mới tới việc tiếp theo |
-| S9b Mã nguồn và secret | Adapter Opengrep, Gitleaks, TruffleHog **bật xác minh** (D17), Betterleaks; module mật khẩu (`cred.test`, T3) sinh ứng viên và thử đăng nhập qua policy + denylist; so sánh ba công cụ secret sau GĐ3; credential Git chỉ đọc | M12, M17 | Token cài sẵn được phát hiện, lưu dạng rõ kèm vị trí, bằng chứng |
+| S9b Mã nguồn và secret | Adapter Opengrep, Gitleaks, TruffleHog **bật xác minh** (D17 — bước xác minh là T3), Betterleaks; so sánh ba công cụ secret sau GĐ3; credential Git chỉ đọc. *(Module mật khẩu `cred.test` đã giao ở G2; GĐ3 mở rộng nguồn ứng viên từ secret quét được trong mã nguồn.)* | M12, M17 | Token cài sẵn được phát hiện, lưu dạng rõ kèm vị trí, bằng chứng |
 | S9c Cấu hình hạ tầng | Adapter Prowler, Kubescape là chính, kube-bench bổ sung; khóa chuẩn cho tài nguyên cloud và workload Kubernetes; credential chỉ đọc, ngắn hạn | M07, M11 | Finding cấu hình gắn đúng tài nguyên |
 | Nguồn OSINT mở rộng | SpiderFoot-ng thụ động; hai nguồn tự dựng tra rò rỉ theo domain tổ chức và tìm mã nguồn công khai; dò tài khoản mạng xã hội theo email tắt mặc định | M08 | Mỗi tài sản mới có nguồn gốc |
 | Tín hiệu ưu tiên | PoC Availability Index ở mức metadata | M19, M20 | Không có job nào thực thi mã PoC |
@@ -134,14 +140,14 @@ Mục tiêu của GĐ4 là làm cho kết quả đáng tin và hệ thống đ�
 
 | Epic | Đầu ra bàn giao | Module | Tiêu chí hoàn thành |
 | --- | --- | --- | --- |
-| S10 Gia cố | Chaos test; bộ kiểm thử prompt injection; diễn tập backup và restore; soak test 7 ngày; kiểm thử hiệu năng với artifact 10 GB và đồ thị 1 triệu nút; quyết định chuyển sang Kubernetes nếu một máy không đủ | M02, M06, M25, nền tảng | Ký nhận bảo mật; SLO đạt |
-| Xác minh | Kiểm tra xác định (so phiên bản, kiểm phản hồi HTTP, đối chiếu chéo công cụ) và **khai thác/kiểm chứng động tới T3** khi cần xác nhận (qua policy M05 + denylist, D14); đối chứng âm; vai trò Verifier đầy đủ. Không chạm T4 | M03, M21 | FR-016 |
-| Mức nghiêm trọng | AI agent đánh giá mức nghiêm trọng, kèm lý do, nguồn và điểm chưa chắc; không dùng công thức trọng số | M20 | FR-018 |
+| S10 Gia cố mở rộng | Chaos test nâng cao; bộ prompt injection đầy đủ; diễn tập backup/restore đạt RPO/RTO; **soak 7 ngày lặp lại ở cấu hình V1.5**; hiệu năng với artifact 10 GB và đồ thị 1 triệu nút; quyết định chuyển sang Kubernetes nếu một máy không đủ. *(Soak 7 ngày mức MVP đã đạt ở G2.)* | M02, M06, M25, nền tảng | Ký nhận bảo mật; SLO đạt |
+| Xác minh mở rộng | Mở rộng Verifier cho các họ finding mới của GĐ3 (mã nguồn, secret, cloud, JS, nhị phân); kiểm tra xác định và đối chứng âm đầy đủ. *(Xác minh động T3 lõi cho finding CVE/dịch vụ đã giao ở G2, FR-016.)* | M03, M21 | FR-016 mở rộng |
+| Mức nghiêm trọng mở rộng | Hoàn thiện đánh giá severity cho các họ finding mới của GĐ3. *(Năng lực severity-do-agent đã giao ở G2, FR-018.)* | M20 | FR-018 mở rộng |
 | Báo cáo và khắc phục | Xuất SARIF và HTML; báo cáo delta giữa hai thời điểm và bản cho lãnh đạo lấy từ đồ thị; gán chủ xử lý; rescan đóng finding | M24, M26 | FR-019: output hợp lệ |
 | Tích hợp CI | Pipeline gọi API để quét image và repo khi build | M12, M13, M26 | FR-020 |
 | Vận hành | Runbook đã diễn tập; dashboard vận hành; checklist go-live | M25 | Checklist go-live đạt |
 
-Soak test 7 ngày chiếm ít nhất một tuần lịch và không rút ngắn được, nên phải bắt đầu muộn nhất ở tuần thứ ba của GĐ4.
+Soak test 7 ngày chiếm ít nhất một tuần lịch và không rút ngắn được. Soak mức MVP đã chạy ở cuối GĐ2 (sau đóng băng tính năng); lần soak lặp lại ở GĐ4 (quy mô V1.5) phải bắt đầu muộn nhất ở tuần thứ ba của GĐ4.
 
 **Demo cuối GĐ4.** Trình bày báo cáo soak test, một buổi phục hồi từ backup có đối soát số finding và hash bằng chứng, và một finding đi trọn vòng đời từ `CANDIDATE` tới `VERIFIED` tới `FIXED` sau rescan.
 
@@ -191,8 +197,8 @@ Bảng dưới cho biết mỗi module lõi giao gì ở cuối từng giai đo�
 | --- | --- | --- | --- | --- |
 | M18 Vuln Feed Sync | Chưa có | Feed NVD, OSV, KEV, EPSS có phiên bản; intel.revision.v1 | Không đổi | Không đổi |
 | M19 PoC Availability Index | Chưa có | Chưa có | Metadata PoC công khai | Không đổi |
-| M20 Correlation và Scoring | Chưa có | Khớp CVE; khử trùng; tín hiệu KEV và EPSS; đánh giá lại theo feed; lịch sử theo từng lần chạy | Finding từ mã nguồn, secret, cấu hình; tín hiệu PoC | Agent đánh giá mức nghiêm trọng kèm giải thích |
-| M21 Evidence Verification | Chưa có | Chưa có | Chưa có | Xác minh an toàn; đối chứng âm |
+| M20 Correlation và Scoring | Chưa có | Khớp CVE; khử trùng; tín hiệu KEV và EPSS; đánh giá lại theo feed; lịch sử theo từng lần chạy; **agent đánh giá mức nghiêm trọng kèm giải thích (FR-018)** | Severity cho finding mã nguồn, secret, cấu hình; tín hiệu PoC | Hoàn thiện severity các họ finding GĐ3 |
+| M21 Evidence Verification | Chưa có | **Xác minh động T3 cho finding CVE/dịch vụ; đối chứng âm (FR-016)** | Mở rộng xác minh cho họ finding GĐ3 | Verifier đầy đủ |
 
 **Nhóm giao diện và vận hành**
 
@@ -236,8 +242,9 @@ Mỗi provider khi giao luôn gồm: manifest đã đăng ký, image pin theo di
 | S7 Suy luận | GĐ2 | S2, S4, dữ liệu thật từ S5 |
 | S8b Findings và báo cáo | GĐ2 | S8a |
 | Cảnh báo sớm | GĐ2 | S6 |
+| Xác minh động T3, kiểm thử credential, mức nghiêm trọng, soak 7 ngày | GĐ2 | S5, S6, S7 |
 | S9, S9b, S9c, Nguồn OSINT mở rộng | GĐ3 | S3 |
-| S10 Gia cố; Xác minh, đánh giá mức nghiêm trọng, báo cáo | GĐ4 | Toàn bộ GĐ1 đến GĐ3; lab thử |
+| S10 Gia cố mở rộng; mở rộng xác minh/severity; báo cáo đầy đủ | GĐ4 | Toàn bộ GĐ1 đến GĐ3; lab thử |
 | S11 Nâng cao | Để sau | MVP nghiệm thu, threat model riêng |
 
 **Đường găng tới MVP:** spike 1, 2 và 4 ở GĐ0, rồi S1, rồi S3 và S4, rồi S5, rồi S7. S1 là điểm nghẽn lớn nhất: mọi subagent chờ schema, nên cả tuần đầu GĐ1 dành để chốt nó và agent review kiến trúc và Product Team phải duyệt ngay trong tuần.
@@ -296,7 +303,7 @@ Subagent được chia theo năm luồng việc, mỗi luồng ứng với một
 
 **Còn mở**
 
-Không còn quyết định mở. Chốt thêm chiều 13/11: mọi dữ liệu quét được lưu vĩnh viễn kèm lịch sử trạng thái và mức nghiêm trọng theo từng lần chạy, kể cả lần không còn thấy lỗ hổng (đặc tả tab Dữ liệu mục 1, bảng `FindingRun`; làm từ GĐ2 cùng S7 Suy luận). Vì dữ liệu không được mất, giữ RPO và RTO của tài liệu nguồn: PostgreSQL RPO 15 phút, RTO 2 giờ; Neo4j và SeaweedFS RPO 1 giờ.
+Các quyết định định vị/kiến trúc (D14–D28) đã chốt; còn D5–D13 (mặc định kỹ thuật S1) chờ Product Team duyệt cùng PR hợp đồng — xem PROGRESS.md. Chốt thêm chiều 13/11: mọi dữ liệu quét được lưu vĩnh viễn kèm lịch sử trạng thái và mức nghiêm trọng theo từng lần chạy, kể cả lần không còn thấy lỗ hổng (đặc tả tab Dữ liệu mục 1, bảng `FindingRun`; làm từ GĐ2 cùng S7 Suy luận). Vì dữ liệu không được mất, giữ RPO và RTO của tài liệu nguồn: PostgreSQL RPO 15 phút, RTO 2 giờ; Neo4j và SeaweedFS RPO 1 giờ.
 
 **Rủi ro tiến độ**
 
@@ -308,7 +315,7 @@ Không còn quyết định mở. Chốt thêm chiều 13/11: mọi dữ liệu 
 | Một máy không đủ tải ở GĐ3, GĐ4 | Job xếp hàng lâu, soak test hỏng | Theo dõi tải từ GĐ2; chuyển sang Kubernetes là thay bộ chạy |
 | Không giới hạn phạm vi khi công cụ thật chạy ở GĐ2 | Quét nhầm tài sản bên thứ ba | Chấp nhận theo quyết định 13/11; mỗi quan hệ trong đồ thị có nguồn gốc để lọc lại, audit đầy đủ |
 | OSS đổi output hoặc bị tấn công chuỗi cung ứng | Parser hỏng hoặc image độc | Pin theo digest, chờ 14 ngày với bản mới, fixture và conformance test trong CI |
-| Soak test 7 ngày thất bại | Mỗi lần chạy lại trễ ít nhất một tuần | Soak rút gọn 24 đến 48 giờ ở cuối GĐ2 và GĐ3 |
+| Soak test 7 ngày thất bại | Mỗi lần chạy lại trễ ít nhất một tuần; vì soak là điều kiện cổng G2, trễ soak làm trễ mốc MVP | Chạy soak rút gọn 24–48 giờ liên tục trong GĐ1 và đầu GĐ2 để bắt lỗi sớm trước soak 7 ngày chính thức ở cuối GĐ2 |
 
 ## 11. Việc cần làm ngay
 

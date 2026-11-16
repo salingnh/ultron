@@ -48,7 +48,7 @@ Bộ đặc tả chia làm năm tab, đọc theo thứ tự từ chung đến ri
 
 - **Mã module.** M01 đến M25 giữ nguyên theo tài liệu 02. M26, M27, M28 là ba module mới được tách ra vì HLD có dịch vụ tương ứng nhưng tài liệu 02 chưa gán mã.
 - **Mức ưu tiên.** P0 là bắt buộc cho MVP, P1 là mở rộng, P2 là nâng cao và thuộc nhánh để sau.
-- **Giai đoạn.** GĐ1 Nền tảng (3 đến 4 tuần), GĐ2 MVP Khám phá (4 đến 6 tuần), GĐ3 V1 Làm giàu (6 đến 8 tuần), GĐ4 V1.5 Bảo đảm (4 đến 6 tuần). MVP là hết GĐ2.
+- **Giai đoạn.** GĐ1 Nền tảng (4 đến 5 tuần), GĐ2 MVP Khám phá + Xác minh T3 (6 đến 9 tuần), GĐ3 V1 Làm giàu (6 đến 8 tuần), GĐ4 V1.5 Bảo đảm (4 đến 6 tuần). MVP là hết GĐ2 và gồm xác minh động T3, kiểm thử credential, severity-do-agent, soak 7 ngày (quyết định 2026-11-16).
 - **Tầng tác động.** T0 thụ động, T1 tác động thấp, T2 chủ động có giới hạn, T3 xâm nhập, T4 cấm mặc định. MVP dùng **T0 đến T3** (D15, 2026-11-16); T3 qua policy M05 và denylist bắt buộc. T4 cấm mặc định.
 - **Trạng thái.** Toàn bộ là thiết kế đề xuất. Chi tiết nào không có trong tài liệu nguồn 00–04 được ghi rõ là "đề xuất mới".
 
@@ -74,8 +74,8 @@ Hệ thống có 28 module: 17 module lõi tự xây và 11 module kết nối O
 | M28 | Evidence Store | Dữ liệu và tri thức | SeaweedFS | P0 | GĐ1 |
 | M18 | Vuln Feed Sync | Tình báo và đánh giá | Feed adapter | P0 | GĐ2 |
 | M19 | PoC Availability Index | Tình báo và đánh giá | Tự xây | P1 | GĐ3 |
-| M20 | Correlation và Scoring | Tình báo và đánh giá | Tự xây | P0 đến P1 | GĐ2 đối chiếu, GĐ4 agent đánh giá mức nghiêm trọng |
-| M21 | Evidence Verification | Tình báo và đánh giá | Tự xây | P1 | GĐ4 |
+| M20 | Correlation và Scoring | Tình báo và đánh giá | Tự xây | P0 đến P1 | GĐ2 đối chiếu **và agent đánh giá mức nghiêm trọng (MVP, 2026-11-16)**; GĐ4 mở rộng cho họ finding GĐ3 |
+| M21 | Evidence Verification | Tình báo và đánh giá | Tự xây | P0 đến P1 | GĐ2 xác minh động T3 cho finding CVE/dịch vụ (MVP); GĐ4 mở rộng |
 | M26 | Web UI và Backend API | Giao diện và vận hành | Tự xây | P0 | GĐ1 API, màn hình luồng quét và đồ thị; GĐ2 findings |
 | M24 | Reporting và Remediation | Giao diện và vận hành | Tự xây | P1 | GĐ2 xuất cơ bản, GĐ4 đầy đủ |
 | M25 | Telemetry và Audit | Giao diện và vận hành | OpenTelemetry | P0 | GĐ1 |

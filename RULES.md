@@ -8,7 +8,7 @@
 2. [docs/living/00-tong-quan-he-thong-hop-nhat.md](docs/living/00-tong-quan-he-thong-hop-nhat.md).
 3. [docs/living/dac-ta-ky-thuat/](docs/living/dac-ta-ky-thuat/README.md) và [docs/living/02-ke-hoach-trien-khai.md](docs/living/02-ke-hoach-trien-khai.md).
 4. Các file PRD, ARCHITECTURE, DESIGN, RULES, TASKS, PROGRESS ở gốc repo (bản tóm tắt của 2 và 3).
-5. `docs/source/` chỉ để tham khảo. **Không** lấy yêu cầu từ đặc tả gốc "Offensive Vaccine" hay bản HTML v2.6: phần tấn công trong đó đã bị loại.
+5. `docs/source/` chỉ để tham khảo. **Không** lấy yêu cầu từ đặc tả gốc "Offensive Vaccine" hay bản HTML v2.6. Phạm vi tấn công hiện hành là **T3 theo D14–D19** (lấy từ các quyết định Product Team, không phải từ nội dung tấn công của tài liệu gốc); năng lực T4 mô tả trong tài liệu gốc vẫn bị loại (cấm mặc định).
 
 ## 2. AI TUYỆT ĐỐI KHÔNG ĐƯỢC LÀM
 
@@ -24,6 +24,7 @@ Những điều dưới là ranh giới của sản phẩm, không phải gợi 
 
 **Về quyền của agent trong sản phẩm (M03)**
 - Agent không có shell, không có Docker/Podman socket, không có quyền cluster, không cầm credential của mục tiêu.
+- Phân biệt hai loại giá trị nhạy cảm: (a) **credential vận hành** để scanner đăng nhập mục tiêu — do policy M05 cấp thẳng cho scanner theo từng job, ngắn hạn, agent không nhận và không thực thi; (b) **secret thu thập được** (coi là dữ liệu bằng chứng) — lưu và hiển thị dạng rõ kèm fingerprint (D17), có thể đưa vào prompt dưới dạng dữ liệu. Việc sinh ứng viên mật khẩu và thử đăng nhập là hành vi T3 do M05 quyết định, không do agent tự cầm credential chạy.
 - Agent không viết Cypher hay SQL tự do; chỉ gọi truy vấn đã đăng ký của M23.
 - Agent không gọi trực tiếp binary/CLI; chỉ gọi capability cấp nghiệp vụ qua MCP.
 - Agent chỉ **đề xuất**. Quyết định chạy hay không nằm ở mã policy (M05), không ở prompt.

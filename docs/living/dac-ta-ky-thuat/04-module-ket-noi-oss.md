@@ -26,6 +26,8 @@ Mọi connector, dù bọc CLI, REST, MCP hay sub-agent, đều hiện thực c�
 | L3 MCP Capability | MCP server qua bridge có whitelist | Công cụ native MCP, ví dụ REA (tùy chọn) | GĐ3 |
 | L4 Sub-agent Job | Cả một phiên agent độc lập, trả báo cáo và bằng chứng | Strix, Decepticon | Để sau |
 
+**Runtime v1 chỉ container (D22).** Cột "Dùng từ" ở trên là lịch trình *phân loại tích hợp*, không phải runtime riêng: `ApprovedTask` v1 chỉ hỗ trợ runtime container, `rest` và `import` dời sang v2. L0 import file và L2 REST như một runtime provider tách biệt thuộc v2+; adapter chạy trong container gọi HTTP tới nguồn ngoài vẫn là hành vi trong container.
+
 MCP chỉ là giao thức giao tiếp. Nó không thay cho job scheduler, schema chuẩn hay policy.
 
 **Chiến lược nâng cấp.** Khóa image theo digest. Giữ ma trận tương thích giữa phiên bản adapter và phiên bản upstream. Lưu fixture kết quả cho từng phiên bản. Triển khai canary từng provider và rollback bằng manifest.
@@ -61,8 +63,8 @@ Bảng dưới có 22 provider, gồm 21 provider cho 11 module kết nối và 
 | `k8s.audit_config` | Kubescape (chính), kube-bench (bổ sung) | M11 | L1 | T1 | Apache-2.0 | GĐ3 |
 | `code.scan_sast` | Opengrep | M12 | L1 | T0 | LGPL-2.1 | GĐ3 |
 | `secret.detect` | Gitleaks, Betterleaks | M12, M17 | L1 | T0 | Cần rà | GĐ3 |
-| `secret.detect` | TruffleHog, **bật xác minh** (D17) | M17 | L1 | T0 | AGPL-3.0 | GĐ3 |
-| `cred.test` (đề xuất) | Module mật khẩu: sinh ứng viên từ dữ liệu thu được + thử đăng nhập (D17) | M17/mới | L2 | **T3** (policy M05 + denylist bắt buộc) | Tự dựng, cần rà | GĐ3 |
+| `secret.detect` | TruffleHog, **bật xác minh** (D17) | M17 | L1 | Phát hiện tĩnh **T0**; bước **xác minh credential là T3** (qua policy M05 + denylist bắt buộc, ghi người kích hoạt/duyệt) | AGPL-3.0 | GĐ3 |
+| `cred.test` (đề xuất) | Module mật khẩu: sinh ứng viên từ dữ liệu thu được + thử đăng nhập (D17) | M17/mới | L2 | **T3** (policy M05 + denylist bắt buộc) | Tự dựng, cần rà | **GĐ2 (MVP)** |
 | `js.analyze_bundle` | webcrack, jsluice | M15 | L1 | T0 | Cần rà | GĐ3 |
 | `binary.analyze_static` | Bộ giải nén tự dựng gọi JADX, asar, Syft hoặc Trivy, strings, Ghidra headless; REA tùy chọn | M16 | L2; REA là L3 | T0 | Theo từng công cụ, cần rà | GĐ3 |
 | `assess.subagent` | Strix, Decepticon | M22 | L4 | **T4** | Apache-2.0 | Để sau |
@@ -116,8 +118,8 @@ M10 nhận diện ứng dụng web, thu endpoint và chạy mẫu Nuclei: toàn 
 | Đầu vào | Host và cổng HTTP; URL gốc; thư mục mẫu chính thức và thư mục mẫu tùy chỉnh |
 | Output thô dự kiến | JSON lines |
 | Ánh xạ vào tri thức | Service `SERVES` Application; Application `HAS_ENDPOINT` Endpoint với khóa URL chuẩn hóa. Observation về công nghệ, TLS, mã trạng thái. File JS và source map thành Artifact và phát `artifact.ready.v1`. Kết quả Nuclei thành Finding CANDIDATE kèm bằng chứng |
-| Profile an toàn | httpx và Katana chỉ dùng HEAD và GET, có trần số request và tốc độ. Nuclei chạy mọi mẫu chính thức và mẫu tùy chỉnh, có trần tốc độ |
-| Quy tắc riêng | Redirect sang domain khác được ghi thành tài sản mới kèm quan hệ nguồn gốc. URL được lưu nguyên vẹn. Crawl có đăng nhập cần credential cấp riêng. Bộ mẫu Nuclei chính thức được pin phiên bản như một phụ thuộc chuỗi cung ứng |
+| Profile an toàn | httpx và Katana chỉ dùng HEAD và GET, có trần số request và tốc độ. Nuclei chạy mẫu chính thức và mẫu tùy chỉnh với trần tốc độ. **Danh mục mẫu được hỗ trợ không đồng nghĩa mọi mẫu đều mặc nhiên T2: policy M05 quyết định theo tầng tác động từng mẫu; mẫu có tác động vượt T2 (ví dụ chạm T3) phải qua duyệt T3 + denylist, không chạy ngầm dưới nhãn T2** |
+| Quy tắc riêng | Redirect sang domain khác được ghi thành tài sản mới kèm quan hệ nguồn gốc. **URL trong bằng chứng gốc lưu nguyên vẹn; nhưng `canonical_key` dùng để khử trùng/định danh thì loại token và tham số nhạy cảm (M07, bảng khóa URL ở tab 05). Hai thứ khác nhau: khử trùng định danh không phải lệnh xóa nội dung bằng chứng.** Crawl có đăng nhập cần credential cấp riêng. Bộ mẫu Nuclei chính thức được pin phiên bản như một phụ thuộc chuỗi cung ứng |
 | Nghiệm thu | FR-007: có endpoint trong đồ thị. Kiểm thử redirect sang domain khác được ghi đúng quan hệ. Demo từ domain tới finding có provenance |
 
 ## 4. Nhóm chuỗi cung ứng, mã nguồn và cấu hình
@@ -238,7 +240,7 @@ M22 không thuộc MVP hay V1; phần này chỉ ghi ranh giới để thiết k
 | --- | --- |
 | Cách tích hợp | Cấp L4: cả phiên Strix hoặc Decepticon là một job có status và result, không lộ công cụ nội bộ của chúng cho agent của AEGIS |
 | Mục tiêu cho phép | Chỉ lab hoặc staging được ủy quyền; không production |
-| Tầng tác động | T3, duyệt tay theo từng mục tiêu, có RoE riêng |
+| Tầng tác động | **T4 (cấm mặc định, nhánh để sau)** — khớp hàng `assess.subagent` ở bảng provider. Nếu mở trong tương lai: chỉ sau threat model và pilot được duyệt, duyệt tay theo từng mục tiêu, có RoE riêng |
 | Không nhập | Workflow red-team, C2, post-exploit, persistence, lateral movement |
 | Điều kiện mở | MVP đã nghiệm thu; threat model riêng; pilot được phê duyệt; sandbox và RoE đạt kiểm thử |
 | Lưu ý phiên bản | CVE-2026-61732 ảnh hưởng Decepticon trước 1.1.17; chỉ pin phiên bản đã vá |

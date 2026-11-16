@@ -19,6 +19,6 @@ Chi tiết đầy đủ nằm ở [docs/living/](docs/README.md). Khi có mâu t
 
 1. Agent trong sản phẩm chỉ **đề xuất**; mã policy quyết định. Không shell, không socket, không Cypher tự do.
 2. Khai thác và kiểm thử credential (gồm thử đăng nhập) được phép tới **T3**, do mã policy (M05) quyết định và **bắt buộc đối chiếu denylist** (D16); chế độ tự duyệt T3 không có denylist thì không chạy, job T3 ghi người kích hoạt/duyệt. **Vẫn cấm:** T4 (PoC không tin cậy từ Internet, C2, persistence, lateral movement, post-exploitation), tự vá, tự merge PR vào mã mục tiêu.
-3. Mọi ghi dữ liệu đi qua Ingestion API (M27); lưu vĩnh viễn, chỉ ghi thêm; mọi thứ ghi nguồn gốc.
+3. Mọi ghi dữ liệu quét và tri thức (từ scanner/adapter) đi qua Ingestion API (M27); không ghi thẳng PostgreSQL/Neo4j. Lịch sử bất biến, chỉ ghi thêm — cột trạng thái "hiện tại" chỉ được UPDATE kèm dòng lịch sử (D13), không DELETE. Bảng điều phối (campaign/session/job/audit) do module sở hữu ghi trực tiếp, không qua M27. Mọi thứ ghi nguồn gốc.
 4. Finding phải có bằng chứng (SHA-256) và dẫn chứng; mức nghiêm trọng do agent đánh giá kèm lý do.
 5. Không chắc thì dừng và hỏi Product Team. Xong việc thì cập nhật TASKS.md và PROGRESS.md.

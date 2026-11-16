@@ -74,14 +74,18 @@ Thứ tự: tuần 1 chốt S1; tuần 2–4 chạy song song S2, S3, S4, S8a; t
 - [ ] **T2.4** S8b Findings và báo cáo (M24, M26): màn hình findings và job lỗi; xuất JSON; `GET /findings`.
 - [ ] **T2.5** Cảnh báo sớm (M18, M20, M24): `intel.revision.v1` → đánh giá lại → `finding.changed.v1` → Telegram theo template; cảnh báo tài sản mới.
 - [ ] **T2.6** Chất lượng (M07, M20, M23): thuộc tính chủ sở hữu, phơi nhiễm, độ quan trọng; bảng `FindingRun`.
-- [ ] **T2.7** Demo G2: domain + từ khóa → finding có bằng chứng; giả lập CVE vào KEV → tin Telegram; dòng thời gian một finding qua hai lần chạy.
+- [ ] **T2.7** Mức nghiêm trọng do agent đánh giá kèm lý do, nguồn, điểm chưa chắc; `assessed_by.kind = agent|rule|operator`, fallback `UNRATED` (M20, D18, FR-018). *Xong khi:* mỗi finding có đánh giá hoặc `UNRATED` kèm tín hiệu thô.
+- [ ] **T2.8** Kiểm thử credential (M17 module mật khẩu): sinh ứng viên mật khẩu từ dữ liệu thu được (OSINT, breach_lookup, endpoint đăng nhập) + thử đăng nhập; **T3 qua policy M05 + denylist bắt buộc, ghi người kích hoạt/duyệt** (D16, D17, D19). *Xong khi:* T3 tự duyệt mà denylist trống thì từ chối chạy.
+- [ ] **T2.9** Xác minh động T3 (M03, M21): khai thác/kiểm chứng có kiểm soát để nâng finding CVE/dịch vụ từ `CANDIDATE`/`CORROBORATED` lên `VERIFIED`; đối chứng âm; không chạm T4; qua policy M05 + denylist (D14, FR-016). *Xong khi:* không VERIFIED nếu thiếu bằng chứng có checksum.
+- [ ] **T2.10** Gia cố mức MVP: chaos test, bộ kiểm thử prompt injection, backup/restore, **soak test 7 ngày** (chạy sau khi đóng băng tính năng, muộn nhất tuần áp chót của GĐ2), hiệu năng cơ bản (M02, M06, M25). *Xong khi:* 7 ngày liên tục từ 10.000 bước điều phối không mất trạng thái.
+- [ ] **T2.11** Demo G2: domain + từ khóa → finding có bằng chứng, có finding `VERIFIED` qua M21 và mức nghiêm trọng do agent; giả lập CVE vào KEV → tin Telegram; dòng thời gian một finding qua hai lần chạy; báo cáo soak 7 ngày.
 
-Nếu GĐ2 vượt 6 tuần, lùi sang GĐ3 trước: Grype, cdncheck, urlfinder.
+Nếu GĐ2 vượt khung thời gian, phần lùi sang GĐ3 trước là Grype, cdncheck, urlfinder (bổ sung, không mở chuỗi mới). **Soak 7 ngày và bước xác minh T3 không rút ngắn được và không được lùi khỏi cổng G2 (quyết định Product Team 2026-11-16: T3, severity, bền-7-ngày thuộc MVP).**
 
 ## GĐ3 V1 Làm giàu (6–8 tuần, cổng G3)
 
 - [ ] **T3.1** S9 Phân tích artifact (M15, M16, M28): webcrack, jsluice; bộ giải nén tự dựng (JADX, asar, Syft/Trivy, strings, Ghidra headless); container không mạng.
-- [ ] **T3.2** S9b Mã nguồn và secret (M12, M17): Opengrep, Gitleaks, TruffleHog (**bật xác minh**, D17), Betterleaks; module mật khẩu `cred.test` (T3: sinh ứng viên + thử đăng nhập, qua policy M05 + denylist); credential Git chỉ đọc.
+- [ ] **T3.2** S9b Mã nguồn và secret (M12, M17): Opengrep, Gitleaks, TruffleHog (**bật xác minh**, D17 — bước xác minh là T3), Betterleaks; credential Git chỉ đọc. *(Module mật khẩu `cred.test` đã chuyển lên GĐ2/T2.8 theo quyết định MVP-tới-T3 2026-11-16; GĐ3 chỉ mở rộng nguồn ứng viên từ secret quét được.)*
 - [ ] **T3.3** S9c Cấu hình hạ tầng (M07, M11): Prowler, Kubescape, kube-bench; khóa chuẩn cloud và Kubernetes.
 - [ ] **T3.4** Nguồn OSINT mở rộng (M08): SpiderFoot-ng thụ động; tra rò rỉ theo domain (API key do người dùng cấu hình); tìm mã nguồn công khai.
 - [ ] **T3.5** PoC Availability Index metadata (M19, M20).
@@ -89,9 +93,9 @@ Nếu GĐ2 vượt 6 tuần, lùi sang GĐ3 trước: Grype, cdncheck, urlfinder
 
 ## GĐ4 V1.5 Bảo đảm (4–6 tuần, cổng G4)
 
-- [ ] **T4.1** S10 Gia cố: chaos test, prompt injection test, backup/restore, soak test 7 ngày (bắt đầu muộn nhất tuần 3 của GĐ4), hiệu năng.
-- [ ] **T4.2** Xác minh (M03, M21): Verifier đầy đủ, đối chứng âm, FR-016.
-- [ ] **T4.3** Mức nghiêm trọng do agent đánh giá kèm lý do (M20), FR-018.
+- [ ] **T4.1** S10 Gia cố mở rộng: chaos test nâng cao, bộ prompt injection đầy đủ, diễn tập backup/restore đạt RPO/RTO, **soak 7 ngày lặp lại ở cấu hình V1.5** (bắt đầu muộn nhất tuần 3 của GĐ4), hiệu năng với artifact 10 GB và đồ thị 1 triệu nút. *(Soak 7 ngày mức MVP đã đạt ở G2/T2.10; GĐ4 là kiểm lại ở quy mô lớn hơn.)*
+- [ ] **T4.2** Xác minh mở rộng (M03, M21): Verifier đầy đủ cho các họ finding của GĐ3 (mã nguồn, secret, cloud, JS, nhị phân); đối chứng âm. *(Xác minh T3 lõi cho finding CVE/dịch vụ đã đạt ở G2/T2.9, FR-016.)*
+- [ ] **T4.3** Hoàn thiện đánh giá mức nghiêm trọng cho các họ finding mới của GĐ3 (M20). *(Năng lực severity-do-agent đã đạt ở G2/T2.7, FR-018.)*
 - [ ] **T4.4** Báo cáo SARIF, HTML, delta, bản cho lãnh đạo; gán chủ xử lý (M24, M26), FR-019.
 - [ ] **T4.5** Tích hợp CI quét image và repo khi build, FR-020.
 - [ ] **T4.6** Runbook, dashboard vận hành, checklist go-live (M25).
@@ -103,4 +107,6 @@ M22 sub-agent Strix và Decepticon; red-team, C2; PR nháp bản vá (FR-022); �
 ## Rà soát tài liệu theo yêu cầu Product Team (2026-11-16)
 
 - [x] **DOC-R1** Review SSE: đối chiếu rule và tính năng giữa các phần; ghi cặp dẫn chứng, tác động và hướng xử lý tại [báo cáo](docs/reviews/2026-11-16-document-consistency.md). Hoàn tất review, chưa hoàn tất khắc phục.
-- [ ] **DOC-R2** Xử lý R01–R18 trong báo cáo; đồng bộ phạm vi, đặc tả, task, cổng nghiệm thu và bản đồ HTML. Chốt các ranh giới/lịch giao còn thiếu trước khi sửa cam kết tương ứng.
+- [~] **DOC-R2** Xử lý R01–R18 trong báo cáo; đồng bộ phạm vi, đặc tả, task, cổng nghiệm thu và bản đồ HTML. *Đã xong:* R01, R04–R07, R10–R13, R15, R16 (sửa tài liệu/đặc tả/kế hoạch); R08, R09 đã sửa trước. R02/R03/R14: Product Team chốt kéo T3/severity/soak vào G2 (2026-11-16) — đã cập nhật PRD, kế hoạch, TASKS, đặc tả. *Còn lại:* R16/R17 trong `04-ban-do-module.html` (mức trình bày, đã gắn nhãn "để sau"); R18 gỡ đặc tả FR-022/M22 khỏi spec (tùy chọn).
+
+- [x] **DOC-R3** Kiểm sâu R05, R08, R10–R15, R17–R18 sau feedback Claude; cập nhật phán định theo source/contract tại HEAD `54f123d`. [Báo cáo](docs/reviews/2026-11-16-ten-findings-deep-review.md).

@@ -8,7 +8,7 @@
 - **Cổng gần nhất đã qua:** chưa có.
 - **Mã sản phẩm:** chưa có. Repo mới chứa tài liệu.
 - **Quyết định còn mở:** D5–D13 (mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4), chấp nhận khi Product Team duyệt PR hợp đồng S1. D1–D4 đã chốt 2026-11-15: Python 3.12, UUIDv7, collector M06 tải bằng chứng, monorepo + `contracts/`.
-- **Tái định vị 2026-11-16:** Product Team chốt D14–D28 ([docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 7): sản phẩm chuyển sang **pentest chủ động** (mở tầng T3), kèm sửa contract S1. AGENTS.md, PRD, RULES, bảng tầng tác động và `contracts/` sẽ được viết lại theo mục 7; cho tới khi đó các file đó vẫn mang định vị "chỉ phòng thủ" cũ.
+- **Tái định vị 2026-11-16:** Product Team chốt D14–D28 ([docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 7): sản phẩm chuyển sang **pentest chủ động** (mở tầng T3), kèm sửa contract S1. AGENTS.md, PRD, RULES, README và bảng tầng tác động **đã** được viết lại sang định vị pentest chủ động tới T3 (nhánh `redesign/pentest-repositioning-s1`); `contracts/` đang sửa theo D16–D28 và chờ Product Team duyệt cổng S1. Không còn file quản trị nào mang định vị "chỉ phòng thủ" cũ.
 
 ## Đã hoàn thành
 
@@ -70,6 +70,13 @@
 
 - **Đã hoàn thành:** review SSE tài liệu hiện tại, phát hiện 18 nhóm lệch rule/phạm vi/lịch giao và mô tả tính năng không triển khai. Dẫn chứng và hướng xử lý: [báo cáo](docs/reviews/2026-11-16-document-consistency.md).
 - **Vấn đề:** bộ tài liệu chưa nhất quán; đặc biệt M05/denylist, T3 và severity tại MVP, phân loại TruffleHog, runtime v1, đường ghi bằng chứng, version schema và SeaweedFS. M22 vẫn có đặc tả triển khai dù ngoài phạm vi.
+- **Đã xử lý 2026-11-16 (nhánh `redesign/pentest-repositioning-s1`):** đã sửa các nhóm kỹ thuật R01, R04, R05, R06, R07, R10, R11, R12, R13, R15, R16 (đồng bộ M05/denylist, TruffleHog T3, đường ghi bằng chứng qua collector, runtime v1 container, phạm vi M27/append-only, tập truy vấn graph G1, M22 về T4). R08 và R09 đã sửa trước (version policy, SeaweedFS). **Phạm vi/lịch R02/R03/R14:** Product Team chốt hướng **kéo năng lực T3 (xác minh động M21, kiểm thử credential M17), severity-do-agent (M20) và soak 7 ngày vào MVP/cổng G2**; đã cập nhật PRD mục 4, kế hoạch (bảng giai đoạn, cổng G2, epic GĐ2/3/4, tổng 22–31 tuần, MVP tuần 9–17), TASKS (T2.7–T2.11) và đặc tả M20/M21/cred.test. Đánh đổi: cửa sổ MVP mở rộng từ 9–13 tuần. **Còn lại:** dọn R16/R17 trong bản đồ HTML (đã gắn nhãn "để sau"/"cảm hứng" nên chỉ còn mức trình bày); R18 (gỡ đặc tả FR-022/M22 khỏi spec hiện hành) tùy chọn.
 - **Trạng thái khắc phục:** chưa sửa thiết kế hay contract trong lượt review; thay đổi contract có sẵn được giữ nguyên. Không chạy runtime test.
 - **Bước tiếp theo:** DOC-R2 xử lý từng R01–R18; chốt lịch giao/ràng buộc còn thiếu, sau đó đồng bộ tài liệu và kiểm tra lại. Các ghi chú tiến độ cũ ở trên là lịch sử, không phải bằng chứng mọi vấn đề vẫn còn hoặc đã sửa.
 - **Kiểm tra cuối lượt:** luồng khác đã commit contract tại `2e6100b` và sửa quy tắc version trong `contracts/README.md`; xung đột chính R08 đã được cập nhật, không phải thay đổi do lượt review này thực hiện.
+
+## Kiểm sâu 10 nhóm sau feedback Claude (2026-11-16)
+
+- **COMPLETE — review:** đối chiếu R05, R08, R10–R15, R17–R18 trên HEAD `54f123d`; [báo cáo](docs/reviews/2026-11-16-ten-findings-deep-review.md).
+- R08 đã sửa xung đột chính; R13–R15 có lệch xác nhận được; R05 thiếu đặc tả, R10–R12 cần làm rõ ranh giới; R17–R18 là biên tập, rút nhận định quá mức về scope đã cam kết.
+- Chỉ sửa báo cáo/tracking; không đổi thiết kế/contract, không chạy runtime test. Tiếp theo vẫn là DOC-R2 khắc phục theo phán định đã cập nhật.
