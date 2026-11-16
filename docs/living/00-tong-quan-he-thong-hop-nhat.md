@@ -4,13 +4,13 @@ Nov 12, 2026 · @T
 
 ## 1. Tóm tắt điều hành
 
-AEGIS–Vanguard là nền tảng rà quét lỗ hổng và quản trị bề mặt tấn công **nội bộ, thiên hướng phòng thủ và cảnh báo sớm**, do AI Agent điều phối trên tài sản mà tổ chức sở hữu hoặc được ủy quyền. Hệ thống hợp nhất các công cụ OSS rời rạc thành một vòng lặp liên tục: khám phá, làm giàu tri thức, đối chiếu lỗ hổng, kiểm chứng an toàn, cảnh báo và theo dõi khắc phục.
+AEGIS–Vanguard là nền tảng **kiểm thử xâm nhập (pentest) chủ động** nội bộ kiêm quản trị bề mặt tấn công, do AI Agent điều phối trên tài sản mà tổ chức sở hữu hoặc được ủy quyền. Hệ thống hợp nhất các công cụ OSS rời rạc thành một vòng lặp liên tục: khám phá, làm giàu tri thức, đối chiếu lỗ hổng, kiểm chứng động (tới T3), cảnh báo và theo dõi khắc phục.
 
-Ba điểm định hướng đã chốt:
+Ba điểm định hướng đã chốt (cập nhật D14–D16, 2026-11-16):
 
-- **Phòng thủ trước.** Giá trị cốt lõi là biết sớm tài sản nào đang phơi nhiễm và lỗ hổng nào thật sự áp dụng, kèm bằng chứng. Hệ thống không tự khai thác, không tự vá production.
-- **Agent harness nằm trong MVP.** Agent lập kế hoạch và điều phối ngay từ GĐ1, nhưng chỉ sinh ra "ý định thao tác". Lớp policy bằng mã mới quyết định thao tác nào được chạy.
-- **Red-team và C2 để sau.** Các năng lực tấn công chủ động của Decepticon và Strix không thuộc MVP. Chúng chỉ được xem xét sau nghiệm thu, qua threat model và phê duyệt riêng.
+- **Pentest chủ động tới T3.** Giá trị cốt lõi là biết sớm tài sản nào phơi nhiễm và lỗ hổng nào **thật sự khai thác được**, kèm bằng chứng. Hệ thống chủ động khai thác và kiểm chứng động tới tầng T3 (xâm nhập), gồm kiểm thử credential (sinh ứng viên mật khẩu và thử đăng nhập). Hệ thống không tự vá production.
+- **Agent harness nằm trong MVP.** Agent lập kế hoạch và điều phối ngay từ GĐ1, nhưng chỉ sinh ra "ý định thao tác". Lớp policy bằng mã mới quyết định thao tác nào được chạy; hành vi T3 **bắt buộc đối chiếu denylist** cưỡng chế bằng mã (D16).
+- **T4 để sau.** Các năng lực sâu hơn T3 — C2, persistence, lateral movement, post-exploitation, sub-agent red-team của Decepticon và Strix — **cấm mặc định**, chỉ xem xét sau nghiệm thu qua threat model và phê duyệt riêng.
 
 Tài liệu này là bản tổng quan chuẩn của dự án. Khi các tài liệu khác mâu thuẫn với nó, nội dung ở đây được ưu tiên.
 
@@ -20,9 +20,9 @@ Ba nguồn tài liệu hiện có lệch nhau ở tám điểm. Bảng dưới g
 
 | Điểm lệch | Bản gốc | UDEP | Bộ 00–04 | Quyết định chốt |
 | --- | --- | --- | --- | --- |
-| Định vị | "Vaccine tấn công": tấn công giả lập rồi phòng thủ | Nền tảng tri thức và kiểm chứng phòng thủ | Đánh giá bề mặt tấn công có kiểm soát | Phòng thủ và cảnh báo sớm cho hệ thống nội bộ |
+| Định vị | "Vaccine tấn công": tấn công giả lập rồi phòng thủ | Nền tảng tri thức và kiểm chứng phòng thủ | Đánh giá bề mặt tấn công có kiểm soát | **Pentest chủ động nội bộ tới T3** (D14, 2026-11-16; trước đó là phòng thủ và cảnh báo sớm) |
 | Agent trong MVP | Có, 16 tác tử tự hành | Không, để tới v2 | Có, harness có giới hạn | **Có.** Harness thuộc MVP, agent chỉ đề xuất, policy quyết định |
-| Khai thác và chạy PoC | Tự chạy PoC trong sandbox | Cấm, chỉ kiểm chứng không phá hoại | Chỉ lập chỉ mục metadata PoC | Không chạy PoC. Chỉ kiểm chứng an toàn, tác động thấp |
+| Khai thác và chạy PoC | Tự chạy PoC trong sandbox | Cấm, chỉ kiểm chứng không phá hoại | Chỉ lập chỉ mục metadata PoC | **Khai thác/kiểm chứng động tới T3 do nền tảng kiểm soát** (D14). M19 chỉ metadata; không chạy PoC không tin cậy từ Internet (T4) |
 | Red-team, C2, post-exploit | Có (Sliver, BloodHound, evil-winrm) | Loại bỏ | Cấm mặc định (T4) | Để sau. Ngoài phạm vi MVP và V1 |
 | Tự vá lỗi | Tự viết bản vá và mở Pull Request | Chỉ quy trình remediation | Đề xuất PR nháp ở P2 | Chỉ gợi ý khắc phục. PR nháp để sau, không tự merge |
 | Dùng 4 OSS trọng tâm | Hợp nhất trực tiếp kiến trúc của cả bốn | Không fork, chỉ hấp thụ pattern | Không fork, tích hợp qua adapter | Không fork. Tích hợp qua Capability Registry và Adapter SDK |
@@ -58,9 +58,8 @@ Ba dòng cuối (cách dùng OSS, ghi vào đồ thị, tenancy) và tên dự �
 
 **Không thuộc MVP**
 
-- Red-team, C2, persistence, lateral movement, post-exploitation.
-- Tự chạy mã PoC lấy từ Internet. MVP chỉ lập chỉ mục metadata về PoC.
-- Dùng secret tìm thấy để đăng nhập vào hệ thống thật.
+- Tầng T4 (cấm mặc định): C2, persistence, lateral movement, post-exploitation, sub-agent red-team.
+- Tự chạy mã PoC **không tin cậy** lấy từ Internet (T4). MVP chỉ lập chỉ mục metadata về PoC; khai thác/kiểm chứng động chỉ qua năng lực T3 do nền tảng kiểm soát.
 - Tự áp bản vá hoặc tự merge thay đổi vào production.
 - Multi-tenant, SSO và RBAC người dùng.
 - Viết lại hoặc fork các scanner OSS.
@@ -209,15 +208,15 @@ An toàn được cưỡng chế bằng mã và hạ tầng, không ủy thác c
 | T0 Thụ động | OSINT chỉ đọc, parse artifact cục bộ | Tự động | Có |
 | T1 Tác động thấp | DNS, HTTP HEAD/GET, kiểm kê | Giới hạn tốc độ, khung giờ cấm | Có |
 | T2 Chủ động có giới hạn | Nmap service scan, Nuclei theo profile giới hạn tốc độ | Duyệt theo profile hoặc chiến dịch, trần tài nguyên | Có |
-| T3 Xâm nhập | Kiểm chứng động làm thay đổi trạng thái | Duyệt tay, chỉ trên staging hoặc lab | Không |
-| T4 Cấm mặc định | Chạy PoC không tin cậy, lateral movement, persistence, C2 | Bị chặn | Không |
+| T3 Xâm nhập | Khai thác có kiểm soát, kiểm thử credential (thử đăng nhập), kiểm chứng động làm thay đổi trạng thái | Policy M05 quyết định; cấu hình được: operator duyệt tay **hoặc** tự duyệt **bắt buộc đối chiếu denylist** (D16); job ghi người kích hoạt/duyệt | **Có** (D15, 2026-11-16) |
+| T4 Cấm mặc định | Chạy PoC không tin cậy, lateral movement, persistence, C2, post-exploitation | Bị chặn | Không |
 
 **Các ranh giới tin cậy**
 
 - **Nguồn gốc theo cấu trúc.** Hệ thống không giới hạn phạm vi quét (chốt 13/11): tài sản quét được thì được coi là thuộc tổ chức và có quan hệ trong đồ thị. Mục tiêu, credential và policy vẫn được kiểm trước, trong và sau mỗi job. Mọi job gắn `campaign_id` và `policy_version`, và mọi cạnh ghi rõ nó được tìm ra từ mục tiêu nào, bởi công cụ nào.
 - **Scanner cô lập.** Mỗi scanner chạy trong một container Podman rootless với image cố định theo digest, không privileged, không gắn socket của container engine, có giới hạn tài nguyên và nằm trong mạng riêng cho scanner. Kubernetes để sau.
 - **Dữ liệu thu về là không tin cậy.** Nội dung web, README, output công cụ chỉ là dữ liệu, không bao giờ là chỉ dẫn cho agent. Output được parse có kiểu trước khi tới LLM.
-- **Secret lưu và hiển thị dạng rõ.** Theo quyết định ngày 13/11, secret phát hiện được lưu dạng rõ kèm fingerprint trong cơ sở dữ liệu và đồ thị, và không che ở giao diện, báo cáo, prompt hay cảnh báo. Hệ thống không xác minh secret bằng cách đăng nhập dịch vụ thật.
+- **Secret lưu và hiển thị dạng rõ.** Theo quyết định ngày 13/11, secret phát hiện được lưu dạng rõ kèm fingerprint trong cơ sở dữ liệu và đồ thị, và không che ở giao diện, báo cáo, prompt hay cảnh báo. Từ D17 (2026-11-16) hệ thống **có kiểm thử credential**: sinh ứng viên mật khẩu từ dữ liệu thu được và thử đăng nhập (hành vi T3, qua denylist); TruffleHog chạy với xác minh **bật**.
 - **Kiểm toán đầy đủ.** Mọi kế hoạch, quyết định policy, lệnh gọi công cụ và thay đổi đồ thị có bản ghi chỉ ghi thêm, liên kết bằng campaign, session, job và evidence ID.
 
 **Prompt injection là rủi ro đã có tiền lệ.** CVE-2026-61732 trên Decepticon cho thấy output của công cụ trinh sát có thể giả mạo ranh giới vai trò và chiếm quyền điều khiển agent. Lọc token đặc biệt và bọc thẻ `<UNTRUSTED_TOOL_OUTPUT>` chỉ là phòng thủ bổ sung. Ranh giới thật sự là agent không có công cụ đặc quyền và policy được kiểm độc lập ở tầng mã.
@@ -236,7 +235,7 @@ Các mốc thời gian là ước lượng khi mã do nhiều subagent viết v�
 
 **Một điều chỉnh đã chốt ngày 13/11.** Tài liệu 00 xếp năng lực giám sát liên tục (đánh giá lại khi feed tình báo thay đổi) ở mức P1 đến P2. Vì cảnh báo sớm là mục tiêu chính, phần đánh giá lại theo KEV và EPSS được kéo vào GĐ2 MVP Khám phá; phần theo dõi thay đổi nâng cao ở GĐ3, còn mẫu tin và group id Telegram cấu hình được làm ở giai đoạn cuối.
 
-**Nhánh để sau.** Sub-agent Strix và Decepticon, kiểm chứng động trong sandbox, red-team, C2, tự sinh bản vá và PR nháp. Nhánh này chỉ mở khi MVP đã nghiệm thu, có threat model riêng và một đợt pilot được phê duyệt.
+**Nhánh để sau (T4).** Sub-agent Strix và Decepticon, red-team, C2, persistence, lateral movement, post-exploitation, tự sinh bản vá và PR nháp. Nhánh này chỉ mở khi có threat model riêng và một đợt pilot được phê duyệt. (Khai thác và kiểm chứng động tới T3 đã thuộc MVP theo D14.)
 
 ## 12. KPI và tiêu chí nghiệm thu
 

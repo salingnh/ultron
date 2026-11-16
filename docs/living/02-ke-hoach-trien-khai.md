@@ -23,7 +23,7 @@ Ba điều cần biết trước khi đọc tiếp:
 
 - **Thời lượng là ước lượng, chưa phải cam kết.** Phần lớn mã do nhiều subagent viết song song, nên nút thắt nằm ở review, tích hợp và cổng nghiệm thu, không nằm ở số người viết mã. GĐ1 dài hơn bản trước khoảng một tuần vì có thêm giao diện; con số này là ước tính của mình. Chưa có ngày bắt đầu, nên mọi mốc tính theo tuần tương đối, với tuần 1 là tuần đầu của GĐ0. Tổng cộng 19 đến 27 tuần.
 - **Bộ khung là trọng tâm của GĐ1.** Mọi chuẩn (hợp đồng dữ liệu, mô tả công cụ, công cụ MCP, sự kiện) được chốt ở GĐ1 để các giai đoạn sau chỉ cắm thêm, không sửa lõi.
-- **Phạm vi không đổi.** Hệ thống nội bộ, thiên về phòng thủ và cảnh báo sớm. Agent harness có mặt từ GĐ1. Red-team, C2 và chạy PoC khai thác nằm ngoài kế hoạch này.
+- **Phạm vi (cập nhật D14, 2026-11-16).** Hệ thống nội bộ, **pentest chủ động tới T3** (gồm kiểm thử credential). Agent harness có mặt từ GĐ1. T4 — C2, persistence, lateral movement, post-exploitation, sub-agent red-team, PoC không tin cậy từ Internet — nằm ngoài kế hoạch này.
 
 ## 2. Lộ trình và cổng nghiệm thu
 
@@ -120,13 +120,13 @@ Mục tiêu của GĐ3 là mở rộng nguồn tri thức và khép vòng phản
 | Epic | Đầu ra bàn giao | Module | Tiêu chí hoàn thành |
 | --- | --- | --- | --- |
 | S9 Phân tích artifact | Adapter webcrack và jsluice; bộ giải nén tự dựng cho APK, Electron, image và nhị phân (JADX, asar, Syft hoặc Trivy, strings, Ghidra headless); REA là tùy chọn; chuỗi artifact.ready.v1 tới phân tích tới endpoint mới tới việc tiếp theo | M15, M16, M28 | Demo từ artifact tới endpoint mới tới việc tiếp theo |
-| S9b Mã nguồn và secret | Adapter Opengrep, Gitleaks, TruffleHog tắt xác minh, Betterleaks; so sánh ba công cụ secret sau GĐ3; credential Git chỉ đọc | M12, M17 | Token cài sẵn được phát hiện và lưu kèm vị trí, bằng chứng |
+| S9b Mã nguồn và secret | Adapter Opengrep, Gitleaks, TruffleHog **bật xác minh** (D17), Betterleaks; module mật khẩu (`cred.test`, T3) sinh ứng viên và thử đăng nhập qua policy + denylist; so sánh ba công cụ secret sau GĐ3; credential Git chỉ đọc | M12, M17 | Token cài sẵn được phát hiện, lưu dạng rõ kèm vị trí, bằng chứng |
 | S9c Cấu hình hạ tầng | Adapter Prowler, Kubescape là chính, kube-bench bổ sung; khóa chuẩn cho tài nguyên cloud và workload Kubernetes; credential chỉ đọc, ngắn hạn | M07, M11 | Finding cấu hình gắn đúng tài nguyên |
 | Nguồn OSINT mở rộng | SpiderFoot-ng thụ động; hai nguồn tự dựng tra rò rỉ theo domain tổ chức và tìm mã nguồn công khai; dò tài khoản mạng xã hội theo email tắt mặc định | M08 | Mỗi tài sản mới có nguồn gốc |
 | Tín hiệu ưu tiên | PoC Availability Index ở mức metadata | M19, M20 | Không có job nào thực thi mã PoC |
 | Quét lại theo delta | Không quét lại tài sản không đổi khi còn trong TTL của policy (FR-017) | M02, M23 | Đo được số job tiết kiệm giữa hai lần chạy |
 
-**Demo cuối GĐ3.** Crawl một ứng dụng web trong lab, hệ thống thu bundle JS, tìm ra một endpoint chưa từng thấy và tự xếp việc kiểm tra endpoint đó. Quét một repo có token cài sẵn và chứng minh token không lộ ở đồ thị, log, prompt hay tin Telegram.
+**Demo cuối GĐ3.** Crawl một ứng dụng web trong lab, hệ thống thu bundle JS, tìm ra một endpoint chưa từng thấy và tự xếp việc kiểm tra endpoint đó. Quét một repo có token cài sẵn và chứng minh token được lưu, hiển thị **dạng rõ** kèm fingerprint ở đồ thị và báo cáo (chốt 13/11); tin Telegram mặc định chỉ mang fingerprint và liên kết.
 
 ### GĐ4 V1.5 Bảo đảm (4 đến 6 tuần)
 
@@ -135,7 +135,7 @@ Mục tiêu của GĐ4 là làm cho kết quả đáng tin và hệ thống đ�
 | Epic | Đầu ra bàn giao | Module | Tiêu chí hoàn thành |
 | --- | --- | --- | --- |
 | S10 Gia cố | Chaos test; bộ kiểm thử prompt injection; diễn tập backup và restore; soak test 7 ngày; kiểm thử hiệu năng với artifact 10 GB và đồ thị 1 triệu nút; quyết định chuyển sang Kubernetes nếu một máy không đủ | M02, M06, M25, nền tảng | Ký nhận bảo mật; SLO đạt |
-| Xác minh | Kiểm tra xác định không khai thác: so phiên bản, kiểm phản hồi HTTP, đối chiếu chéo công cụ; đối chứng âm; vai trò Verifier đầy đủ | M03, M21 | FR-016 |
+| Xác minh | Kiểm tra xác định (so phiên bản, kiểm phản hồi HTTP, đối chiếu chéo công cụ) và **khai thác/kiểm chứng động tới T3** khi cần xác nhận (qua policy M05 + denylist, D14); đối chứng âm; vai trò Verifier đầy đủ. Không chạm T4 | M03, M21 | FR-016 |
 | Mức nghiêm trọng | AI agent đánh giá mức nghiêm trọng, kèm lý do, nguồn và điểm chưa chắc; không dùng công thức trọng số | M20 | FR-018 |
 | Báo cáo và khắc phục | Xuất SARIF và HTML; báo cáo delta giữa hai thời điểm và bản cho lãnh đạo lấy từ đồ thị; gán chủ xử lý; rescan đóng finding | M24, M26 | FR-019: output hợp lệ |
 | Tích hợp CI | Pipeline gọi API để quét image và repo khi build | M12, M13, M26 | FR-020 |

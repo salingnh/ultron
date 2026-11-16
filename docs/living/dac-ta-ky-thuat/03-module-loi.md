@@ -226,7 +226,7 @@ M20 khớp lỗ hổng đã biết với tài sản thật, sinh finding ứng v
 
 ### M21 Evidence Verification
 
-M21 nâng một finding từ ứng viên lên đã xác minh bằng phương pháp an toàn, không khai thác.
+M21 nâng một finding từ ứng viên lên đã xác minh. Từ D14 (2026-11-16) M21 **được khai thác và kiểm chứng động tới T3** (gồm kiểm thử credential) để xác nhận lỗ hổng khai thác được; mọi hành vi T3 qua policy M05 và denylist bắt buộc. Không chạy PoC không tin cậy từ Internet (T4).
 
 | Mục | Đặc tả |
 | --- | --- |
@@ -236,7 +236,7 @@ M21 nâng một finding từ ứng viên lên đã xác minh bằng phương ph�
 | Giao diện | Nội bộ; gửi job xác minh qua M05 và M06 |
 | Dữ liệu sở hữu | Lịch sử chuyển trạng thái finding; bảng FindingRun theo từng lần chạy (cùng M20) |
 | Phụ thuộc | M20, M05, M06, M28 |
-| Quy tắc bắt buộc | Chỉ dùng thao tác tầng T0 đến T2. Không VERIFIED nếu thiếu bằng chứng có checksum. Verifier dùng LLM chỉ khi cần diễn giải, và phải trả khẳng định kèm tham chiếu bằng chứng và độ tin cậy. Mọi thay đổi trạng thái ghi nguồn, thời điểm, bằng chứng |
+| Quy tắc bắt buộc | Dùng thao tác tầng T0 đến **T3** (T3 qua policy M05 + denylist bắt buộc, ghi người kích hoạt/duyệt); không chạm T4. Không VERIFIED nếu thiếu bằng chứng có checksum. Verifier dùng LLM chỉ khi cần diễn giải, và phải trả khẳng định kèm tham chiếu bằng chứng và độ tin cậy. Mọi thay đổi trạng thái ghi nguồn, thời điểm, bằng chứng |
 | Nghiệm thu | FR-016: tách rõ verified, corroborated, unknown. Có đối chứng âm cho finding mức cao |
 | Giai đoạn | GĐ4 |
 

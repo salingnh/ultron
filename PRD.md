@@ -5,11 +5,11 @@
 
 ## 1. Đang xây cái gì
 
-AEGIS–Vanguard là nền tảng **rà quét lỗ hổng và quản trị bề mặt tấn công nội bộ**, thiên hướng **phòng thủ và cảnh báo sớm**, do AI agent điều phối. Hệ thống gom các công cụ quét OSS rời rạc thành một vòng lặp liên tục:
+AEGIS–Vanguard là nền tảng **kiểm thử xâm nhập (pentest) chủ động nội bộ** kiêm quản trị bề mặt tấn công, do AI agent điều phối, chạy trên tài sản tổ chức sở hữu hoặc được ủy quyền. Ngoài rà quét và cảnh báo sớm, hệ thống còn **chủ động khai thác và kiểm chứng động tới tầng T3 (xâm nhập)** — gồm kiểm thử credential (sinh ứng viên mật khẩu và thử đăng nhập) — để xác nhận lỗ hổng thật sự khai thác được (quyết định D14, 2026-11-16). Hệ thống gom các công cụ OSS rời rạc thành một vòng lặp liên tục:
 
-khám phá tài sản → làm giàu tri thức → đối chiếu lỗ hổng → kiểm chứng an toàn → cảnh báo → theo dõi khắc phục.
+khám phá tài sản → làm giàu tri thức → đối chiếu lỗ hổng → kiểm chứng động (tới T3) → cảnh báo → theo dõi khắc phục.
 
-Một câu: **biết sớm tài sản nào đang phơi nhiễm và lỗ hổng nào thật sự áp dụng, kèm bằng chứng.**
+Một câu: **biết sớm tài sản nào đang phơi nhiễm, lỗ hổng nào thật sự khai thác được, kèm bằng chứng.**
 
 ## 2. Dành cho ai
 
@@ -41,9 +41,8 @@ Kịch bản điển hình: một CVE mới vào danh mục KEV → hệ thống
 
 ## 5. Không làm (phi mục tiêu)
 
-- Red-team, C2, persistence, lateral movement, post-exploitation.
-- Chạy mã PoC/khai thác. Chỉ lập chỉ mục metadata PoC.
-- Dùng secret tìm được để đăng nhập hệ thống thật.
+- Tầng T4 (cấm mặc định): C2, persistence, lateral movement, post-exploitation, sub-agent red-team (Strix, Decepticon).
+- Chạy mã PoC **không tin cậy** lấy từ Internet (T4). M19 chỉ lập chỉ mục metadata PoC; khai thác/kiểm chứng động chỉ dùng năng lực T3 do nền tảng kiểm soát.
 - Tự áp bản vá hay tự merge vào production. Chỉ gợi ý khắc phục.
 - Multi-tenant, SSO, RBAC (để sẵn chỗ cắm, chưa làm).
 - Fork hay viết lại scanner OSS.
@@ -52,10 +51,12 @@ Kịch bản điển hình: một CVE mới vào danh mục KEV → hệ thống
 
 | Chủ đề | Quyết định |
 | --- | --- |
-| Định vị | Phòng thủ và cảnh báo sớm cho hệ thống nội bộ |
+| Định vị (D14, 2026-11-16) | **Pentest chủ động** nội bộ, do agent điều phối. Khai thác và kiểm chứng động tới T3; T4 cấm mặc định |
+| Tầng tác động (D15) | MVP dùng T0–T3. T3 (xâm nhập) duyệt theo cấu hình: operator duyệt tay, hoặc policy/agent tự duyệt **bắt buộc đối chiếu denylist**. T4 cấm mặc định |
+| Denylist (D16) | **Bắt buộc, cưỡng chế bằng mã**: hạ tầng của chính nền tảng và các dải cấu hình. T3 tự duyệt không có denylist → từ chối chạy |
 | Agent | Có trong MVP từ GĐ1. Agent chỉ **đề xuất**; mã policy quyết định |
-| Phạm vi quét | **Không giới hạn** phạm vi. Tài sản quét được coi là thuộc tổ chức. Bù lại: mọi cạnh trong đồ thị ghi nguồn gốc (công cụ, tài sản gốc), mọi job có audit |
-| Secret | Lưu và hiển thị **dạng rõ** kèm fingerprint; không che ở UI, báo cáo, prompt, cảnh báo. Không xác minh bằng cách đăng nhập |
+| Phạm vi quét | **Không giới hạn** phạm vi (gồm cả T3). Tài sản quét được coi là thuộc tổ chức. Bù lại: mọi cạnh ghi nguồn gốc, mọi job có audit, job T3 ghi người kích hoạt/duyệt (D19) |
+| Secret (D17) | Lưu và hiển thị **dạng rõ** kèm fingerprint; không che ở UI, báo cáo, prompt, cảnh báo. Có kiểm thử credential: sinh ứng viên mật khẩu và thử đăng nhập (TruffleHog bật xác minh) |
 | Mức nghiêm trọng | AI agent đánh giá, kèm lý do, nguồn, điểm chưa chắc. **Không dùng công thức trọng số** |
 | Chất lượng finding | **Không đo precision/recall**, không golden dataset. Mỗi finding phải có bằng chứng xác nhận và dẫn chứng |
 | Lưu trữ | **Vĩnh viễn**, không xóa, không ghi đè; lịch sử theo từng lần chạy (`FindingRun`) |

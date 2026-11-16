@@ -49,10 +49,10 @@ Bộ đặc tả chia làm năm tab, đọc theo thứ tự từ chung đến ri
 - **Mã module.** M01 đến M25 giữ nguyên theo tài liệu 02. M26, M27, M28 là ba module mới được tách ra vì HLD có dịch vụ tương ứng nhưng tài liệu 02 chưa gán mã.
 - **Mức ưu tiên.** P0 là bắt buộc cho MVP, P1 là mở rộng, P2 là nâng cao và thuộc nhánh để sau.
 - **Giai đoạn.** GĐ1 Nền tảng (3 đến 4 tuần), GĐ2 MVP Khám phá (4 đến 6 tuần), GĐ3 V1 Làm giàu (6 đến 8 tuần), GĐ4 V1.5 Bảo đảm (4 đến 6 tuần). MVP là hết GĐ2.
-- **Tầng tác động.** T0 thụ động, T1 tác động thấp, T2 chủ động có giới hạn, T3 xâm nhập, T4 cấm mặc định. MVP chỉ dùng T0 đến T2.
+- **Tầng tác động.** T0 thụ động, T1 tác động thấp, T2 chủ động có giới hạn, T3 xâm nhập, T4 cấm mặc định. MVP dùng **T0 đến T3** (D15, 2026-11-16); T3 qua policy M05 và denylist bắt buộc. T4 cấm mặc định.
 - **Trạng thái.** Toàn bộ là thiết kế đề xuất. Chi tiết nào không có trong tài liệu nguồn 00–04 được ghi rõ là "đề xuất mới".
 
-**Ngoài phạm vi bộ đặc tả này:** red-team, C2, chạy PoC khai thác, tự vá production, multi-tenant. M22 được mô tả ở mức ranh giới để không chặn đường mở rộng về sau.
+**Ngoài phạm vi bộ đặc tả này (T4):** C2, persistence, lateral movement, post-exploitation, sub-agent red-team, chạy PoC không tin cậy từ Internet, tự vá production, multi-tenant. Khai thác và kiểm thử credential tới T3 thuộc phạm vi MVP (D14). M22 được mô tả ở mức ranh giới để không chặn đường mở rộng về sau.
 
 ## 2. Danh mục module
 

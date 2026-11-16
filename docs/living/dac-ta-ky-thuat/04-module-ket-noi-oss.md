@@ -61,10 +61,11 @@ Bảng dưới có 22 provider, gồm 21 provider cho 11 module kết nối và 
 | `k8s.audit_config` | Kubescape (chính), kube-bench (bổ sung) | M11 | L1 | T1 | Apache-2.0 | GĐ3 |
 | `code.scan_sast` | Opengrep | M12 | L1 | T0 | LGPL-2.1 | GĐ3 |
 | `secret.detect` | Gitleaks, Betterleaks | M12, M17 | L1 | T0 | Cần rà | GĐ3 |
-| `secret.detect` | TruffleHog, tắt xác minh | M17 | L1 | T0 | AGPL-3.0 | GĐ3 |
+| `secret.detect` | TruffleHog, **bật xác minh** (D17) | M17 | L1 | T0 | AGPL-3.0 | GĐ3 |
+| `cred.test` (đề xuất) | Module mật khẩu: sinh ứng viên từ dữ liệu thu được + thử đăng nhập (D17) | M17/mới | L2 | **T3** (policy M05 + denylist bắt buộc) | Tự dựng, cần rà | GĐ3 |
 | `js.analyze_bundle` | webcrack, jsluice | M15 | L1 | T0 | Cần rà | GĐ3 |
 | `binary.analyze_static` | Bộ giải nén tự dựng gọi JADX, asar, Syft hoặc Trivy, strings, Ghidra headless; REA tùy chọn | M16 | L2; REA là L3 | T0 | Theo từng công cụ, cần rà | GĐ3 |
-| `assess.subagent` | Strix, Decepticon | M22 | L4 | T3 | Apache-2.0 | Để sau |
+| `assess.subagent` | Strix, Decepticon | M22 | L4 | **T4** | Apache-2.0 | Để sau |
 
 Không dùng: Amass, Flowsint, Semgrep CE (thay bằng Opengrep), LiteLLM. Liệt kê tài khoản mạng xã hội tắt mặc định. Tên capability mới trong bảng là đề xuất, chốt khi viết manifest.
 
@@ -168,18 +169,18 @@ M12 phân tích tĩnh mã nguồn nội bộ được cấp quyền.
 
 ### M17 Secret Exposure Detection
 
-M17 phát hiện secret bị lộ trong repo, cấu hình và artifact, và chỉ lưu dấu vết đã che.
+M17 phát hiện secret bị lộ trong repo, cấu hình và artifact, và lưu **dạng rõ** kèm fingerprint (chốt 13/11); không che ở UI, báo cáo hay prompt.
 
 | Mục | Đặc tả |
 | --- | --- |
 | Capability | `secret.detect` |
-| Provider | Gitleaks (chính), Betterleaks, TruffleHog tắt xác minh |
+| Provider | Gitleaks (chính), Betterleaks, TruffleHog **bật xác minh** (D17) |
 | Đầu vào | Repo, file cấu hình, artifact đã thu |
 | Output thô dự kiến | JSON danh sách phát hiện |
 | Ánh xạ vào tri thức | Finding secret gồm loại, vị trí, fingerprint, giá trị dạng rõ |
-| Profile an toàn | Tắt mọi chế độ xác minh secret bằng cách gọi dịch vụ thật |
-| Quy tắc riêng | Secret dạng rõ được lưu trong database và đồ thị (chốt 13/11). Không che ở giao diện, báo cáo hay prompt gửi model. Không dùng secret tìm thấy để truy cập hệ thống |
-| Nghiệm thu | Token cài sẵn trong fixture không xuất hiện dạng rõ ở DB, log, prompt |
+| Profile an toàn | Xác minh credential là hành vi **T3**: qua policy M05 và denylist bắt buộc (D16), ghi người kích hoạt/duyệt (D19); không chạm hạ tầng trong denylist |
+| Quy tắc riêng | Secret dạng rõ được lưu trong database và đồ thị (chốt 13/11). Không che ở giao diện, báo cáo hay prompt gửi model. Kiểm thử credential (thử đăng nhập, sinh ứng viên mật khẩu) được phép ở T3 (D17) |
+| Nghiệm thu | Token cài sẵn trong fixture được lưu và hiển thị **dạng rõ** kèm fingerprint ở DB và đồ thị (chốt 13/11) |
 
 ### M11 Config và Infrastructure
 

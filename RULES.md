@@ -14,10 +14,10 @@
 
 Những điều dưới là ranh giới của sản phẩm, không phải gợi ý. Không có ngoại lệ nếu Product Team chưa ra quyết định riêng bằng văn bản.
 
-**Về năng lực sản phẩm**
-- Không viết tính năng red-team, C2, persistence, lateral movement, post-exploitation.
-- Không viết mã chạy PoC hay khai thác. M19 chỉ lưu **metadata** PoC. M21 chỉ xác minh không khai thác (so phiên bản, kiểm phản hồi HTTP, đối chiếu chéo công cụ).
-- Không dùng secret tìm được để đăng nhập, gọi API hay "xác minh" trên hệ thống thật (TruffleHog chạy với xác minh **tắt**).
+**Về năng lực sản phẩm** (cập nhật theo D14–D19, 2026-11-16: pentest chủ động tới T3)
+- Khai thác và kiểm chứng động **được phép tới tầng T3 (xâm nhập)**: M21 có thể khai thác có kiểm soát để xác nhận lỗ hổng; kiểm thử credential (M17/module mật khẩu) được sinh ứng viên mật khẩu và **thử đăng nhập**; TruffleHog chạy với xác minh **bật**.
+- Mọi hành vi T3 do **mã policy M05 quyết định** và **bắt buộc đối chiếu denylist** (D16). Chế độ T3 tự duyệt mà denylist trống hoặc không nạp được thì **phải từ chối chạy**. Job T3 ghi định danh người kích hoạt/duyệt (D19).
+- **Vẫn tuyệt đối không (T4, cấm mặc định):** C2, persistence, lateral movement, post-exploitation, sub-agent red-team (Strix, Decepticon). Không chạy mã PoC **không tin cậy** lấy từ Internet — M19 chỉ lưu **metadata** PoC.
 - Không tự áp bản vá, không tự mở hay merge PR vào mã của mục tiêu.
 - Không fork hay viết lại scanner OSS. Chỉ bọc bằng adapter.
 - Không thêm lại các OSS đã bỏ: Amass, Flowsint, LiteLLM, Semgrep CE.
@@ -36,7 +36,7 @@ Những điều dưới là ranh giới của sản phẩm, không phải gợi 
 - Không đưa log scanner thô vào prompt. Agent chỉ nhận bản tóm tắt có URI và độ tin cậy.
 
 **Về các quyết định đã chốt**
-- Không thêm giới hạn phạm vi quét (scope allowlist) nếu chưa có yêu cầu. Nhưng **bắt buộc** ghi nguồn gốc cho mọi job và mọi cạnh.
+- Không thêm **allowlist** phạm vi quét nếu chưa có yêu cầu; vẫn **bắt buộc** ghi nguồn gốc cho mọi job và mọi cạnh. Riêng tầng T3: **bắt buộc** có **denylist** cưỡng chế bằng mã (D16), đây không phải allowlist.
 - Không thêm công thức chấm điểm trọng số cho mức nghiêm trọng. Agent đánh giá kèm lý do.
 - Không thêm chỉ số precision/recall hay golden dataset.
 - Không thêm Kubernetes, multi-tenant, đăng nhập, SSO, RBAC vào MVP. Chỉ để sẵn điểm cắm.

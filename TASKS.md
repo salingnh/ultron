@@ -81,7 +81,7 @@ Nếu GĐ2 vượt 6 tuần, lùi sang GĐ3 trước: Grype, cdncheck, urlfinder
 ## GĐ3 V1 Làm giàu (6–8 tuần, cổng G3)
 
 - [ ] **T3.1** S9 Phân tích artifact (M15, M16, M28): webcrack, jsluice; bộ giải nén tự dựng (JADX, asar, Syft/Trivy, strings, Ghidra headless); container không mạng.
-- [ ] **T3.2** S9b Mã nguồn và secret (M12, M17): Opengrep, Gitleaks, TruffleHog (tắt xác minh), Betterleaks; credential Git chỉ đọc.
+- [ ] **T3.2** S9b Mã nguồn và secret (M12, M17): Opengrep, Gitleaks, TruffleHog (**bật xác minh**, D17), Betterleaks; module mật khẩu `cred.test` (T3: sinh ứng viên + thử đăng nhập, qua policy M05 + denylist); credential Git chỉ đọc.
 - [ ] **T3.3** S9c Cấu hình hạ tầng (M07, M11): Prowler, Kubescape, kube-bench; khóa chuẩn cloud và Kubernetes.
 - [ ] **T3.4** Nguồn OSINT mở rộng (M08): SpiderFoot-ng thụ động; tra rò rỉ theo domain (API key do người dùng cấu hình); tìm mã nguồn công khai.
 - [ ] **T3.5** PoC Availability Index metadata (M19, M20).
