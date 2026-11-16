@@ -19,7 +19,7 @@ Không có công cụ nào nhận tên binary, dòng lệnh, Cypher hay SQL. Kh�
 | --- | --- | --- |
 | `aegis.io/trace_id` | W3C trace-id 32 hex | Nối trace agent → M05 → M06 → container → M27 |
 | `aegis.io/campaign_id`, `aegis.io/session_id` | UUIDv7 | Lọc theo chiến dịch, ghi audit |
-| `aegis.io/idempotency_key` | `<session_id>:<step>:<n>` | Activity retry không sinh job mới. M05 lưu khóa; M06 còn chặn thêm bằng `job_fingerprint` |
+| `aegis.io/idempotency_key` | `<session_id>:<step>:<n>` | Activity retry không sinh job mới. M05 lưu khóa và ánh xạ sang `scan_cycle` (cùng khóa → cùng `scan_cycle`); M06 còn chặn thêm bằng `job_fingerprint` |
 
 Thiếu `_meta` thì server trả lỗi JSON-RPC `-32602` kèm `INPUT_INVALID`.
 
@@ -28,7 +28,7 @@ Thiếu `_meta` thì server trả lỗi JSON-RPC `-32602` kèm `INPUT_INVALID`.
 1. M05 kiểm `input` theo schema capability (fail-closed `INPUT_INVALID`).
 2. Chuẩn hóa mục tiêu (IDNA, dạng IP thay thế), kiểm tầng tác động, tốc độ, khung giờ nếu có, `approval_required_tiers` nếu có.
 3. Ghi `policy_decision` (mục tiêu, lý do `rationale`, `policy_version`) vào audit; từ chối thì phát `policy.denied.v1` và trả `decision=denied`.
-4. Chọn provider (sức khỏe, tương thích, xếp hạng) → gọi M06 `submit(ApprovedTask)`; M06 tính `job_fingerprint`, trùng thì trả job cũ với `decision=duplicate`.
+4. Chọn provider (sức khỏe, tương thích, xếp hạng) → gọi M06 `submit(ApprovedTask)`; M06 tính `job_fingerprint = sha256(campaign, policy_version, provider, targets, input, profile, scan_cycle)`, trùng thì trả job cũ với `decision=duplicate`. Lần quét mới (scan_cycle mới) không trùng job cũ dù input giống hệt (D21).
 5. Trả ngay `job_id`. Agent không chờ; kết quả về sau qua `knowledge.delta.v1` ở chu kỳ kế.
 
 Điểm còn chờ spike T0.5: SDK MCP Python cụ thể, cách đọc `_meta` ở phía server, và đo P95 của bước 1 đến 4.

@@ -36,19 +36,17 @@
           "required": ["type"],
           "additionalProperties": false,
           "properties": {
-            "type": {"type": "string", "enum": ["container", "rest", "import"]},
+            "type": {"description": "v1 chỉ hỗ trợ container (D22, 2026-11-16); rest/import dời sang manifest v2.", "type": "string", "enum": ["container"]},
             "image": {"description": "Tên image trong registry nội bộ, chỉ để hiển thị; định danh là imageDigest.", "type": "string"},
             "imageDigest": {"$ref": "../common/ids.v1.schema.json#/$defs/ImageDigest"},
             "argsTemplate": {
               "description": "Mảng tham số cố định; chỉ được chèn trường đã khai báo trong input schema bằng ${input.<field>}. Không có shell.",
               "type": "array", "items": {"type": "string"}
             },
-            "outputPath": {"description": "Thư mục kết quả trong container.", "type": "string", "default": "/out"},
-            "endpoint": {"description": "Cho runtime=rest.", "type": "string", "format": "uri"}
+            "outputPath": {"description": "Thư mục kết quả trong container.", "type": "string", "default": "/out"}
           },
           "allOf": [
-            {"if": {"properties": {"type": {"const": "container"}}}, "then": {"required": ["imageDigest", "argsTemplate"]}},
-            {"if": {"properties": {"type": {"const": "rest"}}}, "then": {"required": ["endpoint"]}}
+            {"if": {"properties": {"type": {"const": "container"}}}, "then": {"required": ["imageDigest", "argsTemplate"]}}
           ]
         },
         "inputSchemaRef": {"description": "schema://<nhóm>/<tên>/v<n> ánh xạ tới contracts/capabilities/<nhóm>/<tên>.v<n>.schema.json.", "type": "string", "pattern": "^schema://[a-z0-9-]+/[a-z0-9-]+/v[0-9]+$"},

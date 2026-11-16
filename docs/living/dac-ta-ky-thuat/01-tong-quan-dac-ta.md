@@ -30,7 +30,7 @@ Lịch giao từng module theo giai đoạn nằm ở [kế hoạch triển khai
 | Đánh giá lại theo KEV và EPSS | Có trong MVP | M18, M20 |
 | Tra cứu rò rỉ theo domain | Có; người dùng tự cấu hình API key | M08 |
 | Phạm vi GĐ3 | Đủ mã nguồn, secret, cloud, Kubernetes; giữ TruffleHog | M11, M12, M17 |
-| Sao lưu | Giữ mục tiêu của tài liệu nguồn: PostgreSQL RPO 15 phút, RTO 2 giờ; Neo4j và MinIO RPO 1 giờ. Đây là cách mình hiểu từ yêu cầu không mất dữ liệu, Product Team chưa xác nhận riêng | Tab Nền tảng |
+| Sao lưu | Giữ mục tiêu của tài liệu nguồn: PostgreSQL RPO 15 phút, RTO 2 giờ; Neo4j và SeaweedFS RPO 1 giờ. Đây là cách mình hiểu từ yêu cầu không mất dữ liệu, Product Team chưa xác nhận riêng | Tab Nền tảng |
 
 ## 1. Phạm vi và cách đọc
 
@@ -71,7 +71,7 @@ Hệ thống có 28 module: 17 module lõi tự xây và 11 module kết nối O
 | M27 | Ingestion và Normalizer | Dữ liệu và tri thức | Tự xây | P0 | GĐ1 |
 | M07 | Asset Inventory | Dữ liệu và tri thức | PostgreSQL, Neo4j | P0 | GĐ1, hoàn thiện GĐ2 |
 | M23 | Knowledge Graph và Delta | Dữ liệu và tri thức | Neo4j | P0 | GĐ1, hoàn thiện GĐ2 |
-| M28 | Evidence Store | Dữ liệu và tri thức | MinIO | P0 | GĐ1 |
+| M28 | Evidence Store | Dữ liệu và tri thức | SeaweedFS | P0 | GĐ1 |
 | M18 | Vuln Feed Sync | Tình báo và đánh giá | Feed adapter | P0 | GĐ2 |
 | M19 | PoC Availability Index | Tình báo và đánh giá | Tự xây | P1 | GĐ3 |
 | M20 | Correlation và Scoring | Tình báo và đánh giá | Tự xây | P0 đến P1 | GĐ2 đối chiếu, GĐ4 agent đánh giá mức nghiêm trọng |
@@ -127,7 +127,7 @@ spec:
   compatibilityTests: [schema, policy, cancellation, idempotency]
 ```
 
-**3.2 ResultEnvelope.** Mọi provider trả kết quả theo một phong bì duy nhất. Bằng chứng thô nằm ở MinIO, phong bì chỉ mang tham chiếu và checksum.
+**3.2 ResultEnvelope.** Mọi provider trả kết quả theo một phong bì duy nhất. Bằng chứng thô nằm ở SeaweedFS, phong bì chỉ mang tham chiếu và checksum.
 
 ```json
 {

@@ -9,7 +9,7 @@ Nền tảng là lớp hạ tầng dùng chung mà mọi module chạy trên đ�
 | Vùng | Thành phần | Mạng | Chính sách |
 | --- | --- | --- | --- |
 | Điều khiển | Web UI, API, MCP server (Registry, điểm kiểm, bộ chạy), Temporal worker, LangGraph worker | Mạng điều khiển | Chỉ mở cổng giao diện trong mạng nội bộ; checkpoint ở PostgreSQL |
-| Dữ liệu | PostgreSQL, Neo4j, MinIO, Temporal server | Mạng dữ liệu | Chỉ vùng điều khiển vào được; sao lưu định kỳ; lưu vĩnh viễn |
+| Dữ liệu | PostgreSQL, Neo4j, SeaweedFS, Temporal server | Mạng dữ liệu | Chỉ vùng điều khiển vào được; sao lưu định kỳ; lưu vĩnh viễn |
 | Thực thi | Container công cụ quét, mỗi lần gọi một container | Mạng thực thi, chỉ đi ra ngoài | Không vào được mạng dữ liệu; kết quả ghi vào thư mục riêng rồi được MCP server đọc và gửi Ingestion |
 | Quan sát | OpenTelemetry collector | Mạng điều khiển | Prometheus và Loki tùy chọn |
 
@@ -66,7 +66,7 @@ Ba kho lưu trữ có vai trò tách bạch; PostgreSQL là nguồn sự thật,
 | --- | --- | --- | --- | --- |
 | PostgreSQL | Campaign, policy, job, finding, observation, inbox sự kiện, audit, checkpoint LangGraph | Log thô, artifact | Full hằng ngày và WAL liên tục | RPO tối đa 15 phút, RTO tối đa 2 giờ |
 | Neo4j | Đồ thị tài sản, quan hệ, đường đi | Trạng thái giao dịch | Backup, snapshot, export định kỳ | RPO tối đa 1 giờ; dựng lại được từ event log |
-| MinIO | Bằng chứng thô, artifact, báo cáo | Metadata truy vấn | Versioning, replication hoặc bucket backup | RPO tối đa 1 giờ; kiểm hash sau phục hồi |
+| SeaweedFS | Bằng chứng thô, artifact, báo cáo | Metadata truy vấn | Versioning, replication hoặc bucket backup | RPO tối đa 1 giờ; kiểm hash sau phục hồi |
 | Temporal persistence | Event History của workflow | Dữ liệu nghiệp vụ lớn | Theo backend Temporal | Theo backend Temporal |
 
 Đường dẫn bằng chứng theo mẫu `evidence/{campaign_id}/{job_id}/{sha256}`, bất biến theo version hoặc object lock. Diễn tập phục hồi tối thiểu mỗi quý, đối soát số finding, revision đồ thị và hash bằng chứng.

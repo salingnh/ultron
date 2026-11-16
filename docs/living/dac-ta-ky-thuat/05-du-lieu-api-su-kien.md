@@ -6,7 +6,7 @@ Tab này là hợp đồng dữ liệu dùng chung giữa các module: thực th
 
 Mô hình tách năm khái niệm để không lẫn giữa sự thật và suy đoán: Asset là đối tượng tồn tại, Observation là điều ghi nhận được tại một thời điểm, Finding là đánh giá điểm yếu trên một tài sản cụ thể, Evidence là bằng chứng có checksum, Hypothesis là giả thuyết chưa được xác minh. CVE là định danh tình báo dùng chung; Finding mới là thể hiện của lỗ hổng gắn với tài sản, phiên bản và môi trường.
 
-PostgreSQL là nguồn sự thật. Neo4j là bản chiếu có thể dựng lại từ PostgreSQL. MinIO giữ dữ liệu thô bất biến.
+PostgreSQL là nguồn sự thật. Neo4j là bản chiếu có thể dựng lại từ PostgreSQL. SeaweedFS giữ dữ liệu thô bất biến.
 
 | Thực thể | Thuộc tính định danh chính | Nơi lưu | Module sở hữu |
 | --- | --- | --- | --- |
@@ -18,8 +18,8 @@ PostgreSQL là nguồn sự thật. Neo4j là bản chiếu có thể dựng l�
 | Service | asset\_id, host\_ip, port, protocol, banner, observed\_at | PostgreSQL, Neo4j | M07 |
 | Endpoint | URL đã chuẩn hóa, HTTP method, api\_contract\_id, auth\_context | PostgreSQL, Neo4j | M07 |
 | Package | purl, version, ecosystem, license | PostgreSQL, Neo4j, kèm SBOM | M07 |
-| Artifact | digest, kind, origin\_uri, storage\_uri, size, classification | MinIO, metadata ở PostgreSQL | M28 |
-| Evidence | evidence\_id, sha256, storage\_uri, source\_tool | MinIO, metadata ở PostgreSQL | M28 |
+| Artifact | digest, kind, origin\_uri, storage\_uri, size, classification | SeaweedFS, metadata ở PostgreSQL | M28 |
+| Evidence | evidence\_id, sha256, storage\_uri, source\_tool | SeaweedFS, metadata ở PostgreSQL | M28 |
 | Observation | observation\_id, scan\_id, subject\_id, predicate, value, time | PostgreSQL chỉ ghi thêm, chiếu sang Neo4j | M27 |
 | Vulnerability | source, vulnerability\_id, cvss, references, affected ranges | Bộ đệm tình báo ở PostgreSQL | M18 |
 | Finding | finding\_id, asset\_id, rule\_id, severity, severity\_reason, lifecycle; lịch sử từng lần chạy nằm ở bảng FindingRun | PostgreSQL | M20, với M21 và M24 đổi trạng thái |

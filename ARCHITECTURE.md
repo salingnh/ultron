@@ -10,7 +10,7 @@
 | Suy luận agent | **LangGraph** (Planner, Analyst, Verifier), checkpoint trên PostgreSQL | Đã chốt |
 | Nguồn sự thật | **PostgreSQL** | Đã chốt |
 | Đồ thị tri thức | **Neo4j** (chiếu lại được từ PostgreSQL) | Đã chốt |
-| Bằng chứng thô | **MinIO** (SHA-256, signed URL, versioning/object lock) | Đã chốt |
+| Bằng chứng thô | **SeaweedFS** theo chuẩn S3 (D28; SHA-256, versioning/object lock), qua abstraction `EvidenceStore` | Đã chốt |
 | Chạy công cụ quét | **Podman** rootless, mỗi lần gọi một container, sau interface `ContainerRunner`. Kubernetes để sau | Đã chốt |
 | Giao tiếp agent–công cụ | **MCP** server duy nhất (Registry + điểm kiểm + bộ chạy) | Đã chốt |
 | LLM | `ModelClient` tự dựng, driver chuẩn OpenAI Chat Completions và Anthropic Messages; profile LOW/MID/HIGH | Đã chốt |
@@ -32,13 +32,13 @@
                             │ chỉ vùng điều khiển vào được    │ tạo container
             ┌───────────────▼────────────┐   ┌────────────────▼──────────────────┐
             │ Mạng dữ liệu               │   │ Mạng thực thi (chỉ đi ra ngoài)   │
-            │ PostgreSQL · Neo4j · MinIO │   │ Container scanner, 1 lần gọi = 1  │
+            │ PostgreSQL · Neo4j · SeaweedFS │   │ Container scanner, 1 lần gọi = 1  │
             │ Temporal server            │   │ container; KHÔNG vào mạng dữ liệu │
             └────────────────────────────┘   └───────────────────────────────────┘
 ```
 
 Ràng buộc cứng:
-- **Scanner không bao giờ ghi thẳng vào cơ sở dữ liệu.** Kết quả ghi vào thư mục riêng của container, bằng chứng tải lên MinIO qua signed URL, rồi `ResultEnvelope` đi qua **Ingestion API (M27)**, cửa ghi duy nhất.
+- **Scanner không bao giờ ghi thẳng vào cơ sở dữ liệu.** Kết quả ghi vào thư mục riêng của container; collector M06 (mạng điều khiển) tải bằng chứng lên SeaweedFS (D3), rồi `ResultEnvelope` đi qua **Ingestion API (M27)**, cửa ghi duy nhất.
 - **Agent đọc đồ thị chỉ qua truy vấn đã đăng ký** (`get_asset_neighbors`, `get_recent_observations`, `get_unverified_hypotheses`, `get_package_cve_matches`, `summarize_campaign_delta`, `get_evidence_excerpt`), có giới hạn bước nhảy, số bản ghi, thời gian, luôn lọc theo chiến dịch.
 
 ## 3. Luồng dữ liệu chính
@@ -61,7 +61,7 @@ CampaignWorkflow(campaign_id):
 
 ### 3.2 Đường đi của một kết quả quét
 
-agent đề xuất capability (vd `network.discover_services`) → MCP server → điểm kiểm M05 (kiểm schema, tốc độ, khung giờ; ghi mục tiêu và lý do) → M06 tạo container Podman (image theo digest) → container ghi kết quả → MinIO (bằng chứng, SHA-256) → `POST /api/v1/ingestion/results` (ResultEnvelope) → M27 kiểm schema và checksum, dedup, upsert PostgreSQL trong giao dịch → projector M23 `MERGE` sang Neo4j bằng Cypher tham số hóa → phát `asset.discovered.v1`, `observation.changed.v1`, `knowledge.delta.v1` → M02/M03 đọc delta cho vòng sau.
+agent đề xuất capability (vd `network.discover_services`) → MCP server → điểm kiểm M05 (kiểm schema, tốc độ, khung giờ; ghi mục tiêu và lý do) → M06 tạo container Podman (image theo digest) → container ghi kết quả → SeaweedFS (bằng chứng, SHA-256) → `POST /api/v1/ingestion/results` (ResultEnvelope) → M27 kiểm schema và checksum, dedup, upsert PostgreSQL trong giao dịch → projector M23 `MERGE` sang Neo4j bằng Cypher tham số hóa → phát `asset.discovered.v1`, `observation.changed.v1`, `knowledge.delta.v1` → M02/M03 đọc delta cho vòng sau.
 
 ### 3.3 Cảnh báo sớm không cần quét lại
 
@@ -106,7 +106,7 @@ Monorepo, `contracts/` ở gốc là nguồn sự thật cho mọi hợp đồng
 │   └── api/                 # M26 backend, REST + SSE
 ├── adapters/<module>/<tool>/   # manifest.yaml, parser, fixtures/, conformance test
 ├── web/                     # M26 frontend (React, TS, Vite)
-├── deploy/                  # compose cho Temporal, PostgreSQL, Neo4j, MinIO; mạng; registry
+├── deploy/                  # compose cho Temporal, PostgreSQL, Neo4j, SeaweedFS; mạng; registry
 ├── observability/           # M25: cấu hình OTel, dashboard
 └── tests/                   # e2e, chaos, prompt injection, lab
 ```
@@ -119,6 +119,6 @@ Luồng việc và quyền sửa: điều phối và agent (M01–M04); cổng c
 | --- | --- | --- |
 | PostgreSQL | Campaign, policy, job, finding, `FindingRun`, observation, outbox, audit, checkpoint LangGraph | RPO 15 phút, RTO 2 giờ |
 | Neo4j | Đồ thị tài sản, quan hệ có thời gian | RPO 1 giờ; dựng lại được từ PostgreSQL |
-| MinIO | Bằng chứng `evidence/{campaign_id}/{job_id}/{sha256}` | RPO 1 giờ; kiểm hash sau phục hồi |
+| SeaweedFS | Bằng chứng `evidence/{campaign_id}/{job_id}/{sha256}` | RPO 1 giờ; kiểm hash sau phục hồi |
 
 Mọi dữ liệu lưu vĩnh viễn, chỉ ghi thêm. Mỗi cạnh mang `observed_at`, `valid_from`, `valid_to`, `source_job_id`, `confidence`.

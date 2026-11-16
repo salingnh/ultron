@@ -27,7 +27,7 @@ Mười hai quyết định dưới đây xếp theo mức ảnh hưởng tới 
 | 11 | Gitleaks, TruffleHog | Trọn vẹn | Giữ cả hai, thêm Betterleaks | Ba nguồn đối chứng; Betterleaks do chính tác giả Gitleaks viết | Betterleaks mới ra tháng 3/2026 |
 | 12 | Nguồn cho email và từ khóa | Chưa có | Tự dựng bốn nguồn nhỏ; không bật mặc định việc dò tài khoản mạng xã hội theo email | Phủ được rò rỉ, giả mạo tên miền, mã nguồn lộ | Dò tài khoản cá nhân là chỗ duy nhất mình khuyên chưa bật |
 
-Những thành phần giữ nguyên: Subfinder, DNSx, Naabu, httpx, Katana, Nuclei, Prowler, webcrack, jsluice, Temporal, Neo4j, MinIO. LangGraph giữ nguyên nếu spike 1 đạt. Strix và Decepticon vẫn thuộc nhánh để sau và không triển khai.
+Những thành phần giữ nguyên: Subfinder, DNSx, Naabu, httpx, Katana, Nuclei, Prowler, webcrack, jsluice, Temporal, Neo4j, SeaweedFS. LangGraph giữ nguyên nếu spike 1 đạt. Strix và Decepticon vẫn thuộc nhánh để sau và không triển khai.
 
 Với cả mười hai điểm đã chốt, số nền tảng lớn phải vận hành giảm đi bốn, còn số nguồn thông tin thì tăng lên. Điều này khớp với hướng bạn nêu: bộ công cụ phải đủ rộng để agent có nhiều dữ liệu mà điều phối.
 

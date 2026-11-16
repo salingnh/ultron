@@ -11,6 +11,7 @@
     "capability": {"$ref": "../common/ids.v1.schema.json#/$defs/CapabilityId"},
     "provider": {"description": "Tùy chọn: ép provider cụ thể (vd đối chứng Grype).", "type": "string"},
     "input": {"type": "object"},
+    "scan_cycle": {"description": "Tùy chọn (D21): truyền để ép cùng một lần quét (retry); bỏ trống thì M05 cấp scan_cycle mới, tạo lần quét mới không trùng job cũ.", "$ref": "../common/ids.v1.schema.json#/$defs/Id"},
     "profile": {"$ref": "../campaign/roe-policy.v1.schema.json#/$defs/ScanProfile"},
     "rationale": {"type": "string", "minLength": 3, "maxLength": 2000},
     "actor": {"$ref": "../common/ids.v1.schema.json#/$defs/Actor"}

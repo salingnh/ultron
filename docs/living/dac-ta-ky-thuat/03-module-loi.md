@@ -167,8 +167,8 @@ M28 lưu bằng chứng thô bất biến để mọi finding truy được về
 | Đầu vào | Output thô của scanner, artifact, báo cáo |
 | Đầu ra | `evidence_id`, `sha256`, `storage_uri`, phân loại |
 | Giao diện | Signed URL; đọc qua `get_evidence_excerpt` |
-| Dữ liệu sở hữu | Object ở MinIO; metadata Evidence và Artifact ở PostgreSQL |
-| Phụ thuộc | MinIO |
+| Dữ liệu sở hữu | Object ở SeaweedFS; metadata Evidence và Artifact ở PostgreSQL |
+| Phụ thuộc | SeaweedFS |
 | Quy tắc bắt buộc | Object bất biến. Phân loại PUBLIC, INTERNAL, RESTRICTED, dùng cho quyền xem về sau; dữ liệu lưu vĩnh viễn, không che. Không chạy nhị phân hay script lấy về trong control plane. Secret lưu dạng rõ kèm fingerprint (chốt 13/11) |
 | Nghiệm thu | FR-011: 100% finding có bằng chứng hoặc trạng thái unsupported. Hash khớp sau diễn tập phục hồi |
 | Giai đoạn | GĐ1 |

@@ -35,7 +35,7 @@ class ContainerRunner(Protocol):
     def inspect(self, handle: RunHandle) -> RunState: ...    # created|running|exited|oom|timeout|missing
     def stop(self, handle: RunHandle, grace_seconds: int = 10) -> None: ...
     def output_dir(self, handle: RunHandle) -> Path: ...     # thư mục kết quả trên máy chạy
-    def remove(self, handle: RunHandle) -> None: ...         # xóa container, KHÔNG xóa output (đã chuyển MinIO)
+    def remove(self, handle: RunHandle) -> None: ...         # xóa container, KHÔNG xóa output (đã chuyển SeaweedFS)
 
 @dataclass(frozen=True)
 class ContainerSpec:
@@ -50,13 +50,13 @@ Bản cài đặt GĐ1: `PodmanRunner` (rootless, `--cap-drop=ALL`, `--security-
 
 ## 3. Evidence collector (M06 → M28)
 
-Container **không** chạm MinIO (mạng thực thi không vào được mạng dữ liệu). Sau khi container kết thúc, collector trong mạng điều khiển:
+Container **không** chạm SeaweedFS (mạng thực thi không vào được mạng dữ liệu). Sau khi container kết thúc, collector trong mạng điều khiển:
 
-1. Tính SHA-256 từng file trong `output_dir`, gọi `EvidenceStore.put(campaign_id, job_id, file)` → `s3://evidence/{campaign_id}/{job_id}/{sha256}` (object lock).
-2. Chạy parser của adapter → `ParsedResults`.
-3. Dựng `ResultEnvelope` và `POST /api/v1/ingestion/results` với `event_id` = UUIDv5(job_id, "envelope") để retry không nhân bản.
+1. Tính SHA-256 từng file thường trong `output_dir` (không theo symlink, có trần kích thước và số file — xem mục 4 sandbox), gọi `EvidenceStore.put(campaign_id, job_id, file)` → `s3://evidence/{campaign_id}/{job_id}/{sha256}` (object lock).
+2. Chạy parser của adapter trong tiến trình con không mạng, không credential → `ParsedResults`.
+3. Dựng `ResultEnvelope` và `POST /api/v1/ingestion/results`. `event_id` là UUIDv7 mới mỗi lần nộp; `dedup_key` = `"job:<job_id>:envelope"` (xác định từ job_id) để retry không nhân bản (D23, thay cho UUIDv5).
 
-(Đã chốt D3 ngày 2026-11-15, thay cho cách "scanner tải lên qua signed URL" trong đặc tả.)
+(Object store là SeaweedFS theo chuẩn S3 — D28, thay SeaweedFS. Đã chốt D3 ngày 2026-11-15, thay cho cách "scanner tải lên qua signed URL" trong đặc tả.)
 
 ## 4. EvidenceStore (M28)
 

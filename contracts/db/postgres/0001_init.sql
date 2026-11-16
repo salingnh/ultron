@@ -232,8 +232,9 @@ CREATE TABLE scan_job (
   provider          text        NOT NULL,
   provider_version  text        NOT NULL,
   adapter_version   text        NOT NULL,
-  image_digest      text        CHECK (image_digest ~ '^sha256:[0-9a-f]{64}$'),
-  job_fingerprint   char(64)    NOT NULL UNIQUE,     -- sha256(campaign, policy_version, provider, targets, input, profile)
+  image_digest      text        NOT NULL CHECK (image_digest ~ '^sha256:[0-9a-f]{64}$'),  -- v1 container-only (D22)
+  scan_cycle        uuid        NOT NULL,            -- định danh lần quét (D21): retry dùng lại, lần quét mới sinh mới
+  job_fingerprint   char(64)    NOT NULL UNIQUE,     -- sha256(campaign, policy_version, provider, targets, input, profile, scan_cycle)
   policy_version    text        NOT NULL REFERENCES policy_snapshot,
   scope_id          uuid        NOT NULL REFERENCES scope_snapshot,
   impact_tier       text        NOT NULL CHECK (impact_tier IN ('T0','T1','T2')),
@@ -285,7 +286,7 @@ CREATE TABLE evidence (
   created_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (job_id, sha256)
 );
-COMMENT ON TABLE evidence IS 'M28. Metadata bằng chứng; object ở MinIO có object lock. Append-only.';
+COMMENT ON TABLE evidence IS 'M28. Metadata bằng chứng; object ở SeaweedFS có object lock. Append-only.';
 
 CREATE TABLE evidence_check (
   evidence_id uuid        NOT NULL REFERENCES evidence,
@@ -313,9 +314,10 @@ COMMENT ON TABLE artifact IS 'M28. Append-only.';
 -- M27 Ingestion
 -- ---------------------------------------------------------------------------
 CREATE TABLE ingestion_inbox (
-  event_id      uuid        PRIMARY KEY,             -- ResultEnvelope.event_id
+  event_id      uuid        PRIMARY KEY,             -- ResultEnvelope.event_id (UUIDv7, mỗi lần nộp một giá trị)
+  dedup_key     text        NOT NULL UNIQUE,         -- ResultEnvelope.dedup_key, xác định từ job_id; chống nhận trùng (D23)
   job_id        uuid        NOT NULL REFERENCES scan_job,
-  payload_hash  char(64)    NOT NULL,                -- khác hash cùng event_id -> 409
+  payload_hash  char(64)    NOT NULL,                -- khác hash cùng dedup_key -> 409
   status        text        NOT NULL CHECK (status IN ('received','accepted','partially_quarantined','dead_letter')),
   receipt       jsonb,
   revision      bigint,

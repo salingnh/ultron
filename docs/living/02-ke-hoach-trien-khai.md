@@ -35,7 +35,7 @@ Các dải có bề rộng bằng nhau và không theo tỷ lệ thời gian. M�
 
 | Cổng | Điều kiện đạt | Buổi demo | Người ký nhận |
 | --- | --- | --- | --- |
-| G0, cuối GĐ0 | Năm spike có kết luận bằng văn bản. Có máy chạy container, registry image nội bộ, PostgreSQL, Neo4j, MinIO, Temporal và quyền gọi model. Bảng pin phiên bản và giấy phép cho công cụ của GĐ1, GĐ2. Backlog GĐ1 được khóa | Trình bày kết quả spike | Product Team |
+| G0, cuối GĐ0 | Năm spike có kết luận bằng văn bản. Có máy chạy container, registry image nội bộ, PostgreSQL, Neo4j, SeaweedFS, Temporal và quyền gọi model. Bảng pin phiên bản và giấy phép cho công cụ của GĐ1, GĐ2. Backlog GĐ1 được khóa | Trình bày kết quả spike | Product Team |
 | G1, cuối GĐ1 | Một chiến dịch chạy trọn vòng với công cụ mẫu và hiện trên màn hình luồng quét theo thời gian thực. Kết quả hiện trên màn hình đồ thị và agent truy vấn được đồ thị qua MCP. Thêm một công cụ thật chỉ bằng tệp mô tả và bộ đọc kết quả, không sửa mã lõi. Tắt worker giữa chừng không mất tiến độ và không sinh job trùng. 100% lệnh đi qua điểm kiểm duy nhất và có audit kèm nguồn gốc mục tiêu. Container không vào được mạng dữ liệu | Tạo chiến dịch, xem luồng chạy và đồ thị lớn dần, cắm thêm Subfinder, tắt worker giữa chừng | Product Team |
 | G2, cuối GĐ2, mốc MVP | Đủ chuỗi domain, IP, dịch vụ, endpoint, package, CVE, finding; không trùng; mỗi finding có bằng chứng. KEV vào hệ thống dưới 2 giờ, EPSS dưới 24 giờ. Feed đổi thì agent đánh giá lại finding và có tin Telegram mà không cần quét lại. Mỗi lần chạy đều ghi lịch sử trạng thái của finding, kể cả khi không còn thấy. Giao diện hiện 100% job lỗi kèm phân loại. Agent tự dừng khi hết ngân sách hoặc hết tri thức mới. Đủ năm loại đầu vào | Từ một domain và một từ khóa tới danh sách finding có bằng chứng; giả lập một CVE vừa vào KEV và nhận tin Telegram | Product Team |
 | G3, cuối GĐ3 | Từ một artifact JS tìm ra endpoint mới và hệ thống tự lên lịch việc tiếp theo. Token cài sẵn trong fixture được phát hiện, lưu kèm vị trí và bằng chứng. Bộ giải nén nhị phân chạy trong container không mạng. Thêm một công cụ CLI mới trong tối đa 2 ngày công | Từ artifact tới endpoint mới tới việc tiếp theo; diễn tập thêm công cụ có bấm giờ | Product Team |
@@ -57,7 +57,7 @@ Mục tiêu của GĐ0 là loại bỏ những điểm chưa chắc về kỹ th
 | Kết luận spike 4 | MCP server đưa năng lực ra cho agent: cách truyền trace ID và khóa chống trùng qua lời gọi MCP, cách gắn điểm kiểm trước khi mở container |
 | Kết luận spike 5 | BBOT ở chế độ thụ động: output JSON chuyển được sang ResultEnvelope không; nghĩa vụ của giấy phép AGPL khi dùng nội bộ |
 | Bảng pin phiên bản | Phiên bản, digest image, giấy phép và định dạng output của công cụ GĐ1 và GĐ2; áp quy tắc chờ 14 ngày với bản phát hành mới |
-| Môi trường dev | Một máy chạy Podman, registry image nội bộ, tệp compose cho Temporal, PostgreSQL, Neo4j, MinIO; ba mạng tách riêng cho điều khiển, dữ liệu và thực thi; quyền gọi model theo chuẩn OpenAI hoặc Anthropic |
+| Môi trường dev | Một máy chạy Podman, registry image nội bộ, tệp compose cho Temporal, PostgreSQL, Neo4j, SeaweedFS; ba mạng tách riêng cho điều khiển, dữ liệu và thực thi; quyền gọi model theo chuẩn OpenAI hoặc Anthropic |
 | Ước lượng dung lượng | Dung lượng lưu trữ cho chính sách lưu vĩnh viễn |
 | Lab mục tiêu | Một môi trường thử được phép quét: vài domain, host và image có lỗ hổng đã biết, dùng để demo và kiểm thử hồi quy |
 | Backlog GĐ1 đã khóa | Ticket cho các epic S1 đến S4 và S8a, chia sẵn thành phần việc cho subagent |
@@ -296,7 +296,7 @@ Subagent được chia theo năm luồng việc, mỗi luồng ứng với một
 
 **Còn mở**
 
-Không còn quyết định mở. Chốt thêm chiều 13/11: mọi dữ liệu quét được lưu vĩnh viễn kèm lịch sử trạng thái và mức nghiêm trọng theo từng lần chạy, kể cả lần không còn thấy lỗ hổng (đặc tả tab Dữ liệu mục 1, bảng `FindingRun`; làm từ GĐ2 cùng S7 Suy luận). Vì dữ liệu không được mất, giữ RPO và RTO của tài liệu nguồn: PostgreSQL RPO 15 phút, RTO 2 giờ; Neo4j và MinIO RPO 1 giờ.
+Không còn quyết định mở. Chốt thêm chiều 13/11: mọi dữ liệu quét được lưu vĩnh viễn kèm lịch sử trạng thái và mức nghiêm trọng theo từng lần chạy, kể cả lần không còn thấy lỗ hổng (đặc tả tab Dữ liệu mục 1, bảng `FindingRun`; làm từ GĐ2 cùng S7 Suy luận). Vì dữ liệu không được mất, giữ RPO và RTO của tài liệu nguồn: PostgreSQL RPO 15 phút, RTO 2 giờ; Neo4j và SeaweedFS RPO 1 giờ.
 
 **Rủi ro tiến độ**
 

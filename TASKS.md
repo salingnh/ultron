@@ -14,7 +14,7 @@ Không viết mã sản phẩm ở GĐ0. Đầu ra là văn bản kết luận t
 - [ ] **T0.5** Spike 4: MCP server đưa capability cho agent; truyền trace ID và idempotency key qua lời gọi MCP; vị trí điểm kiểm trước khi tạo container. *Xong khi:* kết luận + mẫu schema công cụ MCP.
 - [ ] **T0.6** Spike 5: BBOT thụ động, output JSON → ResultEnvelope; nghĩa vụ AGPL khi dùng nội bộ. *Xong khi:* kết luận + parser thử.
 - [ ] **T0.7** Bảng pin phiên bản: phiên bản, digest image, giấy phép, định dạng output của công cụ GĐ1–GĐ2 và thư viện giao diện; áp quy tắc chờ 14 ngày. *Xong khi:* `docs/pinning.md`.
-- [ ] **T0.8** Môi trường dev trên máy đã có: Podman, registry image nội bộ, compose cho Temporal, PostgreSQL, Neo4j, MinIO; ba mạng điều khiển, dữ liệu, thực thi; quyền gọi model chuẩn OpenAI hoặc Anthropic. *Xong khi:* `deploy/` khởi động được bằng một lệnh.
+- [ ] **T0.8** Môi trường dev trên máy đã có: Podman, registry image nội bộ, compose cho Temporal, PostgreSQL, Neo4j, SeaweedFS; ba mạng điều khiển, dữ liệu, thực thi; quyền gọi model chuẩn OpenAI hoặc Anthropic. *Xong khi:* `deploy/` khởi động được bằng một lệnh.
 - [ ] **T0.9** Ước lượng dung lượng cho chính sách lưu vĩnh viễn. *Xong khi:* có con số trong `docs/capacity.md`.
 - [ ] **T0.10** Dựng lab mục tiêu được phép quét: vài domain, host, image có lỗ hổng đã biết. *Xong khi:* danh sách mục tiêu lab trong `docs/lab.md`.
 - [ ] **T0.11** Khóa backlog GĐ1: ticket cho S1–S4, S8a, chia sẵn cho subagent. *Xong khi:* Product Team duyệt; demo kết quả spike ở cổng G0.

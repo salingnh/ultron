@@ -14,6 +14,7 @@
     "provider_version": {"type": "string"},
     "status": {"$ref": "#/$defs/JobStatus"},
     "job_fingerprint": {"$ref": "../common/ids.v1.schema.json#/$defs/Sha256"},
+    "scan_cycle": {"description": "Định danh lần quét (D21), thành phần của job_fingerprint.", "$ref": "../common/ids.v1.schema.json#/$defs/Id"},
     "policy_version": {"$ref": "../common/ids.v1.schema.json#/$defs/PolicyVersion"},
     "scope_id": {"$ref": "../common/ids.v1.schema.json#/$defs/Id"},
     "targets": {"type": "array", "items": {"$ref": "../common/ids.v1.schema.json#/$defs/CanonicalKey"}},

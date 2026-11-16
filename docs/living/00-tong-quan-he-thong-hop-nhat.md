@@ -98,7 +98,7 @@ Hệ thống chia thành ba mặt phẳng: điều khiển, thực thi cô lập
 | Intel Fetchers | Đồng bộ NVD, OSV, KEV, EPSS theo delta | Cache có phiên bản |
 | Reporting | Vòng đời finding, delta, xuất SARIF, JSON, HTML | Stateless |
 
-Công nghệ nền: LangGraph và Temporal cho điều phối; PostgreSQL là nguồn sự thật cho giao dịch, Neo4j cho quan hệ và đường đi, MinIO cho bằng chứng thô; container Podman trên một host cho scanner, Kubernetes để sau; ModelClient tự dựng nhận endpoint chuẩn OpenAI và Anthropic cho định tuyến model; OpenTelemetry cho quan sát và kiểm toán.
+Công nghệ nền: LangGraph và Temporal cho điều phối; PostgreSQL là nguồn sự thật cho giao dịch, Neo4j cho quan hệ và đường đi, SeaweedFS cho bằng chứng thô; container Podman trên một host cho scanner, Kubernetes để sau; ModelClient tự dựng nhận endpoint chuẩn OpenAI và Anthropic cho định tuyến model; OpenTelemetry cho quan sát và kiểm toán.
 
 ## 6. Agent harness trong MVP
 
@@ -117,7 +117,7 @@ Một chu kỳ của chiến dịch gồm sáu bước lặp lại:
 
 **Những gì agent không có.** Agent không có shell, không có Docker socket, không có quyền cluster, không viết Cypher tự do, không cầm credential của mục tiêu. Agent chỉ gọi capability cấp nghiệp vụ qua Registry.
 
-**Quản lý ngữ cảnh.** Mỗi phiên bắt đầu với ngữ cảnh sạch: mục tiêu hiện tại, 10 đến 30 quan sát quan trọng nhất, các capability phù hợp và bản chụp policy. Log scanner thô nằm ở MinIO; agent chỉ nhận bản tóm tắt có URI và độ tin cậy. Trạng thái dài hạn nằm trong sổ chiến dịch và đồ thị, không nằm trong lịch sử hội thoại.
+**Quản lý ngữ cảnh.** Mỗi phiên bắt đầu với ngữ cảnh sạch: mục tiêu hiện tại, 10 đến 30 quan sát quan trọng nhất, các capability phù hợp và bản chụp policy. Log scanner thô nằm ở SeaweedFS; agent chỉ nhận bản tóm tắt có URI và độ tin cậy. Trạng thái dài hạn nằm trong sổ chiến dịch và đồ thị, không nằm trong lịch sử hội thoại.
 
 **Ngân sách và chống lặp.** Mỗi chiến dịch có ngân sách về token, chi phí, số job, thời gian và số mục tiêu chạy đồng thời. Ngưỡng dừng nằm trong mã, không chỉ trong prompt. Nếu 3 đến 5 chu kỳ liên tiếp không có bằng chứng mới hữu ích, workflow giảm cấp hoặc tạm dừng và ghi lý do. Công thức ProgressScore trong HLD là heuristic cần hiệu chỉnh, chưa phải thuật toán đã kiểm chứng.
 
@@ -164,14 +164,14 @@ Mọi kết luận trong hệ thống phải truy được về bằng chứng, 
 | Observation | Điều quan sát được tại một thời điểm, chỉ ghi thêm, không ghi đè | PostgreSQL, chiếu sang đồ thị |
 | Hypothesis | Giả thuyết của agent, chưa được xác minh | PostgreSQL và đồ thị |
 | Finding | Đánh giá điểm yếu trên một tài sản cụ thể | PostgreSQL là nguồn sự thật |
-| Evidence | Bằng chứng thô có checksum SHA-256, bất biến | MinIO, metadata ở PostgreSQL |
+| Evidence | Bằng chứng thô có checksum SHA-256, bất biến | SeaweedFS, metadata ở PostgreSQL |
 
 Bốn quy tắc giữ cho tri thức đáng tin:
 
 - **CVE khác Finding.** CVE là định danh tình báo toàn cục. Finding là một trường hợp cụ thể gắn với tài sản, phiên bản và môi trường.
 - **Định danh chuẩn.** Mỗi loại tài sản có một khóa chuẩn, ví dụ `dns:<fqdn>`, `service:<ip>:<port>/<transport>`, `oci:sha256:<digest>`, `purl:<purl>`. Tag image và nhánh git chỉ là bí danh.
 - **Có tính thời gian.** Mỗi quan hệ mang thời điểm quan sát, khoảng hiệu lực, job nguồn và độ tin cậy. "Không tìm thấy" được ghi là chưa rõ, không phải không tồn tại.
-- **Một cửa ghi duy nhất.** Scanner tải bằng chứng lên MinIO qua signed URL rồi gửi ResultEnvelope tới Ingestion API. API kiểm schema và checksum, chống trùng, ghi PostgreSQL trong giao dịch, sau đó chiếu sang Neo4j bằng Cypher tham số hóa.
+- **Một cửa ghi duy nhất.** Collector M06 (mạng điều khiển) tải bằng chứng lên SeaweedFS (D3, D28) rồi gửi ResultEnvelope tới Ingestion API. API kiểm schema và checksum, chống trùng, ghi PostgreSQL trong giao dịch, sau đó chiếu sang Neo4j bằng Cypher tham số hóa.
 
 Finding đi qua bảy trạng thái: CANDIDATE, CORROBORATED, VERIFIED, FALSE\_POSITIVE, ACCEPTED\_RISK, FIXED, REGRESSED. Một finding không thể lên VERIFIED nếu thiếu bằng chứng có checksum.
 
