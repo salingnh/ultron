@@ -1,0 +1,26 @@
+# Danh mục predicate của Observation (cổng G4 kiểm). Thêm predicate = thêm dòng ở đây trong cùng PR với adapter.
+# value_type: string | integer | number | boolean | object | string_list ; subject_kinds: loại tài sản hợp lệ.
+# graph: true = M23 chiếu observation này thành nút :Observation trong Neo4j.
+apiVersion: aegis.io/v2
+kind: PredicateRegistry
+predicates:
+  dns.record:            {value_type: object,   subject_kinds: [domain], description: "{type, value, ttl}", graph: true}
+  dns.resolves:          {value_type: boolean,  subject_kinds: [domain]}
+  dns.wildcard:          {value_type: boolean,  subject_kinds: [domain]}
+  net.port_state:        {value_type: string,   subject_kinds: [service], enum: [open, closed, filtered]}
+  net.asn:               {value_type: object,   subject_kinds: [ip], description: "{asn, org, cidr}", graph: true}
+  net.cdn:               {value_type: object,   subject_kinds: [ip, domain], description: "{provider, kind: cdn|waf|cloud}", graph: true}
+  service.protocol:      {value_type: string,   subject_kinds: [service]}
+  service.product:       {value_type: object,   subject_kinds: [service], description: "{product, version, cpe}", graph: true}
+  service.banner:        {value_type: string,   subject_kinds: [service]}
+  tls.certificate:       {value_type: object,   subject_kinds: [service, application], description: "{subject_cn, sans[], issuer, not_before, not_after, sha256}", graph: true}
+  http.status:           {value_type: integer,  subject_kinds: [application, url]}
+  http.title:            {value_type: string,   subject_kinds: [application, url]}
+  http.technology:       {value_type: string_list, subject_kinds: [application, url], graph: true}
+  http.headers:          {value_type: object,   subject_kinds: [application, url]}
+  web.discovered_by:     {value_type: string,   subject_kinds: [url], enum: [crawl, archive, js, sitemap, robots]}
+  artifact.digest:       {value_type: string,   subject_kinds: [artifact, oci_image]}
+  package.installed:     {value_type: object,   subject_kinds: [package], description: "{version, ecosystem, license, location}"}
+  osint.mentioned_in:    {value_type: object,   subject_kinds: [domain, email], description: "{source, uri}"}
+  osint.lookalike_of:    {value_type: string,   subject_kinds: [domain]}
+  asset.seen:            {value_type: boolean,  subject_kinds: [domain, ip, service, application, url, email, oci_image, repo, repo_snapshot, artifact, package, cloud_resource, k8s_workload], description: "Có/không thấy tài sản trong lần chạy"}

@@ -1,82 +1,41 @@
-# PROGRESS: AEGIS–Vanguard
+# PROGRESS
 
-> Nhật ký tiến độ cho AI agent. Cập nhật sau mỗi task hoặc PR: thêm dòng vào "Đã hoàn thành", ghi lỗi vào "Đang lỗi hoặc bị chặn", sửa "Bước tiếp theo". Ghi ngày theo định dạng YYYY-MM-DD. Không xóa lịch sử, chỉ ghi thêm.
+## Hiện trạng
 
-## Trạng thái hiện tại
+| Hạng mục | Trạng thái |
+| --- | --- |
+| Giai đoạn | G0; repo có tài liệu, schema/DDL/fixture/test; chưa có dịch vụ sản phẩm chạy trọn vòng |
+| Kiến trúc | Theo D29: AI agent/MCP/sandbox/metadata/graph/S3/UI; model cấu hình trực tiếp, job dùng priority/dependency |
+| Tài liệu | Một bộ ở đường dẫn chính. Ngày 2026-11-17 hoàn tất ma trận 367 mục đối chiếu với nguồn trước hợp nhất; mỗi mục có đích hiện hành hoặc căn cứ thay thế, phần còn hiệu lực bị rơi đã được bổ sung |
+| Nội dung đã giữ | Use case, context/ledger/stop conditions, adapter/chain, ontology/identity/provenance, ingestion gates, correlation/finding và kiểm thử/vận hành |
+| Nội dung đã loại | Phương án nền tảng bị thay thế, phân tầng/phân nhóm, workflow duyệt cũ, nhánh ngoài phạm vi và claim benchmark/OSS chưa có bằng chứng; không dùng việc chưa implement làm lý do bỏ yêu cầu đã chốt |
+| Contract | Một bundle hiện hành còn bản nháp trước S1; version giao tiếp nằm ở schema/API/event, không có bộ tài liệu theo version |
+| F1–F3 | Đã sửa receipt chung, một đường gửi MCP và ghim manifest/adapter trong task/job; migration 0003 cho pin bất biến |
+| Rà contract | Đã đối chiếu 76 file trong 10 nhóm; N01–N06 đã sửa và có kiểm hồi quy; S1.1–S1.6 còn mở |
+| Bảo toàn nội dung | Đối chiếu 35 nguồn text tại HEAD trước viết lại và 26 tài liệu hiện hành; 28 quyết định D, 12 lựa chọn OSS, các bảng chốt 12/13-11, FR/NFR, SDK/ingestion, API/event/query và logic chi tiết. Sáu cặp Word/8 hình đã đối chiếu ở lượt trước. Không còn mục trong ma trận thiếu đích hoặc bị loại không có căn cứ |
+| Triển khai | Chưa push/deploy hoặc chạy dịch vụ sản phẩm; không chạy scanner, LLM hoặc E2E sản phẩm |
 
-- **Giai đoạn đang mở:** GĐ0 Chuẩn bị (chưa bắt đầu; chưa chốt ngày bắt đầu).
-- **Cổng gần nhất đã qua:** chưa có.
-- **Mã sản phẩm:** chưa có. Repo mới chứa tài liệu.
-- **Quyết định còn mở:** D5–D13 (mặc định kỹ thuật trong [docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 4), chấp nhận khi Product Team duyệt PR hợp đồng S1. D1–D4 đã chốt 2026-11-15: Python 3.12, UUIDv7, collector M06 tải bằng chứng, monorepo + `contracts/`.
-- **Tái định vị 2026-11-16:** Product Team chốt D14–D28 ([docs/s1/00-thanh-phan-va-quyet-dinh.md](docs/s1/00-thanh-phan-va-quyet-dinh.md) mục 7): sản phẩm chuyển sang **pentest chủ động** (mở tầng T3), kèm sửa contract S1. AGENTS.md, PRD, RULES, README và bảng tầng tác động **đã** được viết lại sang định vị pentest chủ động tới T3 (nhánh `redesign/pentest-repositioning-s1`); `contracts/` đang sửa theo D16–D28 và chờ Product Team duyệt cổng S1. Không còn file quản trị nào mang định vị "chỉ phòng thủ" cũ.
+## Còn mở
 
-## Đã hoàn thành
+S1.1–S1.6 trong TASKS: seed reference, canonical hash/receipt, lifecycle partial/late/cancel, outbox ordering, ModelClient/severity, tool schema/actor và chuyển cấu hình đã lưu. [Kiểm biên schema/OpenAPI C08](docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c08--kiểm-biên-schema-và-openapi) đã được sửa ở S1.7. Chi tiết duy trì tại nguồn phụ trách; chưa đạt cổng S1 hoặc MVP chỉ nhờ các kiểm tra dưới đây.
 
-| Ngày | Việc | Tham chiếu |
-| --- | --- | --- |
-| 2026-11-12 | Bộ tài liệu thiết kế 00–04, đặc tả kỹ thuật, kế hoạch triển khai, đánh giá OSS | `docs/` |
-| 2026-11-13 | Chốt toàn bộ quyết định Product Team (phạm vi quét, secret dạng rõ, agent đánh giá mức nghiêm trọng, không đo precision/recall, lưu vĩnh viễn, Podman, MCP, Telegram) | `docs/living/02-ke-hoach-trien-khai.md` mục 10 |
-| 2026-11-14 | Đưa tài liệu vào repo (`docs/living`, `docs/source`) và thêm bộ file hướng dẫn cho AI agent (PRD, ARCHITECTURE, DESIGN, RULES, TASKS, PROGRESS, AGENTS, CLAUDE) | PR đầu tiên |
-| 2026-11-15 | Bản nháp hợp đồng S1: JSON Schema (ID, lỗi, RoE, manifest, ResultEnvelope, 9 sự kiện, MCP, agent, finding), OpenAPI v1, DDL PostgreSQL, mô hình Neo4j, interface nội bộ, fixture và bộ kiểm tra; phân 8 gói việc cho agent dev | `contracts/`, `docs/s1/` |
-| 2026-11-15 | Product Team chốt D1 Python 3.12, D2 UUIDv7, D3 collector M06 tải bằng chứng, D4 monorepo + `contracts/` | `docs/s1/` mục 4 |
-| 2026-11-16 | Review độc lập contract/thiết kế S1 từ ba vai trò (AI engineer, SE, security); Product Team chốt D14–D28 tái định vị pentest chủ động + sửa contract | `docs/s1/` mục 7 |
-| 2026-11-16 | Viết lại tài liệu quản trị theo định hướng pentest chủ động (AGENTS, PRD, RULES, README, docs/living, bảng tầng tác động → T3) | nhánh `redesign/pentest-repositioning-s1` (8be1b5d) |
-| 2026-11-16 | Sửa contract/DDL: D21 scan_cycle, D22 ApprovedTask container-only, D23 event_id v7 + dedup_key, D24 versioning, D15/D16 denylist+T3, D26 trigger cột, D27 sandbox collector/parser, D18 severity kind, D25 outbox watermark + rebuild thế hệ, D28 SeaweedFS. Validator xanh (33 schema) | nhánh trên (2e6100b…408dc68) |
+Migration chuyển cấu trúc/giữ snapshot, chưa chuyển policy_snapshot JSON và current_policy_version của campaign cũ thành cấu hình mới hợp lệ. Chưa tự resume campaign/job cũ. Scheduler, isolation và agent recovery chưa có implementation sản phẩm để xác minh.
 
-## Đang lỗi hoặc bị chặn
+Theo chỉ đạo tiếp tục giữ logic cũ ngoài phần chủ sản phẩm đã đổi, đã khôi phục quyết định 13/11 về pivot theo seed/provenance và không dùng allowlist phạm vi; bỏ điều kiện xác minh/duyệt riêng từng asset do lần viết lại tự thêm. Campaign nội bộ/ủy quyền, schema, nguồn gốc, ngân sách và cách ly mạng vẫn giữ. S1.5 còn phải khóa declared sources/target binding của egress và query truncation.
 
-> Các phát hiện P0/P1 ngày 2026-11-16 dưới đây đã được xử lý bằng D15–D28 trên nhánh `redesign/pentest-repositioning-s1` (validator xanh; DDL/smoke chưa chạy vì chưa có PostgreSQL). Còn mở: hoàn thiện `ModelClient` (P1), vòng đời job kết quả một phần/đến muộn/cancel (P1), và schema input đầy đủ cho `cred.test` (GĐ3) — chưa làm trong đợt này.
+## Bằng chứng kiểm chứng
 
-| Ngày | Vấn đề | Ảnh hưởng | Người xử lý |
-| --- | --- | --- | --- |
-| 2026-11-14 | Ba sơ đồ nhúng (kiến trúc tổng thể, hai lộ trình) không xuất được sang Markdown trong `docs/living/` | Thiếu hình minh họa; nội dung chữ vẫn đủ | Product Team (xuất ảnh từ Claude Docs nếu cần) |
-| 2026-11-14 | Ngôn ngữ backend và cấu trúc thư mục mới là đề xuất | Cần khóa ở epic S1 trước khi subagent viết mã | Agent review kiến trúc + Product Team |
-| 2026-11-15 | Đặc tả mâu thuẫn: scanner "tải bằng chứng lên MinIO qua signed URL" nhưng mạng thực thi không được vào mạng dữ liệu (nơi có MinIO) | Đã chốt D3 (2026-11-15): collector M06 ở mạng điều khiển tải lên; cần sửa câu "signed URL" trong `docs/living/` khi gộp S1 | Agent review kiến trúc |
-| 2026-11-14 | Giấy phép Nerva và dnstwist chưa xác minh | Chặn đóng gói adapter tương ứng | T0.7 |
-| 2026-11-16 | **P0** `job_fingerprint` unique vĩnh viễn (`contracts/db/postgres/0001_init.sql:236`) chặn quét lại cùng đầu vào → không sinh được bằng chứng FIXED/REGRESSED | Verifier không đóng/mở lại finding được | D21 (thêm `scan_cycle`) |
-| 2026-11-16 | **P0** `ApprovedTask` bắt buộc `image_digest` (`approved-task.v1.schema.json:7`) trong khi manifest cho rest/import và DDL để nullable (`0001_init.sql:235`) — lệch ba chiều | L0/L2 không có đường contract nhất quán | D22 (v1 chỉ container) |
-| 2026-11-16 | **P0** `event_id` UUIDv5 (`interfaces/README.md:57`) bị `ids.v1.schema.json:10` (ép UUIDv7) từ chối — lỗi tự mâu thuẫn, fail ngay lần nộp đầu | Luồng ingestion không chạy | D23 |
-| 2026-11-16 | **P0** append-only không cưỡng chế: `protect(false)` chỉ cấm DELETE, cột giá trị (`targets`, `secret_value`) vẫn UPDATE tự do (`0001_init.sql:44-55,793-795`) | Phá cam kết "không ghi đè"; audit không có chuỗi băm | D26 (trigger theo cột) + chuỗi băm audit |
-| 2026-11-16 | **P0** luồng đánh giá severity chưa có contract (trigger/ngân sách/đường lui); `finding.v1` bắt buộc severity nhưng M20 giao agent severity ở GĐ4 | Kịch bản KEV→Telegram phụ thuộc bước LLM chưa định nghĩa | D18 |
-| 2026-11-16 | **P0** prompt injection có thể sinh job quét/tấn công tùy ý: M05 cho qua mọi mục tiêu, nguồn gốc chỉ là `rationale` do LLM viết | Confused-deputy; nguy hiểm hơn khi mở T3 | D16 (denylist bắt buộc) + kiểm `origin_ref` (đề xuất) |
-| 2026-11-16 | **P0** collector băm/tải "từng file trong `output_dir`" không chặn symlink/trần (`interfaces/README.md:55`) | Symlink trong `/out` kéo file máy chủ (token, khóa) vào kho bằng chứng | D27 |
-| 2026-11-16 | **P1** outbox `bigserial`+`last_seq` có thể bỏ sót giao dịch commit muộn (`0001_init.sql:667,685`); `graph_revision` cùng kiểu | Mất `policy.denied`/`finding.changed` → mất cảnh báo; agent không thấy delta | D25 (watermark) |
-| 2026-11-16 | **P1** quy tắc version mâu thuẫn: RULES.md:53 (tăng version) vs `contracts/README.md:39` (thêm field trong v1) với `additionalProperties:false` | Thêm field phá consumer cũ | D24 |
-| 2026-11-16 | **P1** rebuild Neo4j bị `consumer_inbox` dedup vĩnh viễn chặn (`graph/model.md:3`, `0001_init.sql:690-697`); thiếu `projection_generation` | Replay bỏ qua sự kiện đã xử lý, không tái dựng được đồ thị | Kỹ thuật kèm D-set (rebuild có generation) |
-| 2026-11-16 | **P1** target bắt buộc `CanonicalKey` (`approved-task.v1:21`, `result-envelope:61`) nhưng keyword/CIDR không có canonical key (`0001_init.sql:132`) | Job khám phá từ keyword không ghi được provenance trung thực | Cần `TargetRef` phân biệt seed với asset key |
-| 2026-11-16 | **P1** kết quả một phần/đến muộn chưa có quy tắc: `job.completed.v1` chỉ 3 trạng thái terminal, một `event_id`/job | Nguy cơ 409 hoặc mất cập nhật muộn | Kỹ thuật kèm D-set (state machine + fencing) |
-| 2026-11-16 | **P1** `ModelClient` chưa đủ hai driver: `ModelResponse.content:str` mất khối nội dung, `finish_reason` không chuẩn, thiếu xử lý sai schema/cắt/refusal (`interfaces/README.md:74-95`) | Vòng tool call thứ hai và fallback không triển khai đúng được | Kỹ thuật kèm D-set |
-| 2026-11-16 | **P1** agent tự khai `campaign_id` khi truy vấn bằng chứng (`mcp/graph-queries.v1.schema.json:13,516`) | Agent bị tiêm có thể đọc bằng chứng chiến dịch khác | Server suy `campaign` từ session, bỏ khỏi input |
-| 2026-11-16 | **P1** tài liệu còn nói "che secret" (`docs/living/02-ke-hoach-trien-khai.md:129`, `04-module-ket-noi-oss.md:171`) trái quyết định 13/11 (lưu dạng rõ) | Hai chỗ mâu thuẫn, cần thống nhất khi gộp S1 | Agent review kiến trúc |
+Các kiểm Python/DB/Cypher bên dưới đã chạy ở lượt sửa contract trước; lượt bảo toàn logic chỉ sửa tài liệu. Schema/code/SQL/fixture giữ hash, bốn README/model của contracts được làm rõ. Không diễn giải các test trước thành nghiệm thu runtime hoặc nghiệm thu yêu cầu G3/G4 vừa phục hồi.
 
-## Bước tiếp theo
+- PASS trên Python 3.12.16: validator 34 schema, 9 fixture hợp lệ, 6 fixture bị từ chối đúng, 23 operation; 17 test contract/conformance, gồm F1–F3 và N01–N06. Các kiểm tra chạy trong container tách mạng sau khi cài dependency.
+- PASS OpenAPI 3.1 đầy đủ; validator bắt cả response ngoài chuẩn và format thiếu hook. Bộ kiểm dùng chung từ chối IP/domain/port/giờ/zone/usage sai; event dùng Severity chung và export chỉ JSON.
+- PostgreSQL 16 clean 0001→0002→0003→0004: smoke 9/9, dependency/bất biến 4/4, pin 3/3 và usage 4/4. Upgrade giữ 4 snapshot, priority/event lịch sử, pin null cho job cũ và bản ghi usage âm trước 0004; bản ghi âm mới bị chặn. Chưa chứng minh campaign cũ chạy liên tục.
+- PASS Cypher smoke Neo4j 5.26.28: constraints chạy hai lần; bốn upsert chạy hai lần giữ 2 asset/1 finding/1 evidence/3 cạnh; đóng/mở lại giữ 2 khoảng hiệu lực với 1 cạnh hiện hành; ID asset trùng bị chặn. Đây là kiểm template, chưa phải projector/outbox/rebuild/concurrency sản phẩm.
+- PASS kiểm tài liệu hiện hành: 26 Markdown/HTML, 98 link/anchor/ảnh tương đối hợp lệ; không có thư mục/bộ nguồn cũ. Migration 0001–0003 giữ nguyên trong lượt sửa N01–N06.
+- Lỗi khởi động Neo4j trước đó được khắc phục trong môi trường kiểm bằng hostname loopback ở container không mạng. Hai lỗi script smoke về parse CSV/nhận diện thông báo constraint đã sửa trước lần chạy đạt; không sửa Cypher để né lỗi.
+- Rà bảo toàn 2026-11-17: số đầu lượt +7.461/-9.378 không được dùng làm bằng chứng giữ đủ logic. Đã đối chiếu 367 mục; 23/23 method/path API giữ nguyên và 33 schema có đích thay thế, các field/enum loại được giải thích theo thay đổi đã chốt. 72/76 file contracts giữ hash của lần kiểm trước, bốn file tài liệu được bổ sung; không sửa schema/code/SQL/fixture. Đã phục hồi FindingRun, phạm vi G3/G4, metadata, giao thức MCP, giới hạn tool/network, tiêu chí kiểm và vận hành. Các ngưỡng vẫn là mục tiêu chưa đo.
+- Không kiểm HMAC/executor runtime, trực quan HTML bằng trình duyệt hoặc diễn tập dịch vụ sản phẩm. Các test dự kiến trong đặc tả vẫn là tiêu chí cần thực hiện theo giai đoạn.
 
-1. **Sửa tài liệu quản trị theo D14–D28 (nhánh `redesign/pentest-repositioning-s1`):** Bước 2 viết lại AGENTS.md/PRD/RULES/bảng tầng tác động; Bước 3 sửa contract + DDL (B1–B8, D16–D28) và kiểm bằng validator.
-2. Product Team duyệt hợp đồng S1 (D1–D13); sau đó gộp vào `docs/living/`.
-3. T0.1 Chốt ngày bắt đầu, cấu hình agent review kiến trúc và bảo mật.
-3. T0.2–T0.6 Chạy năm spike (ưu tiên spike 1, 2, 4 vì nằm trên đường găng).
-4. T0.7 Lập bảng pin phiên bản và giấy phép.
-5. T0.8 Dựng môi trường dev; T0.10 dựng lab.
-6. T0.11 Khóa backlog GĐ1, demo cổng G0.
+## Tiếp theo
 
-## Rủi ro cần theo dõi
-
-- Spike 1 thất bại (LangGraph không lồng an toàn trong Temporal) → thiết kế lại S2; không bắt đầu S2 trước kết luận.
-- Một máy không đủ tải ở GĐ3–GĐ4 → theo dõi tải từ GĐ2; Kubernetes là thay bộ chạy.
-- Không giới hạn phạm vi khi chạy công cụ thật ở GĐ2 → chấp nhận theo quyết định 13/11; bắt buộc ghi nguồn gốc và audit.
-- **(2026-11-16, cao) Tái định vị pentest chủ động + không giới hạn phạm vi + T3 tự duyệt:** hệ thống có thể tự động tấn công bên thứ ba không đồng thuận nếu agent bị prompt injection; rủi ro pháp lý. Giảm thiểu bằng denylist bắt buộc (D16); theo dõi sát và cân nhắc thêm `origin_ref`/phạm vi ủy quyền cho T3 nếu sự cố xảy ra.
-
-## Rà soát tính nhất quán 2026-11-16
-
-- **Đã hoàn thành:** review SSE tài liệu hiện tại, phát hiện 18 nhóm lệch rule/phạm vi/lịch giao và mô tả tính năng không triển khai. Dẫn chứng và hướng xử lý: [báo cáo](docs/reviews/2026-11-16-document-consistency.md).
-- **Vấn đề:** bộ tài liệu chưa nhất quán; đặc biệt M05/denylist, T3 và severity tại MVP, phân loại TruffleHog, runtime v1, đường ghi bằng chứng, version schema và SeaweedFS. M22 vẫn có đặc tả triển khai dù ngoài phạm vi.
-- **Đã xử lý 2026-11-16 (nhánh `redesign/pentest-repositioning-s1`):** đã sửa các nhóm kỹ thuật R01, R04, R05, R06, R07, R10, R11, R12, R13, R15, R16 (đồng bộ M05/denylist, TruffleHog T3, đường ghi bằng chứng qua collector, runtime v1 container, phạm vi M27/append-only, tập truy vấn graph G1, M22 về T4). R08 và R09 đã sửa trước (version policy, SeaweedFS). **Phạm vi/lịch R02/R03/R14:** Product Team chốt hướng **kéo năng lực T3 (xác minh động M21, kiểm thử credential M17), severity-do-agent (M20) và soak 7 ngày vào MVP/cổng G2**; đã cập nhật PRD mục 4, kế hoạch (bảng giai đoạn, cổng G2, epic GĐ2/3/4, tổng 22–31 tuần, MVP tuần 9–17), TASKS (T2.7–T2.11) và đặc tả M20/M21/cred.test. Đánh đổi: cửa sổ MVP mở rộng từ 9–13 tuần. **Còn lại:** dọn R16/R17 trong bản đồ HTML (đã gắn nhãn "để sau"/"cảm hứng" nên chỉ còn mức trình bày); R18 (gỡ đặc tả FR-022/M22 khỏi spec hiện hành) tùy chọn.
-- **Trạng thái khắc phục:** chưa sửa thiết kế hay contract trong lượt review; thay đổi contract có sẵn được giữ nguyên. Không chạy runtime test.
-- **Bước tiếp theo:** DOC-R2 xử lý từng R01–R18; chốt lịch giao/ràng buộc còn thiếu, sau đó đồng bộ tài liệu và kiểm tra lại. Các ghi chú tiến độ cũ ở trên là lịch sử, không phải bằng chứng mọi vấn đề vẫn còn hoặc đã sửa.
-- **Kiểm tra cuối lượt:** luồng khác đã commit contract tại `2e6100b` và sửa quy tắc version trong `contracts/README.md`; xung đột chính R08 đã được cập nhật, không phải thay đổi do lượt review này thực hiện.
-
-## Kiểm sâu 10 nhóm sau feedback Claude (2026-11-16)
-
-- **COMPLETE — review:** đối chiếu R05, R08, R10–R15, R17–R18 trên HEAD `54f123d`; [báo cáo](docs/reviews/2026-11-16-ten-findings-deep-review.md).
-- R08 đã sửa xung đột chính; R13–R15 có lệch xác nhận được; R05 thiếu đặc tả, R10–R12 cần làm rõ ranh giới; R17–R18 là biên tập, rút nhận định quá mức về scope đã cam kết.
-- Chỉ sửa báo cáo/tracking; không đổi thiết kế/contract, không chạy runtime test. Tiếp theo vẫn là DOC-R2 khắc phục theo phán định đã cập nhật.
+Khóa S1.1–S1.6, hoàn thiện projector và kiểm replay/concurrency. Nghiệm thu runtime theo cổng G0–G2 khi có implementation. Cập nhật sau mỗi lần merge hoặc deploy (update after every merge or deploy).

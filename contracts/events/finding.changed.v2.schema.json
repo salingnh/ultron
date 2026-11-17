@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/finding.changed.v2.schema.json",
+  "title": "Payload finding.changed.v2",
+  "description": "Bên phát: M20|M21|M24. Khóa khử trùng của consumer: finding_id+transition_seq.",
+  "type": "object",
+  "required": [
+    "finding_id",
+    "transition_seq",
+    "asset_id",
+    "new_status",
+    "reason",
+    "changed_by",
+    "cause",
+    "changed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "finding_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "transition_seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "asset_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "old_status": {
+      "oneOf": [
+        {
+          "$ref": "../finding/finding-status.v2.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "new_status": {
+      "$ref": "../finding/finding-status.v2.schema.json"
+    },
+    "old_severity": {
+      "anyOf": [
+        {
+          "$ref": "../finding/severity-assessment.v2.schema.json#/$defs/Severity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "new_severity": {
+      "anyOf": [
+        {
+          "$ref": "../finding/severity-assessment.v2.schema.json#/$defs/Severity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "evidence_ref": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "changed_by": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+    },
+    "cause": {
+      "type": "string",
+      "enum": [
+        "scan",
+        "intel_revision",
+        "verification",
+        "operator",
+        "regression_check"
+      ]
+    },
+    "changed_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    }
+  }
+}

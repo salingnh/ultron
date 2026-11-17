@@ -1,0 +1,1056 @@
+openapi: 3.1.0
+info:
+  title: AEGIS–Vanguard API
+  version: 2.0.0
+  description: 'REST API v2 (bản nháp S1). M26 phục vụ mọi endpoint, trừ `/ingestion/results`
+    do M27 phục vụ.
+
+    Nguồn: docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md. Endpoint đánh
+    dấu `x-aegis-status: proposed`
+
+    cần khóa hình dạng trước khi triển khai S1.
+
+
+    Quy ước:
+
+    - POST tạo tài nguyên bắt buộc `Idempotency-Key`: cùng key cùng body trả kết quả
+    cũ (kèm header `Idempotent-Replayed: true`); cùng key khác body trả 409.
+
+    - POST hành động (pause/resume/cancel) an toàn khi gửi lại: trạng thái đích đã
+    đạt thì trả 200 với trạng thái hiện tại.
+
+    - Lỗi luôn theo `Error` (mã chuẩn theo error schema) kèm `trace_id`. Job bị policy từ chối trả
+    403 và phát `policy.denied.v2`.
+
+    - Danh sách dùng cursor (`cursor`, `limit` ≤ 200), không dùng offset. `next_cursor`
+    vắng = hết.
+
+    - MVP chưa đăng nhập; truy cập qua private ingress/VPN. Giữa dịch vụ dùng service
+    token (header `X-Aegis-Service-Token`).
+
+    - Header `traceparent` (W3C) được nhận và trả lại; thiếu thì server sinh.
+
+    '
+servers:
+- url: /api/v2
+tags:
+- name: campaigns
+  description: M01/M02
+- name: jobs
+  description: M05/M06
+- name: ingestion
+  description: M27
+- name: graph
+  description: M07/M23
+- name: findings
+  description: M20/M21/M24
+- name: reports
+  description: M24
+paths:
+  /campaigns:
+    post:
+      tags:
+      - campaigns
+      operationId: createCampaign
+      summary: Tạo chiến dịch kèm ảnh chụp RoE
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../campaign/campaign-create.v2.schema.json
+      responses:
+        '202':
+          description: Đã nhận; workflow khởi động bất đồng bộ.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - campaign_id
+                - status
+                - policy_version
+                - scope_id
+                properties:
+                  campaign_id:
+                    $ref: ../common/ids.v2.schema.json#/$defs/Id
+                  status:
+                    const: CREATED
+                  policy_version:
+                    $ref: ../common/ids.v2.schema.json#/$defs/PolicyVersion
+                  scope_id:
+                    $ref: ../common/ids.v2.schema.json#/$defs/Id
+        '400':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    get:
+      tags:
+      - campaigns
+      operationId: listCampaigns
+      x-aegis-status: proposed
+      summary: Danh sách chiến dịch (cho màn hình quản lý chiến dịch)
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      - name: status
+        in: query
+        schema:
+          $ref: ../campaign/campaign.v2.schema.json#/$defs/CampaignStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignPage'
+  /campaigns/{campaign_id}:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    get:
+      tags:
+      - campaigns
+      operationId: getCampaign
+      summary: Trạng thái, ngân sách, bộ đếm
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../campaign/campaign.v2.schema.json
+        '404':
+          $ref: '#/components/responses/Error'
+  /campaigns/{campaign_id}/policy:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    post:
+      tags:
+      - campaigns
+      operationId: updateCampaignPolicy
+      x-aegis-status: proposed
+      summary: Đổi RoE, sinh policy_version mới (bản cũ không bị sửa)
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - policy
+              - actor
+              - reason
+              properties:
+                policy:
+                  $ref: ../campaign/roe-policy.v2.schema.json
+                actor:
+                  $ref: ../common/ids.v2.schema.json#/$defs/Actor
+                reason:
+                  type: string
+                  minLength: 3
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - policy_version
+                properties:
+                  policy_version:
+                    $ref: ../common/ids.v2.schema.json#/$defs/PolicyVersion
+        '409':
+          $ref: '#/components/responses/Error'
+  /campaigns/{campaign_id}/pause:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    post:
+      tags:
+      - campaigns
+      operationId: pauseCampaign
+      summary: Tạm dừng (signal Temporal)
+      requestBody:
+        $ref: '#/components/requestBodies/ActorReason'
+      responses:
+        '200':
+          $ref: '#/components/responses/CampaignState'
+        '409':
+          $ref: '#/components/responses/Error'
+  /campaigns/{campaign_id}/resume:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    post:
+      tags:
+      - campaigns
+      operationId: resumeCampaign
+      summary: Tiếp tục
+      requestBody:
+        $ref: '#/components/requestBodies/ActorReason'
+      responses:
+        '200':
+          $ref: '#/components/responses/CampaignState'
+        '409':
+          $ref: '#/components/responses/Error'
+  /campaigns/{campaign_id}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    post:
+      tags:
+      - campaigns
+      operationId: cancelCampaign
+      summary: Hủy và phát lệnh hủy tới job
+      requestBody:
+        $ref: '#/components/requestBodies/ActorReason'
+      responses:
+        '200':
+          $ref: '#/components/responses/CampaignState'
+  /campaigns/{campaign_id}/events:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    get:
+      tags:
+      - campaigns
+      operationId: streamCampaignEvents
+      summary: Dòng thời gian; SSE khi Accept text/event-stream, JSON phân trang khi
+        Accept application/json
+      description: 'SSE: mỗi message `id: <outbox seq>`, `event: <type>`, `data: <EventEnvelope
+        JSON>`. Client nối lại bằng `Last-Event-ID`.
+
+        Server gửi `event: heartbeat` mỗi 15 giây.
+
+        '
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      - name: types
+        in: query
+        schema:
+          type: array
+          items:
+            type: string
+        style: form
+        explode: false
+      - name: Last-Event-ID
+        in: header
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            text/event-stream:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../events/event-envelope.v2.schema.json
+                  next_cursor:
+                    type: string
+  /campaigns/{campaign_id}/flow:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    get:
+      tags:
+      - campaigns
+      operationId: getCampaignFlow
+      x-aegis-status: proposed
+      summary: Dữ liệu màn hình luồng quét (React Flow) - phiên agent, quyết định
+        policy, job và quan hệ cha con
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - nodes
+                - edges
+                - revision
+                properties:
+                  revision:
+                    type: integer
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - type
+                      - status
+                      - label
+                      properties:
+                        id:
+                          type: string
+                        type:
+                          enum:
+                          - campaign
+                          - session
+                          - decision
+                          - job
+                          - finding_batch
+                        status:
+                          type: string
+                        label:
+                          type: string
+                        error:
+                          $ref: ../common/error.v2.schema.json
+                        started_at:
+                          type: string
+                          format: date-time
+                        finished_at:
+                          type: string
+                          format: date-time
+                  edges:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - from
+                      - to
+                      properties:
+                        from:
+                          type: string
+                        to:
+                          type: string
+                        kind:
+                          type: string
+  /capabilities:
+    get:
+      tags:
+      - jobs
+      operationId: listCapabilities
+      summary: Danh sách capability và provider (Registry M05)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - capability
+                      - providers
+                      properties:
+                        capability:
+                          $ref: ../common/ids.v2.schema.json#/$defs/CapabilityId
+                        input_schema_ref:
+                          type: string
+                        providers:
+                          type: array
+                          items:
+                            type: object
+                            required:
+                            - name
+                            - version
+                            - health
+                            properties:
+                              name:
+                                type: string
+                              version:
+                                type: string
+                              module:
+                                type: string
+                              health:
+                                enum:
+                                - healthy
+                                - degraded
+                                - unavailable
+  /jobs:
+    post:
+      tags:
+      - jobs
+      operationId: submitJob
+      summary: Gửi job (vẫn qua điểm kiểm M05)
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../capability/job-submit.v2.schema.json
+      responses:
+        '202':
+          description: Đã duyệt và xếp hàng
+          content:
+            application/json:
+              schema:
+                $ref: ../capability/job.v2.schema.json
+        '200':
+          description: Trùng job_fingerprint, trả job cũ
+          content:
+            application/json:
+              schema:
+                $ref: ../capability/job.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+    get:
+      tags:
+      - jobs
+      operationId: listJobs
+      x-aegis-status: proposed
+      summary: Danh sách job (màn hình job lỗi)
+      parameters:
+      - name: campaign_id
+        in: query
+        required: true
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      - name: status
+        in: query
+        schema:
+          $ref: ../capability/job.v2.schema.json#/$defs/JobStatus
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../capability/job.v2.schema.json
+                  next_cursor:
+                    type: string
+  /jobs/{job_id}:
+    parameters:
+    - $ref: '#/components/parameters/JobId'
+    get:
+      tags:
+      - jobs
+      operationId: getJob
+      summary: Trạng thái và tham chiếu kết quả
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../capability/job.v2.schema.json
+        '404':
+          $ref: '#/components/responses/Error'
+  /jobs/{job_id}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/JobId'
+    post:
+      tags:
+      - jobs
+      operationId: cancelJob
+      summary: Hủy job (best effort, báo kết quả trung thực)
+      requestBody:
+        $ref: '#/components/requestBodies/ActorReason'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../capability/job.v2.schema.json
+  /ingestion/results:
+    post:
+      tags:
+      - ingestion
+      operationId: ingestResult
+      summary: Nhận ResultEnvelope (chỉ dịch vụ nội bộ, service token)
+      description: Idempotent theo dedup_key và content hash của kết quả logic; event_id định danh lần nộp. Không cần Idempotency-Key. Hash/receipt phải khóa theo C03 trước S1.
+        Bản ghi không qua cổng G1-G7 bị cách ly, envelope vẫn được nhận.
+      security:
+      - serviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../ingestion/result-envelope.v2.schema.json
+      responses:
+        '202':
+          description: Đã nhận (hoặc đã nhận trước đó)
+          content:
+            application/json:
+              schema:
+                $ref: ../ingestion/ingest-receipt.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /assets:
+    get:
+      tags:
+      - graph
+      operationId: listAssets
+      x-aegis-status: proposed
+      summary: Tìm tài sản theo chiến dịch, kind hoặc tiền tố khóa (điểm vào màn hình
+        đồ thị)
+      parameters:
+      - name: campaign_id
+        in: query
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      - name: kind
+        in: query
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/AssetKind
+      - name: q
+        in: query
+        description: Tiền tố canonical_key hoặc alias
+        schema:
+          type: string
+          maxLength: 256
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Asset'
+                  next_cursor:
+                    type: string
+  /assets/{asset_id}/graph:
+    parameters:
+    - $ref: '#/components/parameters/AssetId'
+    get:
+      tags:
+      - graph
+      operationId: getAssetGraph
+      summary: Vùng lân cận có giới hạn (cùng truy vấn get_asset_neighbors của agent)
+      parameters:
+      - name: campaign_id
+        in: query
+        required: true
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      - name: max_hops
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2
+          default: 1
+      - name: as_of
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../mcp/graph-queries.v2.schema.json#/$defs/get_asset_neighbors/properties/output
+  /assets/{asset_id}/history:
+    parameters:
+    - $ref: '#/components/parameters/AssetId'
+    get:
+      tags:
+      - graph
+      operationId: getAssetHistory
+      summary: Dòng thời gian tài sản theo từng lần chạy (observation gắn scan_id)
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - asset
+                - items
+                properties:
+                  asset:
+                    $ref: '#/components/schemas/Asset'
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - scan_id
+                      - observed_at
+                      - predicate
+                      - polarity
+                      properties:
+                        scan_id:
+                          $ref: ../common/ids.v2.schema.json#/$defs/Id
+                        capability:
+                          type: string
+                        provider:
+                          type: string
+                        observed_at:
+                          type: string
+                          format: date-time
+                        predicate:
+                          type: string
+                        value: {}
+                        polarity:
+                          enum:
+                          - present
+                          - absent
+                          - negated
+                        evidence_ids:
+                          type: array
+                          items:
+                            $ref: ../common/ids.v2.schema.json#/$defs/Id
+                  next_cursor:
+                    type: string
+  /findings:
+    get:
+      tags:
+      - findings
+      operationId: listFindings
+      summary: Lọc và xuất findings
+      parameters:
+      - name: campaign_id
+        in: query
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      - name: asset_id
+        in: query
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      - name: status
+        in: query
+        schema:
+          type: array
+          items:
+            $ref: ../finding/finding-status.v2.schema.json
+        style: form
+        explode: false
+      - name: severity
+        in: query
+        schema:
+          type: array
+          items:
+            $ref: ../finding/severity-assessment.v2.schema.json#/$defs/Severity
+        style: form
+        explode: false
+      - name: category
+        in: query
+        schema:
+          type: string
+      - name: vulnerability_id
+        in: query
+        schema:
+          type: string
+      - name: kev
+        in: query
+        schema:
+          type: boolean
+      - name: changed_since
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: format
+        in: query
+        description: Định dạng báo cáo JSON
+        schema:
+          enum:
+          - json
+          default: json
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../finding/finding.v2.schema.json
+                  next_cursor:
+                    type: string
+  /findings/{finding_id}:
+    parameters:
+    - $ref: '#/components/parameters/FindingId'
+    get:
+      tags:
+      - findings
+      operationId: getFinding
+      summary: Chi tiết finding kèm bằng chứng (signed URL)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../finding/finding.v2.schema.json
+        '404':
+          $ref: '#/components/responses/Error'
+  /findings/{finding_id}/transitions:
+    parameters:
+    - $ref: '#/components/parameters/FindingId'
+    post:
+      tags:
+      - findings
+      operationId: transitionFinding
+      summary: Đổi trạng thái finding kèm lý do (kiểm theo finding/transitions.v2.yaml)
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../finding/transition-request.v2.schema.json
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../finding/finding.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: Chuyển trạng thái không hợp lệ hoặc expected_seq lệch
+          content:
+            application/json:
+              schema:
+                $ref: ../common/error.v2.schema.json
+  /findings/{finding_id}/history:
+    parameters:
+    - $ref: '#/components/parameters/FindingId'
+    get:
+      tags:
+      - findings
+      operationId: getFindingHistory
+      summary: Trạng thái và mức nghiêm trọng theo từng lần chạy (FindingRun) cùng
+        các lần chuyển trạng thái
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - runs
+                - transitions
+                - assessments
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - scan_id
+                      - seen
+                      - status
+                      - severity
+                      - observed_at
+                      properties:
+                        scan_id:
+                          $ref: ../common/ids.v2.schema.json#/$defs/Id
+                        seen:
+                          type: boolean
+                        status:
+                          $ref: ../finding/finding-status.v2.schema.json
+                        severity:
+                          $ref: ../finding/severity-assessment.v2.schema.json#/$defs/Severity
+                        severity_reason:
+                          type: string
+                        evidence_id:
+                          $ref: ../common/ids.v2.schema.json#/$defs/Id
+                        observed_at:
+                          type: string
+                          format: date-time
+                  transitions:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - seq
+                      - to_status
+                      - reason
+                      - actor
+                      - cause
+                      - created_at
+                      properties:
+                        seq:
+                          type: integer
+                        from_status:
+                          type:
+                          - string
+                          - 'null'
+                        to_status:
+                          $ref: ../finding/finding-status.v2.schema.json
+                        reason:
+                          type: string
+                        evidence_id:
+                          $ref: ../common/ids.v2.schema.json#/$defs/Id
+                        actor:
+                          $ref: ../common/ids.v2.schema.json#/$defs/Actor
+                        cause:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                  assessments:
+                    type: array
+                    items:
+                      $ref: ../finding/severity-assessment.v2.schema.json
+  /reports/delta:
+    get:
+      tags:
+      - reports
+      operationId: getDeltaReport
+      summary: Báo cáo thay đổi giữa hai thời điểm
+      parameters:
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      - name: campaign_id
+        in: query
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - from
+                - to
+                - assets_new
+                - assets_gone
+                - findings_new
+                - findings_changed
+                - findings_fixed
+                - findings_regressed
+                properties:
+                  from:
+                    type: string
+                    format: date-time
+                  to:
+                    type: string
+                    format: date-time
+                  assets_new:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Asset'
+                  assets_gone:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Asset'
+                  findings_new:
+                    type: array
+                    items:
+                      $ref: ../finding/finding.v2.schema.json
+                  findings_changed:
+                    type: array
+                    items:
+                      $ref: ../finding/finding.v2.schema.json
+                  findings_fixed:
+                    type: array
+                    items:
+                      $ref: ../finding/finding.v2.schema.json
+                  findings_regressed:
+                    type: array
+                    items:
+                      $ref: ../finding/finding.v2.schema.json
+components:
+  securitySchemes:
+    serviceToken:
+      type: apiKey
+      in: header
+      name: X-Aegis-Service-Token
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 256
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    CampaignId:
+      name: campaign_id
+      in: path
+      required: true
+      schema:
+        $ref: ../common/ids.v2.schema.json#/$defs/Id
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        $ref: ../common/ids.v2.schema.json#/$defs/Id
+    AssetId:
+      name: asset_id
+      in: path
+      required: true
+      schema:
+        $ref: ../common/ids.v2.schema.json#/$defs/Id
+    FindingId:
+      name: finding_id
+      in: path
+      required: true
+      schema:
+        $ref: ../common/ids.v2.schema.json#/$defs/Id
+  requestBodies:
+    ActorReason:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+            - actor
+            properties:
+              actor:
+                $ref: ../common/ids.v2.schema.json#/$defs/Actor
+              reason:
+                type: string
+                maxLength: 2000
+  responses:
+    Error:
+      description: Lỗi chuẩn
+      content:
+        application/json:
+          schema:
+            $ref: ../common/error.v2.schema.json
+    CampaignState:
+      description: Trạng thái hiện tại sau thao tác
+      content:
+        application/json:
+          schema:
+            $ref: ../campaign/campaign.v2.schema.json
+  schemas:
+    Asset:
+      type: object
+      required:
+      - asset_id
+      - canonical_key
+      - kind
+      - first_seen
+      - last_seen
+      properties:
+        asset_id:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+        canonical_key:
+          $ref: ../common/ids.v2.schema.json#/$defs/CanonicalKey
+        kind:
+          $ref: ../common/ids.v2.schema.json#/$defs/AssetKind
+        owner:
+          type:
+          - string
+          - 'null'
+        exposure:
+          enum:
+          - internet
+          - internal
+          - unknown
+          - null
+        criticality:
+          enum:
+          - high
+          - medium
+          - low
+          - unknown
+          - null
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        aliases:
+          type: array
+          items:
+            type: object
+            properties:
+              namespace:
+                type: string
+              value:
+                type: string
+        discovered_from:
+          type: array
+          items:
+            $ref: ../common/ids.v2.schema.json#/$defs/CanonicalKey
+    CampaignPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: ../campaign/campaign.v2.schema.json
+        next_cursor:
+          type: string

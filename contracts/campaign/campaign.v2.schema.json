@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/campaign/campaign.v2.schema.json",
+  "title": "Chiến dịch v2 (đọc)",
+  "description": "Response của GET /api/v2/campaigns/{id}; rút gọn (không counters/budget) là response 202 của POST.",
+  "type": "object",
+  "required": [
+    "campaign_id",
+    "name",
+    "status",
+    "policy_version",
+    "scope_id",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "name": {
+      "type": "string"
+    },
+    "objective": {
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/CampaignStatus"
+    },
+    "status_reason": {
+      "type": "string"
+    },
+    "policy_version": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/PolicyVersion"
+    },
+    "scope_id": {
+      "description": "Bản chụp tập mục tiêu đầu vào (không phải allowlist).",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "policy": {
+      "$ref": "roe-policy.v2.schema.json"
+    },
+    "targets": {
+      "$ref": "campaign-create.v2.schema.json#/$defs/Targets"
+    },
+    "created_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "started_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "ended_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "budget_remaining": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "llm_cost_usd": {
+          "type": "number"
+        },
+        "llm_tokens": {
+          "type": "integer"
+        },
+        "jobs": {
+          "type": "integer"
+        },
+        "hours": {
+          "type": "number"
+        }
+      }
+    },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobs_total": {
+          "type": "integer"
+        },
+        "jobs_running": {
+          "type": "integer"
+        },
+        "jobs_failed": {
+          "type": "integer"
+        },
+        "policy_denials": {
+          "type": "integer"
+        },
+        "assets": {
+          "type": "integer"
+        },
+        "findings_open": {
+          "type": "integer"
+        },
+        "agent_sessions": {
+          "type": "integer"
+        },
+        "graph_revision": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "CampaignStatus": {
+      "description": "Trạng thái M02.",
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "RUNNING",
+        "WAITING",
+        "PAUSED",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED"
+      ]
+    }
+  }
+}

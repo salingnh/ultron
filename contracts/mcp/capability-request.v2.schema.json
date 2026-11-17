@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/mcp/capability-request.v2.schema.json",
+  "title": "Đối số chung của công cụ MCP capability v2",
+  "description": "arguments của tools/call cho mọi công cụ capability (tên công cụ = capability id). input hợp lệ theo inputSchemaRef của capability. trace_id và idempotency_key đi trong params._meta (xem mcp/README.md).",
+  "type": "object",
+  "required": [
+    "input",
+    "rationale",
+    "objective_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "input": {
+      "type": "object",
+      "description": "Tham số đã có kiểu của tool; M05 ghép inputDefaults và kiểm input schema."
+    },
+    "rationale": {
+      "description": "Lý do chọn mục tiêu và capability; ghi vào audit (FR-002).",
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 2000
+    },
+    "objective_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "hypothesis_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+      },
+      "maxItems": 10
+    },
+    "expected_signal": {
+      "description": "Agent mong thấy gì; dùng để đánh giá novelty.",
+      "type": "string",
+      "maxLength": 1000
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 50,
+      "description": "Số lớn chạy trước trong tập job đã đủ dependency; không thay thế kiểm tra điều kiện thực thi."
+    },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+      },
+      "uniqueItems": true,
+      "maxItems": 100,
+      "default": [],
+      "description": "Job tiền nhiệm trong cùng campaign, phải SUCCEEDED trước dispatch. M05 từ chối self-reference và chu trình."
+    }
+  }
+}

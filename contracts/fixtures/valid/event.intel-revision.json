@@ -1,9 +1,21 @@
 {
   "event_id": "01934f6a-0000-7000-8000-0000000ee002",
-  "type": "intel.revision.v1",
+  "type": "intel.revision.v2",
   "occurred_at": "2026-11-15T05:00:00Z",
   "producer": "M18",
   "dedup_key": "kev:2026.11.15",
-  "trace": {"trace_id": "7bf92f3577b34da6a3ce929d0e0e4739"},
-  "payload": {"feed": "kev", "version": "2026.11.15", "snapshot_at": "2026-11-15T04:55:00Z", "impacted_ids": ["CVE-2021-23337"], "change_kinds": ["kev_added"]}
+  "trace": {
+    "trace_id": "7bf92f3577b34da6a3ce929d0e0e4739"
+  },
+  "payload": {
+    "feed": "kev",
+    "version": "2026.11.15",
+    "snapshot_at": "2026-11-15T04:55:00Z",
+    "impacted_ids": [
+      "CVE-2021-23337"
+    ],
+    "change_kinds": [
+      "kev_added"
+    ]
+  }
 }

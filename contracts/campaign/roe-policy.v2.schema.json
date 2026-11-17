@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/campaign/roe-policy.v2.schema.json",
+  "title": "Campaign execution settings v2",
+  "description": "Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency, thời gian và danh sách mục tiêu bị loại. Không dùng phân loại thao tác.",
+  "type": "object",
+  "required": [
+    "max_parallel_jobs",
+    "max_duration_hours"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "target_denylist": {
+      "description": "Danh sách mục tiêu bị loại bổ sung. Sandbox luôn cách ly hạ tầng điều khiển/dữ liệu; kiểm tra cấu hình này áp dụng cho mọi job.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "maxItems": 10000
+    },
+    "max_parallel_jobs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "max_duration_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168
+    },
+    "rate_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests_per_second_per_host": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        },
+        "packets_per_second": {
+          "description": "Trần cho quét cổng (Naabu, Nmap).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "jobs_per_minute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        }
+      }
+    },
+    "allowed_windows": {
+      "description": "Tùy chọn. Rỗng hoặc vắng = được quét mọi lúc.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TimeWindow"
+      },
+      "maxItems": 50
+    },
+    "blackout_windows": {
+      "description": "Nếu có thì mọi job bị chặn trong khung giờ này với WAIT_WINDOW; kiểm cùng allowed_windows trước dispatch.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TimeWindow"
+      },
+      "maxItems": 50
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_llm_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_llm_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_jobs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_agent_sessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "idle_cycles_before_pause": {
+          "description": "Số chu kỳ liên tiếp không có bằng chứng mới hữu ích trước khi tạm dừng kèm lý do.",
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 5,
+          "default": 3
+        }
+      }
+    },
+    "capability_denylist": {
+      "description": "Tùy chọn: capability không được dùng trong chiến dịch này.",
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "TimeWindow": {
+      "type": "object",
+      "required": [
+        "days",
+        "start",
+        "end",
+        "timezone"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "start": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$"
+        },
+        "timezone": {
+          "description": "Tên IANA, vd Asia/Ho_Chi_Minh.",
+          "type": "string",
+          "minLength": 1,
+          "format": "aegis-iana-timezone",
+          "maxLength": 255
+        }
+      },
+      "description": "Khoảng nửa mở [start,end) theo giờ địa phương; days là ngày bắt đầu. End < start kéo sang ngày kế; start=end là khoảng rỗng. 24:00 chỉ hợp lệ ở end, chỉ cuối ngày bắt đầu. So thời gian thực sau khi đổi sang timezone; giờ DST lặp khớp cả hai lần, giờ bị bỏ không tạo thời điểm."
+    }
+  }
+}

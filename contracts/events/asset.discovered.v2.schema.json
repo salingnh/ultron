@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/asset.discovered.v2.schema.json",
+  "title": "Payload asset.discovered.v2",
+  "description": "Bên phát: M27. Khóa khử trùng của consumer: asset_id+revision.",
+  "type": "object",
+  "required": [
+    "asset_id",
+    "canonical_key",
+    "kind",
+    "revision",
+    "causal_job_id",
+    "campaign_id",
+    "discovered_from",
+    "first_seen"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "canonical_key": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+    },
+    "kind": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/AssetKind"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "causal_job_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "discovered_from": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+      }
+    },
+    "first_seen": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    }
+  }
+}

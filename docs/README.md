@@ -1,32 +1,18 @@
-# Tài liệu dự án AEGIS–Vanguard
+# Tài liệu AEGIS–Vanguard
 
-Hệ thống rà quét lỗ hổng nội bộ do AI agent điều phối. Thư mục này gom toàn bộ tài liệu dự án tính đến ngày 14/11/2026.
+Repo giữ một bộ tài liệu. Mỗi nội dung có một nguồn chính; các file chỉ mục dẫn tới nguồn đó. Sửa nguồn trực tiếp, không tạo bộ tài liệu theo version/ngày hoặc bản lưu song song. Các tài liệu nguồn cũ đã được đối chiếu, chuyển phần phù hợp và xóa.
 
-## Đọc gì trước
-
-Bộ tài liệu hiện hành nằm trong [`living/`](living/). Đây là bản xuất Markdown từ các tài liệu sống trên Claude Docs, đã được viết lại thống nhất theo các quyết định ngày 12 và 13/11/2026. Khi có mâu thuẫn với tài liệu trong `source/`, bản trong `living/` được ưu tiên.
-
-| Tài liệu | Nội dung |
+| Nội dung | Nguồn chính |
 | --- | --- |
-| [00 Tổng quan hệ thống hợp nhất](living/00-tong-quan-he-thong-hop-nhat.md) | Tóm tắt, quyết định chốt, phạm vi, kiến trúc, an toàn, lộ trình, KPI. Thay thế tài liệu 00 cũ |
-| [01 Đặc tả kỹ thuật](living/dac-ta-ky-thuat/README.md) | 28 module, nền tảng, dữ liệu, API và sự kiện (5 phần) |
-| [02 Kế hoạch triển khai](living/02-ke-hoach-trien-khai.md) | Giai đoạn GĐ0 đến GĐ4, cổng nghiệm thu, đầu ra từng module |
-| [03 Đánh giá OSS](living/03-danh-gia-oss.md) | Bọc nguyên hay tự dựng: Flowsint, LiteLLM, REA, Amass và các bộ công cụ |
-| [04 Bản đồ module](living/04-ban-do-module.html) | Sơ đồ module theo tầng kiến trúc (trang HTML, mở bằng trình duyệt) |
+| Điểm vào cho agent và rule | [AGENTS](../AGENTS.md); RULES chỉ là chỉ mục, CLAUDE chỉ nạp AGENTS |
+| Sản phẩm, thành phần và luồng | [Tổng quan](living/00-tong-quan-he-thong-hop-nhat.md); PRD/ARCHITECTURE dẫn tới đây |
+| Đặc tả kỹ thuật | [Chỉ mục đặc tả](living/dac-ta-ky-thuat/README.md) |
+| Giai đoạn/cổng nghiệm thu | [Kế hoạch](living/02-ke-hoach-trien-khai.md) |
+| Công nghệ/tool | [Chỉ mục công nghệ](living/03-danh-gia-oss.md) |
+| Sơ đồ thành phần | [HTML](living/04-ban-do-module.html), minh họa tổng quan |
+| Quyết định kiến trúc | [Quyết định/S1](s1/00-thanh-phan-va-quyet-dinh.md) |
+| Schema/API/interface/DDL | [Contract](../contracts/README.md) |
+| Yêu cầu giao diện | [DESIGN](../DESIGN.md) |
+| Việc cần làm / trạng thái đã kiểm | [TASKS](../TASKS.md) / [PROGRESS](../PROGRESS.md) |
 
-Lưu ý: ba sơ đồ nhúng (kiến trúc tổng thể và lộ trình) trong tài liệu 00 và 02 không xuất được sang Markdown, chỗ đó chỉ còn dòng ghi chú `[embedded content: …]`. Bản gốc có sơ đồ vẫn nằm trên Claude Docs.
-
-## Tài liệu nguồn
-
-[`source/`](source/) giữ nguyên các file gốc đã tải lên dự án, kèm bản chuyển sang Markdown trong [`source/markdown/`](source/markdown/) để đọc và so sánh trên GitHub.
-
-| File gốc | Ghi chú |
-| --- | --- |
-| `00_Tong_quan_du_an_AEGIS_Vanguard.docx` | Tổng quan dự án, đã được thay bằng `living/00` |
-| `01_Thiet_ke_kien_truc_HLD.docx` | Thiết kế kiến trúc HLD |
-| `02_Dac_ta_chuc_nang_va_modules_OSS.docx` | Đặc tả chức năng và module OSS |
-| `03_Mo_hinh_du_lieu_KnowledgeGraph_API.docx` | Mô hình dữ liệu, Knowledge Graph, API |
-| `04_Trien_khai_An_toan_Kiem_thu_Roadmap.docx` | Triển khai, an toàn, kiểm thử, roadmap |
-| `Đặc Tả Hệ Thống Rà Quét Lỗ Hổng AI.docx` | Đặc tả gốc "Offensive Vaccine" (tham khảo) |
-| `dac-ta-ky-thuat-aegis-vanguard-v2.6.html` | Bản HTML SPEC v2.6 (tham khảo) |
-| `deep-research-report.md` | Báo cáo deep-research (UDEP), tham khảo |
+Các khoảng trống contract được mô tả ngay tại nguồn liên quan và theo dõi ở TASKS; không tạo bộ review/đề xuất riêng làm yêu cầu thứ hai. Schema/API có version kỹ thuật để ghép nối; không chia tài liệu thành các bộ tương ứng. Chưa có dịch vụ sản phẩm chạy trọn vòng; xem PROGRESS để biết bằng chứng hiện có.

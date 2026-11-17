@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/agent/context-bundle.v2.schema.json",
+  "title": "ContextBundle v2",
+  "description": "Đầu vào một phiên agent (M02 → M03). Chỉ chứa tóm tắt có URI và độ tin cậy, không log thô. Nội dung lấy từ mục tiêu nằm trong trường untrusted và được bọc <UNTRUSTED_TOOL_OUTPUT> khi dựng prompt.",
+  "type": "object",
+  "required": [
+    "campaign_id",
+    "session_id",
+    "objective",
+    "policy_version",
+    "graph_revision",
+    "observations",
+    "capabilities",
+    "budget"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "session_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "objective": {
+      "type": "object",
+      "required": [
+        "objective_id",
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "objective_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      }
+    },
+    "policy_version": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/PolicyVersion"
+    },
+    "policy_summary": {
+      "description": "Ngân sách, concurrency, khung giờ và giới hạn thực thi còn lại.",
+      "type": "object"
+    },
+    "graph_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "previous_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observations": {
+      "description": "10 đến 30 quan sát mới đáng chú ý nhất (đặc tả M03).",
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": [
+          "ref",
+          "summary",
+          "confidence"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "description": "observation_id, finding_id hoặc canonical_key.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Tóm tắt do mã sinh từ dữ liệu có kiểu.",
+            "type": "string",
+            "maxLength": 1000
+          },
+          "untrusted": {
+            "description": "Chuỗi lấy nguyên từ mục tiêu (title, banner...). Luôn bọc khi đưa vào prompt.",
+            "type": "string",
+            "maxLength": 2000
+          },
+          "confidence": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/Confidence"
+          },
+          "evidence_uri": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "open_hypotheses": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "hypothesis-update.v2.schema.json#/$defs/HypothesisView"
+      }
+    },
+    "ledger": {
+      "description": "Campaign ledger: mục tiêu đã xong, blocker, job đang chạy.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "completed_objectives": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pending_job_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+          }
+        },
+        "idle_cycles": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "capabilities": {
+      "description": "Tóm tắt capability agent được thấy (không tên công cụ thô).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "capability",
+          "accepts"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
+          },
+          "accepts": {
+            "type": "array",
+            "items": {
+              "$ref": "../common/ids.v2.schema.json#/$defs/AssetKind"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "max_steps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "max_tool_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50
+        },
+        "llm_cost_usd_remaining": {
+          "type": "number"
+        },
+        "llm_tokens_remaining": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

@@ -1,34 +1,31 @@
-# Hợp đồng MCP giữa agent (M03) và MCP server (M05 + M06 + M23)
+# MCP contract
 
-Một MCP server duy nhất, transport Streamable HTTP trong mạng điều khiển. Agent là MCP client duy nhất; Web UI không dùng MCP.
+Agent là MCP client; registry công bố tool/capability qua tools/list. CLI được bọc bằng adapter, chạy trong sandbox. Query tool đọc tri thức/bằng chứng, có pagination/timeout và lọc campaign. MCP không thay workflow scheduler.
 
-## tools/list
+Giữ transport Streamable HTTP trong mạng điều khiển, một MCP server cho agent. Web UI dùng REST/SSE của M26. Mỗi tools/call đặt metadata trong params._meta theo bảng dưới; server đối chiếu ngữ cảnh session, không dùng ID do LLM khai làm quyền truy cập.
 
-Server chỉ trả hai nhóm công cụ, lọc theo chiến dịch (capability_denylist, tầng tác động tối đa của RoE):
+| Khóa params._meta | Ý nghĩa |
+| --- | --- |
+| aegis.io/trace_id | W3C trace ID, 32 ký tự hex |
+| aegis.io/campaign_id, aegis.io/session_id | UUIDv7, khớp ngữ cảnh session phía server |
+| aegis.io/idempotency_key | Mã client tạo ổn định theo session_id:step:n, lưu cùng checkpoint; retry dùng lại key và scan_cycle |
 
-| Nhóm | Tên công cụ | inputSchema | outputSchema (structuredContent) |
-| --- | --- | --- | --- |
-| Capability | đúng capability id, vd `dns.enumerate_subdomains` | `capability-request.v1` với `input` thay bằng schema của capability | `capability-response.v1` |
-| Truy vấn đồ thị | `graph.get_asset_neighbors`, `graph.get_recent_observations`, `graph.get_unverified_hypotheses`, `graph.get_package_cve_matches`, `graph.summarize_campaign_delta`, `graph.get_evidence_excerpt` | `graph-queries.v1#/$defs/<name>/properties/input` | `.../output` |
+Thiếu/sai metadata bắt buộc trả JSON-RPC -32602 với INPUT_INVALID. Spike G0 xác minh SDK và cách đọc _meta, không tự đổi wire key khi triển khai.
 
-Không có công cụ nào nhận tên binary, dòng lệnh, Cypher hay SQL. Không có `resources` hay `prompts` ở MVP.
+tools/list giữ hai nhóm: capability lấy tên capability ID, inputSchema là capability-request.v2 với thuộc tính input thay bằng schema capability đã resolve, outputSchema là capability-response.v2 trong structuredContent; query graph.* lấy input/output từ graph-queries.v2. Không công bố schema CLI thô thay cho wrapper có rationale/priority/depends_on. Danh sách lọc theo capability_denylist, compatibility và ngữ cảnh campaign; không nạp cả registry vào prompt.
 
-## params._meta bắt buộc trên mọi tools/call
+## tools/call
 
-| Khóa | Giá trị | Dùng để |
-| --- | --- | --- |
-| `aegis.io/trace_id` | W3C trace-id 32 hex | Nối trace agent → M05 → M06 → container → M27 |
-| `aegis.io/campaign_id`, `aegis.io/session_id` | UUIDv7 | Lọc theo chiến dịch, ghi audit |
-| `aegis.io/idempotency_key` | `<session_id>:<step>:<n>` | Activity retry không sinh job mới. M05 lưu khóa và ánh xạ sang `scan_cycle` (cùng khóa → cùng `scan_cycle`); M06 còn chặn thêm bằng `job_fingerprint` |
+Tên tool = capability ID; arguments theo capability-request.v2: input, rationale, objective_id, priority (mặc định 50), depends_on (mặc định []). Provider selection từ registry hoặc lựa chọn rõ khi API cho phép. Metadata chứa trace_id, campaign_id, session_id và idempotency_key; server kiểm các ID khớp session, không coi chúng là quyền do agent tự cấp.
 
-Thiếu `_meta` thì server trả lỗi JSON-RPC `-32602` kèm `INPUT_INVALID`.
+1. Kiểm session, schema và tool/provider đã đăng ký.
+2. Ghép inputDefaults, kiểm lại inputSchemaRef, mục tiêu được phép, nguồn gốc và giới hạn thực thi.
+3. Kiểm dependency tồn tại/cùng campaign, không self/cycle. Job tạo kèm toàn bộ dependency trong một giao dịch; không thêm cạnh sau dispatch.
+4. Ghim adapter_version/manifest_sha256 theo [quy tắc runtime](../interfaces/README.md#manifest-bất-biến-và-cấu-hình-thực-thi), ghi actor/rationale, tạo ApprovedTask có chữ ký và job_id. Trả ngay, không chờ tool kết thúc.
+5. Scheduler chỉ dispatch job có tiền nhiệm SUCCEEDED, đủ ngân sách/rate/concurrency/khung giờ; sort priority DESC, created_at ASC, job_id ASC.
 
-## Luồng một lời gọi capability
+Retry cùng idempotency_key giữ scan_cycle và job. Lần quét mới có scan_cycle mới. Fingerprint gồm campaign, cấu hình, provider/upstream/adapter version, image, manifest_sha256, targets/input và scan_cycle. Priority/dependency không thay định danh phép quét; nếu trùng job nhưng yêu cầu scheduling khác, trả lỗi xung đột thay vì âm thầm dùng cấu hình cũ. Metadata/history không ghi đè.
 
-1. M05 kiểm `input` theo schema capability (fail-closed `INPUT_INVALID`).
-2. Chuẩn hóa mục tiêu (IDNA, dạng IP thay thế), kiểm tầng tác động, tốc độ, khung giờ nếu có, `approval_required_tiers` nếu có. **Với job T3 (D15/D16):** đối chiếu `target_denylist` của RoE và denylist tự bảo vệ cố định trong mã (hạ tầng nền tảng, loopback, `169.254.0.0/16`) — trúng denylist thì từ chối `POLICY_DENIED`; chế độ `t3_approval_mode=operator` cần duyệt tay, `auto` mà denylist rỗng thì fail-closed; ghi người kích hoạt/duyệt vào audit (D19).
-3. Ghi `policy_decision` (mục tiêu, lý do `rationale`, `policy_version`) vào audit; từ chối thì phát `policy.denied.v1` và trả `decision=denied`.
-4. Chọn provider (sức khỏe, tương thích, xếp hạng) → gọi M06 `submit(ApprovedTask)`; M06 tính `job_fingerprint = sha256(campaign, policy_version, provider, targets, input, profile, scan_cycle)`, trùng thì trả job cũ với `decision=duplicate`. Lần quét mới (scan_cycle mới) không trùng job cũ dù input giống hệt (D21).
-5. Trả ngay `job_id`. Agent không chờ; kết quả về sau qua `knowledge.delta.v1` ở chu kỳ kế.
+## Kết quả
 
-Điểm còn chờ spike T0.5: SDK MCP Python cụ thể, cách đọc `_meta` ở phía server, và đo P95 của bước 1 đến 4.
+capability-response.v2 trả job_id hoặc lỗi có next_action. ResultEnvelope.v2 do collector nộp M27; agent đọc kết quả qua query tools. Output luôn là dữ liệu không tin cậy. AgentSessionResult chỉ trả requested_jobs đã gửi qua MCP; M02 chờ các ID đó, không nhận danh sách proposals để dispatch lại. Runtime implementation và semantics late-result/idempotency hash vẫn có backlog riêng; schema tồn tại không chứng minh dispatch đã chạy.

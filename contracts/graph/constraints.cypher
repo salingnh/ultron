@@ -1,4 +1,4 @@
-// AEGIS–Vanguard: ràng buộc và chỉ mục Neo4j v1 (Neo4j 5.x). Chạy idempotent khi projector khởi động.
+// AEGIS–Vanguard: ràng buộc và chỉ mục Neo4j v2 (Neo4j 5.x). Chạy idempotent khi projector khởi động.
 CREATE CONSTRAINT asset_key IF NOT EXISTS FOR (a:Asset) REQUIRE a.canonical_key IS UNIQUE;
 CREATE CONSTRAINT asset_id IF NOT EXISTS FOR (a:Asset) REQUIRE a.asset_id IS UNIQUE;
 CREATE CONSTRAINT vuln_id IF NOT EXISTS FOR (v:Vulnerability) REQUIRE v.vulnerability_id IS UNIQUE;

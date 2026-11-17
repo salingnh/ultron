@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capability/provider-manifest.v2.schema.json",
+  "title": "CapabilityProvider manifest v2",
+  "description": "File adapters/<module>/<tool>/manifest.yaml. M05 Registry đọc thư mục adapters/ khi khởi động. Thêm công cụ = thêm manifest + parser, không sửa mã lõi.",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "aegis.io/v2"
+    },
+    "kind": {
+      "const": "CapabilityProvider"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "module",
+        "license"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Tên provider duy nhất, vd subfinder.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+        },
+        "version": {
+          "description": "Phiên bản adapter.",
+          "$ref": "../common/ids.v2.schema.json#/$defs/SemVer"
+        },
+        "module": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/ModuleCode"
+        },
+        "license": {
+          "description": "SPDX của công cụ upstream.",
+          "type": "string",
+          "minLength": 1
+        },
+        "licenseNotes": {
+          "type": "string"
+        },
+        "upstream": {
+          "type": "string",
+          "format": "uri"
+        },
+        "owners": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "capability",
+        "providerVersion",
+        "runtime",
+        "inputSchemaRef",
+        "outputSchemaRef",
+        "permissions",
+        "budget",
+        "handlers",
+        "parser",
+        "compatibilityTests"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
+        },
+        "providerVersion": {
+          "description": "Phiên bản upstream đã pin (theo docs/pinning.md).",
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime": {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "Một tool invocation chạy trong container sandbox.",
+              "type": "string",
+              "enum": [
+                "container"
+              ]
+            },
+            "image": {
+              "description": "Tên image trong registry nội bộ, chỉ để hiển thị; định danh là imageDigest.",
+              "type": "string"
+            },
+            "imageDigest": {
+              "$ref": "../common/ids.v2.schema.json#/$defs/ImageDigest"
+            },
+            "argsTemplate": {
+              "description": "Mảng tham số cố định; chỉ được chèn trường đã khai báo trong input schema bằng ${input.<field>}. Không có shell.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "outputPath": {
+              "description": "Thư mục kết quả trong container.",
+              "type": "string",
+              "default": "/out"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "container"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "imageDigest",
+                  "argsTemplate"
+                ]
+              }
+            }
+          ]
+        },
+        "inputSchemaRef": {
+          "description": "schema://<nhóm>/<tên>/v<n> ánh xạ tới contracts/capabilities/<nhóm>/<tên>.v<n>.schema.json.",
+          "type": "string",
+          "pattern": "^schema://[a-z0-9-]+/[a-z0-9-]+/v[0-9]+$"
+        },
+        "outputSchemaRef": {
+          "const": "schema://common/result-envelope/v2"
+        },
+        "acceptsTargetKinds": {
+          "type": "array",
+          "items": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/AssetKind"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "permissions": {
+          "type": "object",
+          "required": [
+            "networkAccess"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "scopeRequired": {
+              "const": false
+            },
+            "networkAccess": {
+              "type": "string",
+              "enum": [
+                "none",
+                "egress"
+              ]
+            },
+            "rawSocket": {
+              "description": "Chỉ Naabu/Nmap nếu spike 2 yêu cầu.",
+              "type": "boolean",
+              "default": false
+            },
+            "credentials": {
+              "description": "Tên credential gray-box chỉ đọc được cấp ngắn hạn (GĐ3). Không bao giờ là secret tìm được.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "required": [
+            "timeoutSeconds",
+            "maxConcurrency",
+            "cpu",
+            "memoryMb"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 86400
+            },
+            "maxConcurrency": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "cpu": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 16
+            },
+            "memoryMb": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 65536
+            },
+            "maxOutputMb": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10240,
+              "default": 256,
+              "description": "MiB (1 MiB = 1048576 byte); M06 luôn truyền trần này vào ContainerSpec, mặc định 256 MiB."
+            }
+          }
+        },
+        "handlers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "describe",
+              "validate",
+              "start",
+              "status",
+              "cancel",
+              "collect",
+              "health"
+            ]
+          },
+          "uniqueItems": true,
+          "minItems": 7,
+          "maxItems": 7
+        },
+        "parser": {
+          "type": "object",
+          "required": [
+            "entrypoint",
+            "outputFormat"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "entrypoint": {
+              "description": "Đường dẫn module parser trong repo, vd adapters.m08.subfinder.parser:parse. Chỉ cho import dưới gói adapters.*.",
+              "type": "string",
+              "pattern": "^adapters\\.[a-z0-9_]+(\\.[a-z0-9_]+)+:[a-z_][a-z0-9_]*$"
+            },
+            "outputFormat": {
+              "type": "string",
+              "enum": [
+                "jsonl",
+                "json",
+                "sarif",
+                "cyclonedx",
+                "spdx",
+                "xml",
+                "text"
+              ]
+            }
+          }
+        },
+        "emits": {
+          "description": "Loại dữ liệu adapter có thể sinh, để Registry kiểm conformance.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "assetKinds": {
+              "type": "array",
+              "items": {
+                "$ref": "../common/ids.v2.schema.json#/$defs/AssetKind"
+              }
+            },
+            "predicates": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "relationships": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "findings": {
+              "type": "boolean"
+            }
+          }
+        },
+        "compatibilityTests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "schema",
+              "policy",
+              "cancellation",
+              "idempotency",
+              "fixture-replay",
+              "network-isolation"
+            ]
+          },
+          "uniqueItems": true,
+          "contains": {
+            "const": "fixture-replay"
+          }
+        },
+        "inputDefaults": {
+          "type": "object",
+          "description": "Giá trị mặc định cho input. Sau khi ghép phải kiểm bằng inputSchemaRef; không nhận tham số ngoài schema."
+        }
+      }
+    }
+  }
+}

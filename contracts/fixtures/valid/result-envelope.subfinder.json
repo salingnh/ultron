@@ -1,32 +1,117 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "event_id": "01934f6a-0000-7000-8000-00000000e001",
   "dedup_key": "job:01934f6a-0000-7000-8000-00000000d001:envelope",
   "job_id": "01934f6a-0000-7000-8000-00000000d001",
   "campaign_id": "01934f6a-0000-7000-8000-000000000001",
   "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
   "capability": "dns.enumerate_subdomains",
-  "provider": {"name": "subfinder", "version": "v2.6.6", "adapter_version": "1.0.0", "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"},
+  "provider": {
+    "name": "subfinder",
+    "version": "v2.6.6",
+    "adapter_version": "1.0.0",
+    "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
   "policy_version": "roe-12",
   "status": "succeeded",
-  "coverage": {"subjects": ["dns:internal.example"], "complete": true},
+  "coverage": {
+    "subjects": [
+      "dns:internal.example"
+    ],
+    "complete": true
+  },
   "results": {
     "assets": [
-      {"kind": "domain", "canonical_key": "dns:vpn.internal.example", "discovered_from": ["dns:internal.example"], "confidence": 0.8, "evidence_refs": [{"local_ref": "raw"}]},
-      {"kind": "domain", "canonical_key": "dns:xn--bcher-kva.internal.example", "aliases": [{"namespace": "original", "value": "bücher.internal.example"}], "discovered_from": ["dns:internal.example"], "confidence": 0.7, "evidence_refs": [{"local_ref": "raw"}]}
+      {
+        "kind": "domain",
+        "canonical_key": "dns:vpn.internal.example",
+        "discovered_from": [
+          "dns:internal.example"
+        ],
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "kind": "domain",
+        "canonical_key": "dns:xn--bcher-kva.internal.example",
+        "aliases": [
+          {
+            "namespace": "original",
+            "value": "bücher.internal.example"
+          }
+        ],
+        "discovered_from": [
+          "dns:internal.example"
+        ],
+        "confidence": 0.7,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
     ],
     "observations": [
-      {"subject": "dns:vpn.internal.example", "predicate": "asset.seen", "value": true, "observed_at": "2026-11-15T03:00:00Z", "confidence": 0.8, "evidence_refs": [{"local_ref": "raw"}]}
+      {
+        "subject": "dns:vpn.internal.example",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-15T03:00:00Z",
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
     ],
     "relationships": [
-      {"type": "SUBDOMAIN_OF", "from": "dns:vpn.internal.example", "to": "dns:internal.example", "observed_at": "2026-11-15T03:00:00Z", "confidence": 1.0, "evidence_refs": [{"local_ref": "raw"}]}
+      {
+        "type": "SUBDOMAIN_OF",
+        "from": "dns:vpn.internal.example",
+        "to": "dns:internal.example",
+        "observed_at": "2026-11-15T03:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
     ],
     "findings": []
   },
   "evidence": [
-    {"local_ref": "raw", "sha256": "2222222222222222222222222222222222222222222222222222222222222222", "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d001/2222222222222222222222222222222222222222222222222222222222222222", "size_bytes": 1834, "media_type": "application/x-ndjson", "classification": "INTERNAL", "kind": "raw_output"}
+    {
+      "local_ref": "raw",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d001/2222222222222222222222222222222222222222222222222222222222222222",
+      "size_bytes": 1834,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
   ],
   "errors": [],
-  "provenance": {"input_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333", "started_at": "2026-11-15T02:59:10Z", "finished_at": "2026-11-15T03:00:00Z", "seed_targets": ["dns:internal.example"], "exit_code": 0},
-  "trace": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "campaign_id": "01934f6a-0000-7000-8000-000000000001", "job_id": "01934f6a-0000-7000-8000-00000000d001", "capability_id": "dns.enumerate_subdomains", "provider_version": "v2.6.6", "policy_version": "roe-12"}
+  "provenance": {
+    "input_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+    "started_at": "2026-11-15T02:59:10Z",
+    "finished_at": "2026-11-15T03:00:00Z",
+    "seed_targets": [
+      "dns:internal.example"
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-00000000d001",
+    "capability_id": "dns.enumerate_subdomains",
+    "provider_version": "v2.6.6",
+    "policy_version": "roe-12"
+  }
 }

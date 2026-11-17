@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capability/job.v2.schema.json",
+  "title": "ScanJob v2 (đọc)",
+  "description": "Response của GET /api/v2/jobs/{id} và POST /api/v2/jobs.",
+  "type": "object",
+  "required": [
+    "job_id",
+    "campaign_id",
+    "capability",
+    "provider",
+    "status",
+    "job_fingerprint",
+    "policy_version",
+    "scope_id",
+    "created_at",
+    "priority",
+    "depends_on",
+    "adapter_version",
+    "manifest_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "capability": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "provider_version": {
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/JobStatus"
+    },
+    "job_fingerprint": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+    },
+    "scan_cycle": {
+      "description": "Định danh lần quét, thành phần của job_fingerprint.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "policy_version": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/PolicyVersion"
+    },
+    "scope_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+      }
+    },
+    "requested_by": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "created_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "started_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "finished_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "envelope_event_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+      }
+    },
+    "error": {
+      "$ref": "../common/error.v2.schema.json"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 50,
+      "description": "Số lớn chạy trước trong tập job đã đủ dependency; không thay thế kiểm tra điều kiện thực thi."
+    },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+      },
+      "uniqueItems": true,
+      "maxItems": 100,
+      "default": [],
+      "description": "Job tiền nhiệm trong cùng campaign, phải SUCCEEDED trước dispatch. M05 từ chối self-reference và chu trình."
+    },
+    "adapter_version": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/SemVer"
+    },
+    "manifest_sha256": {
+      "description": "Pin manifest của job mới; null chỉ cho job lịch sử chưa chuyển đổi, không được dispatch/replay.",
+      "anyOf": [
+        {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "JobStatus": {
+      "type": "string",
+      "enum": [
+        "QUEUED",
+        "VALIDATING",
+        "DISPATCHED",
+        "RUNNING",
+        "COLLECTING",
+        "SUCCEEDED",
+        "FAILED",
+        "CANCELLED"
+      ]
+    }
+  }
+}

@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/event-envelope.v2.schema.json",
+  "title": "Phong bì sự kiện v2",
+  "description": "Mọi sự kiện ghi vào bảng outbox_event trong cùng giao dịch với thay đổi dữ liệu, rồi dispatcher giao at-least-once. Consumer khử trùng theo dedup_key (bảng consumer_inbox).",
+  "type": "object",
+  "required": [
+    "event_id",
+    "type",
+    "occurred_at",
+    "producer",
+    "dedup_key",
+    "trace",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "job.started.v2",
+        "job.completed.v2",
+        "policy.denied.v2",
+        "asset.discovered.v2",
+        "observation.changed.v2",
+        "artifact.ready.v2",
+        "knowledge.delta.v2",
+        "intel.revision.v2",
+        "finding.changed.v2"
+      ]
+    },
+    "occurred_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "producer": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/ModuleCode"
+    },
+    "dedup_key": {
+      "description": "Theo bảng sự kiện tab Dữ liệu mục 5, nối bằng ':' (vd '<finding_id>:3').",
+      "type": "string",
+      "maxLength": 512
+    },
+    "trace": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/TraceContext"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "job.started.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "job.started.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "job.completed.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "job.completed.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "policy.denied.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "policy.denied.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "asset.discovered.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "asset.discovered.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "observation.changed.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "observation.changed.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "artifact.ready.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "artifact.ready.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "knowledge.delta.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "knowledge.delta.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "intel.revision.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "intel.revision.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "finding.changed.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "finding.changed.v2.schema.json"
+          }
+        }
+      }
+    }
+  ]
+}

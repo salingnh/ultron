@@ -1,11 +1,7 @@
-# Schema đầu vào của capability
+# Input schema của tool
 
-Mỗi capability có một schema đầu vào, đặt theo quy ước `schema://<nhóm>/<tên>/v<n>` ↔ `contracts/capabilities/<nhóm>/<tên>.v<n>.schema.json`. Đầu ra luôn là `ResultEnvelope v1`.
+Mỗi capability có một schema `schema://<nhóm>/<tên>/v2` ánh xạ tới file trong thư mục này; output là ResultEnvelope v2. M05 ghép inputDefaults từ manifest, validate input, kiểm mục tiêu và giới hạn trước dispatch. Không nhận args/command tự do.
 
-Quy tắc chung:
+Bộ mẫu: dns/enumerate-subdomains, dns/resolve, network/discover-services. Tool mới phải thêm schema/parser/fixture trước khi đăng ký; không coi danh mục OSS là adapter đã triển khai. Priority/dependency nằm ở request chung, không trộn vào tham số CLI.
 
-- Tham số có cấu trúc, `additionalProperties: false`. Không có trường "args" hay "command" tự do.
-- `targets` là danh sách khóa định danh chuẩn hoặc giá trị thô (domain, IP, CIDR, URL) mà M05 chuẩn hóa trước khi kiểm.
-- Trường tốc độ và độ sâu bị kẹp bởi RoE và safety profile của manifest; giá trị agent đưa vượt trần thì M05 trả `POLICY_DENIED`, không tự hạ.
-
-Đã có (mẫu cho S1): `dns/enumerate-subdomains`, `dns/resolve`, `network/discover-services`. Các capability còn lại trong tab Module kết nối OSS mục 2 thêm khi viết adapter tương ứng.
+Giữ quy tắc trần tham số: rate/depth/concurrency trong input không được vượt cấu hình campaign/manifest đã pin. Vượt trần trả POLICY_DENIED, không tự hạ giá trị rồi chạy một yêu cầu khác. InputDefaults chỉ bù trường chưa có và phải validate lại toàn bộ input cuối trước dispatch.

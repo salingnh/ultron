@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/common/error.v2.schema.json",
+  "title": "Lỗi chuẩn v2",
+  "description": "Lỗi chung cho REST, ResultEnvelope, MCP và job completion. Mã/next_action lấy từ schema này, không khai báo danh sách thứ hai trong tài liệu. Không chuyển FAILED thành SUCCEEDED.",
+  "type": "object",
+  "required": [
+    "code",
+    "message",
+    "next_action"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "$ref": "#/$defs/ErrorCode"
+    },
+    "message": {
+      "description": "Mô tả dễ đọc cho người vận hành.",
+      "type": "string",
+      "maxLength": 2000
+    },
+    "technical_cause": {
+      "description": "Nguyên nhân kỹ thuật (exit code, stderr rút gọn...). Là dữ liệu không tin cậy, không đưa vào prompt như chỉ dẫn.",
+      "type": "string",
+      "maxLength": 8000
+    },
+    "next_action": {
+      "$ref": "#/$defs/NextAction"
+    },
+    "next_action_detail": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "retry_after_seconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "field": {
+      "description": "JSON Pointer tới trường sai khi code=INPUT_INVALID.",
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    }
+  },
+  "$defs": {
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "INPUT_INVALID",
+        "OUT_OF_SCOPE",
+        "POLICY_DENIED",
+        "RATE_LIMITED",
+        "TOOL_UNAVAILABLE",
+        "DEPENDENCY_MISSING",
+        "NETWORK_TIMEOUT",
+        "EXECUTION_TIMEOUT",
+        "RESOURCE_LIMIT",
+        "OUTPUT_INVALID",
+        "EVIDENCE_INCOMPLETE",
+        "CANCELLED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "NextAction": {
+      "description": "Bước tiếp theo máy đọc được; UI hiển thị kèm next_action_detail.",
+      "type": "string",
+      "enum": [
+        "RETRY",
+        "RETRY_LATER",
+        "FIX_INPUT",
+        "WAIT_WINDOW",
+        "CHECK_PROVIDER",
+        "REVIEW_QUARANTINE",
+        "ESCALATE",
+        "NONE"
+      ]
+    }
+  }
+}
