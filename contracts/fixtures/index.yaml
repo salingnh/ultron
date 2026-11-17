@@ -1,16 +1,17 @@
-# Ánh xạ fixture → schema. valid/* phải đạt, invalid/* phải bị từ chối.
 valid:
-  valid/campaign-create.json: campaign/campaign-create.v1.schema.json
-  valid/result-envelope.subfinder.json: ingestion/result-envelope.v1.schema.json
-  valid/result-envelope.trivy-secret.json: ingestion/result-envelope.v1.schema.json
-  valid/event.finding-changed.json: events/event-envelope.v1.schema.json
-  valid/event.intel-revision.json: events/event-envelope.v1.schema.json
-  valid/manifest.subfinder.yaml: capability/provider-manifest.v1.schema.json
-  valid/severity-assessment.json: finding/severity-assessment.v1.schema.json
+  valid/campaign-create.json: campaign/campaign-create.v2.schema.json
+  valid/result-envelope.subfinder.json: ingestion/result-envelope.v2.schema.json
+  valid/result-envelope.trivy-secret.json: ingestion/result-envelope.v2.schema.json
+  valid/event.finding-changed.json: events/event-envelope.v2.schema.json
+  valid/event.intel-revision.json: events/event-envelope.v2.schema.json
+  valid/manifest.subfinder.yaml: capability/provider-manifest.v2.schema.json
+  valid/severity-assessment.json: finding/severity-assessment.v2.schema.json
+  valid/approved-task.subfinder.json: capability/approved-task.v2.schema.json
+  valid/ingest-receipt.json: ingestion/ingest-receipt.v2.schema.json
 invalid:
-  invalid/result-envelope.bad-key.json: ingestion/result-envelope.v1.schema.json   # khóa viết hoa + dấu chấm cuối, thiếu scope_id
-  invalid/campaign-create.no-targets.json: campaign/campaign-create.v1.schema.json
-  invalid/campaign-create.too-long.json: campaign/campaign-create.v1.schema.json
-  invalid/manifest.tag-not-digest.yaml: capability/provider-manifest.v1.schema.json
-  invalid/event.payload-mismatch.json: events/event-envelope.v1.schema.json
-  invalid/finding-secret-without-value.json: ingestion/result-envelope.v1.schema.json#/$defs/FindingCandidate
+  invalid/result-envelope.bad-key.json: ingestion/result-envelope.v2.schema.json
+  invalid/campaign-create.no-targets.json: campaign/campaign-create.v2.schema.json
+  invalid/campaign-create.too-long.json: campaign/campaign-create.v2.schema.json
+  invalid/manifest.tag-not-digest.yaml: capability/provider-manifest.v2.schema.json
+  invalid/event.payload-mismatch.json: events/event-envelope.v2.schema.json
+  invalid/finding-secret-without-value.json: ingestion/result-envelope.v2.schema.json#/$defs/FindingCandidate

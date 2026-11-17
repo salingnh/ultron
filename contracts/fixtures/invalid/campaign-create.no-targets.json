@@ -1,1 +1,15 @@
-{"name": "x", "objective": "y", "targets": {"domains": []}, "policy": {"scan_profile": "low-impact", "max_parallel_jobs": 10, "max_duration_hours": 168}, "actor": {"kind": "operator", "id": "a"}}
+{
+  "name": "x",
+  "objective": "y",
+  "targets": {
+    "domains": []
+  },
+  "policy": {
+    "max_parallel_jobs": 10,
+    "max_duration_hours": 168
+  },
+  "actor": {
+    "kind": "operator",
+    "id": "a"
+  }
+}

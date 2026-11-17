@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capability/approved-task.v2.schema.json",
+  "title": "ApprovedTask v2",
+  "description": "Đầu ra M05, đầu vào M06; chữ ký HMAC bảo vệ toàn bộ nội dung task trừ trường signature. Task bắt buộc ghim manifest_sha256 và adapter_version; M06 đối chiếu manifest bất biến và policy snapshot trước thực thi. Quy tắc runtime ở contracts/interfaces/README.md.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "decision_id",
+    "campaign_id",
+    "scope_id",
+    "policy_version",
+    "capability",
+    "provider",
+    "provider_version",
+    "image_digest",
+    "scan_cycle",
+    "input",
+    "targets",
+    "idempotency_key",
+    "requested_by",
+    "rationale",
+    "trace",
+    "signature",
+    "priority",
+    "depends_on",
+    "adapter_version",
+    "manifest_sha256"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "decision_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "scope_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "policy_version": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/PolicyVersion"
+    },
+    "capability": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "provider_version": {
+      "type": "string"
+    },
+    "adapter_version": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/SemVer"
+    },
+    "image_digest": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/ImageDigest"
+    },
+    "scan_cycle": {
+      "description": "Định danh lần quét. Nằm trong job_fingerprint: retry cùng idempotency_key dùng lại giá trị này; lần quét mới nhận giá trị mới nên không trùng job cũ.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "input": {
+      "description": "Tham số đã có kiểu của tool; M05 ghép inputDefaults và kiểm input schema.",
+      "type": "object"
+    },
+    "targets": {
+      "description": "Mục tiêu đã chuẩn hóa thành khóa chuẩn.",
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+      },
+      "minItems": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "requested_by": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "parent_job_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "trace": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/TraceContext"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 50,
+      "description": "Số lớn chạy trước trong tập job đã đủ dependency; không thay thế kiểm tra điều kiện thực thi."
+    },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+      },
+      "uniqueItems": true,
+      "maxItems": 100,
+      "default": [],
+      "description": "Job tiền nhiệm trong cùng campaign, phải SUCCEEDED trước dispatch. M05 từ chối self-reference và chu trình."
+    },
+    "manifest_sha256": {
+      "description": "SHA-256 của nguyên byte manifest đã lưu bất biến trong registry. M06 lấy đúng bản theo hash, kiểm lại hash và các định danh trước khi tạo ContainerSpec; không resolve latest. Toàn bộ trường task, gồm pin này, thuộc nội dung được ký.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+    }
+  }
+}

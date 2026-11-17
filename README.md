@@ -1,8 +1,7 @@
 # AEGIS–Vanguard
 
-Nền tảng rà quét lỗ hổng và quản trị bề mặt tấn công nội bộ, thiên hướng phòng thủ và cảnh báo sớm, do AI agent điều phối.
+Nền tảng AI điều phối tool qua MCP, thực thi trong sandbox, lưu metadata ở PostgreSQL, tri thức asset/quan hệ ở Neo4j và dữ liệu raw trên S3. Giao diện cho thấy kế hoạch, thứ tự job, trạng thái và bằng chứng.
 
-- Tài liệu dự án: [docs/](docs/README.md)
-- Hướng dẫn cho AI agent: [AGENTS.md](AGENTS.md) → [PRD](PRD.md) · [ARCHITECTURE](ARCHITECTURE.md) · [DESIGN](DESIGN.md) · [RULES](RULES.md) · [TASKS](TASKS.md) · [PROGRESS](PROGRESS.md)
+Bắt đầu từ [PRD](PRD.md), [kiến trúc](ARCHITECTURE.md), [thiết kế hiện hành](docs/living/00-tong-quan-he-thong-hop-nhat.md) và [contract](contracts/README.md). [Tiến độ](PROGRESS.md) phân biệt contract đã kiểm với dịch vụ chưa triển khai.
 
-Trạng thái: giai đoạn GĐ0 Chuẩn bị, chưa có mã sản phẩm.
+[Chỉ mục tài liệu](docs/README.md) dẫn tới bộ duy nhất ở đường dẫn chính. Tài liệu cũ đã được đối chiếu và xóa; lịch sử đã commit tra qua Git.

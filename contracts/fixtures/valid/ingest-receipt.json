@@ -1,0 +1,13 @@
+{
+  "event_id": "01934f6a-0000-7000-8000-000000000001",
+  "accepted": true,
+  "duplicate": false,
+  "revision": 1,
+  "quarantined": [
+    {
+      "pointer": "/results/assets/0",
+      "gate": "G1",
+      "reason": "Invalid identity in fixture"
+    }
+  ]
+}

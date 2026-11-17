@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/observation.changed.v2.schema.json",
+  "title": "Payload observation.changed.v2",
+  "description": "Bên phát: M27. Khóa khử trùng của consumer: observation_id.",
+  "type": "object",
+  "required": [
+    "observation_id",
+    "subject_id",
+    "subject_key",
+    "predicate",
+    "new_value",
+    "causal_job_id",
+    "campaign_id",
+    "observed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "observation_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "subject_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "subject_key": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+    },
+    "predicate": {
+      "type": "string"
+    },
+    "old_value": {},
+    "new_value": {},
+    "old_observation_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "polarity": {
+      "type": "string",
+      "enum": [
+        "present",
+        "absent",
+        "negated"
+      ]
+    },
+    "causal_job_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "observed_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    }
+  }
+}

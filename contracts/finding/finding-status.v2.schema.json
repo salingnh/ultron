@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/finding/finding-status.v2.schema.json",
+  "title": "Trạng thái finding v2",
+  "type": "string",
+  "enum": [
+    "CANDIDATE",
+    "CORROBORATED",
+    "VERIFIED",
+    "FALSE_POSITIVE",
+    "ACCEPTED_RISK",
+    "FIXED",
+    "REGRESSED"
+  ]
+}

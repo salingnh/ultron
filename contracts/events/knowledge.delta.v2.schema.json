@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/events/knowledge.delta.v2.schema.json",
+  "title": "Payload knowledge.delta.v2",
+  "description": "Bên phát: M23. Khóa khử trùng của consumer: revision.",
+  "type": "object",
+  "required": [
+    "revision",
+    "campaign_id",
+    "changed_entities",
+    "truncated"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "causal_job_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "changed_entities": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "required": [
+          "entity_type",
+          "entity_id",
+          "change"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "asset",
+              "observation",
+              "relationship",
+              "finding",
+              "hypothesis"
+            ]
+          },
+          "entity_id": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+          },
+          "canonical_key": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "created",
+              "changed",
+              "closed"
+            ]
+          }
+        }
+      }
+    },
+    "truncated": {
+      "description": "true nếu delta quá 1000 thực thể; consumer gọi summarize_campaign_delta.",
+      "type": "boolean"
+    }
+  }
+}

@@ -1,17 +1,39 @@
-apiVersion: aegis.io/v1
+apiVersion: aegis.io/v2
 kind: CapabilityProvider
-metadata: {name: dnsx, version: 1.0.0, module: M09, license: MIT}
+metadata:
+  name: dnsx
+  version: 1.0.0
+  module: M09
+  license: MIT
 spec:
   capability: dns.resolve
-  providerVersion: v1.2.1
-  integrationLevel: L1
-  runtime: {type: container, imageDigest: "projectdiscovery/dnsx:latest", argsTemplate: ["sh", "-c", "${input.raw}"]}
-  inputSchemaRef: schema://dns/resolve/v1
-  outputSchemaRef: schema://common/result-envelope/v1
-  impactTier: T1
-  permissions: {networkAccess: active}
-  safety: {defaultProfile: low-impact}
-  budget: {timeoutSeconds: 600, maxConcurrency: 4, cpu: 1, memoryMb: 256}
-  handlers: [describe, validate, start, status, cancel, collect, health]
-  parser: {entrypoint: "adapters.m09.dnsx.parser:parse", outputFormat: jsonl}
-  compatibilityTests: [schema]
+  providerVersion: v2.2.1
+  runtime:
+    type: container
+    imageDigest: projectdiscovery/dnsx:latest
+    argsTemplate:
+    - sh
+    - -c
+    - ${input.raw}
+  inputSchemaRef: schema://dns/resolve/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  permissions:
+    networkAccess: active
+  budget:
+    timeoutSeconds: 600
+    maxConcurrency: 4
+    cpu: 1
+    memoryMb: 256
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m09.dnsx.parser:parse
+    outputFormat: jsonl
+  compatibilityTests:
+  - schema

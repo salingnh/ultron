@@ -1,1 +1,41 @@
-{"schema_version": "1.0", "event_id": "01934f6a-0000-7000-8000-00000000e003", "job_id": "01934f6a-0000-7000-8000-00000000d003", "campaign_id": "01934f6a-0000-7000-8000-000000000001", "capability": "dns.resolve", "provider": {"name": "dnsx", "version": "1.2.1", "adapter_version": "1.0.0"}, "policy_version": "roe-12", "status": "succeeded", "coverage": {"subjects": []}, "results": {"assets": [{"kind": "domain", "canonical_key": "dns:VPN.Internal.Example."}], "observations": [], "relationships": [], "findings": []}, "evidence": [], "errors": [], "provenance": {"input_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333", "started_at": "2026-11-15T02:59:10Z", "finished_at": "2026-11-15T03:00:00Z", "seed_targets": ["dns:internal.example"]}, "trace": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"}}
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-00000000e003",
+  "job_id": "01934f6a-0000-7000-8000-00000000d003",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "capability": "dns.resolve",
+  "provider": {
+    "name": "dnsx",
+    "version": "1.2.1",
+    "adapter_version": "1.0.0"
+  },
+  "policy_version": "roe-12",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": []
+  },
+  "results": {
+    "assets": [
+      {
+        "kind": "domain",
+        "canonical_key": "dns:VPN.Internal.Example."
+      }
+    ],
+    "observations": [],
+    "relationships": [],
+    "findings": []
+  },
+  "evidence": [],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+    "started_at": "2026-11-15T02:59:10Z",
+    "finished_at": "2026-11-15T03:00:00Z",
+    "seed_targets": [
+      "dns:internal.example"
+    ]
+  },
+  "trace": {
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+  }
+}

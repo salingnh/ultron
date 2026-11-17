@@ -5,8 +5,10 @@
 --   * Mọi ID là UUIDv7 do dịch vụ sinh (đã chốt D2, 2026-11-15). Thời gian là timestamptz, UTC.
 --   * KHÔNG DELETE ở bất kỳ bảng nào (trigger aegis.forbid_delete).
 --   * Bảng "append-only" cấm cả UPDATE (trigger aegis.forbid_update).
---   * Bảng "trạng thái hiện tại" (campaign, agent_session, scan_job, asset, finding, ingestion_inbox, alert_delivery)
---     chỉ cho UPDATE các cột trạng thái/bộ đệm; mọi thay đổi đồng thời ghi một dòng vào bảng lịch sử tương ứng.
+--   * Bảng "trạng thái hiện tại" (campaign, agent_session, scan_job, asset, finding, ingestion_inbox,
+--     alert_delivery, consumer_cursor) chỉ cho UPDATE các cột trạng thái/bộ đệm liệt kê ở trigger
+--     aegis.forbid_value_update (D26); cột giá trị/định danh như secret_value, targets, input là bất biến.
+--     Mọi thay đổi đồng thời ghi một dòng vào bảng lịch sử tương ứng.
 --   * relationship chỉ cho UPDATE một lần: valid_to từ NULL sang có giá trị.
 --   * Mỗi bảng ghi module sở hữu trong COMMENT. Module khác chỉ đọc, hoặc ghi qua API của module sở hữu.
 --   * Checkpoint LangGraph do thư viện langgraph-checkpoint-postgres tạo trong schema riêng "langgraph".
@@ -36,6 +38,18 @@ BEGIN
      OR NEW.valid_to < OLD.valid_from
      OR (to_jsonb(NEW) - 'valid_to' - 'closed_by_job_id') IS DISTINCT FROM (to_jsonb(OLD) - 'valid_to' - 'closed_by_job_id') THEN
     RAISE EXCEPTION 'relationship chỉ được đóng khoảng hiệu lực một lần (valid_to NULL -> giá trị)'
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+
+-- D26 (2026-11-16): bảng "trạng thái hiện tại" chỉ cho UPDATE các cột trạng thái
+-- liệt kê trong TG_ARGV; mọi cột giá trị/định danh khác là bất biến.
+CREATE OR REPLACE FUNCTION aegis.forbid_value_update() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF (to_jsonb(NEW) - TG_ARGV) IS DISTINCT FROM (to_jsonb(OLD) - TG_ARGV) THEN
+    RAISE EXCEPTION 'UPDATE chỉ được đổi cột trạng thái (%) trên %.%; cột giá trị/định danh là bất biến (D26)',
+      array_to_string(TG_ARGV, ', '), TG_TABLE_SCHEMA, TG_TABLE_NAME
       USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN NEW;
@@ -232,8 +246,9 @@ CREATE TABLE scan_job (
   provider          text        NOT NULL,
   provider_version  text        NOT NULL,
   adapter_version   text        NOT NULL,
-  image_digest      text        CHECK (image_digest ~ '^sha256:[0-9a-f]{64}$'),
-  job_fingerprint   char(64)    NOT NULL UNIQUE,     -- sha256(campaign, policy_version, provider, targets, input, profile)
+  image_digest      text        NOT NULL CHECK (image_digest ~ '^sha256:[0-9a-f]{64}$'),  -- v1 container-only (D22)
+  scan_cycle        uuid        NOT NULL,            -- định danh lần quét (D21): retry dùng lại, lần quét mới sinh mới
+  job_fingerprint   char(64)    NOT NULL UNIQUE,     -- sha256(campaign, policy_version, provider, targets, input, profile, scan_cycle)
   policy_version    text        NOT NULL REFERENCES policy_snapshot,
   scope_id          uuid        NOT NULL REFERENCES scope_snapshot,
   impact_tier       text        NOT NULL CHECK (impact_tier IN ('T0','T1','T2')),
@@ -285,7 +300,7 @@ CREATE TABLE evidence (
   created_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (job_id, sha256)
 );
-COMMENT ON TABLE evidence IS 'M28. Metadata bằng chứng; object ở MinIO có object lock. Append-only.';
+COMMENT ON TABLE evidence IS 'M28. Metadata bằng chứng; object ở SeaweedFS có object lock. Append-only.';
 
 CREATE TABLE evidence_check (
   evidence_id uuid        NOT NULL REFERENCES evidence,
@@ -313,9 +328,10 @@ COMMENT ON TABLE artifact IS 'M28. Append-only.';
 -- M27 Ingestion
 -- ---------------------------------------------------------------------------
 CREATE TABLE ingestion_inbox (
-  event_id      uuid        PRIMARY KEY,             -- ResultEnvelope.event_id
+  event_id      uuid        PRIMARY KEY,             -- ResultEnvelope.event_id (UUIDv7, mỗi lần nộp một giá trị)
+  dedup_key     text        NOT NULL UNIQUE,         -- ResultEnvelope.dedup_key, xác định từ job_id; chống nhận trùng (D23)
   job_id        uuid        NOT NULL REFERENCES scan_job,
-  payload_hash  char(64)    NOT NULL,                -- khác hash cùng event_id -> 409
+  payload_hash  char(64)    NOT NULL,                -- khác hash cùng dedup_key -> 409
   status        text        NOT NULL CHECK (status IN ('received','accepted','partially_quarantined','dead_letter')),
   receipt       jsonb,
   revision      bigint,
@@ -360,7 +376,7 @@ CREATE TABLE graph_revision (
   envelope_event_id uuid        REFERENCES ingestion_inbox,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE graph_revision IS 'M27 cấp, M23 phát knowledge.delta.v1. Một envelope được nhận = một revision. Append-only.';
+COMMENT ON TABLE graph_revision IS 'M27 cấp, M23 phát knowledge.delta.v1. Một envelope được nhận = một revision. Append-only. D25: projector M23 đọc revision cũng theo quy tắc watermark/tiền tố liền mạch như outbox (revision bigserial có thể commit không theo thứ tự).';
 
 -- ---------------------------------------------------------------------------
 -- M07 Asset Inventory
@@ -635,10 +651,12 @@ CREATE TABLE severity_assessment (
   finding_id     uuid        NOT NULL REFERENCES finding,
   severity       text        NOT NULL CHECK (severity IN ('CRITICAL','HIGH','MEDIUM','LOW','INFO','UNRATED')),
   assessment     jsonb       NOT NULL,              -- severity-assessment.v1 đầy đủ (reasons, source_refs, uncertainty...)
+  kind           text        NOT NULL CHECK (kind IN ('agent','rule','operator')),  -- D18
   trigger        text        NOT NULL CHECK (trigger IN ('scan','intel_revision','operator_request','verification')),
   session_id     uuid        REFERENCES agent_session,
-  model          text        NOT NULL,
-  created_at     timestamptz NOT NULL DEFAULT now()
+  model          text,                             -- chỉ bắt buộc khi kind='agent'
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  CHECK (kind <> 'agent' OR (model IS NOT NULL AND session_id IS NOT NULL))  -- D18
 );
 CREATE INDEX severity_assessment_finding ON severity_assessment (finding_id, created_at DESC);
 ALTER TABLE finding ADD CONSTRAINT finding_assessment_fk FOREIGN KEY (current_assessment) REFERENCES severity_assessment DEFERRABLE INITIALLY DEFERRED;
@@ -678,14 +696,14 @@ CREATE TABLE outbox_event (
   UNIQUE (type, dedup_key)
 );
 CREATE INDEX outbox_event_type_seq ON outbox_event (type, seq);
-COMMENT ON TABLE outbox_event IS 'Ghi trong cùng giao dịch với thay đổi dữ liệu; dispatcher đọc theo seq (LISTEN/NOTIFY để đánh thức). Append-only; giữ vĩnh viễn, là event log để dựng lại Neo4j.';
+COMMENT ON TABLE outbox_event IS 'Ghi trong cùng giao dịch với thay đổi dữ liệu; MỘT dispatcher mỗi consumer đọc theo seq (LISTEN/NOTIFY để đánh thức). Append-only; giữ vĩnh viễn, là event log để dựng lại Neo4j. D25 (2026-11-16): seq (bigserial) được cấp lúc INSERT nhưng commit có thể không theo thứ tự seq, nên con trỏ KHÔNG được nhảy qua khoảng trống — chỉ vượt tiền tố seq liền mạch đã commit, hoặc giới hạn đọc tới watermark = pg_snapshot_xmin(pg_current_snapshot()) để không bỏ sót giao dịch seq thấp commit muộn. An toàn at-least-once nhờ consumer_inbox khử trùng.';
 
 CREATE TABLE consumer_cursor (
   consumer     text        PRIMARY KEY,              -- vd 'm23-projector', 'm24-alerts', 'm02-signal'
   last_seq     bigint      NOT NULL DEFAULT 0,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE consumer_cursor IS 'Vị trí đọc outbox của từng consumer. Bảng trạng thái (cho UPDATE).';
+COMMENT ON TABLE consumer_cursor IS 'Vị trí đọc outbox của từng consumer. Bảng trạng thái (cho UPDATE). last_seq chỉ tiến qua tiền tố liền mạch đã commit (xem outbox_event, D25); không nhảy qua khoảng trống seq.';
 
 CREATE TABLE consumer_inbox (
   consumer     text        NOT NULL,
@@ -694,7 +712,7 @@ CREATE TABLE consumer_inbox (
   processed_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (consumer, dedup_key)
 );
-COMMENT ON TABLE consumer_inbox IS 'Khử trùng phía consumer (at-least-once). Append-only.';
+COMMENT ON TABLE consumer_inbox IS 'Khử trùng phía consumer (at-least-once). Append-only. Dựng lại Neo4j: dùng một consumer id thế hệ mới (vd ''m23-projector#g2'') để inbox khử trùng bắt đầu sạch thay vì bỏ qua sự kiện đã xử lý; dòng inbox cũ vẫn giữ. Checkpoint cursor chỉ sau khi commit Neo4j.';
 
 -- ---------------------------------------------------------------------------
 -- M25 Audit, M04 Model usage
@@ -793,4 +811,15 @@ DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY[
 DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY[
   'campaign','agent_session','scan_job','ingestion_inbox','asset','finding','alert_delivery','consumer_cursor','relationship'
 ] LOOP PERFORM aegis.protect(t::regclass, false); END LOOP; END $$;
+
+-- D26: giới hạn cột được UPDATE trên các bảng trạng thái (cột giá trị/định danh bất biến).
+CREATE TRIGGER cols_only BEFORE UPDATE ON campaign        FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','status_reason','current_policy_version','labels','started_at','ended_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON agent_session   FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','decision','stop_reason','steps_used','result','finished_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON scan_job        FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','error','envelope_event_id','started_at','finished_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON ingestion_inbox FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','receipt','revision','processed_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON asset           FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('owner','exposure','criticality','last_seen');
+CREATE TRIGGER cols_only BEFORE UPDATE ON finding         FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','severity','current_assessment','transition_seq','confidence','last_seen');
+CREATE TRIGGER cols_only BEFORE UPDATE ON consumer_cursor FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('last_seq','updated_at');
+CREATE TRIGGER cols_only BEFORE UPDATE ON alert_delivery  FOR EACH ROW EXECUTE FUNCTION aegis.forbid_value_update('status','sent_at');
+-- relationship: chỉ được đóng khoảng hiệu lực một lần (chặt hơn danh sách cột).
 CREATE TRIGGER close_only BEFORE UPDATE ON relationship FOR EACH ROW EXECUTE FUNCTION aegis.relationship_close_only();

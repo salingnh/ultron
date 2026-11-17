@@ -1,79 +1,56 @@
-# DESIGN: AEGIS–Vanguard
+# DESIGN: giao diện nền tảng
 
-> Hướng dẫn giao diện cho AI agent khi làm M26 (Web UI). Phần **đã chốt** lấy từ đặc tả và kế hoạch. Phần **đề xuất** (màu, font) lấy từ trang [bản đồ module](docs/living/04-ban-do-module.html), là ngôn ngữ hình ảnh duy nhất dự án đang có; dùng làm mặc định cho đến khi Product Team đổi.
+## Màn hình
 
-## 1. Nguyên tắc
+- Campaign: mục tiêu, objective, ngân sách, concurrency, khung giờ, pause/resume/cancel.
+- Kế hoạch/job: tool, input, priority, depends_on, trạng thái, lý do chờ, lỗi và kết quả. React Flow hiển thị dependency, không dùng các tầng quyền thao tác.
+- Graph: asset/quan hệ, provenance, observed_at, lọc theo campaign và truy nguyên job.
+- Findings/evidence: mức nghiêm trọng, lý do, trạng thái, nguồn, SHA-256, raw reference và đoạn trích. Finding severity không dùng để quyết định job được phép chạy.
+- Tool catalogue: tên, version, input schema, sandbox requirements, health và output.
+- Báo cáo/triage ở G4: gán chủ xử lý, đổi trạng thái có lý do, report delta/tổng hợp và xuất SARIF/HTML; JSON cơ bản có ở G2. Chỉ mở control xuất sau khi contract tương ứng đạt.
 
-1. **Công cụ vận hành, không phải trang marketing.** Mật độ thông tin cao, gọn, đọc nhanh. Không hero, không minh họa trang trí.
-2. **Cho thấy agent đã làm gì.** Người xem phải thấy chiến dịch chạy và đồ thị lớn dần **mà không cần đọc log** (tiêu chí epic S8a).
-3. **Mọi thứ truy được về bằng chứng.** Mỗi nút đồ thị, mỗi finding, mỗi bước trong luồng quét đều mở được nguồn gốc: công cụ nào, từ tài sản nào, job nào, bằng chứng nào.
-4. **Lỗi là công dân hạng nhất.** 100% job lỗi hiện kèm phân loại lỗi (mã lỗi chuẩn) và bước tiếp theo.
-5. **Không che dữ liệu.** Secret hiển thị dạng rõ theo quyết định 13/11. Không thêm lớp mask.
-6. **Tiếng Việt** cho nhãn giao diện; giữ nguyên thuật ngữ kỹ thuật (finding, endpoint, CVE, KEV, EPSS).
+SSE cập nhật trạng thái; UI ghi rõ dữ liệu chưa có, kết quả chưa đủ và lỗi. Query có phân trang, giới hạn node/edge và timeout; hiển thị dữ liệu bị cắt, không làm người xem tưởng đã thấy toàn bộ graph. Model/provider cấu hình trực tiếp ở vận hành. Private ingress/VPN, single-tenant, chưa có đăng nhập người dùng ở MVP. Không vẽ UI cho tool chưa có contract triển khai.
 
-## 2. Màn hình (đã chốt)
+## Nguyên tắc trình bày
 
-| Màn hình | Giai đoạn | Nội dung | Thư viện |
+Giao diện là công cụ vận hành: mật độ thông tin cao, đọc nhanh bằng bảng, luồng job và graph; không hero hoặc minh họa trang trí. Người xem thấy agent đã làm gì mà không cần đọc log. Mỗi bước, node, cạnh và finding mở được tool/version, job, nguồn gốc, thời điểm và bằng chứng.
+
+Nhãn giao diện dùng tiếng Việt; giữ thuật ngữ finding, endpoint, CVE, KEV, EPSS và canonical key. Secret và credential vận hành được xử lý theo AGENTS; phần bằng chứng hiển thị giá trị đầy đủ. Mỗi lỗi có mã chuẩn, mô tả và next_action. Trạng thái luôn có nhãn chữ; màu chỉ hỗ trợ đọc.
+
+## Màu và typography mặc định
+
+Đây là các mặc định thiết kế đã có trước khi hợp nhất; chủ sản phẩm có thể đổi khi chốt UI. Khai báo bằng CSS custom properties, hỗ trợ sáng/tối qua prefers-color-scheme và data-theme.
+
+| Token | Sáng | Tối | Mục đích |
 | --- | --- | --- | --- |
-| Tạo và quản lý chiến dịch | GĐ1 | Năm loại đầu vào (IP, domain, URL, email, từ khóa), RoE, pause/resume/cancel, trạng thái và ngân sách | React |
-| Luồng quét | GĐ1 | Agent lập kế hoạch → điểm kiểm → container chạy → kết quả vào kho, cập nhật thời gian thực; xem chi tiết từng bước | React Flow + ELK hoặc dagre, SSE |
-| Đồ thị tri thức | GĐ1 | Tài sản và quan hệ, nguồn gốc từng nút và từng cạnh, lớn dần theo thời gian thực | Cytoscape.js (Sigma.js nếu vượt vài chục nghìn nút) |
-| Findings và job lỗi | GĐ2 | Danh sách finding có lọc, mở được bằng chứng và dẫn chứng; dòng thời gian qua các lần chạy (`FindingRun`); danh sách job lỗi kèm phân loại | React |
-| Báo cáo và đổi trạng thái | GĐ4 | Đổi trạng thái finding kèm lý do, báo cáo delta giữa hai thời điểm, xuất SARIF, JSON, HTML | React |
+| --bg | #F2F5F8 | #0E161D | Nền trang |
+| --surface | #FFFFFF | #16222C | Thẻ, bảng, panel |
+| --ink | #12202B | #E6EDF3 | Chữ chính |
+| --muted | #4A5B69 | #9FB0BE | Chữ phụ |
+| --line | #CBD5DE | #2C3C49 | Viền |
+| --subtle | #E6ECF1 | #121C25 | Nền nhóm |
+| --accent / --accent-bg | #1D4ED8 / #E3ECFF | #9BBBFF / #1B2D55 | Liên kết, thông tin |
+| --success / --success-bg | #0F766E / #DAF2EE | #62D6C7 / #11352F | Thành công, verified |
+| --warning / --warning-bg | #9A4506 / #FCE8D0 | #F4B874 / #3B2A14 | Cần chú ý |
+| --neutral / --neutral-bg | #55616B / #E7EBEE | #A3AFB9 / #222E38 | Trung tính |
 
-Chưa có đăng nhập ở MVP. Truy cập qua private ingress hoặc VPN.
+Chữ đạt tương phản tối thiểu 4.5:1. Các trạng thái cần phân biệt phải có nhãn và khác độ sáng; ưu tiên cặp xanh dương/cam. Severity dùng nhãn chữ và chip; bảng màu từng severity được chốt cùng màn hình finding.
 
-## 3. Màu sắc (đề xuất)
+- Font giao diện: IBM Plex Sans 400/500/600, fallback system-ui, -apple-system, Segoe UI, Roboto, sans-serif.
+- Code, ID, canonical key, hash và mã module: JetBrains Mono 500, fallback ui-monospace, Menlo, Consolas, monospace.
+- Thang chữ: 12.5 / 13.5 / 15 / 20 / 26–36 px; nhấn bằng độ đậm. Số trong bảng dùng tabular-nums.
+- Font và thư viện phục vụ tại chỗ hoặc qua registry nội bộ; không gửi dữ liệu nhạy cảm ra dịch vụ bên ngoài để dựng UI.
 
-Định nghĩa bằng CSS custom properties trên `:root`, có bản tối qua `prefers-color-scheme` và `[data-theme]`.
+## Component và bố cục
 
-| Token | Sáng | Tối | Dùng cho |
-| --- | --- | --- | --- |
-| `--bg` | `#F2F5F8` | `#0E161D` | Nền trang |
-| `--surface` | `#FFFFFF` | `#16222C` | Thẻ, bảng, panel |
-| `--ink` | `#12202B` | `#E6EDF3` | Chữ chính |
-| `--muted` | `#4A5B69` | `#9FB0BE` | Chữ phụ, nhãn |
-| `--line` | `#CBD5DE` | `#2C3C49` | Viền, đường kẻ |
-| `--layer` | `#E6ECF1` | `#121C25` | Nền nhóm, vùng phân tầng |
-| `--use` / `--use-bg` | `#1D4ED8` / `#E3ECFF` | `#9BBBFF` / `#1B2D55` | Nhấn chính, liên kết, trạng thái thông tin |
-| `--wrap` / `--wrap-bg` | `#0F766E` / `#DAF2EE` | `#62D6C7` / `#11352F` | Thành công, đã xác minh |
-| `--own` / `--own-bg` | `#9A4506` / `#FCE8D0` | `#F4B874` / `#3B2A14` | Cảnh báo, cần chú ý |
-| `--def` / `--def-bg` | `#55616B` / `#E7EBEE` | `#A3AFB9` / `#222E38` | Trung tính, tắt, để sau |
-
-Quy tắc:
-- Chữ đạt tương phản tối thiểu 4.5:1 trên nền của nó.
-- Màu không bao giờ là kênh duy nhất: trạng thái và mức nghiêm trọng luôn có **nhãn chữ** đi kèm.
-- Các màu cần phân biệt nhau phải khác cả độ sáng, không chỉ khác sắc độ; ưu tiên cặp xanh dương/cam thay cho đỏ/xanh lá.
-- Mức nghiêm trọng do agent đánh giá: dùng nhãn chữ + chip màu; bảng màu cụ thể cho từng mức chốt khi làm M20/M24 ở GĐ2–GĐ4.
-
-## 4. Font chữ (đề xuất)
-
-- Chữ giao diện: **IBM Plex Sans** (400, 500, 600), dự phòng `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`.
-- Mã, ID, khóa chuẩn, hash, mã module: **JetBrains Mono** (500), dự phòng `ui-monospace, Menlo, Consolas, monospace`.
-- Thang chữ gọn, 4–5 cỡ: 12.5 / 13.5 / 15 (thân) / 20 (tiêu đề mục) / 26–36 (tiêu đề trang). Nhấn bằng độ đậm, không thêm cỡ.
-- Số trong bảng dùng `font-variant-numeric: tabular-nums`.
-
-## 5. Thành phần (component)
-
-| Thành phần | Mô tả |
+| Component | Quy tắc |
 | --- | --- |
-| Chip | Bo tròn hoàn toàn, chữ 12.5px, nền `--*-bg`, chữ `--*`; dùng cho trạng thái finding, công cụ, giai đoạn |
-| Thẻ module/tài sản | Nền `--surface`, viền 1px `--line`, bo 8px, padding 10–12px; dòng đầu có mã (font mono) và nhãn phụ căn phải |
-| Mã định danh | Luôn font mono, có nút sao chép; hiển thị khóa chuẩn (`dns:…`, `purl:…`) |
-| Bảng | Đầu cột cố định, phân trang theo cursor, lọc ở trên; hàng mở được panel chi tiết bên phải |
-| Panel nguồn gốc | Với mỗi nút, cạnh, finding: công cụ, phiên bản, job, tài sản gốc, `observed_at`, độ tin cậy, link bằng chứng (SHA-256) |
-| Dòng thời gian | Lịch sử theo từng lần chạy, kể cả lần "không còn thấy" |
-| Trạng thái lỗi | Mã lỗi chuẩn + mô tả + `next_action`; không bao giờ chỉ là "Error" |
-| Trạng thái rỗng và đang tải | Có chữ giải thích; skeleton cho bảng và đồ thị |
+| Chip trạng thái | Bo tròn, chữ 12.5px, có nhãn chữ cùng màu |
+| Thẻ tài sản/module | Viền 1px, bo 8px, padding 10–12px, ID font mono, nhãn phụ căn phải |
+| ID/hash | Có nút sao chép và hiển thị canonical key |
+| Bảng | Đầu cột cố định, lọc phía trên, cursor pagination, mở panel chi tiết bên phải |
+| Panel nguồn gốc | Tool/version, job, asset nguồn, observed_at, confidence và evidence SHA-256 |
+| Timeline | Hiển thị từng lần chạy và cả lần không còn thấy finding |
+| Rỗng/đang tải/lỗi | Có giải thích; skeleton cho bảng/graph; lỗi kèm bước tiếp theo |
 
-## 6. Bố cục
-
-- Rộng tối đa khoảng 1120–1440px cho trang nội dung; màn hình luồng quét và đồ thị dùng toàn khung.
-- Lề 16px trên điện thoại, không cuộn ngang trang (đồ thị tự cuộn bên trong khung của nó).
-- Khoảng cách theo bội số 4px.
-
-## 7. Không làm
-
-- Không đưa dữ liệu nhạy cảm ra dịch vụ bên ngoài (font và thư viện tự host hoặc lấy từ registry nội bộ khi triển khai).
-- Không thêm hoạt ảnh trang trí; chuyển động chỉ khi nó cho thấy dữ liệu mới đến.
-- Không dựng giao diện cho tính năng nằm ngoài phạm vi (đăng nhập, multi-tenant, red-team).
+Trang nội dung rộng khoảng 1120–1440px; flow và graph dùng toàn khung. Lề nhỏ nhất 16px, khoảng cách theo bội số 4px; không cuộn ngang trang, graph cuộn trong khung riêng. Chuyển động chỉ dùng để thể hiện dữ liệu mới đến.

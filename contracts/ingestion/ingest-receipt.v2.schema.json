@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/ingestion/ingest-receipt.v2.schema.json",
+  "title": "IngestReceipt",
+  "description": "Receipt của M27 cho REST và interface nội bộ. quarantined là mảng object pointer/gate/reason; không định nghĩa lại kiểu tại caller.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "accepted",
+    "duplicate",
+    "revision",
+    "quarantined"
+  ],
+  "properties": {
+    "event_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "duplicate": {
+      "type": "boolean"
+    },
+    "revision": {
+      "type": "integer"
+    },
+    "quarantined": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "pointer",
+          "gate",
+          "reason"
+        ],
+        "properties": {
+          "pointer": {
+            "type": "string"
+          },
+          "gate": {
+            "enum": [
+              "G1",
+              "G2",
+              "G3",
+              "G4",
+              "G5",
+              "G6",
+              "G7"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

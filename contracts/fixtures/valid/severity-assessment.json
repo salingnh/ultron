@@ -1,9 +1,48 @@
 {
   "severity": "HIGH",
-  "reasons": ["lodash 4.17.20 nằm trong dải ảnh hưởng của CVE-2021-23337 (< 4.17.21)", "Image chạy dịch vụ web hướng Internet theo quan sát httpx"],
-  "source_refs": [{"kind": "evidence", "ref": "01934f6a-0000-7000-8000-0000000e0001"}, {"kind": "intel", "ref": "nvd:CVE-2021-23337"}],
-  "uncertainty": ["Chưa xác định ứng dụng có gọi _.template với dữ liệu người dùng không"],
-  "recommended_actions": ["Nâng lodash lên 4.17.21 trở lên", "Yêu cầu rescan image sau khi build lại"],
-  "inputs": {"cvss": {"version": "3.1", "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H", "base_score": 7.2}, "kev": {"listed": false}, "epss": {"score": 0.02, "percentile": 0.81, "date": "2026-11-14"}, "exposure": "internet", "criticality": "unknown", "scanner_severity": "high"},
-  "assessed_by": {"session_id": "01934f6a-0000-7000-8000-0000000c0001", "model": "configured-mid-model", "profile": "MID", "prompt_version": "severity-v1"}
+  "reasons": [
+    "lodash 4.17.20 nằm trong dải ảnh hưởng của CVE-2021-23337 (< 4.17.21)",
+    "Image chạy dịch vụ web hướng Internet theo quan sát httpx"
+  ],
+  "source_refs": [
+    {
+      "kind": "evidence",
+      "ref": "01934f6a-0000-7000-8000-0000000e0001"
+    },
+    {
+      "kind": "intel",
+      "ref": "nvd:CVE-2021-23337"
+    }
+  ],
+  "uncertainty": [
+    "Chưa xác định ứng dụng có gọi _.template với dữ liệu người dùng không"
+  ],
+  "recommended_actions": [
+    "Nâng lodash lên 4.17.21 trở lên",
+    "Yêu cầu rescan image sau khi build lại"
+  ],
+  "inputs": {
+    "cvss": {
+      "version": "3.1",
+      "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+      "base_score": 7.2
+    },
+    "kev": {
+      "listed": false
+    },
+    "epss": {
+      "score": 0.02,
+      "percentile": 0.81,
+      "date": "2026-11-14"
+    },
+    "exposure": "internet",
+    "criticality": "unknown",
+    "scanner_severity": "high"
+  },
+  "assessed_by": {
+    "kind": "agent",
+    "session_id": "01934f6a-0000-7000-8000-0000000c0001",
+    "model": "configured-model",
+    "prompt_version": "severity-v1"
+  }
 }
