@@ -29,3 +29,22 @@ Retry cùng idempotency_key giữ scan_cycle và job. Lần quét mới có scan
 ## Kết quả
 
 capability-response.v2 trả job_id hoặc lỗi có next_action. ResultEnvelope.v2 do collector nộp M27; agent đọc kết quả qua query tools. Output luôn là dữ liệu không tin cậy. AgentSessionResult chỉ trả requested_jobs đã gửi qua MCP; M02 chờ các ID đó, không nhận danh sách proposals để dispatch lại. Semantics late-result/idempotency hash đã khóa ở C03/C06 (0006, 0007); runtime implementation vẫn thuộc G1.2a — schema tồn tại không chứng minh dispatch đã chạy.
+
+## Spike G0.3a — Streamable HTTP, `_meta`, idempotency (kết quả đo)
+
+Spike dùng Python `mcp` 2.3.0 (lowlevel `Server` + `streamable_http_app`, protocol 2025-11-25); code ở nhánh `spike/g0.3-mcp@6372e4c` và không merge. Registry giả trong bộ nhớ 100 provider, không PostgreSQL; số đo ở `spikes/g0.3-mcp/benchmarks/latency.json`, `session-concurrency.json` trên nhánh đó.
+
+Đã xác minh trên wire:
+
+- `_meta`: khóa `aegis.io/*` của bảng trên đọc được nguyên vẹn ở handler; không đổi wire key. Thiếu/sai key trả `error.code=-32602` với `error.data` là `error.v2` đầy đủ: `code=INPUT_INVALID`, `field` là JSON Pointer RFC 6901 (`/_meta/aegis.io~1trace_id`), `next_action=FIX_INPUT`, kèm `trace_id`. Thiếu cả `_meta` thì báo đủ bốn key thiếu. Key ngoài namespace (ví dụ `progressToken`) được bỏ qua; key lạ trong `aegis.io/` bị từ chối.
+- `tools/list`: `inputSchema` phải tự chứa vì client không có bundle; `$ref` tương đối không dùng được. Server resolve mọi ref vào `$defs` của từng tool và thay `properties.input` bằng schema capability. Validator phải compile một lần cho mỗi schema: compile lại mỗi lời gọi tốn ~18 ms, sau khi cache còn 0,52 ms.
+- Ngữ cảnh session: server bind `Mcp-Session-Id` với campaign/agent session phía server; `_meta` chỉ được đối chiếu với ngữ cảnh đã bind, khác campaign/session trả INPUT_INVALID. `_meta` không cấp quyền.
+- `tools/call`: merge default (priority 50, depends_on [], default của capability) rồi mới validate; sai schema trả -32602 với `field` trỏ `/arguments/...`; thiếu provider hoặc quyết định registry trả kết quả `isError=true` kèm `capability-response.v2` (`decision=denied`).
+- Idempotency theo `(campaign_id, idempotency_key)`; khóa coi là opaque 8..128 ký tự `[A-Za-z0-9._:-]`, quy ước `<session_id>:step:<n>` chỉ ràng buộc phía client. Cùng khóa cùng fingerprint theo [canonicalization.v2.yaml](../ingestion/canonicalization.v2.yaml) → `duplicate` kèm đúng `job_id`; cùng khóa khác fingerprint hoặc khác priority/depends_on → xung đột: `isError=true` với `capability-response.v2` (`decision=denied`) và `error.v2` `IDEMPOTENCY_CONFLICT`, không phải lỗi giao thức (`field` chỉ dành cho INPUT_INVALID nên khóa được nêu trong `message`). 100 lời gọi đồng thời cùng khóa tạo đúng 1 job; đối chứng bỏ lock tạo nhiều job nên test phát hiện được thiếu unique index.
+- Latency (100 provider, loopback, 500 lượt mỗi cảnh HTTP): handler `tools/call` P95 0,62 ms; thêm 5 ms ghi registry giả → 6,14 ms; HTTP JSON P95 3,64 ms; SSE 5,54 ms; `tools/list` 4,32 ms. Mục tiêu registry P95 <300 ms đạt ở tầng MCP với registry giả, **chưa** chứng minh cho M05 thật — phải đo lại ở G1.1c/G1.2b với PostgreSQL. Đường handler nghẽn CPU (~250–370 `tools/call`/s mỗi tiến trình; 50 request đồng thời không tăng thông lượng), nên sizing dùng nhiều process.
+
+Còn mở:
+
+- Spike mới đo với fingerprint rút gọn; G1.2b phải băm đúng định nghĩa aegis-c14n/1 trong [canonicalization.v2.yaml](../ingestion/canonicalization.v2.yaml) (`policy_version`, `target_refs`) và trả `IDEMPOTENCY_CONFLICT` thay cho `INPUT_INVALID` mà spike tạm dùng.
+- `scan_cycle` không có trong bảng `_meta`; spike lấy từ ngữ cảnh session phía server. G1.1c/G1.2b phải chốt khi nào agent bắt đầu `scan_cycle` mới (nay chỉ quy định "lần quét mới có scan_cycle mới").
+- `capability-response.v2` không trả lại idempotency key/scan_cycle; agent đối chiếu qua `job_id`. Cân nhắc khi schema response được mở lại.
