@@ -27,6 +27,24 @@ Giữ giới hạn egress theo provider: chỉ kết nối mục tiêu của job
 
 Kiểm: [test_egress_actor.py](../../../contracts/tests/test_egress_actor.py) và các fixture âm `contracts/fixtures/invalid/manifest.*.yaml`. Cưỡng chế lúc chạy (broker, ContainerSpec) thuộc G1.3a; chưa được coi schema đã là bằng chứng runtime.
 
+### Bằng chứng đo trên máy dev (spike G0.2, 2026-11-24)
+
+Máy: Fedora 44, kernel 7.3.4, rootless Podman 5.8.9, netavark 1.17.2, pasta, SELinux Enforcing. Bằng chứng chạy được ở `spikes/g0.2-sandbox/` trên nhánh `spike/g0.2-sandbox` (chưa merge; 42 unit + 21 kiểm Podman). Đây là kết quả trên máy dev, chưa phải nghiệm thu máy chạy thật.
+
+- cgroup v2 được delegate: `cgroup2fs`, manager systemd, controller `cpu memory pids` có trong user slice; giới hạn áp thật, không im lặng: RAM 64 MiB → `OOMKilled=true`, exit 137; `pids.events: max` tăng khi vượt `--pids-limit`; `cpu.stat: nr_throttled > 0` với `--cpus=0.1`; `--read-only` chặn ghi `/etc`; tmpfs `/out` chặn ở đúng trần; `CapEff=CapBnd=0`, `NoNewPrivs=1`; container chạy uid/gid 65534.
+- Một job một mạng riêng: `podman network create --internal --disable-dns` theo job; container chỉ có `lo` và một interface nội bộ không có default route. Đo được: không tới được PG/Neo4j/S3/Temporal giả lập ở mạng control, không tới gateway, IP LAN của host, `127.0.0.1`, `[::1]`, `::ffff:127.0.0.1`, `169.254.169.254`; không có DNS ngoài.
+- Egress chỉ qua broker L7 của job (HTTP CONNECT, HTTP absolute-URI, SOCKS5) đặt trên mạng nội bộ tại địa chỉ cố định; broker là nguồn duy nhất mở socket ra ngoài. Broker phân giải ở control plane, kiểm **toàn bộ** đáp án A/AAAA rồi pin đúng địa chỉ đã kiểm: một tên trả về lẫn địa chỉ bị chặn thì cả tên bị từ chối (chống DNS rebinding), tên phân giải ngoài binding cũng bị từ chối. Lý do từ chối có mã ổn định (`DENY_LOOPBACK`, `DENY_LINK_LOCAL`, `DENY_PLATFORM_NETWORK`, `DENY_TARGET_DENYLIST`, `NOT_BOUND_TO_JOB`, `PORT_NOT_ALLOWED`, `RESOLVE_FAILED`) và được ghi audit theo job. Chuyển hướng 302 sang đích bị chặn bị từ chối ở hop tiếp theo. Địa chỉ luôn bị chặn dù có trong binding: loopback, link-local (gồm metadata), multicast, unspecified; IPv4 nhúng trong IPv6 (`::ffff:0:0/96`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`, Teredo `2001::/32`) được tách ra và kiểm lại. RFC1918/ULA **không** bị chặn mặc định vì tài sản tổ chức có thể ở dải riêng; chúng chỉ đi qua được khi là target của job.
+- Collector: chỉ file thường, không đi theo symlink (kể cả symlink thư mục), bỏ FIFO/socket/device; trần byte, trần số file, và trần kích thước giải nén khai báo của zip/gzip bị vượt thì từ chối job; file nhận được tính SHA-256.
+- Parser chạy trong tiến trình con có user+network namespace riêng (`unshare --user --map-root-user --net --pid --fork --kill-child`): kết nối TCP/UDP ra ngoài trả `ENETUNREACH`, DNS ngoài không phân giải, biến môi trường được dựng lại từ allowlist nên không thấy credential/proxy của tiến trình cha; RLIMIT_AS/CPU/FSIZE/NOFILE và timeout giữ lỗi parser trong tiến trình con.
+- BBOT: JSON passive (NDJSON) map được sang `ResultEnvelope` v2 hợp lệ (DNS_NAME, IP_ADDRESS, OPEN_TCP_PORT, URL/HTTP_RESPONSE, TECHNOLOGY, ASN, EMAIL_ADDRESS; `SUBDOMAIN_OF`/`RESOLVES_TO`/`EXPOSES`/`HAS_ENDPOINT`), phần chưa map được đếm và đặt `status=partial` thay vì bỏ im lặng. Lưu ý BBOT 3.x serialize `scope_description` bằng `str()` và `resolved_hosts` là list; parser phải chấp nhận cả hai dạng.
+
+Giới hạn đã biết, chưa được coi là đã giải quyết:
+
+- Egress qua broker L7 **không phục vụ được SYN/UDP scan**. Naabu 2.7.0 trong rootless Podman tự hạ `-s syn` xuống CONNECT và ghi "Running CONNECT scan with non root privileges" dù `NET_RAW` hiệu lực, nên GĐ1 ghim `rawSocket=false` và chỉ chạy provider HTTP/DNS qua broker; muốn mở lại phải có chế độ egress L3 (router nft trong netns riêng của job) kèm kiểm conformance chứng minh chế độ quét thực tế.
+- Broker là mã control plane tin cậy: phải pin digest, read-only, policy mount riêng theo job; lỗi broker phải làm job fail chứ không mở đường tắt.
+- Trên host SELinux Enforcing, bind mount cho user không phải root trong container cần `:Z` (hoặc xử lý nhãn tương đương); runner chỉ relabel thư mục output/policy riêng của job.
+- Chưa kiểm: seccomp profile tùy chỉnh (đang dùng mặc định của Podman), giới hạn I/O, hành vi khi host hết PID/RAM, và IPv6 thật ra Internet (máy dev không có IPv6 ra ngoài).
+
 ## Điều phối
 
 Temporal chứa ID/reference, không raw lớn. Activity idempotent; retry có giới hạn. Pause/resume/cancel lưu lịch sử. Scheduler lấy ready jobs (dependency thành công, đủ ngân sách/khung giờ/rate/concurrency), sắp priority DESC, created_at ASC, job_id ASC. Dependency thất bại làm job chờ có lý do; không tự bỏ dependency.
