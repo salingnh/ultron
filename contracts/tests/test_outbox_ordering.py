@@ -1,11 +1,13 @@
 """S1.3 / C04: publication ordering under real concurrency (dispatcher prototype + race harness).
 
-What this proves (see contracts/graph/model.md#c04 and 0008_outbox_publication_order.sql):
+What this proves (see contracts/graph/model.md#c04, 0008 and 0013):
   * writers take the shared publication lock and draw outbox_event.seq / graph_revision.revision
     from one transactional counter, so commit order equals sequence order;
   * a rollback returns its number, and a number that never commits can never stall a consumer;
-  * the dispatcher publishes only up to a watermark it reads while holding the publication lock
-    exclusively (exclusive try-lock), never blocks behind a slow writer, and is fenced on failover;
+  * the dispatcher publishes only up to a watermark it reads after *waiting* for the publication
+    lock exclusively (0013; bounded by aegis.outbox_watermark_lock_timeout, and a timeout is a
+    loud error, never a silent skip), so writers queue behind it for one short transaction and the
+    watermark makes progress under continuous load; it is fenced on failover;
   * a consumer may not checkpoint past the watermark; retry is idempotent; a rebuild under a new
     consumer generation reproduces exactly the same applied events.
 
@@ -33,12 +35,14 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 PG_DIR = ROOT / "db/postgres"
 # 0008 is deliberately applied straight after 0004: it must stay independent of 0005..0007.
+# 0013 only needs 0008 (it checks that dependency itself) and stays independent of 0011/0012.
 MIGRATIONS = (
     "0001_init.sql",
     "0002_tool_orchestration.sql",
     "0003_task_manifest_binding.sql",
     "0004_usage_nonnegative.sql",
     "0008_outbox_publication_order.sql",
+    "0013_outbox_watermark_blocking.sql",
 )
 HARNESS_SCHEMA = "s13_harness"
 CAMPAIGN = "01900000-0000-7000-8000-000000000882"
@@ -173,12 +177,13 @@ class SequenceStream:
     def refresh(self, conn, dispatcher: str, fence: int) -> int:
         with conn.transaction():          # hold the exclusive lock until this short transaction ends
             conn.execute("SELECT aegis.outbox_fence_check(%s,%s)", (dispatcher, fence))
-            if conn.execute("SELECT pg_try_advisory_xact_lock(aegis.outbox_publication_lock_key())").fetchone()[0]:
-                conn.execute(
-                    f"UPDATE {HARNESS_SCHEMA}.alt_watermark SET updated_at = now(),"
-                    f" published_upto = greatest(published_upto, (SELECT CASE WHEN is_called THEN last_value ELSE 0 END"
-                    f" FROM {HARNESS_SCHEMA}.alt_seq)) WHERE id"
-                )
+            conn.execute("SET LOCAL lock_timeout = '5s'")
+            conn.execute("SELECT pg_advisory_xact_lock(aegis.outbox_publication_lock_key())")
+            conn.execute(
+                f"UPDATE {HARNESS_SCHEMA}.alt_watermark SET updated_at = now(),"
+                f" published_upto = greatest(published_upto, (SELECT CASE WHEN is_called THEN last_value ELSE 0 END"
+                f" FROM {HARNESS_SCHEMA}.alt_seq)) WHERE id"
+            )
         return self.watermark(conn)
 
     def watermark(self, conn) -> int:
@@ -212,10 +217,10 @@ class SequenceStream:
 class Dispatcher:
     """Fenced outbox dispatcher prototype: lease -> watermark -> deliver -> checkpoint.
 
-    The watermark refresh runs on its own autocommit connection: it takes the publication lock
-    exclusively, and that transaction-scoped lock must be released before the (slower) delivery
-    transaction, so writers are never blocked behind delivery. Delivery is at-least-once and the
-    consumer inbox makes a retry idempotent.
+    The watermark refresh runs on its own autocommit connection: it waits for the publication lock
+    exclusively (bounded by aegis.outbox_watermark_lock_timeout, 0013), and that transaction-scoped
+    lock must be released before the (slower) delivery transaction, so writers are never blocked
+    behind delivery. Delivery is at-least-once and the consumer inbox makes a retry idempotent.
     """
 
     def __init__(self, harness: Harness, stream, name: str = "s13-dispatcher", holder: str = "dispatcher-1"):
@@ -279,6 +284,21 @@ def apply_batch(conn, consumer: str, batch) -> None:
 
 PRODUCT = ProductStream()
 SEQUENCE = SequenceStream()
+
+
+def refresh_in_thread(disp: "Dispatcher") -> tuple[threading.Thread, dict]:
+    """Run a refresh on its own thread so a blocked wait can be observed without hanging the test."""
+    box: dict = {}
+
+    def call() -> None:
+        try:
+            box["watermark"] = disp.refresh()
+        except BaseException as exc:                     # noqa: BLE001 - asserted by the caller
+            box["error"] = exc
+
+    thread = threading.Thread(target=call, daemon=True)
+    thread.start()
+    return thread, box
 
 
 def setUpModule():
@@ -354,8 +374,9 @@ class C04(unittest.TestCase):
         self.assertEqual(revision, event_seq + 1, "revision did not draw from the shared counter")
 
     # -- publication watermark -------------------------------------------
-    def test_slow_writer_neither_blocks_nor_publishes_early(self):
-        """An in-flight writer holds the prefix back without blocking the dispatcher."""
+    def test_inflight_writer_holds_the_watermark_back_until_commit(self):
+        """0013: refresh waits for the open writer instead of silently keeping the old watermark;
+        the already-published prefix stays readable while it waits."""
         disp = self.dispatcher()
         with self.harness.connect() as conn:
             published, _ = self.event(conn)
@@ -365,16 +386,11 @@ class C04(unittest.TestCase):
         self.addCleanup(slow.close)
         slow_seq, _ = self.event(slow, suffix="slow", commit=False)
 
-        started = threading.Event()
-        self.addCleanup(started.set)
-        thread = threading.Thread(target=lambda: (started.wait(10), slow.commit()))
-        thread.start()
-
-        began = time.monotonic()
-        watermark = disp.refresh()
-        elapsed = time.monotonic() - began
-        self.assertLess(elapsed, 2.0, "dispatcher blocked behind a slow writer")
-        self.assertEqual(watermark, published, "watermark passed an uncommitted allocation")
+        thread, box = refresh_in_thread(disp)
+        self.addCleanup(thread.join, 30)
+        time.sleep(0.2)
+        self.assertTrue(thread.is_alive(), "refresh returned while a writer still held the publication lock")
+        self.assertNotIn("watermark", box)
 
         consumer = self.consumer()
         with self.harness.connect() as reader:
@@ -382,16 +398,54 @@ class C04(unittest.TestCase):
             self.assertEqual(delivered, [published], "already-published prefix was withheld")
             self.assertEqual(disp.dispatch_once(reader, consumer), 1)
 
-        started.set()
+        slow.commit()
         thread.join(timeout=30)
-        self.assertFalse(thread.is_alive(), "slow writer did not commit")
-        self.assertEqual(disp.refresh(), slow_seq, "watermark did not advance after the slow commit")
+        self.assertFalse(thread.is_alive(), "refresh did not finish after the writer committed")
+        self.assertNotIn("error", box)
+        self.assertEqual(box["watermark"], slow_seq, "watermark did not advance to the committed allocation")
         with self.harness.connect() as reader:
             delivered = [row[0] for row in disp.stream.batch(reader, consumer, 100)]
         self.assertEqual(delivered, [slow_seq], "the slow writer's event was skipped")
 
+    def test_watermark_refresh_times_out_loudly_after_the_bound(self):
+        """0013: the wait is bounded; a timeout raises 55P03 and does not move the watermark."""
+        disp = self.dispatcher()
+        with self.harness.connect() as conn:
+            self.event(conn)
+        published = disp.refresh()
+        disp.refresh_conn.execute("SET aegis.outbox_watermark_lock_timeout = '200ms'")
+
+        slow = self.harness.connect()
+        self.addCleanup(slow.close)
+        slow_seq, _ = self.event(slow, suffix="timeout", commit=False)
+
+        began = time.monotonic()
+        with self.assertRaises(pg_errors.LockNotAvailable) as raised:
+            disp.refresh()
+        elapsed = time.monotonic() - began
+        self.assertGreaterEqual(elapsed, 0.15, "refresh returned before the configured bound")
+        self.assertLess(elapsed, 3.0, "refresh ignored the configured bound")
+        self.assertIn("publication lock", str(raised.exception))
+        with self.harness.connect() as conn:
+            self.assertEqual(disp.stream.watermark(conn), published,
+                             "a timed-out refresh changed the watermark")
+
+        slow.commit()
+        self.assertEqual(disp.refresh(), slow_seq, "refresh did not recover after the timeout")
+
+    def test_a_non_positive_lock_bound_is_rejected(self):
+        """A zero bound must not become 'wait forever': it fails before taking the lock."""
+        disp = self.dispatcher()
+        disp.refresh_conn.execute("SET aegis.outbox_watermark_lock_timeout = '0'")
+        with self.assertRaises(pg_errors.InvalidParameterValue):
+            disp.refresh()
+
     def test_inverted_commit_is_never_published_early(self):
-        """C04's hard case: seq n+1 commits while seq n is open, so n must not be skipped."""
+        """C04's hard case: seq n+1 commits while seq n is open, so n must not be skipped.
+
+        0013: the refresh waits for n's transaction; it must not publish n+1 while n is open and
+        must deliver both after n commits.
+        """
         disp = self.dispatcher(SEQUENCE)
         slow = self.harness.connect()
         self.addCleanup(slow.close)
@@ -399,13 +453,21 @@ class C04(unittest.TestCase):
         with self.harness.connect() as fast:
             second, _ = self.event(fast, SEQUENCE, "inverted-second", commit=True)
         self.assertEqual(second, first + 1)
-        self.assertEqual(disp.refresh(), first - 1, "published past the uncommitted lower sequence")
+
+        thread, box = refresh_in_thread(disp)
+        self.addCleanup(thread.join, 30)
+        time.sleep(0.2)
+        self.assertTrue(thread.is_alive(), "refresh published while the lower sequence was open")
         consumer = self.consumer()
         with self.harness.connect() as reader:
             self.assertEqual(disp.stream.batch(reader, consumer, 100), [])
             self.assertEqual(disp.dispatch_once(reader, consumer), 0)
+
         slow.commit()
-        self.assertEqual(disp.refresh(), second)
+        thread.join(timeout=30)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(box.get("watermark"), second,
+                         "watermark did not advance to the committed higher sequence")
         with self.harness.connect() as reader:
             delivered = disp.stream.batch(reader, consumer, 100)
             self.assertEqual([row[0] for row in delivered], [first, second], "an event was skipped")
@@ -445,12 +507,20 @@ class C04(unittest.TestCase):
         self.addCleanup(conn.close)
         seqs = [self.event(conn, suffix=f"multi:{k}", commit=False)[0] for k in range(3)]
         self.assertEqual(seqs, [seqs[0], seqs[0] + 1, seqs[0] + 2])
-        self.assertLess(disp.refresh(), seqs[0], "watermark covered an uncommitted multi-event transaction")
+
+        thread, box = refresh_in_thread(disp)
+        self.addCleanup(thread.join, 30)
+        time.sleep(0.2)
+        self.assertTrue(thread.is_alive(), "watermark covered an uncommitted multi-event transaction")
         consumer = self.consumer()
         with self.harness.connect() as reader:
             self.assertEqual(disp.stream.batch(reader, consumer, 100), [])
+
         conn.commit()
-        disp.refresh()
+        thread.join(timeout=30)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(box.get("watermark"), seqs[-1],
+                         "watermark did not move to the committed transaction")
         with self.harness.connect() as reader:
             delivered = [row[0] for row in disp.stream.batch(reader, consumer, 100)]
             self.assertEqual(delivered, seqs, "multi-event transaction was published partially")
@@ -570,7 +640,14 @@ class UpgradeC04(unittest.TestCase):
             ).fetchone()[0]
             conn.commit()
         history.apply("0008_outbox_publication_order.sql")
+        history.apply("0013_outbox_watermark_blocking.sql")
         highest = max(old_events + [old_revision])
+        with history.connect() as conn:
+            source = conn.execute(
+                "SELECT pg_get_functiondef('aegis.outbox_watermark_refresh(text,bigint)'::regprocedure)"
+            ).fetchone()[0]
+            self.assertIn("pg_advisory_xact_lock", source, "0013 did not replace the try-lock")
+            self.assertNotIn("pg_try_advisory_xact_lock", source)
         with history.connect() as conn:
             counter, watermark = conn.execute(
                 "SELECT next_seq, published_upto FROM aegis.outbox_publication, aegis.outbox_watermark"
