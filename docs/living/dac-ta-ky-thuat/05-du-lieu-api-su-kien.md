@@ -18,7 +18,7 @@ Finding: CANDIDATE, CORROBORATED, VERIFIED, FALSE_POSITIVE, ACCEPTED_RISK, FIXED
 
 Giữ quy tắc FindingRun: mỗi finding có một dòng cho mỗi lần chạy đã kiểm tài sản đó theo coverage, gồm scan_id, seen, status, severity/lý do, evidence và thời điểm; kể cả seen=false hoặc trạng thái không đổi. scan_id = job_id; scan_cycle phân biệt lần quét mới, không thay scan_id. Mỗi lần đánh giá severity là bản ghi mới. Sau FIXED mà thấy lại với bằng chứng thì REGRESSED; không đóng finding chỉ vì không thấy.
 
-Job có priority 0–100 và depends_on; dependency cùng campaign, không self/cycle. Priority/dependency ghi lúc tạo và bất biến; DB giữ relation job_dependency, API thể hiện mảng depends_on. Metadata vẫn cần contract lifecycle rõ cho late result/cancel theo backlog.
+Job có priority 0–100 và depends_on; dependency cùng campaign, không self/cycle. Priority/dependency ghi lúc tạo và bất biến; DB giữ relation job_dependency, API thể hiện mảng depends_on. Vòng đời job (attempt/generation, cancel intent, terminal CAS, late result, lý do chờ) đã khóa ở §C06.
 
 ## API và MCP
 
@@ -100,11 +100,15 @@ Kiểm chứng: [test_hash_receipt.py](../../../contracts/tests/test_hash_receip
 
 ### C06 — Kết quả cuối, partial, cancel và late result
 
-Mô hình hiện có một dedup_key và một envelope reference cho mỗi job. `partial` mô tả kết quả thu cuối có độ phủ chưa đầy đủ, không là chuỗi nhiều envelope thay đổi liên tục. Tiến độ được biểu diễn qua job status/event. Thu thêm dữ liệu là lần quét mới có scan_cycle mới.
+Đã khóa ở S1.2b (contract v2 + migration 0007). Một job có một `dedup_key` và một envelope reference. `partial` là kết quả thu cuối có độ phủ chưa đầy đủ — không phải chuỗi nhiều envelope thay đổi liên tục; tiến độ thể hiện qua status/event, thu thêm dữ liệu là job mới với `scan_cycle` mới.
 
-Contract xử lý cancel/complete cạnh tranh và attempt fencing còn phải khóa ở S1.2. Phương án: cancel ghi intent; terminal hóa có compare-and-set trên attempt/generation; callback attempt cũ bị cách ly và giữ audit, không ghi đè terminal result. Generation tái thực thi khác scan_cycle và khác retry truyền lại envelope. Các field/giao dịch tương ứng chưa đủ trong schema/DDL, không được triển khai bằng giả định ngầm.
+Hai fencing token trong [job.v2](../../../contracts/capability/job.v2.schema.json): `attempt` (số lần dispatch trong cùng generation, +1 khi dispatch lại job chưa terminal) và `generation` (số lần tái thực thi; chỉ tăng khi mở lại job đã terminal, `attempt` trở về 1 và kết quả cũ được xoá khỏi hàng). Cả hai khác `scan_cycle` và khác retry truyền lại envelope.
 
-Test cần có cancel/complete đảo thứ tự, timeout có bằng chứng partial, duplicate callback, kết quả muộn từ attempt cũ và retry sau crash; chỉ một terminal result được nhận, evidence đã thu không mất.
+Hủy là **ý định**: [`aegis.request_job_cancel`](../../../contracts/db/postgres/0007_job_lifecycle.sql) ghi `cancel.requested_at/requested_by`, trả `requested | already_requested | terminal`, không đổi trạng thái và không ghi đè kết quả đã nhận. Terminal hóa chỉ qua [`aegis.record_job_callback`](../../../contracts/db/postgres/0007_job_lifecycle.sql): khóa hàng rồi compare-and-set trên `(generation, attempt)`, trả `terminalized | duplicate | quarantined`. Trạng thái terminal là cuối cùng — không trạng thái terminal nào thay bằng trạng thái terminal khác; mở lại chỉ bằng `generation+1` với kết quả đã xoá (trigger `lifecycle_guard`). Callback của attempt/generation cũ, callback trái kết quả đã ghi, hoặc `CANCELLED` không có ý định hủy bị cách ly ở `job_callback_quarantine` kèm `claimed`, `payload_hash` (aegis-c14n/1 từ §C03) và `evidence_refs` — dữ liệu đã thu vẫn nằm ở S3/`evidence`, không bị xoá. Timeout có kết quả một phần giữ nguyên evidence đã thu và envelope một phần trên hàng job. Mọi thay đổi attempt/generation/cancel intent/wait reason có dòng append-only trong `job_lifecycle_change`; status có `job_status_change`.
+
+Lý do chờ (X-4): `job.wait_reason` là `{code, detail?, blocking_job_ids?, since}` chỉ có khi `status=QUEUED`; job `QUEUED` không có nó là job sẵn sàng dispatch. Mã: `DEPENDENCY_PENDING`, `DEPENDENCY_FAILED`, `CAMPAIGN_PAUSED`, `BUDGET_EXHAUSTED`, `WINDOW_CLOSED`, `CONCURRENCY_LIMIT`, `RATE_LIMITED`, `PROVIDER_UNAVAILABLE`, `MANUAL_HOLD`; schema và DDL công bố cùng danh sách. Dispatch phải xoá reason trong cùng UPDATE (CHECK `scan_job_wait_reason_queued`), nên lý do cũ không tồn tại trên job đang chạy. Flow API `/campaigns/{id}/flow` trả `attempt`, `generation`, `cancel`, `wait_reason` cho node job.
+
+Kiểm chứng: [test_job_lifecycle.py](../../../contracts/tests/test_job_lifecycle.py) (shape/rule schema, event mang attempt, danh sách mã schema = DDL, OpenAPI flow/cancel); [job_lifecycle.sql](../../../contracts/db/postgres/tests/job_lifecycle.sql) (cancel/complete cả hai thứ tự còn đúng một terminal, terminal bất biến, callback attempt/generation cũ bị cách ly, timeout giữ evidence một phần, duplicate callback idempotent, mở lại bằng generation+1, wait reason chỉ trong QUEUED); [test_job_lifecycle_race.py](../../../contracts/tests/test_job_lifecycle_race.py) với hai kết nối thật trên database dùng một lần do harness tự tạo và drop (chặn trên row lock, chỉ một terminal, cancel intent idempotent). Còn mở: implementation M02/M06 (G1.1d/G1.3a) — contract mô tả luồng tham chiếu, chưa có scheduler/runner.
 
 ### C08 — Kiểm biên schema và OpenAPI
 

@@ -17,7 +17,9 @@
     "priority",
     "depends_on",
     "adapter_version",
-    "manifest_sha256"
+    "manifest_sha256",
+    "attempt",
+    "generation"
   ],
   "additionalProperties": false,
   "properties": {
@@ -38,6 +40,24 @@
     },
     "status": {
       "$ref": "#/$defs/JobStatus"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Số lần dispatch trong cùng generation. M06 tăng 1 mỗi lần dispatch lại job chưa terminal (vd mất container); callback mang attempt cũ bị cách ly. Re-execution sau terminal là generation mới, không phải attempt mới."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Thế hệ tái thực thi của job: 1 khi tạo, +1 chỉ khi mở lại job đã terminal (attempt trở về 1, kết quả cũ đã xoá khỏi hàng). Khác scan_cycle (lần quét mới là job mới) và khác retry truyền lại envelope."
+    },
+    "cancel": {
+      "$ref": "#/$defs/CancelIntent"
+    },
+    "wait_reason": {
+      "$ref": "#/$defs/WaitReason"
     },
     "job_fingerprint": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
@@ -131,6 +151,126 @@
         "FAILED",
         "CANCELLED"
       ]
+    },
+    "CancelIntent": {
+      "description": "Ý định hủy đã ghi nhận (cancel intent). Bản thân nó không đổi trạng thái: job terminal khi M06 gọi terminal hóa. Ý định không bao giờ ghi đè một kết quả terminal đã nhận trước đó; nó vẫn nằm trong lịch sử.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested_at",
+        "requested_by"
+      ],
+      "properties": {
+        "requested_at": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        },
+        "requested_by": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "WaitReason": {
+      "description": "Lý do job đang chờ (X-4). Chỉ có khi status=QUEUED; job QUEUED không có wait_reason là job sẵn sàng dispatch. Dependency thất bại/hủy làm job chờ, không tự bỏ dependency.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "since"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "DEPENDENCY_PENDING",
+            "DEPENDENCY_FAILED",
+            "CAMPAIGN_PAUSED",
+            "BUDGET_EXHAUSTED",
+            "WINDOW_CLOSED",
+            "CONCURRENCY_LIMIT",
+            "RATE_LIMITED",
+            "PROVIDER_UNAVAILABLE",
+            "MANUAL_HOLD"
+          ]
+        },
+        "detail": {
+          "description": "Giải thích cho người vận hành; dữ liệu không tin cậy khi lấy từ tool.",
+          "type": "string",
+          "maxLength": 500
+        },
+        "blocking_job_ids": {
+          "description": "Job tiền nhiệm đang chặn (cùng campaign) khi code là DEPENDENCY_*.",
+          "type": "array",
+          "items": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "since": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "description": "wait_reason chỉ có nghĩa khi job đang chờ dispatch.",
+      "if": {
+        "required": [
+          "wait_reason"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "QUEUED"
+          }
+        }
+      }
+    },
+    {
+      "description": "Trạng thái terminal phải có finished_at.",
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "SUCCEEDED",
+              "FAILED",
+              "CANCELLED"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "finished_at"
+        ]
+      }
+    },
+    {
+      "description": "CANCELLED chỉ xảy ra sau một cancel intent (cancel ghi intent trước, terminal sau).",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "CANCELLED"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "cancel"
+        ]
+      }
+    }
+  ]
 }

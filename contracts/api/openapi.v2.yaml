@@ -307,6 +307,18 @@ paths:
                           type: string
                         error:
                           $ref: ../common/error.v2.schema.json
+                        attempt:
+                          type: integer
+                          minimum: 1
+                          description: Attempt đang chạy (fencing); 0 khi node không phải job.
+                        generation:
+                          type: integer
+                          minimum: 1
+                          description: Generation tái thực thi; 0 khi node không phải job.
+                        cancel:
+                          $ref: ../capability/job.v2.schema.json#/$defs/CancelIntent
+                        wait_reason:
+                          $ref: ../capability/job.v2.schema.json#/$defs/WaitReason
                         started_at:
                           type: string
                           format: date-time
@@ -469,6 +481,11 @@ paths:
       - jobs
       operationId: cancelJob
       summary: Hủy job (best effort, báo kết quả trung thực)
+      description: 'Ghi cancel intent (cancel.requested_at/requested_by) rồi để M06 dừng container và
+        terminal hóa. Intent KHÔNG tự đổi trạng thái và không ghi đè kết quả terminal đã nhận trước
+        đó; job còn chờ (QUEUED) có thể terminal CANCELLED ngay sau intent. Gửi lại khi job chưa
+        terminal trả 200 với intent đã có (không ghi trùng); job đã terminal trả 200 với trạng thái
+        hiện tại và giữ nguyên lý do hủy trong lịch sử.'
       requestBody:
         $ref: '#/components/requestBodies/ActorReason'
       responses:

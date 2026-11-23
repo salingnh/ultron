@@ -10,6 +10,8 @@ valid:
   valid/approved-task.subfinder.json: capability/approved-task.v2.schema.json
   valid/approved-task.seed-kinds.json: capability/approved-task.v2.schema.json
   valid/ingest-receipt.json: ingestion/ingest-receipt.v2.schema.json
+  valid/job.queued-waiting.json: capability/job.v2.schema.json
+  valid/job.cancelled-with-intent.json: capability/job.v2.schema.json
   valid/severity-assessment.unrated.json: finding/severity-assessment.v2.schema.json
   valid/model-request.agent-turn.json: agent/model-request.v2.schema.json
   valid/model-response.tool-calls.openai.json: agent/model-response.v2.schema.json
@@ -25,6 +27,7 @@ invalid:
   invalid/finding-secret-without-value.json: ingestion/result-envelope.v2.schema.json#/$defs/FindingCandidate
   invalid/approved-task.target-ref-ambiguous.json: capability/approved-task.v2.schema.json
   invalid/approved-task.target-ref-raw-key.json: capability/approved-task.v2.schema.json
+  invalid/job.wait-reason-running.json: capability/job.v2.schema.json
   invalid/severity-assessment.unrated-with-source-refs.json: finding/severity-assessment.v2.schema.json
   invalid/severity-assessment.assessed-without-refs.json: finding/severity-assessment.v2.schema.json
   invalid/severity-assessment.failure-non-unrated.json: finding/severity-assessment.v2.schema.json
