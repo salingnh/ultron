@@ -1,0 +1,141 @@
+{
+  "environment": {
+    "capabilities": [
+      "dns.enumerate_subdomains",
+      "dns.resolve",
+      "network.discover_services"
+    ],
+    "cpu": "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
+    "cpu_count": 56,
+    "host": "SAPC",
+    "packages": {
+      "anyio": "4.11.0",
+      "httpx2": "2.16.2",
+      "jsonschema": "4.26.0",
+      "mcp": "2.3.0",
+      "mcp-types": "2.3.0",
+      "starlette": "1.10.0",
+      "uvicorn": "0.54.0"
+    },
+    "platform": "Linux-7.3.4-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "providers": 100,
+    "python": "3.12.13",
+    "timestamp_utc": "2026-11-23T18:26:59+00:00",
+    "transport": "Streamable HTTP, stateful session, localhost"
+  },
+  "nfr_04_target": {
+    "metric": "registry P95 < 300 ms with 100 providers",
+    "note": "fake in-memory registry; no PostgreSQL, no network to data services",
+    "target_p95_ms": 300.0
+  },
+  "results": [
+    {
+      "description": "tools/list over Streamable HTTP (JSON), 3 wrapped capability tools",
+      "extra": {},
+      "name": "tools/list_http_json",
+      "passes_target": true,
+      "stats": {
+        "max_ms": 110.589,
+        "mean_ms": 4.286,
+        "n": 500,
+        "p50_ms": 4.047,
+        "p90_ms": 4.275,
+        "p95_ms": 4.319,
+        "p99_ms": 4.455
+      }
+    },
+    {
+      "description": "tools/call over Streamable HTTP (JSON): schema+_meta validation, session check, registry, job create",
+      "extra": {},
+      "name": "tools/call_http_json",
+      "passes_target": true,
+      "stats": {
+        "max_ms": 4.422,
+        "mean_ms": 3.397,
+        "n": 500,
+        "p50_ms": 3.386,
+        "p90_ms": 3.586,
+        "p95_ms": 3.636,
+        "p99_ms": 3.73
+      }
+    },
+    {
+      "description": "tools/call over Streamable HTTP, 16 concurrent callers, distinct keys",
+      "extra": {
+        "calls_per_s": 272.7,
+        "concurrency": 16,
+        "wall_s": 1.833
+      },
+      "name": "tools/call_http_json_concurrent",
+      "passes_target": true,
+      "stats": {
+        "max_ms": 156.678,
+        "mean_ms": 57.137,
+        "n": 500,
+        "p50_ms": 53.031,
+        "p90_ms": 63.355,
+        "p95_ms": 67.314,
+        "p99_ms": 135.447
+      }
+    },
+    {
+      "description": "tools/call over Streamable HTTP with SSE framed responses",
+      "extra": {},
+      "name": "tools/call_http_sse",
+      "passes_target": true,
+      "stats": {
+        "max_ms": 6.536,
+        "mean_ms": 5.087,
+        "n": 500,
+        "p50_ms": 5.009,
+        "p90_ms": 5.395,
+        "p95_ms": 5.544,
+        "p99_ms": 5.87
+      }
+    },
+    {
+      "description": "tools/call handler only (no HTTP): contract validation + _meta/session + registry select + in-memory job create",
+      "extra": {},
+      "name": "tools/call_handler",
+      "passes_target": true,
+      "stats": {
+        "max_ms": 2.256,
+        "mean_ms": 0.536,
+        "n": 5000,
+        "p50_ms": 0.516,
+        "p90_ms": 0.588,
+        "p95_ms": 0.623,
+        "p99_ms": 0.909
+      }
+    },
+    {
+      "description": "tools/call handler only (no HTTP): contract validation + _meta/session + registry select + simulated 5 ms registry write",
+      "extra": {},
+      "name": "tools/call_handler_plus_5ms_registry_write",
+      "passes_target": true,
+      "stats": {
+        "max_ms": 109.569,
+        "mean_ms": 5.843,
+        "n": 5000,
+        "p50_ms": 5.769,
+        "p90_ms": 6.014,
+        "p95_ms": 6.14,
+        "p99_ms": 6.362
+      }
+    },
+    {
+      "description": "100 concurrent tools/call with one idempotency_key (NFR-02 case, fake registry)",
+      "extra": {
+        "approved": 1,
+        "calls": 100,
+        "distinct_job_ids": 1,
+        "duplicate": 99,
+        "jobs_in_registry": 11641,
+        "wall_ms": 68.56
+      },
+      "name": "same_idempotency_key_burst_100",
+      "passes_target": null,
+      "stats": {}
+    }
+  ]
+}

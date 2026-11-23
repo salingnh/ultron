@@ -1,0 +1,23 @@
+{
+  "concurrency": 50,
+  "jobs_created": 200,
+  "phases": [
+    {
+      "description": "stateless Streamable HTTP (no session), 50 concurrent POSTs",
+      "name": "stateless_concurrent",
+      "requests_per_s": 244.2,
+      "stats": {
+        "max_ms": 355.345,
+        "mean_ms": 179.536,
+        "n": 200,
+        "p50_ms": 133.025,
+        "p90_ms": 347.914,
+        "p95_ms": 351.116,
+        "p99_ms": 353.434
+      },
+      "wall_s": 0.819
+    }
+  ],
+  "requests": 200,
+  "stateless": true
+}

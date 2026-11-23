@@ -1,0 +1,52 @@
+{
+  "concurrency": 50,
+  "jobs_created": 620,
+  "phases": [
+    {
+      "description": "one MCP session, requests sent one at a time",
+      "name": "one_session_sequential",
+      "requests_per_s": 367.0,
+      "stats": {
+        "max_ms": 4.71,
+        "mean_ms": 2.714,
+        "n": 200,
+        "p50_ms": 2.485,
+        "p90_ms": 3.589,
+        "p95_ms": 3.733,
+        "p99_ms": 4.027
+      },
+      "wall_s": 0.545
+    },
+    {
+      "description": "one MCP session, 50 concurrent POSTs",
+      "name": "one_session_concurrent",
+      "requests_per_s": 275.5,
+      "stats": {
+        "max_ms": 231.508,
+        "mean_ms": 142.195,
+        "n": 200,
+        "p50_ms": 151.92,
+        "p90_ms": 175.109,
+        "p95_ms": 207.707,
+        "p99_ms": 227.121
+      },
+      "wall_s": 0.726
+    },
+    {
+      "description": "200 separate MCP sessions, 50 concurrent",
+      "name": "many_sessions_concurrent",
+      "requests_per_s": 136.1,
+      "stats": {
+        "max_ms": 105.999,
+        "mean_ms": 80.521,
+        "n": 200,
+        "p50_ms": 81.53,
+        "p90_ms": 94.173,
+        "p95_ms": 99.899,
+        "p99_ms": 105.027
+      },
+      "wall_s": 1.469
+    }
+  ],
+  "requests": 200
+}
