@@ -1,6 +1,7 @@
--- S1.3 / C04: publication ordering after 0001 -> 0002 -> 0003 -> 0004 -> 0008 on a fresh PostgreSQL 16.
--- Single-session properties only; multi-connection races (slow writer, inverted commit, crash
--- mid-transaction) are in contracts/tests/test_outbox_ordering.py against the same schema.
+-- S1.3 / C04: publication ordering after 0001 -> 0002 -> 0003 -> 0004 -> 0008 -> 0013 on a fresh
+-- PostgreSQL 16. Single-session properties only; multi-connection blocking/timeout races (slow
+-- writer, inverted commit, crash mid-transaction, bounded wait) are in
+-- contracts/tests/test_outbox_ordering.py against the same schema.
 -- Everything runs in one transaction and is rolled back, so the script can run on any DB that has
 -- the migrations applied.
 SET search_path = aegis, public;
@@ -94,6 +95,14 @@ BEGIN
   END IF;
   PERFORM aegis.consumer_advance('m23-projector', wm, 'c04-test', fence);
 
+  -- 0013: the wait must stay bounded. A non-positive bound is rejected before the lock is taken
+  -- instead of silently becoming an unbounded wait (the blocking/timeout race itself is multi-
+  -- connection, so it lives in the Python harness).
+  PERFORM set_config('aegis.outbox_watermark_lock_timeout', '0', true);
+  BEGIN PERFORM aegis.outbox_watermark_refresh('c04-test', fence);
+  EXCEPTION WHEN invalid_parameter_value THEN blocked := blocked + 1; END;
+  PERFORM set_config('aegis.outbox_watermark_lock_timeout', '5s', true);
+
   -- Failover: the holder dies without releasing (lease expires), a new holder takes over with a
   -- higher fence, and the old holder is rejected everywhere.
   UPDATE outbox_dispatcher SET leased_until = now() - interval '1 second' WHERE name = 'c04-test';
@@ -108,10 +117,10 @@ BEGIN
     RAISE EXCEPTION 'new holder could not read the watermark';
   END IF;
 
-  IF blocked <> 7 THEN
-    RAISE EXCEPTION 'C04: only % / 7 protections blocked (expected: explicit seq x2, seq update, counter delete, checkpoint past watermark, stale fence x2)', blocked;
+  IF blocked <> 8 THEN
+    RAISE EXCEPTION 'C04: only % / 8 protections blocked (expected: explicit seq x2, seq update, counter delete, checkpoint past watermark, non-positive lock bound, stale fence x2)', blocked;
   END IF;
-  RAISE NOTICE 'C04 single-session: allocator consecutive, revision shares counter, 7/7 protections blocked, watermark/fence/checkpoint semantics PASS';
+  RAISE NOTICE 'C04 single-session: allocator consecutive, revision shares counter, 8/8 protections blocked, watermark/fence/checkpoint semantics PASS';
 END $$;
 
 -- Writer group role: append-only access; the allocator runs as SECURITY DEFINER, so the role needs
