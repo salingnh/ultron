@@ -1,0 +1,6 @@
+# Local dev configuration and credentials (see .env.example)
+.env
+
+# Python test/tooling caches
+__pycache__/
+*.pyc
