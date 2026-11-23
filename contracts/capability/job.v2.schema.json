@@ -53,9 +53,10 @@
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"
     },
     "targets": {
+      "description": "Mục tiêu đã phân giải của job (TargetRef: seed_id hoặc canonical_key). Giữ nguyên seed gốc của campaign; đây là nguồn của G5/provenance, không phải allowlist.",
       "type": "array",
       "items": {
-        "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+        "$ref": "../common/ids.v2.schema.json#/$defs/TargetRef"
       }
     },
     "requested_by": {

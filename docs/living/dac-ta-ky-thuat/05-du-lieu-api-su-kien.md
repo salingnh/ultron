@@ -80,9 +80,11 @@ CVSS, EPSS, KEV, mức phơi nhiễm, criticality và hạn chế coverage là t
 
 ### C02 — Seed reference xuyên hợp đồng
 
-Campaign nhận keyword/CIDR nhưng targets/provenance trong task/envelope hiện đòi CanonicalKey của asset. Đây là khoảng trống hình dạng dữ liệu, không phải runtime đã hỗ trợ các seed này xuyên luồng.
+Đã khóa ở S1.1 (contract v2 + migration 0005). [TargetRef](../../../contracts/common/ids.v2.schema.json) là đúng một trong hai dạng: `{seed_id}` trỏ `campaign_target.target_id` (giữ nguyên kind/raw_value, kể cả keyword/CIDR không có canonical_key) hoặc `{canonical_key}` của asset đã biết. `approved-task.targets`, `job.targets` và `result-envelope.provenance.seed_targets` dùng TargetRef; `coverage.subjects`, `discovered_from` và `input.targets` vẫn là khóa asset/tham số tool, không phải chỗ thay thế seed. Không tạo asset giả cho keyword/CIDR: M05 phân giải mục tiêu trong request (job-submit, MCP capability-request) thành TargetRef; giá trị không khớp seed của campaign hoặc asset đã biết bị từ chối, không tự suy ra khóa chuẩn.
 
-Phương án cần khóa S1.1: TargetRef phân biệt seed_id và asset canonical_key; giữ loại/giá trị seed gốc tại campaign_target. Không tạo asset giả cho keyword/CIDR. M27 phải kiểm seed tồn tại và thuộc campaign/scope; coverage vẫn nói về asset thực sự đã kiểm. Test domain/IP/URL/email/keyword/CIDR từ request đến provenance, seed khác campaign, replay và CIDR mở rộng không mất nguồn gốc.
+DB: `scan_job.target_refs` bắt buộc với job mới; seed phải là `campaign_target` của đúng campaign/scope (trigger `aegis.require_job_target_refs`), bất biến sau khi nhận, và `asset_provenance.from_target_id` cũng bị chặn seed khác campaign. `scan_job.targets` chỉ còn là hình chiếu canonical-key cho lịch sử/tiện đọc và có thể rỗng khi job chỉ có seed keyword/CIDR. Hàng trước 0005 giữ refs NULL, không được dispatch/replay. `job_fingerprint` băm danh sách TargetRef (không băm hình chiếu `targets text[]`, nếu không hai job keyword/CIDR khác nhau sẽ trùng fingerprint); phần còn lại của thành phần fingerprint thuộc S1.2a.
+
+Kiểm chứng: schema + fixture tại [test_seed_reference.py](../../../contracts/tests/test_seed_reference.py) (seed-kinds và seed-provenance hợp lệ; bị từ chối: seed_id+canonical_key cùng lúc, chuỗi khóa cũ, canonical_key giả `keyword:`); DB tại [job_target_refs.sql](../../../contracts/db/postgres/tests/job_target_refs.sql) — seed khác campaign bị chặn, replay không đổi seed đã nhận, CIDR→IP giữ seed gốc ở provenance, 5 dạng list sai bị từ chối. Còn mở: implementation M05/M27 (G1.1c/G1.4a), capability tiêu thụ seed keyword chưa có schema, và M05 ghi `policy_decision.targets` (vẫn `text[]`) cần quy ước khi chỉ có seed keyword/CIDR.
 
 ### C03 — Idempotency, hash và receipt
 
@@ -113,4 +115,4 @@ Schema và kiểm conformance dùng [validator chung](../../../contracts/validat
 | N05 | Usage tiêu thụ không âm ở schema và DB. Lịch sử sai giữ nguyên và phải báo lỗi toàn vẹn, không giảm consumed budget | Schema từ chối âm, DB từ chối bốn cột âm và nhận zero; upgrade giữ nguyên bản ghi lịch sử sai |
 | N06 | API hiện hành ở G2 xuất JSON; query và response cùng định dạng. SARIF/HTML của G4 có task khóa contract riêng, không tự bật trong API hiện tại | Kiểm enum query và response media type; G4.2 kiểm chuẩn định dạng mở rộng |
 
-Test tại [schema boundaries](../../../contracts/tests/test_schema_boundaries.py) và SQL test trong contracts/db/postgres/tests. Kiểm conformance này không thay thế các phần còn cần khóa về seed reference, hash, ordering, actor, lifecycle hay ModelClient.
+Test tại [schema boundaries](../../../contracts/tests/test_schema_boundaries.py) và SQL test trong contracts/db/postgres/tests. Kiểm conformance này không thay thế các phần còn cần khóa về hash, ordering, actor, lifecycle hay ModelClient.

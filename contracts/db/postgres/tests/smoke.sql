@@ -10,8 +10,8 @@ COMMIT;
 INSERT INTO campaign_target VALUES ('01900000-0000-7000-8000-0000000000b1','01900000-0000-7000-8000-0000000000a1','domain','internal.example','dns:internal.example');
 INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
   VALUES ('01900000-0000-7000-8000-0000000000c1','01900000-0000-7000-8000-000000000001','dns.enumerate_subdomains','subfinder','{dns:internal.example}','{"targets":["internal.example"]}','approved','Mở rộng domain hạt giống','{"kind":"agent","id":"planner"}','roe-1','01900000-0000-7000-8000-0000000000a1','s1:1:1',repeat('0',32));
-INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,priority,input,targets,requested_by,rationale,trace_id)
-  VALUES ('01900000-0000-7000-8000-0000000000d1','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-0000000000c1','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('9',64),'01900000-0000-7000-8000-0000000000f1',repeat('f',64),'roe-1','01900000-0000-7000-8000-0000000000a1',50,'{}','{dns:internal.example}','{"kind":"agent","id":"planner"}','Mở rộng domain hạt giống',repeat('0',32));
+INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,priority,input,targets,target_refs,requested_by,rationale,trace_id)
+  VALUES ('01900000-0000-7000-8000-0000000000d1','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-0000000000c1','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('9',64),'01900000-0000-7000-8000-0000000000f1',repeat('f',64),'roe-1','01900000-0000-7000-8000-0000000000a1',50,'{}','{dns:internal.example}','[{"seed_id":"01900000-0000-7000-8000-0000000000b1"},{"canonical_key":"dns:internal.example"}]','{"kind":"agent","id":"planner"}','Mở rộng domain hạt giống',repeat('0',32));
 INSERT INTO ingestion_inbox (event_id,dedup_key,job_id,payload_hash,status) VALUES ('01900000-0000-7000-8000-0000000000e1','job:01900000-0000-7000-8000-0000000000d1:envelope','01900000-0000-7000-8000-0000000000d1',repeat('b',64),'received');
 INSERT INTO graph_revision (campaign_id,causal_job_id,envelope_event_id) VALUES ('01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-0000000000d1','01900000-0000-7000-8000-0000000000e1');
 INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen) VALUES
@@ -43,14 +43,15 @@ BEGIN
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
     VALUES ('01900000-0000-7000-8000-0000000000c2','01900000-0000-7000-8000-000000000001','dns.enumerate_subdomains','subfinder','{dns:internal.example}','{"targets":["internal.example"]}','approved','Quét lại','{"kind":"agent","id":"planner"}','roe-1','01900000-0000-7000-8000-0000000000a1','s1:1:2',repeat('1',32));
   BEGIN
-    INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,priority,input,targets,requested_by,rationale,trace_id)
-      SELECT '01900000-0000-7000-8000-0000000000d2',campaign_id,'01900000-0000-7000-8000-0000000000c2',capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,priority,input,targets,requested_by,rationale,trace_id FROM scan_job WHERE job_id='01900000-0000-7000-8000-0000000000d1';
+    INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,priority,input,targets,target_refs,requested_by,rationale,trace_id)
+      SELECT '01900000-0000-7000-8000-0000000000d2',campaign_id,'01900000-0000-7000-8000-0000000000c2',capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,priority,input,targets,target_refs,requested_by,rationale,trace_id FROM scan_job WHERE job_id='01900000-0000-7000-8000-0000000000d1';
   EXCEPTION WHEN unique_violation THEN ok := ok + 1; END;
   -- D26: UPDATE cột giá trị/định danh bị chặn trên bảng trạng thái
   BEGIN UPDATE scan_job SET targets = '{dns:evil.example}' WHERE job_id='01900000-0000-7000-8000-0000000000d1'; EXCEPTION WHEN insufficient_privilege THEN ok := ok + 1; END;
+  BEGIN UPDATE scan_job SET target_refs = '[{"canonical_key":"dns:evil.example"}]' WHERE job_id='01900000-0000-7000-8000-0000000000d1'; EXCEPTION WHEN insufficient_privilege THEN ok := ok + 1; END;
   BEGIN UPDATE asset SET canonical_key = 'dns:evil.example' WHERE asset_id='01900000-0000-7000-8000-0000000000f1'; EXCEPTION WHEN insufficient_privilege THEN ok := ok + 1; END;
   -- D26: UPDATE cột trạng thái phải thành công (không ném lỗi)
   UPDATE scan_job SET status='RUNNING', started_at=now() WHERE job_id='01900000-0000-7000-8000-0000000000d1';
-  IF ok <> 9 THEN RAISE EXCEPTION 'smoke: chỉ % / 9 kiểm tra bảo vệ đạt', ok; END IF;
-  RAISE NOTICE 'smoke: 9/9 kiểm tra bảo vệ đạt';
+  IF ok <> 10 THEN RAISE EXCEPTION 'smoke: chỉ % / 10 kiểm tra bảo vệ đạt', ok; END IF;
+  RAISE NOTICE 'smoke: 10/10 kiểm tra bảo vệ đạt';
 END $$;
