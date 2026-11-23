@@ -81,7 +81,7 @@
       }
     },
     "requested_by": {
-      "description": "Người/kênh khởi động job, server gán (operator|module). Hàng lịch sử trước 0010 có thể giữ actor tự khai cũ (kể cả kind=agent): chỉ đọc, không dispatch/replay, không diễn giải lại.",
+      "description": "Người/kênh khởi động job, server gán (operator|module). Hàng lịch sử trước 0010 có thể giữ actor tự khai cũ (kể cả kind=agent): chỉ đọc, không diễn giải lại. Actor mà 0010 không thể chấp nhận (kind agent hoặc sai shape) bị DDL giữ với lý do LEGACY_ACTOR (0011), nên hàng đó không dispatch/replay và không mở lại generation mới.",
       "oneOf": [
         {
           "$ref": "../common/ids.v2.schema.json#/$defs/RequestedBy"
@@ -153,7 +153,7 @@
   },
   "$defs": {
     "LegacyRequestedBy": {
-      "description": "Actor tự khai của hàng job trước 0010 (thường là chính phiên agent). Chỉ đọc: hàng này không có pin/proposed_by và không được dispatch/replay; không chuyển ngược thành RequestedBy hay gán một operator thay thế.",
+      "description": "Actor tự khai của hàng job trước 0010 (thường là chính phiên agent). Chỉ đọc: hàng này không có proposed_by (pin và target_refs có thể có nếu được tạo sau 0003/0005) và bị DDL giữ với lý do LEGACY_ACTOR (0011) nên không được dispatch/replay, cũng không mở lại generation mới; không chuyển ngược thành RequestedBy hay gán một operator thay thế.",
       "allOf": [
         {
           "$ref": "../common/ids.v2.schema.json#/$defs/Actor"

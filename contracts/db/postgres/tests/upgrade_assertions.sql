@@ -1,6 +1,7 @@
 -- Run 0001 + v1-upgrade fixture + 0002 + 0003 + pre-usage-upgrade fixture + 0004 + 0005 + 0006 +
--- 0007 + 0008 + v1-policy-jobs fixture + 0009 + 0010, then this test. Proves the upgrade kept every prior
--- value and that S1.6 moved the legacy configuration path without resuming anything.
+-- 0007 + 0008 + v1-policy-jobs fixture + 0009 + post-0009-agent-actor fixture + 0010 + 0011, then this
+-- test. Proves the upgrade kept every prior value, that S1.6 moved the legacy configuration path
+-- without resuming anything, and that 0011 holds the rows 0010 could not have accepted.
 SET search_path=aegis,public;
 DO $$ BEGIN
  IF (SELECT count(*) FROM legacy_contract_snapshot) <> 4 THEN RAISE EXCEPTION 'archive row count mismatch'; END IF;
@@ -45,9 +46,12 @@ DECLARE
   job_running uuid := '01900000-0000-7000-8000-0000000d1642';
   job_terminal uuid := '01900000-0000-7000-8000-0000000d1643';
   job_v1 uuid := '01900000-0000-7000-8000-0000000000d1';
+  job_agent_queued uuid := '01900000-0000-7000-8000-0000000d1741';
+  job_agent_done uuid := '01900000-0000-7000-8000-0000000d1742';
   new_l text;
   new_c text;
   blocked int := 0;
+  actor_blocked int := 0;
   shape int := 0;
   converted int;
   out text;
@@ -68,8 +72,8 @@ BEGIN
   -- 2. One conversion record per legacy snapshot, one new v2 row each, nothing promoted.
   SELECT count(*) INTO converted FROM policy_snapshot_migration;
   IF converted <> 3 THEN RAISE EXCEPTION '% conversion record(s), expected 3 (roe-1, roe-101, roe-102)', converted; END IF;
-  IF (SELECT count(*) FROM policy_snapshot) <> 6 THEN
-    RAISE EXCEPTION 'policy_snapshot row count % after 0009, expected 3 historical + 3 v2 candidates',
+  IF (SELECT count(*) FROM policy_snapshot) <> 7 THEN
+    RAISE EXCEPTION 'policy_snapshot row count % after 0009, expected 3 historical + 3 v2 candidates + the post-0009 v2 fixture',
       (SELECT count(*) FROM policy_snapshot);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM policy_snapshot_migration m
@@ -142,12 +146,12 @@ BEGIN
 
   -- 5. Jobs: the explicit hold, in both shapes of legacy row, and no drift from the definition.
   IF EXISTS (SELECT 1 FROM scan_job WHERE job_id IN (job_queued, job_running, job_terminal)
-              AND dispatch_block_reasons IS DISTINCT FROM ARRAY['LEGACY_POLICY_V1']::text[]) THEN
-    RAISE EXCEPTION 'a pinned legacy job is not held exactly for its v1 configuration';
+              AND dispatch_block_reasons IS DISTINCT FROM ARRAY['LEGACY_ACTOR','LEGACY_POLICY_V1']::text[]) THEN
+    RAISE EXCEPTION 'a pinned legacy job is not held exactly for its agent actor and its v1 configuration';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM scan_job WHERE job_id = job_v1 AND dispatch_block_reasons
-                  = ARRAY['LEGACY_MISSING_MANIFEST_PIN','LEGACY_MISSING_TARGET_REFS','LEGACY_POLICY_V1']::text[]) THEN
-    RAISE EXCEPTION 'the pre-0003 job does not carry all three legacy reasons';
+                  = ARRAY['LEGACY_ACTOR','LEGACY_MISSING_MANIFEST_PIN','LEGACY_MISSING_TARGET_REFS','LEGACY_POLICY_V1']::text[]) THEN
+    RAISE EXCEPTION 'the pre-0003 job does not carry all four legacy reasons';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM scan_job WHERE job_id = job_terminal AND status = 'SUCCEEDED'
                   AND envelope_event_id = '01900000-0000-7000-8000-0000000d1663') THEN
@@ -156,6 +160,47 @@ BEGIN
   IF EXISTS (SELECT 1 FROM scan_job WHERE dispatch_block_reasons IS DISTINCT FROM aegis.legacy_dispatch_block(scan_job)) THEN
     RAISE EXCEPTION 'stored dispatch_block_reasons drifted from the legacy definition';
   END IF;
+
+  -- 5b. OI-2/OI-18: the post-0009/pre-0010 agent-actor rows (gate-review probe P1). 0010 refuses such
+  --     an actor on INSERT, so only 0011 can hold it; without LEGACY_ACTOR the queued row was
+  --     dispatchable, which contradicted 0010 and 04. A held terminal row cannot be reopened either.
+  IF EXISTS (SELECT 1 FROM scan_job WHERE job_id IN (job_agent_queued, job_agent_done)
+              AND dispatch_block_reasons IS DISTINCT FROM ARRAY['LEGACY_ACTOR']::text[]) THEN
+    RAISE EXCEPTION 'a post-0009 agent-actor job is not held exactly for LEGACY_ACTOR';
+  END IF;
+  FOR out IN SELECT unnest(ARRAY[
+      'UPDATE scan_job SET status = ''VALIDATING'' WHERE job_id = ' || quote_literal(job_agent_queued),
+      'UPDATE scan_job SET status = ''DISPATCHED'' WHERE job_id = ' || quote_literal(job_agent_queued),
+      'UPDATE scan_job SET attempt = attempt + 1 WHERE job_id = ' || quote_literal(job_agent_queued)]) LOOP
+    BEGIN
+      EXECUTE out;
+      RAISE EXCEPTION 'not blocked: %', out;
+    EXCEPTION WHEN check_violation THEN actor_blocked := actor_blocked + 1;
+    END;
+  END LOOP;
+  BEGIN
+    UPDATE scan_job SET generation = 2, attempt = 1, status = 'QUEUED',
+        started_at = NULL, finished_at = NULL, envelope_event_id = NULL, error = NULL
+     WHERE job_id = job_agent_done;
+    RAISE EXCEPTION 'a held post-0009 terminal job was reopened';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM NOT LIKE '%held%' THEN
+      RAISE EXCEPTION 'the reopen was refused for another reason: %', SQLERRM;
+    END IF;
+    actor_blocked := actor_blocked + 1;
+  END;
+  out := aegis.request_job_cancel(job_agent_queued, '{"kind":"operator","id":"s1f-test"}', 'agent actor');
+  IF out <> 'requested' THEN
+    RAISE EXCEPTION 'a held post-0009 job could not be cancelled: %', out;
+  END IF;
+  out := aegis.record_job_callback(job_agent_queued, 1, 1, 'CANCELLED', NULL, NULL, NULL);
+  IF out <> 'terminalized' THEN
+    RAISE EXCEPTION 'a held post-0009 job could not record its terminal result: %', out;
+  END IF;
+  IF actor_blocked <> 4 THEN
+    RAISE EXCEPTION 'post-0009 agent actor: % / 4 dispatch and reopen attempts blocked', actor_blocked;
+  END IF;
+  RAISE NOTICE 'OI-2/OI-18: 2 post-0009 agent-actor jobs held for LEGACY_ACTOR, 4/4 dispatch+reopen attempts blocked, cancel and terminal result still recorded';
 
   -- 6. No auto-resume: a v1 campaign cannot start, and a held job cannot be dispatched
   --    (VALIDATING, DISPATCHED, RUNNING or an attempt bump), whatever order the scheduler tries.
