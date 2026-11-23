@@ -67,7 +67,7 @@
         "$ref": "#/$defs/DispatchBlockReason"
       },
       "minItems": 1,
-      "maxItems": 4,
+      "maxItems": 6,
       "uniqueItems": true
     },
     "job_fingerprint": {
@@ -163,13 +163,15 @@
   },
   "$defs": {
     "DispatchBlockReason": {
-      "description": "Mã lý do giữ job. LEGACY_ACTOR: requested_by không phải initiator do server gán (hàng 0010 không thể chấp nhận); LEGACY_POLICY_V1: cấu hình v1; LEGACY_MISSING_MANIFEST_PIN: nhận trước 0003; LEGACY_MISSING_TARGET_REFS: nhận trước 0005.",
+      "description": "Mã lý do giữ job. LEGACY_ACTOR: requested_by không phải initiator do server gán (hàng 0010 không thể chấp nhận); LEGACY_POLICY_V1: cấu hình v1; LEGACY_MISSING_MANIFEST_PIN: nhận trước 0003; LEGACY_MISSING_TARGET_REFS: nhận trước 0005; LEGACY_PROPOSER_LABEL: proposed_by là nhãn chứ không phải session_id (hàng trước 0012); LEGACY_TARGET_PROJECTION: targets chứa khóa mà target_refs không giải thích được (hàng trước 0012).",
       "type": "string",
       "enum": [
         "LEGACY_POLICY_V1",
         "LEGACY_MISSING_MANIFEST_PIN",
         "LEGACY_MISSING_TARGET_REFS",
-        "LEGACY_ACTOR"
+        "LEGACY_ACTOR",
+        "LEGACY_PROPOSER_LABEL",
+        "LEGACY_TARGET_PROJECTION"
       ]
     },
     "LegacyRequestedBy": {

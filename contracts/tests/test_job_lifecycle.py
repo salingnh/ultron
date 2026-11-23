@@ -119,9 +119,18 @@ class JobLifecycleSchema(unittest.TestCase):
     def test_ddl_and_schema_publish_one_dispatch_block_code_list(self):
         # job.v2 and the DDL must publish the same hold codes, in the same order (0011 widens 0009).
         codes = JOB_SCHEMA["$defs"]["DispatchBlockReason"]["enum"]
-        ddl = (ROOT / "db/postgres/0011_dispatch_hold_and_search_path.sql").read_text()
-        block = ddl.split("WHERE c NOT IN (", 1)[1].split("))", 1)[0]
+        # The list is versioned by migrations: 0011 added LEGACY_ACTOR, 0014 the two pre-0012 shapes.
+        # Compare against the last migration that publishes it.
+        latest, latest_text = None, None
+        for path in sorted((ROOT / "db/postgres").glob("[0-9][0-9][0-9][0-9]_*.sql")):
+            text = path.read_text()
+            if "WHERE c NOT IN (" in text and "is_dispatch_block_reasons" in text:
+                latest, latest_text = path, text
+        self.assertIsNotNone(latest_text)
+        block = latest_text.split("WHERE c NOT IN (", 1)[1].split("))", 1)[0]
         self.assertEqual(re.findall(r"'([A-Z_0-9]+)'", block), codes)
+        self.assertIn("0014", latest.name)
+        ddl = (ROOT / "db/postgres/0011_dispatch_hold_and_search_path.sql").read_text()
         self.assertIn("OLD.dispatch_block_reasons IS NOT NULL", ddl)
         self.assertIn("NOT aegis.is_initiator(j.requested_by)", ddl)
         # A read model with the hold is valid; an unknown code and a duplicate are not.

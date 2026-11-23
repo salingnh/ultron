@@ -30,7 +30,7 @@ Agent dùng MCP capability/query schema, không dùng SQL/Cypher tự do. Ngữ 
 
 `job.started.v2`, `job.completed.v2`, `policy.denied.v2`, `asset.discovered.v2`, `observation.changed.v2`, `artifact.ready.v2`, `knowledge.delta.v2`, `intel.revision.v2`, `finding.changed.v2`.
 
-policy.denied là lỗi điều kiện thực thi/schema/budget/mục tiêu, không là phân loại quyền thao tác. Event có ID/provenance, giao at-least-once. V1 còn trong lịch sử DB, consumer v2 không tự parse như payload v2. Thuật toán watermark và content hash idempotency đã khóa (C03/C04: `aegis-c14n/1`, outbox watermark/fence ở 0008 và [graph/model.md](../../../contracts/graph/model.md#c04--thứ-tự-công-bố-còn-cần-chứng-minh)); migration kiến trúc không thay cho việc kiểm.
+policy.denied là lỗi điều kiện thực thi/schema/budget/mục tiêu, không là phân loại quyền thao tác. Event có ID/provenance, giao at-least-once. V1 còn trong lịch sử DB, consumer v2 không tự parse như payload v2. Thuật toán watermark và content hash idempotency đã khóa (C03/C04: `aegis-c14n/1`, outbox watermark/fence ở 0008 và [graph/model.md](../../../contracts/graph/model.md#c04--thứ-tự-công-bố-đã-khóa-ở-s13)); migration kiến trúc không thay cho việc kiểm.
 
 ## Mô hình tri thức và định danh
 

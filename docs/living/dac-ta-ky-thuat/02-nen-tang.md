@@ -41,7 +41,7 @@ Endpoint tương thích OpenAI/Anthropic có thể local hoặc cloud do vận h
 
 ## Lưu trữ và vận hành
 
-PostgreSQL nguồn metadata; Neo4j projection; S3 raw theo SHA-256. Giữ mục tiêu RPO PostgreSQL 15 phút, RTO 2 giờ, graph/raw RPO 1 giờ như mục tiêu kỹ thuật chưa có diễn tập chứng minh. Backup/restore kiểm checksum và số bản ghi. Outbox at-least-once, consumer idempotent; thứ tự công bố đã khóa ở C04 (allocator + watermark + fence, [graph/model.md](../../../contracts/graph/model.md#c04--thứ-tự-công-bố-còn-cần-chứng-minh)); thuật toán chọn allocator cuối cùng đang là finding mở, không dùng seq liền mạch làm bằng chứng đã đúng.
+PostgreSQL nguồn metadata; Neo4j projection; S3 raw theo SHA-256. Giữ mục tiêu RPO PostgreSQL 15 phút, RTO 2 giờ, graph/raw RPO 1 giờ như mục tiêu kỹ thuật chưa có diễn tập chứng minh. Backup/restore kiểm checksum và số bản ghi. Outbox at-least-once, consumer idempotent; thứ tự công bố đã khóa ở C04 (allocator + watermark + fence, [graph/model.md](../../../contracts/graph/model.md#c04--thứ-tự-công-bố-đã-khóa-ở-s13)); thuật toán chọn allocator cuối cùng đang là finding mở, không dùng seq liền mạch làm bằng chứng đã đúng.
 
 OTel: trace, log, metric; mọi job có campaign/tool/version/actor/rationale. UI cho biết lỗi và phần chưa hoàn tất. Dữ liệu lớn dùng reference và pagination.
 
@@ -112,7 +112,7 @@ Hai điểm đo cần nhớ khi đọc: (1) index là 28–45% dung lượng met
 | --- | --- | --- | --- |
 | Projector M23 (một consumer tuần tự) | **168–175 event/s** = 14,7 triệu event/ngày | G0.3b (14 lần rebuild 149,6–174,6) | P3 cần 833 event/s = **4,9× trần**; 3 triệu event cần 4,9 giờ mới project xong |
 | Đường ghi PostgreSQL (counter 0008) | **563 event/s** tx thật, 389 tx/s allocator-only; end-to-end 163,7 event/s (blocking) / 126,7 (try-lock) | G0.3b | P3 833 event/s vượt 1,5×; allocator không phải điểm nghẽn (nextval 1.814 tx/s) |
-| Watermark try-lock | 0 event được project trong 11–12 s ghi liên tục; lần đầu 1,07–1,09 s sau khi ngừng ghi | G0.3b §Reading 2 | Độ tươi graph/UI tụt khi ingestion liên tục — finding mở, không phải giới hạn dung lượng |
+| Watermark try-lock | 0 event được project trong 11–12 s ghi liên tục; lần đầu 1,07–1,09 s sau khi ngừng ghi | G0.3b §Reading 2 | Đã đóng: [0013](../../contracts/db/postgres/0013_outbox_watermark_blocking.sql) thay try-lock bằng khóa chờ có giới hạn, nên độ tươi graph/UI không còn tụt khi ingestion liên tục (đo lại ở G0.3b) |
 | MCP handler (CPU) | 0,52 ms p50, 2,26 ms max; 250–370 `tools/call`/s mỗi process | G0.3a | NFR-04 (100 provider, P95 <300 ms) còn xa; cần ≥2 process khi >300 call/s |
 | Neo4j upsert | 473 ops/s (100 key khác nhau); 100 writer cùng key 0,61–0,68 s | G0.3b | Không nghẽn ở 170 event/s |
 | Ready-query scheduler | P95 1,09 ms với 5.000 job QUEUED, dùng `scan_job_ready_order` | G0.1 | Queue delay P95 <2 phút không bị query làm nghẽn |

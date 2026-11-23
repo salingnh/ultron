@@ -5,6 +5,7 @@ BEGIN;
 DO $$
 DECLARE
   scope_a uuid := '01900000-0000-7000-8000-000000007001';
+  scope_a2 uuid := '01900000-0000-7000-8000-000000007003';
   scope_b uuid := '01900000-0000-7000-8000-000000007002';
   camp_a  uuid := '01900000-0000-7000-8000-000000007010';
   camp_b  uuid := '01900000-0000-7000-8000-000000007020';
@@ -23,9 +24,11 @@ DECLARE
 BEGIN
   INSERT INTO policy_snapshot VALUES
     ('roe-18',camp_a,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('1',64),'{"kind":"operator","id":"soc-1"}'),
+    ('roe-20',camp_a,'{"max_parallel_jobs":5,"max_duration_hours":24}',repeat('3',64),'{"kind":"operator","id":"soc-1"}'),
     ('roe-19',camp_b,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('2',64),'{"kind":"operator","id":"soc-1"}');
   INSERT INTO scope_snapshot VALUES
     (scope_a,camp_a,'{"domains":["bind-a.example"]}'),
+    (scope_a2,camp_a,'{"domains":["bind-a2.example"]}'),
     (scope_b,camp_b,'{"domains":["bind-b.example"]}');
   INSERT INTO campaign (campaign_id,name,objective,current_policy_version,scope_id,created_by) VALUES
     (camp_a,'Binding A','OI-6/8/9','roe-18',scope_a,'{"kind":"operator","id":"soc-1"}'),
@@ -84,16 +87,23 @@ BEGIN
     END;
   END LOOP;
 
-  -- 3. OI-8: a decision and its job cannot be relabelled or moved between campaigns.
-  FOR i IN 1 .. 4 LOOP
+  -- 3. OI-8/R-3: a decision and its job cannot be relabelled, moved between campaigns or made to run
+  --    something the decision did not approve (the executed fields are input, capability, provider,
+  --    policy_version and scope_id).
+  FOR i IN 1 .. 9 LOOP
     BEGIN
       INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,proposed_by,rationale,trace_id)
       SELECT ('01900000-0000-7000-8000-00000000705' || i)::uuid,
              CASE WHEN i = 3 THEN camp_b ELSE campaign_id END,
-             decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,
-             repeat('d' || i,32),policy_version,
-             CASE WHEN i = 3 THEN scope_b ELSE scope_id END,
-             input,targets,
+             decision_id,
+             CASE WHEN i = 6 THEN 'dns.resolve' ELSE capability END,
+             CASE WHEN i = 7 THEN 'dnsx' ELSE provider END,
+             provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,
+             repeat('d' || i,32),
+             CASE WHEN i = 8 THEN 'roe-20' ELSE policy_version END,
+             CASE WHEN i = 3 THEN scope_b WHEN i = 9 THEN scope_a2 ELSE scope_id END,
+             CASE WHEN i = 5 THEN '{"targets":["bind-a.example"],"recursive":true}'::jsonb ELSE input END,
+             targets,
              CASE WHEN i = 1 THEN '{"kind":"module","id":"M26"}'::jsonb ELSE requested_by END,
              CASE WHEN i = 2 THEN NULL ELSE proposed_by END,
              CASE WHEN i = 4 THEN jsonb_build_array(jsonb_build_object('seed_id',seed_a)) ELSE target_refs END,
@@ -149,9 +159,9 @@ BEGIN
   out := aegis.request_job_cancel(job_ok, '{"kind":"module","id":"M02"}', 'scheduler');
   IF out <> 'already_requested' THEN RAISE EXCEPTION 'cancel intent was not idempotent: %', out; END IF;
 
-  IF blocked <> 11 THEN RAISE EXCEPTION 'OI-6/8: % / 11 binding checks blocked', blocked; END IF;
+  IF blocked <> 16 THEN RAISE EXCEPTION 'OI-6/8: % / 16 binding checks blocked', blocked; END IF;
   IF cancel_blocked <> 4 THEN RAISE EXCEPTION 'OI-9: % / 4 cancel-actor checks blocked', cancel_blocked; END IF;
-  RAISE NOTICE 'OI-6/8 decision binding: 11/11 (label/foreign/missing proposer, missing/foreign refs, unexplained projection on decision and job, 4 job-vs-decision relabels) blocked';
+  RAISE NOTICE 'OI-6/8 decision binding: 16/16 (label/foreign/missing proposer, missing/foreign refs, unexplained projection on decision and job, 9 job-vs-decision relabels incl. input/capability/provider/policy_version/scope) blocked';
   RAISE NOTICE 'OI-9 cancel actor: 4/4 invalid or foreign cancels blocked; proposing session, operator and module cancel accepted, intent idempotent';
 END $$;
 ROLLBACK;

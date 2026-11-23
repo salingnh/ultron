@@ -34,8 +34,8 @@ BEGIN
     (seed_a,scope_a,'domain','hold.example','dns:hold.example');
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,target_refs,policy_version,scope_id,idempotency_key,trace_id) VALUES
     (dec_a,camp_a,'dns.enumerate_subdomains','subfinder','{dns:hold.example}','{"targets":["hold.example"]}','approved','OI-2','{"kind":"operator","id":"soc-1"}','[{"seed_id":"01900000-0000-7000-8000-000000006f21"},{"canonical_key":"dns:hold.example"}]','roe-193',scope_a,'s1f-hold:1',repeat('6',32)),
-    (dec_b,camp_a,'dns.resolve','dnsx','{dns:hold.example}','{"targets":["hold.example"]}','approved','OI-2 held in flight','{"kind":"operator","id":"soc-1"}','[{"seed_id":"01900000-0000-7000-8000-000000006f21"},{"canonical_key":"dns:hold.example"}]','roe-193',scope_a,'s1f-hold:2',repeat('6',32)),
-    (dec_c,camp_a,'dns.resolve','dnsx','{dns:hold.example}','{"targets":["hold.example"]}','approved','OI-2 held terminal','{"kind":"operator","id":"soc-1"}','[{"seed_id":"01900000-0000-7000-8000-000000006f21"},{"canonical_key":"dns:hold.example"}]','roe-193',scope_a,'s1f-hold:3',repeat('6',32));
+    (dec_b,camp_a,'dns.enumerate_subdomains','subfinder','{dns:hold.example}','{"targets":["hold.example"]}','approved','OI-2 held in flight','{"kind":"operator","id":"soc-1"}','[{"seed_id":"01900000-0000-7000-8000-000000006f21"},{"canonical_key":"dns:hold.example"}]','roe-193',scope_a,'s1f-hold:2',repeat('6',32)),
+    (dec_c,camp_a,'dns.enumerate_subdomains','subfinder','{dns:hold.example}','{"targets":["hold.example"]}','approved','OI-2 held terminal','{"kind":"operator","id":"soc-1"}','[{"seed_id":"01900000-0000-7000-8000-000000006f21"},{"canonical_key":"dns:hold.example"}]','roe-193',scope_a,'s1f-hold:3',repeat('6',32));
 
   -- 1. A job whose actor 0010 accepts carries no hold by itself; a stored hold passes the shape CHECK.
   INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id) VALUES

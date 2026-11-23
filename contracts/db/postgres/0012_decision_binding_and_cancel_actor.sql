@@ -102,13 +102,14 @@ COMMENT ON FUNCTION aegis.is_canonical_projection(text[], jsonb) IS
 ALTER TABLE policy_decision ADD COLUMN target_refs jsonb;
 ALTER TABLE policy_decision
   ADD CONSTRAINT policy_decision_target_refs_shape
-    CHECK (target_refs IS NULL OR aegis.is_target_refs(target_refs)),
-  ADD CONSTRAINT policy_decision_targets_canonical
-    CHECK (aegis.is_canonical_projection(targets, target_refs));
+    CHECK (target_refs IS NULL OR aegis.is_target_refs(target_refs));
 
-ALTER TABLE scan_job
-  ADD CONSTRAINT scan_job_targets_canonical
-    CHECK (aegis.is_canonical_projection(targets, target_refs));
+-- The projection rule (`targets` ⊆ canonical_key(target_refs)) is deliberately NOT a CHECK here: a
+-- validated CHECK cannot be added over a 0005-0011 database whose `targets` holds the seed's own
+-- canonical key, and a NOT VALID one would still re-check that legacy row on its next cancel or
+-- terminal update. It is an INSERT-only trigger from 0014, which also holds such rows for dispatch
+-- (LEGACY_TARGET_PROJECTION). Rule of this bundle: a tightened rule over history is an insert-time
+-- rule, never a row constraint (see 0010 on requested_by, 0014 on this one).
 
 CREATE FUNCTION aegis.require_decision_target_refs() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE foreign_seed uuid;
@@ -146,7 +147,7 @@ COMMENT ON FUNCTION aegis.require_decision_target_refs() IS
 COMMENT ON COLUMN policy_decision.targets IS
   'Legacy canonical-key projection of the request (authoritative only for rows predating 0012). For newer rows it is the canonical_key subset of target_refs and may be empty when every target is a keyword/CIDR seed.';
 COMMENT ON COLUMN scan_job.targets IS
-  'Legacy canonical-key projection: authoritative for rows predating 0005. For newer jobs it is the canonical_key subset of target_refs (enforced by scan_job_targets_canonical since 0012) and may be empty when every target is a keyword/CIDR seed. Never the source of identity or provenance for new jobs.';
+  'Legacy canonical-key projection: authoritative for rows predating 0005. For newer jobs it is the canonical_key subset of target_refs (enforced on INSERT by aegis.require_canonical_projection, 0014) and may be empty when every target is a keyword/CIDR seed. Never the source of identity or provenance for new jobs.';
 
 -- ---------------------------------------------------------------------------
 -- 3. OI-8 — the job is the job of its decision.

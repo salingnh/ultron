@@ -199,6 +199,29 @@ BEGIN
   EXCEPTION WHEN check_violation THEN blocked := blocked + 1;
   END;
 
+  -- 6b. R-1 (gate re-review): a reopened job clears its cancel intent, and clearing is not a cancel.
+  --     Before 0014 the cancel-actor trigger validated the NULL it was being cleared to, so no job that
+  --     ever had a cancel intent could be reopened (C06 regression).
+  out := aegis.request_job_cancel(job_reopen, '{"kind":"operator","id":"fixture"}', 'reopen after cancel');
+  IF out <> 'requested' THEN RAISE EXCEPTION 'cancel intent before reopen returned %', out; END IF;
+  out := aegis.record_job_callback(job_reopen, 2, 1, 'CANCELLED', NULL, NULL, NULL);
+  IF out <> 'terminalized' THEN RAISE EXCEPTION 'cancelled job did not terminalize: %', out; END IF;
+  UPDATE scan_job
+     SET status = 'QUEUED', generation = 3, attempt = 1, started_at = NULL,
+         finished_at = NULL, error = NULL, envelope_event_id = NULL,
+         cancel_requested_at = NULL, cancel_requested_by = NULL, cancel_reason = NULL
+   WHERE job_id = job_reopen;
+  IF NOT EXISTS (SELECT 1 FROM scan_job WHERE job_id = job_reopen AND generation = 3 AND attempt = 1
+                  AND status = 'QUEUED' AND cancel_requested_at IS NULL AND cancel_requested_by IS NULL) THEN
+    RAISE EXCEPTION 'reopening a cancelled job did not clear its cancel intent and move to generation 3';
+  END IF;
+  -- Setting a non-Actor is still refused after the fix.
+  BEGIN
+    UPDATE scan_job SET cancel_requested_at = now(), cancel_requested_by = '"junk"'::jsonb WHERE job_id = job_reopen;
+    RAISE EXCEPTION 'a non-Actor cancel was accepted on a reopened job';
+  EXCEPTION WHEN check_violation THEN blocked := blocked + 1;
+  END;
+
   -- 7. A job can only be CANCELLED after an explicit intent; a queued job needs no container.
   out := aegis.record_job_callback(job_stale, 1, 2, 'CANCELLED', NULL, NULL, NULL);
   IF out <> 'quarantined' THEN RAISE EXCEPTION 'cancel without intent returned %', out; END IF;
@@ -213,9 +236,9 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN blocked := blocked + 1; END;
 
   IF shape <> 4 THEN RAISE EXCEPTION 'only % / 4 wait-reason shape/status rules blocked', shape; END IF;
-  IF blocked <> 7 THEN RAISE EXCEPTION 'only % / 7 lifecycle immutability/finality guards blocked', blocked; END IF;
+  IF blocked <> 8 THEN RAISE EXCEPTION 'only % / 8 lifecycle immutability/finality guards blocked', blocked; END IF;
   RAISE NOTICE 'lifecycle: complete-before-cancel and cancel-before-complete each leave exactly one terminal result';
   RAISE NOTICE 'lifecycle: stale attempt/generation and cancelled-without-intent callbacks quarantined; timeout keeps partial evidence';
-  RAISE NOTICE 'lifecycle: 4/4 wait-reason shape/status rules, 7/7 immutability/finality guards PASS';
+  RAISE NOTICE 'lifecycle: 4/4 wait-reason shape/status rules, 8/8 immutability/finality guards PASS (incl. R-1 reopen after cancel)';
 END $$;
 ROLLBACK;

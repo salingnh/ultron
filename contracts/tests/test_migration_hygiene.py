@@ -12,6 +12,7 @@ new migration, fixture or SQL test cannot be added to the directory and silently
 from __future__ import annotations
 
 import re
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -25,7 +26,8 @@ FIXTURES = sorted(p.name for p in (PG / "tests/fixtures").glob("*.sql"))
 # with the upgrade fixtures; upgrade_assertions.sql runs on the upgraded database only. Every other
 # SQL test must be in both chains.
 CLEAN_ONLY = {"smoke.sql", "tool_orchestration.sql"}
-UPGRADE_ONLY = {"upgrade_assertions.sql"}
+# legacy_row_shapes.sql needs the pre-0012 fixture rows, which only the upgrade chain has.
+UPGRADE_ONLY = {"upgrade_assertions.sql", "legacy_row_shapes.sql"}
 
 
 def clean_chain() -> list[str]:
@@ -90,6 +92,50 @@ class ChainOnDisk(unittest.TestCase):
 
 FUNCTION_RE = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+aegis\.([a-z0-9_]+)", re.I)
 PIN_SWEEP = "ALTER FUNCTION %s SET search_path = aegis, pg_temp"
+
+
+def _slug(heading: str) -> str:
+    """GitHub heading anchor: lowercase, drop punctuation, spaces to hyphens (Unicode letters kept)."""
+    kept = "".join(ch for ch in heading.strip().lower()
+                   if ch.isalnum() or ch in "-_ " or unicodedata.category(ch).startswith("L"))
+    return kept.replace(" ", "-")
+
+
+def _anchors(path: Path) -> set[str]:
+    return {_slug(line.lstrip("#").strip()) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.startswith("#")}
+
+
+class DocLinks(unittest.TestCase):
+    """No dead cross-file anchors: the contract narrative is cited by anchor (OI-14).
+
+    The gate review found anchors that survived a heading edit (C04 "còn cần chứng minh" became
+    "đã khóa ở S1.3", the C05 heading lost "cần khóa"); a reader following them lands nowhere. Only
+    relative links into Markdown files are checked, which is what the docs use.
+    """
+
+    def test_cross_file_anchors_resolve(self):
+        roots = [ROOT, ROOT.parent / "docs"]
+        broken = []
+        seen = 0
+        for root in roots:
+            for md in root.rglob("*.md"):
+                text = md.read_text(encoding="utf-8")
+                for match in re.finditer(r"\]\(([^)\s]+)\)", text):
+                    target = match.group(1)
+                    if target.startswith(("http://", "https://", "mailto:", "#")) or "#" not in target:
+                        continue
+                    file_part, _, anchor = target.partition("#")
+                    if not file_part.endswith(".md"):
+                        continue
+                    target_path = (md.parent / file_part).resolve()
+                    seen += 1
+                    if not target_path.exists():
+                        broken.append(f"{md}: {target} (missing file)")
+                    elif anchor and anchor not in _anchors(target_path):
+                        broken.append(f"{md}: {target} (missing anchor)")
+        self.assertGreater(seen, 20, "no cross-file anchor was checked; the rule is vacuous")
+        self.assertEqual(broken, [], "dead cross-file anchors:\n" + "\n".join(broken[:10]))
 
 
 class SearchPathPinning(unittest.TestCase):
