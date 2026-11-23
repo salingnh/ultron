@@ -18,13 +18,15 @@ ApprovedTask bắt buộc ghim adapter_version/manifest_sha256 theo [quy tắc r
 
 ## Dữ liệu và migration
 
-DB mới chạy `0001_init.sql` → `0002_tool_orchestration.sql` → `0003_task_manifest_binding.sql` → `0004_usage_nonnegative.sql` → `0005_job_target_refs.sql`. Migration 0001 là lịch sử bất biến để nâng cấu trúc DB, không phải bộ đặc tả sản phẩm thứ hai. 0002 lưu nguyên các hàng bị ảnh hưởng vào `legacy_contract_snapshot` trước khi loại cột khỏi bảng vận hành; không đổi phân loại cũ thành priority. Event lịch sử v1 và payload audit cũ giữ nguyên; không diễn giải như v2.
+DB mới chạy `0001_init.sql` → `0002_tool_orchestration.sql` → `0003_task_manifest_binding.sql` → `0004_usage_nonnegative.sql` → `0005_job_target_refs.sql` → `0008_outbox_publication_order.sql` (có thể áp 0008 ngay sau 0004: nó không phụ thuộc 0005–0007). Migration 0001 là lịch sử bất biến để nâng cấu trúc DB, không phải bộ đặc tả sản phẩm thứ hai. 0002 lưu nguyên các hàng bị ảnh hưởng vào `legacy_contract_snapshot` trước khi loại cột khỏi bảng vận hành; không đổi phân loại cũ thành priority. Event lịch sử v1 và payload audit cũ giữ nguyên; không diễn giải như v2.
 
 0003 thêm pin bất biến vào job mới. Hàng cũ giữ null, không được dispatch/replay; trigger chặn INSERT job mới thiếu pin và bảo vệ giá trị khỏi UPDATE.
 
 0004 chặn tokens/cost/latency âm cho bản ghi mới. CHECK NOT VALID giữ nguyên dữ liệu lịch sử append-only, không hợp thức hóa các giá trị âm đã có. Reader phải báo lỗi toàn vẹn khi gặp dữ liệu lịch sử sai; không dùng nó để giảm consumed budget hoặc trình bày tổng chính xác.
 
 0005 thêm `scan_job.target_refs` (mảng [TargetRef](common/ids.v2.schema.json): `{seed_id}` của `campaign_target` hoặc `{canonical_key}` của asset). Job mới bắt buộc có refs; seed phải thuộc campaign/scope của job; keyword/CIDR giữ nguyên seed, không tạo asset giả. `targets text[]` chỉ còn là hình chiếu canonical-key của lịch sử/tiện đọc và có thể rỗng khi job chỉ có seed keyword/CIDR. Hàng cũ giữ NULL, không được dispatch/replay.
+
+0008 thay `bigserial` của `outbox_event.seq` và `graph_revision.revision` bằng thứ tự công bố C04: writer lấy khóa công bố dạng shared rồi tăng counter `outbox_publication.next_seq` ngay trong giao dịch của mình (trigger `allocate_seq`, writer không tự đặt số); dispatcher chỉ đẩy watermark `outbox_watermark.published_upto` lên mốc `next_seq - 1` khi lấy được khóa công bố dạng exclusive (`pg_try_advisory_xact_lock`, không chặn writer). Counter dùng chung cho event và revision; số đã reserve mà không dùng là khoảng trống hợp lệ, không làm kẹt consumer. `outbox_dispatcher` giữ lease + fencing token cho mọi lần đẩy watermark/checkpoint consumer; consumer chỉ checkpoint qua `consumer_advance` và không vượt watermark (D25). Hai role NOLOGIN `aegis_outbox_writer`/`aegis_outbox_dispatcher` chỉ có đúng quyền của phần mình, không chạm được counter/watermark/lease; role được tạo idempotent nên 0008 phải chạy bằng role có CREATEROLE. `consumer_cursor.last_seq` từ 0008 nghĩa là "số công bố cao nhất đã áp", không phải bigserial. Hàng lịch sử giữ nguyên `seq`/`revision` cũ; counter và watermark được khởi tạo cao hơn mọi hàng lịch sử.
 
 DB cũ áp các migration còn thiếu theo thứ tự trong maintenance window. Migration hiện chưa chuyển `policy_snapshot.policy` JSON và `campaign.current_policy_version` thành cấu hình v2 hợp lệ. Không tiếp tục chạy campaign v1 như v2: phải khóa bước tạo snapshot mới, xử lý job đang chạy/chờ và chuyển producer/consumer trong S1.6 trước. Kiểm upgrade bên dưới chỉ chứng minh chuyển cấu trúc và giữ lịch sử, chưa chứng minh tính liên tục vận hành.
 
@@ -34,15 +36,19 @@ Priority mặc định 50, dependency cũ rỗng. Lịch sử idempotency/hash c
 
 ```sh
 python3 -m pip install -r contracts/tests/requirements.txt
+python3 -m pip install -r contracts/tests/requirements-db.txt
 python3 -I contracts/tests/validate_contracts.py
 python3 -I contracts/tests/test_tool_orchestration.py
 python3 -I contracts/tests/test_schema_boundaries.py
 python3 -I contracts/tests/test_seed_reference.py
 python3 -I contracts/tests/test_model_client.py
-psql -v ON_ERROR_STOP=1 -f contracts/db/postgres/0001_init.sql -f contracts/db/postgres/0002_tool_orchestration.sql -f contracts/db/postgres/0003_task_manifest_binding.sql -f contracts/db/postgres/0004_usage_nonnegative.sql -f contracts/db/postgres/0005_job_target_refs.sql -f contracts/db/postgres/tests/smoke.sql -f contracts/db/postgres/tests/tool_orchestration.sql -f contracts/db/postgres/tests/usage_nonnegative.sql -f contracts/db/postgres/tests/job_target_refs.sql
+AEGIS_TEST_PG_DSN=postgresql://<user>:<pw>@127.0.0.1:<port>/<db> python3 -I contracts/tests/test_outbox_ordering.py
+psql -v ON_ERROR_STOP=1 -f contracts/db/postgres/0001_init.sql -f contracts/db/postgres/0002_tool_orchestration.sql -f contracts/db/postgres/0003_task_manifest_binding.sql -f contracts/db/postgres/0004_usage_nonnegative.sql -f contracts/db/postgres/0005_job_target_refs.sql -f contracts/db/postgres/0008_outbox_publication_order.sql -f contracts/db/postgres/tests/smoke.sql -f contracts/db/postgres/tests/tool_orchestration.sql -f contracts/db/postgres/tests/usage_nonnegative.sql -f contracts/db/postgres/tests/job_target_refs.sql -f contracts/db/postgres/tests/outbox_ordering.sql
 ```
 
-Python 3.12, dependency kiểm contract được khóa tại [requirements](tests/requirements.txt); có đủ format validators và dữ liệu IANA timezone. PostgreSQL 16. Test nâng cấp trên DB riêng theo thứ tự `0001_init.sql` → `tests/fixtures/v1-upgrade.sql` → `0002_tool_orchestration.sql` → `0003_task_manifest_binding.sql` → `tests/fixtures/pre-usage-upgrade.sql` → `0004_usage_nonnegative.sql` → `0005_job_target_refs.sql` → `tests/upgrade_assertions.sql` → `tests/usage_nonnegative.sql` → `tests/job_target_refs.sql`. Các fixture này chỉ là dữ liệu test. Không chạy smoke hiện hành trước migration.
+Python 3.12, dependency kiểm contract được khóa tại [requirements](tests/requirements.txt); có đủ format validators và dữ liệu IANA timezone. PostgreSQL 16. Test nâng cấp trên DB riêng theo thứ tự `0001_init.sql` → `tests/fixtures/v1-upgrade.sql` → `0002_tool_orchestration.sql` → `0003_task_manifest_binding.sql` → `tests/fixtures/pre-usage-upgrade.sql` → `0004_usage_nonnegative.sql` → `0005_job_target_refs.sql` → `0008_outbox_publication_order.sql` → `tests/upgrade_assertions.sql` → `tests/usage_nonnegative.sql` → `tests/job_target_refs.sql` → `tests/outbox_ordering.sql`. Các fixture này chỉ là dữ liệu test. Không chạy smoke hiện hành trước migration.
+
+[test_outbox_ordering.py](tests/test_outbox_ordering.py) là harness nhiều connection cho C04 (dispatcher prototype): nó tự tạo và xóa database riêng và cần `pip install -r contracts/tests/requirements-db.txt`. Chỉ trỏ vào PostgreSQL 16 dùng một lần, không bao giờ vào DB chung. Không đặt `AEGIS_TEST_PG_DSN` thì test **skip** (không phải pass): lần chạy cổng nghiệm thu phải đặt biến này, còn `tests/outbox_ordering.sql` chạy bằng psql như các test SQL khác và không cần Python.
 
 Mọi consumer schema phải bật [validator ngữ nghĩa chung](validation.py): các format `aegis-*` kiểm IP/domain/port và tên timezone. M05, G1 và validator của DTO được sinh phải gọi cùng kiểm tra; tạo DTO hoặc kiểm regex riêng chưa đủ. Validator báo lỗi nếu gặp format chưa đăng ký, đồng thời kiểm toàn tài liệu OpenAPI 3.1. Thư viện này là kiểm conformance tham chiếu, chưa phải implementation của các dịch vụ.
 
