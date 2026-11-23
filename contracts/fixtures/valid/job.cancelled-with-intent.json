@@ -14,6 +14,14 @@
       "canonical_key": "dns:internal.example"
     }
   ],
+  "requested_by": {
+    "kind": "operator",
+    "id": "soc-1"
+  },
+  "proposed_by": {
+    "kind": "agent",
+    "id": "01934f6a-0000-7000-8000-0000000000c1"
+  },
   "attempt": 2,
   "generation": 1,
   "cancel": {

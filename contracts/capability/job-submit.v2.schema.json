@@ -37,6 +37,7 @@
       "maxLength": 2000
     },
     "actor": {
+      "description": "Khai báo của client về người gửi; KHÔNG phải nguồn quyền (C05, X-8). Server gán requested_by từ principal nó đã xác minh và bỏ qua giá trị ở đây khi khác; khi request do agent đề xuất, server gán proposed_by từ session của phiên đó. MVP chưa có đăng nhập nên cơ chế xác minh principal còn mở (OD-5); không dùng trường này để cấp quyền.",
       "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
     },
     "priority": {

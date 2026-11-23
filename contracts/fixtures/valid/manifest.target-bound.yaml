@@ -1,0 +1,75 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: naabu
+  version: 1.0.0
+  module: M09
+  license: MIT
+  upstream: https://github.com/projectdiscovery/naabu
+  licenseNotes: 'Fixture only: image digest is a placeholder, the pinned digest lands with the adapter
+    (G1.3b).'
+spec:
+  capability: network.discover_services
+  providerVersion: v2.7.0
+  runtime:
+    type: container
+    image: registry.internal/aegis/naabu
+    imageDigest: sha256:7777777777777777777777777777777777777777777777777777777777777777
+    argsTemplate:
+    - -silent
+    - -json
+    - -s
+    - connect
+    - -list
+    - /in/targets.txt
+    - -p
+    - ${input.ports}
+    - -o
+    - /out/result.jsonl
+    outputPath: /out
+  inputSchemaRef: schema://network/discover-services/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - ip
+  - service
+  permissions:
+    scopeRequired: false
+    networkAccess: egress
+    egressMode: broker
+    proxyAware: true
+    egressSources: []
+    targetBinding: required
+    targetPorts: from_input
+    rawSocket: false
+  budget:
+    timeoutSeconds: 900
+    maxConcurrency: 4
+    cpu: 1
+    memoryMb: 512
+    maxOutputMb: 64
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m09.naabu.parser:parse
+    outputFormat: jsonl
+  emits:
+    assetKinds:
+    - service
+    predicates:
+    - asset.seen
+    relationships:
+    - EXPOSES
+    findings: false
+  compatibilityTests:
+  - schema
+  - policy
+  - network-isolation
+  - fixture-replay
+  inputDefaults:
+    version_intensity: 0

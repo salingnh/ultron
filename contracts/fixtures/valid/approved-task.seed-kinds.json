@@ -45,6 +45,10 @@
     "kind": "operator",
     "id": "fixture-operator"
   },
+  "proposed_by": {
+    "kind": "agent",
+    "id": "01934f6a-0000-7000-8000-0000000000c1"
+  },
   "rationale": "Contract fixture: TargetRef seed kinds domain/IP/URL/email/keyword/CIDR plus one asset key; no execution",
   "trace": {
     "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

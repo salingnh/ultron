@@ -1,5 +1,5 @@
 -- Run 0001 + v1-upgrade fixture + 0002 + 0003 + pre-usage-upgrade fixture + 0004 + 0005 + 0006 +
--- 0007 + 0008 + v1-policy-jobs fixture + 0009, then this test. Proves the upgrade kept every prior
+-- 0007 + 0008 + v1-policy-jobs fixture + 0009 + 0010, then this test. Proves the upgrade kept every prior
 -- value and that S1.6 moved the legacy configuration path without resuming anything.
 SET search_path=aegis,public;
 DO $$ BEGIN
@@ -20,6 +20,14 @@ DO $$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM ingestion_inbox WHERE event_id='01900000-0000-7000-8000-0000000000e1'
     AND payload_hash=repeat('b',64) AND hash_version IS NULL AND receipt IS NULL) THEN
    RAISE EXCEPTION 'historical inbox row was given a hash version or an invented receipt';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM scan_job WHERE job_id='01900000-0000-7000-8000-0000000000d1'
+    AND requested_by->>'kind'='agent' AND requested_by->>'id'='planner' AND proposed_by IS NULL) THEN
+   RAISE EXCEPTION 'historical job actor was rewritten or given an invented proposer';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM policy_decision WHERE decision_id='01900000-0000-7000-8000-0000000000c1'
+    AND requested_by->>'kind'='agent' AND proposed_by IS NULL) THEN
+   RAISE EXCEPTION 'historical decision actor was rewritten or given an invented proposer';
  END IF;
  RAISE NOTICE 'upgrade: archived rows, prior values, default priority, legacy targets and historical events PASS';
 END $$;
@@ -177,6 +185,8 @@ BEGIN
   IF out <> 'terminalized' THEN RAISE EXCEPTION 'held queued cancel was not recorded: %', out; END IF;
 
   -- 8. An operator can still adopt the v2 candidate explicitly, and only then does the campaign run
+  --    (the job created here is new, so 0010 requires a server-derived initiator; the fixture rows
+  --    inserted before 0009 keep their legacy self-declared actor).
   --    and v2 work continue: the guard closes the v1 path without freezing the campaign forever.
   UPDATE campaign SET current_policy_version = new_l, status = 'RUNNING' WHERE campaign_id = camp_l;
   IF (SELECT status FROM campaign WHERE campaign_id = camp_l) <> 'RUNNING' THEN
@@ -188,9 +198,9 @@ BEGIN
   EXCEPTION WHEN check_violation THEN blocked := blocked + 1;
   END;
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-    VALUES ('01900000-0000-7000-8000-0000000d1681',camp_l,'dns.enumerate_subdomains','subfinder','{dns:legacy.example}','{"targets":["legacy.example"]}','approved','Post-migration v2 job','{"kind":"agent","id":"s16-test"}',new_l,'01900000-0000-7000-8000-0000000d1602','s16:4',repeat('9',32));
+    VALUES ('01900000-0000-7000-8000-0000000d1681',camp_l,'dns.enumerate_subdomains','subfinder','{dns:legacy.example}','{"targets":["legacy.example"]}','approved','Post-migration v2 job','{"kind":"operator","id":"s16-test"}',new_l,'01900000-0000-7000-8000-0000000d1602','s16:4',repeat('9',32));
   INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
-    VALUES ('01900000-0000-7000-8000-0000000d1682',camp_l,'01900000-0000-7000-8000-0000000d1681','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('d',64),'01900000-0000-7000-8000-0000000d1683',repeat('f4',32),new_l,'01900000-0000-7000-8000-0000000d1602','{"targets":["legacy.example"]}','{dns:legacy.example}','[{"seed_id":"01900000-0000-7000-8000-0000000d1621"}]','{"kind":"agent","id":"s16-test"}','Post-migration v2 job',repeat('9',32));
+    VALUES ('01900000-0000-7000-8000-0000000d1682',camp_l,'01900000-0000-7000-8000-0000000d1681','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('d',64),'01900000-0000-7000-8000-0000000d1683',repeat('f4',32),new_l,'01900000-0000-7000-8000-0000000d1602','{"targets":["legacy.example"]}','{dns:legacy.example}','[{"seed_id":"01900000-0000-7000-8000-0000000d1621"}]','{"kind":"operator","id":"s16-test"}','Post-migration v2 job',repeat('9',32));
   IF EXISTS (SELECT 1 FROM scan_job WHERE job_id = '01900000-0000-7000-8000-0000000d1682' AND dispatch_block_reasons IS NOT NULL) THEN
     RAISE EXCEPTION 'a new job on adopted v2 configuration was held';
   END IF;

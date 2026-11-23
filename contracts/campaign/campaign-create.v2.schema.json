@@ -30,6 +30,7 @@
       "$ref": "roe-policy.v2.schema.json"
     },
     "actor": {
+      "description": "Khai báo của client về người tạo campaign; server gán created_by từ principal đã xác minh và không dùng giá trị này làm quyền (C05, X-8).",
       "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
     },
     "labels": {

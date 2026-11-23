@@ -112,6 +112,7 @@ class SeedReference(unittest.TestCase):
         job = {"job_id": ID, "campaign_id": ID, "capability": "dns.enumerate_subdomains", "provider": "subfinder",
                "status": "QUEUED", "job_fingerprint": "a" * 64, "policy_version": "roe-1", "scope_id": ID,
                "created_at": "2026-11-15T03:00:00Z", "priority": 50, "depends_on": [],
+               "requested_by": {"kind": "operator", "id": "fixture-operator"},
                "adapter_version": "1.0.0", "manifest_sha256": "b" * 64, "attempt": 1, "generation": 1}
         self.assertTrue(v.is_valid(job))
         self.assertTrue(v.is_valid(dict(job, targets=[{"seed_id": OTHER}, {"canonical_key": "dns:seed.example"}])))

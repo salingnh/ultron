@@ -24,10 +24,10 @@ BEGIN
     VALUES (camp,'Hash and receipt','C03 fixture','roe-6',scope,'{"kind":"operator","id":"fixture"}');
   INSERT INTO campaign_target VALUES (seed,scope,'domain','hash.example','dns:hash.example');
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-    VALUES ('01900000-0000-7000-8000-000000000231',camp,'dns.enumerate_subdomains','subfinder','{dns:hash.example}','{"targets":["hash.example"]}','approved','C03 job','{"kind":"agent","id":"fixture"}','roe-6',scope,'c03:1',repeat('6',32));
+    VALUES ('01900000-0000-7000-8000-000000000231',camp,'dns.enumerate_subdomains','subfinder','{dns:hash.example}','{"targets":["hash.example"]}','approved','C03 job','{"kind":"operator","id":"fixture"}','roe-6',scope,'c03:1',repeat('6',32));
   INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
     VALUES (job,camp,'01900000-0000-7000-8000-000000000231','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('5',64),repeat('6',64),'01900000-0000-7000-8000-000000000291',repeat('7',64),'roe-6',scope,'{"targets":["hash.example"]}','{dns:hash.example}',
-      jsonb_build_array(jsonb_build_object('seed_id',seed)),'{"kind":"agent","id":"fixture"}','C03 job',repeat('6',32));
+      jsonb_build_array(jsonb_build_object('seed_id',seed)),'{"kind":"operator","id":"fixture"}','C03 job',repeat('6',32));
 
   -- 1. A new inbox row without a canonicalization version is rejected: an unversioned hash can
   --    never be compared with a versioned one.

@@ -42,7 +42,7 @@
       ]
     },
     "resolvers": {
-      "description": "Resolver dùng cho lần chạy (DNSx -r). Mỗi địa chỉ là một đích egress khai báo; phải nằm trong tập nguồn manifest cho phép khi S1.5a khóa declared sources.",
+      "description": "Resolver dùng cho lần chạy (DNSx -r). Mỗi địa chỉ phải là một host của nguồn `protocol: dns` trong `permissions.egressSources` của manifest đã pin (C05, S1.5a); địa chỉ khác bị POLICY_DENIED trước khi dispatch.",
       "type": "array",
       "items": {
         "$ref": "../../common/ids.v2.schema.json#/$defs/IPAddress"

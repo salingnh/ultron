@@ -211,7 +211,7 @@
       }
     },
     "Actor": {
-      "description": "Ai thực hiện thao tác. MVP chưa đăng nhập: kind=operator và id do người vận hành khai báo; kind=module cho thao tác tự động.",
+      "description": "Chủ thể của một thao tác trong bản ghi kiểm toán (ai đã làm). Một Actor là dữ liệu ghi nhận, không phải token hay quyền: server gán actor từ nguồn nó đã xác minh, không lấy giá trị do client/LLM khai để cấp quyền. kind=operator: principal đã được server xác minh; id là định danh mờ do server cấp, không phải username/email do request khai. kind=module: module nền tảng tự động. kind=agent: một phiên agent.",
       "type": "object",
       "required": [
         "kind",
@@ -228,9 +228,39 @@
           ]
         },
         "id": {
+          "description": "Định danh mờ (opaque) do server cấp: operator principal, mã module, hoặc session_id của phiên agent. Không phải chuỗi do người dùng/LLM tự đặt.",
           "type": "string",
           "minLength": 1,
           "maxLength": 200
+        }
+      }
+    },
+    "RequestedBy": {
+      "description": "Người/kênh khởi động task (initiator), do server gán: kind chỉ operator hoặc module (C05, S1.5a). Server điền từ principal đã xác minh của chính nó; giá trị khai trong request, tool output hay do LLM sinh không bao giờ được dùng. Không có trường nào ở phía request để tự đặt giá trị này.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/Actor"
+        }
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "operator",
+            "module"
+          ]
+        }
+      }
+    },
+    "ProposedBy": {
+      "description": "Phiên agent đã đề xuất task (proposer), do server gán từ ngữ cảnh phiên (params._meta session_id của MCP; M03 cho vòng lặp agent), không từ trường do LLM khai. id là session_id của phiên đề xuất. Chỉ có khi một agent đề xuất: request do người vận hành/module gửi trực tiếp không có proposer và không được bịa một phiên agent.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/Actor"
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "agent"
         }
       }
     },

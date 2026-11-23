@@ -37,35 +37,35 @@ BEGIN
 
   -- 1. Accepted job: keyword/CIDR/domain seeds plus one known asset key; canonical projection empty.
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-    VALUES ('01900000-0000-7000-8000-000000000131',camp_a,'dns.enumerate_subdomains','subfinder','{}','{"targets":["seed.example"]}','approved','C02 seed refs','{"kind":"agent","id":"fixture"}','roe-4',scope_a,'c02:1',repeat('4',32));
+    VALUES ('01900000-0000-7000-8000-000000000131',camp_a,'dns.enumerate_subdomains','subfinder','{}','{"targets":["seed.example"]}','approved','C02 seed refs','{"kind":"operator","id":"fixture"}','roe-4',scope_a,'c02:1',repeat('4',32));
   INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
     VALUES (job_main,camp_a,'01900000-0000-7000-8000-000000000131','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('5',64),repeat('6',64),scan,repeat('7',64),'roe-4',scope_a,'{"targets":["seed.example"]}','{}',
       jsonb_build_array(jsonb_build_object('seed_id',seed_domain),jsonb_build_object('seed_id',seed_cidr),jsonb_build_object('seed_id',seed_keyword),jsonb_build_object('canonical_key','dns:www.seed.example')),
-      '{"kind":"agent","id":"fixture"}','C02 seed refs',repeat('4',32));
+      '{"kind":"operator","id":"fixture"}','C02 seed refs',repeat('4',32));
 
   -- 2. A job whose targets are all known assets may still fill the canonical-key projection.
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-    VALUES ('01900000-0000-7000-8000-000000000132',camp_a,'dns.resolve','dnsx','{dns:seed.example}','{"targets":["seed.example"]}','approved','C02 asset refs','{"kind":"agent","id":"fixture"}','roe-4',scope_a,'c02:2',repeat('4',32));
+    VALUES ('01900000-0000-7000-8000-000000000132',camp_a,'dns.resolve','dnsx','{dns:seed.example}','{"targets":["seed.example"]}','approved','C02 asset refs','{"kind":"operator","id":"fixture"}','roe-4',scope_a,'c02:2',repeat('4',32));
   INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
     VALUES (job_assets,camp_a,'01900000-0000-7000-8000-000000000132','dns.resolve','dnsx','v1.2.3','1.0.0','sha256:'||repeat('5',64),repeat('6',64),scan,repeat('8',64),'roe-4',scope_a,'{"targets":["seed.example"]}','{dns:seed.example}',
-      '[{"canonical_key":"dns:seed.example"}]','{"kind":"agent","id":"fixture"}','C02 asset refs',repeat('4',32));
+      '[{"canonical_key":"dns:seed.example"}]','{"kind":"operator","id":"fixture"}','C02 asset refs',repeat('4',32));
 
   -- 3. A new job without target_refs is rejected: no accepted job without seed provenance.
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-    VALUES ('01900000-0000-7000-8000-000000000133',camp_a,'dns.resolve','dnsx','{dns:seed.example}','{"targets":["seed.example"]}','approved','C02 missing refs','{"kind":"agent","id":"fixture"}','roe-4',scope_a,'c02:3',repeat('4',32));
+    VALUES ('01900000-0000-7000-8000-000000000133',camp_a,'dns.resolve','dnsx','{dns:seed.example}','{"targets":["seed.example"]}','approved','C02 missing refs','{"kind":"operator","id":"fixture"}','roe-4',scope_a,'c02:3',repeat('4',32));
   BEGIN
     INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,requested_by,rationale,trace_id)
-      VALUES ('01900000-0000-7000-8000-000000000143',camp_a,'01900000-0000-7000-8000-000000000133','dns.resolve','dnsx','v1.2.3','1.0.0','sha256:'||repeat('5',64),repeat('6',64),scan,repeat('9',64),'roe-4',scope_a,'{"targets":["seed.example"]}','{dns:seed.example}','{"kind":"agent","id":"fixture"}','C02 missing refs',repeat('4',32));
+      VALUES ('01900000-0000-7000-8000-000000000143',camp_a,'01900000-0000-7000-8000-000000000133','dns.resolve','dnsx','v1.2.3','1.0.0','sha256:'||repeat('5',64),repeat('6',64),scan,repeat('9',64),'roe-4',scope_a,'{"targets":["seed.example"]}','{dns:seed.example}','{"kind":"operator","id":"fixture"}','C02 missing refs',repeat('4',32));
   EXCEPTION WHEN check_violation THEN blocked := blocked + 1;
   END;
 
   -- 4. A seed of another campaign cannot be a target of this campaign's job.
   INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-    VALUES ('01900000-0000-7000-8000-000000000134',camp_a,'dns.resolve','dnsx','{dns:other.example}','{"targets":["other.example"]}','approved','C02 cross campaign','{"kind":"agent","id":"fixture"}','roe-4',scope_a,'c02:4',repeat('4',32));
+    VALUES ('01900000-0000-7000-8000-000000000134',camp_a,'dns.resolve','dnsx','{dns:other.example}','{"targets":["other.example"]}','approved','C02 cross campaign','{"kind":"operator","id":"fixture"}','roe-4',scope_a,'c02:4',repeat('4',32));
   BEGIN
     INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
       VALUES ('01900000-0000-7000-8000-000000000144',camp_a,'01900000-0000-7000-8000-000000000134','dns.resolve','dnsx','v1.2.3','1.0.0','sha256:'||repeat('5',64),repeat('6',64),scan,repeat('a',64),'roe-4',scope_a,'{"targets":["other.example"]}','{dns:other.example}',
-        jsonb_build_array(jsonb_build_object('seed_id',seed_other)),'{"kind":"agent","id":"fixture"}','C02 cross campaign',repeat('4',32));
+        jsonb_build_array(jsonb_build_object('seed_id',seed_other)),'{"kind":"operator","id":"fixture"}','C02 cross campaign',repeat('4',32));
   EXCEPTION WHEN foreign_key_violation THEN blocked := blocked + 1;
   END;
 
@@ -82,11 +82,11 @@ BEGIN
   BEGIN
     FOR i IN 1 .. array_length(shapes,1) LOOP
       INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-        VALUES (('01900000-0000-7000-8000-00000000015' || i)::uuid,camp_a,'dns.resolve','dnsx','{}','{}','approved','C02 shape','{"kind":"agent","id":"fixture"}','roe-4',scope_a,'c02:shape:'||i,repeat('4',32));
+        VALUES (('01900000-0000-7000-8000-00000000015' || i)::uuid,camp_a,'dns.resolve','dnsx','{}','{}','approved','C02 shape','{"kind":"operator","id":"fixture"}','roe-4',scope_a,'c02:shape:'||i,repeat('4',32));
       BEGIN
         INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
           VALUES (('01900000-0000-7000-8000-00000000016' || i)::uuid,camp_a,('01900000-0000-7000-8000-00000000015' || i)::uuid,'dns.resolve','dnsx','v1.2.3','1.0.0','sha256:'||repeat('5',64),repeat('6',64),scan,repeat('b',64),'roe-4',scope_a,'{}','{}',
-            shapes[i],'{"kind":"agent","id":"fixture"}','C02 shape',repeat('4',32));
+            shapes[i],'{"kind":"operator","id":"fixture"}','C02 shape',repeat('4',32));
       EXCEPTION WHEN check_violation THEN shape_blocked := shape_blocked + 1;
       END;
     END LOOP;
@@ -101,10 +101,10 @@ BEGIN
   -- 7. Replay of the same result is rejected (one logical job per fingerprint) and keeps the seed.
   BEGIN
     INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-      VALUES ('01900000-0000-7000-8000-000000000135',camp_a,'dns.enumerate_subdomains','subfinder','{}','{"targets":["seed.example"]}','approved','C02 replay','{"kind":"agent","id":"fixture"}','roe-4',scope_a,'c02:5',repeat('4',32));
+      VALUES ('01900000-0000-7000-8000-000000000135',camp_a,'dns.enumerate_subdomains','subfinder','{}','{"targets":["seed.example"]}','approved','C02 replay','{"kind":"operator","id":"fixture"}','roe-4',scope_a,'c02:5',repeat('4',32));
     INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
       VALUES ('01900000-0000-7000-8000-000000000145',camp_a,'01900000-0000-7000-8000-000000000135','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('5',64),repeat('6',64),scan,repeat('7',64),'roe-4',scope_a,'{"targets":["seed.example"]}','{}',
-        jsonb_build_array(jsonb_build_object('seed_id',seed_domain)),'{"kind":"agent","id":"fixture"}','C02 replay',repeat('4',32));
+        jsonb_build_array(jsonb_build_object('seed_id',seed_domain)),'{"kind":"operator","id":"fixture"}','C02 replay',repeat('4',32));
   EXCEPTION WHEN unique_violation THEN blocked := blocked + 1;
   END;
   SELECT string_agg(DISTINCT e->>'seed_id', ',' ORDER BY e->>'seed_id') INTO seed_list
