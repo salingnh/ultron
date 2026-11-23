@@ -1,18 +1,24 @@
 valid:
   valid/campaign-create.json: campaign/campaign-create.v2.schema.json
   valid/result-envelope.subfinder.json: ingestion/result-envelope.v2.schema.json
+  valid/result-envelope.dnsx.json: ingestion/result-envelope.v2.schema.json
   valid/result-envelope.trivy-secret.json: ingestion/result-envelope.v2.schema.json
   valid/result-envelope.seed-provenance.json: ingestion/result-envelope.v2.schema.json
   valid/event.finding-changed.json: events/event-envelope.v2.schema.json
   valid/event.intel-revision.json: events/event-envelope.v2.schema.json
   valid/manifest.subfinder.yaml: capability/provider-manifest.v2.schema.json
+  valid/manifest.dnsx.yaml: capability/provider-manifest.v2.schema.json
   valid/severity-assessment.json: finding/severity-assessment.v2.schema.json
   valid/approved-task.subfinder.json: capability/approved-task.v2.schema.json
+  valid/approved-task.dnsx.json: capability/approved-task.v2.schema.json
   valid/approved-task.seed-kinds.json: capability/approved-task.v2.schema.json
   valid/ingest-receipt.json: ingestion/ingest-receipt.v2.schema.json
   valid/job.queued-waiting.json: capability/job.v2.schema.json
   valid/job.cancelled-with-intent.json: capability/job.v2.schema.json
   valid/severity-assessment.unrated.json: finding/severity-assessment.v2.schema.json
+  valid/capability-input.enumerate-subdomains.json: capabilities/dns/enumerate-subdomains.v2.schema.json
+  valid/capability-input.resolve.json: capabilities/dns/resolve.v2.schema.json
+  valid/graph-query.asset-neighbors.json: mcp/graph-queries.v2.schema.json#/$defs/get_asset_neighbors/properties/output
   valid/model-request.agent-turn.json: agent/model-request.v2.schema.json
   valid/model-response.tool-calls.openai.json: agent/model-response.v2.schema.json
   valid/model-response.completed.anthropic.json: agent/model-response.v2.schema.json
@@ -33,3 +39,6 @@ invalid:
   invalid/severity-assessment.failure-non-unrated.json: finding/severity-assessment.v2.schema.json
   invalid/model-response.tool-calls-without-call.json: agent/model-response.v2.schema.json
   invalid/model-response.refused-with-parsed.json: agent/model-response.v2.schema.json
+  invalid/capability-input.resolve-unknown-record.json: capabilities/dns/resolve.v2.schema.json
+  invalid/capability-input.enumerate-target-cidr.json: capabilities/dns/enumerate-subdomains.v2.schema.json
+  invalid/graph-query.asset-neighbors-no-limits.json: mcp/graph-queries.v2.schema.json#/$defs/get_asset_neighbors/properties/output

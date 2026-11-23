@@ -61,6 +61,8 @@ Pseudocode không phải mã nguồn gốc; static call graph không chứng min
 
 Catalogue chưa phải registry đã triển khai: bộ schema hiện chỉ có ba input DNS/network mẫu. Mỗi tool tiếp theo phải khóa input/output, target reference, budget, mạng/credential và provenance trước khi implement adapter. S1.5 phải bổ sung declared sources/target binding để cưỡng chế đích egress và output query có giới hạn/truncated; networkAccess hiện tại chưa đủ biểu diễn các yêu cầu đó. Server đối chiếu danh tính người kích hoạt campaign/job và agent/module đề xuất; identity do LLM tự khai không tạo quyền thực thi.
 
+Đã khóa ở S1.5b cho chuỗi DNS đầu tiên (dns.enumerate_subdomains + dns.resolve, Subfinder và DNSx): kiểu target ref và binding seed, trần tham số theo manifest/campaign (`concurrency`, `rate_limit`), mạng/credential, provenance bắt buộc của envelope, và bộ conformance registry/adapter chạy được — xem [capabilities/README.md](../../../contracts/capabilities/README.md) và [test_conformance.py](../../../contracts/tests/test_conformance.py); mọi output graph-queries bắt buộc `truncated` + `limits_applied` ([graph-queries.v2](../../../contracts/mcp/graph-queries.v2.schema.json)). Còn mở: declared sources/target binding cho egress và actor rule thuộc S1.5a; runtime M05–M06/M23 chưa tồn tại nên đây mới là contract và kiểm tham chiếu.
+
 Tiêu chí kiểm: input sai, actor không hợp lệ hoặc nguồn mục tiêu không thuộc campaign bị từ chối; job hợp lệ truy được người kích hoạt và nguồn đề xuất; credential vận hành cấp trực tiếp tới sandbox. Thiếu contract thì tool chưa được đăng ký. Backlog khóa phần này ở S1.5.
 
 ## Hành vi nghiệp vụ của các chuỗi tool

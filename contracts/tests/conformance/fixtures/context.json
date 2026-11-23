@@ -1,0 +1,57 @@
+{
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_snapshots": {
+    "roe-1": {
+      "max_parallel_jobs": 10,
+      "max_duration_hours": 168,
+      "rate_limits": {
+        "requests_per_second_per_host": 20,
+        "jobs_per_minute": 30
+      },
+      "target_denylist": [
+        "169.254.169.254"
+      ]
+    }
+  },
+  "seeds": [
+    {
+      "target_id": "01934f6a-0000-7000-8000-0000000000b1",
+      "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+      "kind": "domain",
+      "raw_value": "internal.example",
+      "canonical_key": "dns:internal.example"
+    },
+    {
+      "target_id": "01934f6a-0000-7000-8000-0000000000b2",
+      "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+      "kind": "cidr",
+      "raw_value": "10.20.0.0/24",
+      "canonical_key": null
+    },
+    {
+      "target_id": "01934f6a-0000-7000-8000-0000000000b3",
+      "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+      "kind": "keyword",
+      "raw_value": "acme corp",
+      "canonical_key": null
+    },
+    {
+      "target_id": "01934f6a-0000-7000-8000-0000000000b4",
+      "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+      "kind": "url",
+      "raw_value": "https://portal.internal.example/login",
+      "canonical_key": "url:https://portal.internal.example:443/login"
+    },
+    {
+      "target_id": "01934f6a-0000-7000-8000-0000000000b5",
+      "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+      "kind": "ip",
+      "raw_value": "203.0.113.10",
+      "canonical_key": "ip:203.0.113.10"
+    }
+  ],
+  "assets": [
+    "dns:vpn.internal.example"
+  ]
+}

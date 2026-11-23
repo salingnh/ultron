@@ -1,0 +1,2 @@
+{"host":"internal.example","ttl":3600,"resolver":["10.20.0.53:53"],"a":["203.0.113.10"],"all":["203.0.113.10"]}
+{"host":"internal.example","ttl":3600,"resolver":["10.20.0.53:53"],"aaaa":["2001:db8::10"],"all":["2001:db8::10"]}

@@ -1,0 +1,11 @@
+{
+  "case": "input over campaign rate cap: rate_limit 200 > snapshot requests_per_second_per_host 20 (Subfinder)",
+  "base_task": "fixtures/valid/approved-task.subfinder.json",
+  "patch": {
+    "input.rate_limit": 200
+  },
+  "expect": {
+    "code": "POLICY_DENIED",
+    "next_action": "FIX_INPUT"
+  }
+}

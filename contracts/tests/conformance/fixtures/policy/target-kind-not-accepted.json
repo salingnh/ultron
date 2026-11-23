@@ -1,0 +1,15 @@
+{
+  "case": "target kind not accepted: task binds a CIDR seed but DNSx only accepts domain targets",
+  "base_task": "fixtures/valid/approved-task.dnsx.json",
+  "patch": {
+    "targets": [
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b2"
+      }
+    ]
+  },
+  "expect": {
+    "code": "POLICY_DENIED",
+    "next_action": "FIX_INPUT"
+  }
+}

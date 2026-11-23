@@ -1,0 +1,14 @@
+{
+  "targets": [
+    "internal.example",
+    "dns:vpn.internal.example"
+  ],
+  "sources": [
+    "crtsh",
+    "virustotal"
+  ],
+  "recursive": false,
+  "max_results": 5000,
+  "concurrency": 2,
+  "rate_limit": 5
+}

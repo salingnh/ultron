@@ -1,0 +1,181 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-00000000e002",
+  "dedup_key": "job:01934f6a-0000-7000-8000-00000000d002:envelope",
+  "job_id": "01934f6a-0000-7000-8000-00000000d002",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "capability": "dns.resolve",
+  "provider": {
+    "name": "dnsx",
+    "version": "v1.2.2",
+    "adapter_version": "1.0.0",
+    "image_digest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec"
+  },
+  "policy_version": "roe-1",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": [
+      "dns:internal.example"
+    ],
+    "complete": true
+  },
+  "results": {
+    "assets": [
+      {
+        "kind": "ip",
+        "canonical_key": "ip:203.0.113.10",
+        "discovered_from": [
+          "dns:internal.example"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "kind": "ip",
+        "canonical_key": "ip:2001:db8::10",
+        "discovered_from": [
+          "dns:internal.example"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
+    ],
+    "observations": [
+      {
+        "subject": "dns:internal.example",
+        "predicate": "dns.record",
+        "value": {
+          "type": "A",
+          "value": "203.0.113.10",
+          "ttl": 3600
+        },
+        "observed_at": "2026-11-15T04:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "subject": "dns:internal.example",
+        "predicate": "dns.record",
+        "value": {
+          "type": "AAAA",
+          "value": "2001:db8::10",
+          "ttl": 3600
+        },
+        "observed_at": "2026-11-15T04:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "subject": "dns:internal.example",
+        "predicate": "dns.resolves",
+        "value": true,
+        "observed_at": "2026-11-15T04:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "subject": "ip:203.0.113.10",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-15T04:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "subject": "ip:2001:db8::10",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-15T04:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "type": "RESOLVES_TO",
+        "from": "dns:internal.example",
+        "to": "ip:203.0.113.10",
+        "observed_at": "2026-11-15T04:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "type": "RESOLVES_TO",
+        "from": "dns:internal.example",
+        "to": "ip:2001:db8::10",
+        "observed_at": "2026-11-15T04:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
+    ],
+    "findings": []
+  },
+  "evidence": [
+    {
+      "local_ref": "raw",
+      "sha256": "2e1f828db40f6e79faa638194186eda0cb01420bfd10d30fdc83b3f6baec88db",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d002/2e1f828db40f6e79faa638194186eda0cb01420bfd10d30fdc83b3f6baec88db",
+      "size_bytes": 227,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
+  ],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "915c99f177601910c850c41eebbbe1fc1f2067841368af972b916ddc67c7fbae",
+    "started_at": "2026-11-15T03:59:20Z",
+    "finished_at": "2026-11-15T04:00:00Z",
+    "seed_targets": [
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b1"
+      }
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-00000000d002",
+    "capability_id": "dns.resolve",
+    "provider_version": "v1.2.2",
+    "policy_version": "roe-1"
+  }
+}
