@@ -4,39 +4,75 @@
 
 | Hạng mục | Trạng thái |
 | --- | --- |
-| Giai đoạn | G0; repo có tài liệu, schema/DDL/fixture/test; chưa có dịch vụ sản phẩm chạy trọn vòng |
-| Git | Hợp nhất nhánh redesign/pentest-repositioning-s1 vào main theo yêu cầu; baseline nguồn 23490be, các mục S1.1–S1.6 vẫn mở |
+| Giai đoạn | G0: contract khóa ở mức schema/DDL/test, spike và sizing xong; cổng G0 còn mở ở lab mục tiêu và quyết định của chủ sản phẩm (xem Hồ sơ cổng G0). Chưa có dịch vụ sản phẩm chạy trọn vòng |
+| Git | `integ/g0-s1-contracts` @ `15c02b9`: đã gộp S1.1–S1.6, S1 follow-up A/B/C, G0.3b, G0.3c, G0.4d, 0013. Nhánh tích hợp chưa merge vào `main`. PR docs-only #7 (G0.3a), #9 (G0.2), #13 (G0.1), #14 (môi trường dev + CI) còn mở vào `main`; mã spike nằm trên nhánh `spike/*` (#10 là bản nháp, không merge) |
 | Kiến trúc | Theo D29: AI agent/MCP/sandbox/metadata/graph/S3/UI; model cấu hình trực tiếp, job dùng priority/dependency |
 | Tài liệu | Một bộ ở đường dẫn chính. Ngày 2026-11-17 hoàn tất ma trận 367 mục đối chiếu với nguồn trước hợp nhất; mỗi mục có đích hiện hành hoặc căn cứ thay thế, phần còn hiệu lực bị rơi đã được bổ sung |
 | Nội dung đã giữ | Use case, context/ledger/stop conditions, adapter/chain, ontology/identity/provenance, ingestion gates, correlation/finding và kiểm thử/vận hành |
 | Nội dung đã loại | Phương án nền tảng bị thay thế, phân tầng/phân nhóm, workflow duyệt cũ, nhánh ngoài phạm vi và claim benchmark/OSS chưa có bằng chứng; không dùng việc chưa implement làm lý do bỏ yêu cầu đã chốt |
-| Contract | Một bundle hiện hành còn bản nháp trước S1; version giao tiếp nằm ở schema/API/event, không có bộ tài liệu theo version |
-| F1–F3 | Đã sửa receipt chung, một đường gửi MCP và ghim manifest/adapter trong task/job; migration 0003 cho pin bất biến |
-| Rà contract | Đã đối chiếu 76 file trong 10 nhóm; N01–N06 đã sửa và có kiểm hồi quy; S1.1–S1.6 còn mở |
+| Contract | Bundle v2 khóa cho S1: 37 schema, 26 fixture hợp lệ, 30 fixture bị từ chối đúng, 23 operation OpenAPI; migration 0005–0014. C02/C03/C06/C08 ở [05](docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#các-contract-đã-khóa-c02c08), C04 ở [graph/model.md](contracts/graph/model.md#c04--thứ-tự-công-bố-đã-khóa-ở-s13) |
+| F1–F3 | Đã sửa receipt dùng một schema, một đường gửi MCP và ghim manifest/adapter trong task/job; migration 0003 cho pin bất biến, 0006 sửa lại định nghĩa `job_fingerprint` (X-1) |
+| Rà contract | Review độc lập S1.5c PASS ở mức contract sau hai vòng; các blocker R-1, R-2a/b, R-3, R-4 đóng ở 0014. OI-4/OD-5 còn chờ chủ sản phẩm |
 | Bảo toàn nội dung | Đối chiếu 35 nguồn text tại HEAD trước viết lại và 26 tài liệu hiện hành; 28 quyết định D, 12 lựa chọn OSS, các bảng chốt 12/13-11, FR/NFR, SDK/ingestion, API/event/query và logic chi tiết. Sáu cặp Word/8 hình đã đối chiếu ở lượt trước. Không còn mục trong ma trận thiếu đích hoặc bị loại không có căn cứ |
-| Triển khai | Chưa triển khai/chạy dịch vụ sản phẩm; không chạy scanner, LLM hoặc E2E sản phẩm |
+| Triển khai | Chưa có dịch vụ sản phẩm: không chạy scanner thật, LLM thật, E2E hay deploy. Môi trường dev và CI viết ở PR #14, chưa nằm trên `integ`/`main` |
 
 ## Còn mở
 
-S1.1–S1.6 trong TASKS: seed reference, canonical hash/receipt, lifecycle partial/late/cancel, outbox ordering, ModelClient/severity, tool schema/actor và chuyển cấu hình đã lưu. [Kiểm biên schema/OpenAPI C08](docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c08--kiểm-biên-schema-và-openapi) đã được sửa ở S1.7. Chi tiết duy trì tại nguồn phụ trách; chưa đạt cổng S1 hoặc MVP chỉ nhờ các kiểm tra dưới đây.
-
-Migration chuyển cấu trúc/giữ snapshot, chưa chuyển policy_snapshot JSON và current_policy_version của campaign cũ thành cấu hình mới hợp lệ. Chưa tự resume campaign/job cũ. Scheduler, isolation và agent recovery chưa có implementation sản phẩm để xác minh.
-
-Theo chỉ đạo tiếp tục giữ logic cũ ngoài phần chủ sản phẩm đã đổi, đã khôi phục quyết định 13/11 về pivot theo seed/provenance và không dùng allowlist phạm vi; bỏ điều kiện xác minh/duyệt riêng từng asset do lần viết lại tự thêm. Campaign nội bộ/ủy quyền, schema, nguồn gốc, ngân sách và cách ly mạng vẫn giữ. S1.5 còn phải khóa declared sources/target binding của egress và query truncation.
+- Cổng G0: lab mục tiêu (G0.4c, chờ OD-1), OD-2 (provider/model LLM), OD-5 (cơ chế operator identity, cũng là OI-4) và Product Team ký cổng. Điều kiện đạt/chưa đạt ở mục Hồ sơ cổng G0.
+- Trước khi viết code G1: tám điều kiện ở TASKS §G1 (E-1, R-5, P3a/P3c, OI-7, R-6, throughput projector, `normalization_version`, OI-4), mỗi điều kiện ghi task G1 sở hữu.
+- Chưa kiểm runtime: xem mục "Chưa kiểm runtime" dưới đây. Schema xanh và số đo spike không thay nghiệm thu runtime.
 
 ## Bằng chứng kiểm chứng
 
-Các kiểm Python/DB/Cypher bên dưới đã chạy ở lượt sửa contract trước; lượt bảo toàn logic chỉ sửa tài liệu. Schema/code/SQL/fixture giữ hash, bốn README/model của contracts được làm rõ. Không diễn giải các test trước thành nghiệm thu runtime hoặc nghiệm thu yêu cầu G3/G4 vừa phục hồi.
+Hai mức được tách riêng: **đã kiểm ở mức contract** (schema/DDL/test chạy được) và **đã chứng minh bằng spike** (số đo trên máy dev). Không mức nào là nghiệm thu runtime sản phẩm.
 
-- PASS trên Python 3.12.16: validator 34 schema, 9 fixture hợp lệ, 6 fixture bị từ chối đúng, 23 operation; 17 test contract/conformance, gồm F1–F3 và N01–N06. Các kiểm tra chạy trong container tách mạng sau khi cài dependency.
-- PASS OpenAPI 3.1 đầy đủ; validator bắt cả response ngoài chuẩn và format thiếu hook. Bộ kiểm dùng chung từ chối IP/domain/port/giờ/zone/usage sai; event dùng Severity chung và export chỉ JSON.
-- PostgreSQL 16 clean 0001→0002→0003→0004: smoke 9/9, dependency/bất biến 4/4, pin 3/3 và usage 4/4. Upgrade giữ 4 snapshot, priority/event lịch sử, pin null cho job cũ và bản ghi usage âm trước 0004; bản ghi âm mới bị chặn. Chưa chứng minh campaign cũ chạy liên tục.
-- PASS Cypher smoke Neo4j 5.26.28: constraints chạy hai lần; bốn upsert chạy hai lần giữ 2 asset/1 finding/1 evidence/3 cạnh; đóng/mở lại giữ 2 khoảng hiệu lực với 1 cạnh hiện hành; ID asset trùng bị chặn. Đây là kiểm template, chưa phải projector/outbox/rebuild/concurrency sản phẩm.
-- PASS kiểm tài liệu hiện hành: 26 Markdown/HTML, 98 link/anchor/ảnh tương đối hợp lệ; không có thư mục/bộ nguồn cũ. Migration 0001–0003 giữ nguyên trong lượt sửa N01–N06.
-- Lỗi khởi động Neo4j trước đó được khắc phục trong môi trường kiểm bằng hostname loopback ở container không mạng. Hai lỗi script smoke về parse CSV/nhận diện thông báo constraint đã sửa trước lần chạy đạt; không sửa Cypher để né lỗi.
-- Rà bảo toàn 2026-11-17: số đầu lượt +7.461/-9.378 không được dùng làm bằng chứng giữ đủ logic. Đã đối chiếu 367 mục; 23/23 method/path API giữ nguyên và 33 schema có đích thay thế, các field/enum loại được giải thích theo thay đổi đã chốt. 72/76 file contracts giữ hash của lần kiểm trước, bốn file tài liệu được bổ sung; không sửa schema/code/SQL/fixture. Đã phục hồi FindingRun, phạm vi G3/G4, metadata, giao thức MCP, giới hạn tool/network, tiêu chí kiểm và vận hành. Các ngưỡng vẫn là mục tiêu chưa đo.
-- Không kiểm HMAC/executor runtime, trực quan HTML bằng trình duyệt hoặc diễn tập dịch vụ sản phẩm. Các test dự kiến trong đặc tả vẫn là tiêu chí cần thực hiện theo giai đoạn.
+### Đã kiểm ở mức contract (chưa phải runtime)
+
+Lượt chạy 2026-11-24 trên `15c02b9`, venv Python 3.12.13 (jsonschema 4.26.0, psycopg 3.3.9), PostgreSQL 16.16 trong container dùng một lần, chạy đúng lệnh của [contracts/README.md §Kiểm tra](contracts/README.md#kiểm-tra):
+
+- 15 bộ Python/134 test, 0 skip. Validator: 37 schema, 26 fixture hợp lệ, 30 fixture bị từ chối đúng, 23 operation. Conformance Subfinder+DNSx, identity golden 23 test, lifecycle 9 + race 4, hash/receipt 9 + concurrency 4, outbox 15, legacy policy 6, egress/actor 11, migration hygiene 7 (gồm DocLinks và luật ghim `search_path`).
+- Chuỗi sạch `0001→0014` (14 migration) + 11 test SQL: rc=0; 56/56 hàm schema `aegis` ghim `search_path`; smoke 10/10, lifecycle 8/8, decision binding 16/16 + cancel 4/4, outbox 8/8 + 4/4 + 4/4, actor 6/6, seed guard và dispatch hold đều bị chặn đúng.
+- Chuỗi nâng cấp 30 file (14 migration + 5 fixture + `upgrade_assertions` + 10 test SQL): rc=0; 2 job lịch sử giữ `LEGACY_ACTOR`, 2 hàng giữ `LEGACY_PROPOSER_LABEL`/`LEGACY_TARGET_PROJECTION`, hủy và kết quả terminal vẫn ghi được, không job cũ nào tự chạy lại.
+- Kết quả khớp review độc lập S1.5c (re-review 2 @ `15c02b9`), nên không phải lần chạy duy nhất của chuỗi này.
+- Lượt bảo toàn 2026-11-17 (giữ làm mốc, không phải nghiệm thu runtime): Cypher smoke Neo4j 5.26.28 đạt 4/4 (constraints chạy hai lần, upsert giữ 2 asset/1 finding/1 evidence/3 cạnh, ID trùng bị chặn); 26 Markdown/HTML và 98 link/anchor/ảnh tương đối hợp lệ; rà 367 mục giữ 23/23 method/path API và 33 schema có đích thay thế, 72/76 file contracts giữ hash của lần kiểm trước. Cypher smoke chạy ở lượt đó và trong CI PR #14, nhưng **không** nằm trong §Kiểm tra nên không tính vào lần chạy trên.
+
+### Đã chứng minh bằng spike (số đo, `nhánh@sha`)
+
+- **G0.1** `spike/g0.1-temporal-langgraph@8c20a1e`: 10 test xanh. Worker bị SIGKILL giữa activity thì tiếp tục từ checkpoint, còn 1 job/1 lần dispatch; replay 29 event/19,4 KB tất định, đổi lệnh đầu thì replay báo `TMPRL1100`; cancel job 120 s dừng dưới 20 s; Continue-As-New giữ cursor; ready query p95 1,09 ms trên 5.000 job `QUEUED` dùng index `scan_job_ready_order`. Chọn phiên agent chạy trong activity (29 event/19.467 B) thay vì workflow-per-session (41 event/32.208 B).
+- **G0.2** `spike/g0.2-sandbox@e1c2a25`: 42 unit + 21 test Podman (rootless Podman 5.8.9, cgroup v2 có thật). OOM/pids/cpu/rootfs read-only/uid 65534/cap-drop ALL xác nhận bằng số đo; container không tới được PG/Neo4j/S3/Temporal/loopback/link-local/metadata, gồm cả `::ffff:127.0.0.1`, NAT64/6to4/Teredo; DNS tắt theo job và broker kiểm lại sau redirect; collector chỉ nhận file thường với trần byte/file; parser không mở được socket. Bảng pin 4 tool: subfinder v2.17.0 (MIT), dnsx v1.2.2 (MIT), bbot 3.0.2 (AGPL-3.0), naabu v2.7.0 (MIT), kèm digest và SBOM SPDX. Naabu SYN bị hạ xuống CONNECT rootless dù có `NET_RAW` → G1 giữ `rawSocket=false`.
+- **G0.3a** `spike/g0.3-mcp@6372e4c`: 42 test với MCP 2.3.0 (`2025-11-25`). `_meta` thiếu/sai → `-32602` kèm `error.v2`; 100 lần cùng `idempotency_key` → 1 job (`approved` 1/`duplicate` 99). p95 `tools/call` handler 0,62 ms, HTTP JSON 3,64 ms, SSE 5,54 ms; 16 request đồng thời 272,7 call/s trên fake registry — NFR-04 (<300 ms p95) đạt ở mức fake, chưa phải registry PostgreSQL.
+- **G0.3b** `spike/g0.3-graph@cf58b49` (+`a686b80` cho lần đo 0013): 100 writer cùng `canonical_key` → 1 node, 0 retry; 100 key khác nhau 473 ops/s. Rebuild 2.799 event đạt 174,5 event/s, 2.465 node/2.743 cạnh, so từng property và đối chiếu PostgreSQL 0 lệch; replay lại 67 event đã chiếu không đổi graph. 0013 (đã gộp): watermark chờ có trần (`lock_timeout` 5 s, 55P03, không bỏ im lặng) → 0 lần refresh bị chặn so với 921–1.163 lần trước, end-to-end 167 so với 133 event/s, p50 commit 0,185 so với 0,148 s.
+- **G0.3c** (#18 @ `6158696`): `aegis-norm/1` là trục version riêng; 54 vector chấp nhận/37 bị từ chối/7 nhóm thu gọn, 23 test; replay giữ nguyên canonical key.
+- **G0.4a/b** (PR #14 @ `9f25513`, chưa merge): `make dev-up` từ volume rỗng → 4 dịch vụ healthy, migration chạy một lần mỗi file và từ chối sửa migration đã áp; `make dev-down` xoá đúng project của mình. CI đọc danh sách cổng từ `contracts/README.md` nên không có bản sao thứ hai: chạy thử trên nhánh `integ` @ `8ea163d` đạt (13 bộ python, 16 file chuỗi sạch, 18 file chuỗi nâng cấp); CI của chính PR (dựa trên `main`, chưa có S1) chạy 3/7/8, run `45251769962` xanh 1m27s, run `45248059340` với fixture cố ý hỏng thì đỏ.
+- **G0.4d** (#21 @ `df9448e`): đơn giá đo được metadata 3.526 B/asset, graph 447 B/asset, WAL 1.030 B/event. Đỉnh NFR-03 833 event/s so với trần projector 168–175 event/s (thiếu 4,9 lần); backlog G1 ước 14 card ≈ 63 person-day, W1→W5.
+
+### Chưa kiểm runtime
+
+- Không có code sản phẩm M01–M28: không chạy pipeline thật, không có UI/SSE, không có projector/outbox/dispatcher sản phẩm.
+- MCP, registry, latency mới đo trên fake registry và template Cypher; graph query tools chưa chạy qua MCP (thuộc G1.2b).
+- Sandbox/egress mới đo trên container của spike với listener giả; chưa có M06/broker sản phẩm, chưa thử IPv6 egress thật, seccomp tùy chỉnh hay host hết cgroup delegation.
+- HMAC của ApprovedTask, restart-reconcile của M06: chưa có implementation để kiểm.
+- LLM thật (OD-2), lab mục tiêu (OD-1), soak 24–48 h và 7 ngày: chưa chạy.
+- CI chưa chạy trên `integ` vì workflow nằm ở PR #14 (target `main`); cổng hiện vẫn chạy tay.
+
+## Hồ sơ cổng G0
+
+Đối chiếu theo [bằng chứng giao hàng](docs/living/02-ke-hoach-trien-khai.md#bằng-chứng-giao-hàng) của kế hoạch (G0 và điều kiện ký cổng); trạng thái chỉ dựa trên bằng chứng ở trên.
+
+| Điều kiện G0 | Trạng thái | Căn cứ |
+| --- | --- | --- |
+| Kết luận spike (Temporal/LangGraph, sandbox, MCP, graph, identity) | đạt | G0.1/G0.2/G0.3a: báo cáo + `spike/*@sha`; kết luận G0.3b/G0.3c đã gộp vào [model.md](contracts/graph/model.md#c04--thứ-tự-công-bố-đã-khóa-ở-s13) và `contracts/ingestion/normalization.v2.yaml`. Kết luận G0.1/G0.2/G0.3a còn ở PR #7/#9/#13 chờ merge vào `main` |
+| Schema + DB sạch/nâng cấp | đạt | Migration 0005–0014; hai chuỗi psql ở mục trên (15 bộ/134 test, 56/56 hàm ghim, chuỗi nâng cấp 30 file) |
+| Bảng pin version/digest/license | đạt nội dung, chờ merge | G0.2: 4 tool + digest + SBOM SPDX; văn bản ở PR #9 (`04-module-ket-noi-oss.md` §Chọn provider), chưa trên `integ` |
+| Registry và môi trường dev | registry đạt; môi trường chờ merge | Conformance Subfinder+DNSx đã gộp (S1.5b); `make dev-up/down` + CI ở PR #14 |
+| Lab và fixture | fixture đạt, lab mở | Fixture: 26 hợp lệ/30 bị từ chối, golden hash `aegis-c14n/1`, golden identity `aegis-norm/1`. Lab G0.4c chờ OD-1 |
+| Backlog G1 + sizing lưu trữ lâu dài | đạt | TASKS §G1 (G1.1–G1.5 + 8 điều kiện review); [02-nen-tang.md §Định cỡ](docs/living/dac-ta-ky-thuat/02-nen-tang.md#định-cỡ-dung-lượng-và-tải-g04d) (G0.4d) |
+| Contract được review | đạt ở mức contract | Review độc lập S1.5c (re-review 2 @ `15c02b9`): PASS mức contract; blocker R-1/R-2a/R-2b/R-3/R-4 đóng ở 0014. OI-4 chờ OD-5 |
+| Kiểm hạn chế sandbox | đạt bằng spike | G0.2 (63 test) — chưa phải runner sản phẩm (G1.3a) |
+| Kiểm scheduling | đạt bằng spike | G0.1 ready query + dependency/priority; implementation thuộc G1.1d |
+
+**Chưa đạt, chờ chủ sản phẩm:** lab mục tiêu (G0.4c/OD-1), OD-2 (provider/model LLM), OD-5 (operator identity, cũng là OI-4), và Product Team ký cổng. Cổng G0 chỉ được coi là đạt khi các mục này đạt hoặc chủ sản phẩm chấp nhận mở G1 kèm điều kiện đã ghi (kế hoạch, điều kiện ký cổng).
 
 ## Tiếp theo
 
-Khóa S1.1–S1.6, hoàn thiện projector và kiểm replay/concurrency. Nghiệm thu runtime theo cổng G0–G2 khi có implementation. Cập nhật sau mỗi lần merge hoặc deploy (update after every merge or deploy).
+Chờ chủ sản phẩm: OD-1/OD-2/OD-5, merge PR #7/#9/#13/#14, ký cổng G0. Sau đó mở G1 theo TASKS: G1.1a trước, tám điều kiện review phải xong cùng task sở hữu. Cập nhật sau mỗi lần merge hoặc deploy (update after every merge or deploy).
