@@ -48,6 +48,7 @@ python3 -I contracts/tests/test_seed_reference.py
 python3 -I contracts/tests/test_model_client.py
 python3 -I contracts/tests/test_hash_receipt.py
 python3 -I contracts/tests/test_job_lifecycle.py
+python3 -I contracts/tests/test_conformance.py
 AEGIS_TEST_PG_DSN=postgresql://<user>:<pw>@127.0.0.1:<port>/<db> python3 -I contracts/tests/test_outbox_ordering.py
 # test_ingestion_concurrency.py và test_job_lifecycle_race.py tự tạo database dùng một lần (áp migration rồi drop);
 # DSN chỉ cần một server PostgreSQL 16, không cần schema đã migrate.
@@ -63,6 +64,14 @@ Python 3.12, dependency kiểm contract được khóa tại [requirements](test
 Mọi consumer schema phải bật [validator ngữ nghĩa chung](validation.py): các format `aegis-*` kiểm IP/domain/port và tên timezone. M05, G1 và validator của DTO được sinh phải gọi cùng kiểm tra; tạo DTO hoặc kiểm regex riêng chưa đủ. Validator báo lỗi nếu gặp format chưa đăng ký, đồng thời kiểm toàn tài liệu OpenAPI 3.1. Thư viện này là kiểm conformance tham chiếu, chưa phải implementation của các dịch vụ.
 
 Receipt dùng duy nhất [IngestReceipt](ingestion/ingest-receipt.v2.schema.json) cho REST và interface nội bộ. AgentSessionResult chỉ giữ các job ID đã được gửi qua MCP, không có nhánh dispatch dự phòng.
+
+## Tool và query có giới hạn
+
+Manifest đã pin là nguồn trần cho input: `concurrency` không vượt `budget.maxConcurrency`, `rate_limit` không vượt `rate_limits.requests_per_second_per_host` của snapshot `policy_version`; vượt trần là POLICY_DENIED, không tự hạ giá trị. Input khai báo `sources`/`resolvers` cần manifest `networkAccess: egress`; input không có trường secret (credential do manifest/cấu hình cấp tới sandbox). Quy tắc đầy đủ, cùng cách viết `CapabilityId` (`dns.enumerate_subdomains`) so với `schema://dns/enumerate-subdomains/v2`, ở [capabilities/README.md](capabilities/README.md).
+
+[test_conformance.py](tests/test_conformance.py) là bộ kiểm chạy được cho registry/adapter trên fixture Subfinder và DNSx: bảy handler, envelope dựng lại đúng `result-envelope.*.json`, provenance/pin/coverage, parser tất định, và các negative fixture POLICY_DENIED/INPUT_INVALID cấp registry ([tests/conformance](tests/conformance/)).
+
+Mọi output của [graph-queries.v2](mcp/graph-queries.v2.schema.json) bắt buộc có `truncated` và `limits_applied` (các trần hiệu lực server đã áp); validator từ chối schema nếu một truy vấn bỏ hai trường này, và fixture `graph-query.asset-neighbors*` kiểm cả hai chiều.
 
 ## Vòng đời job
 

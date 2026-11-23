@@ -2,18 +2,18 @@
   "task_id": "01934f6a-0000-7000-8000-000000000001",
   "decision_id": "01934f6a-0000-7000-8000-000000000001",
   "campaign_id": "01934f6a-0000-7000-8000-000000000001",
-  "scope_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
   "policy_version": "roe-1",
   "capability": "dns.enumerate_subdomains",
   "provider": "subfinder",
-  "provider_version": "v2.6.6",
+  "provider_version": "v2.17.0",
   "adapter_version": "1.0.0",
-  "manifest_sha256": "4c6b8fc3a5d4d7616bf52af29173f7c5e69ecc40f249f2b73737de913e9a1448",
-  "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "manifest_sha256": "33c0a417bd54554e4754adb05d3b92277d4941e70908e1d97d937a9792c3bf25",
+  "image_digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000001",
   "input": {
     "targets": [
-      "example.test"
+      "internal.example"
     ],
     "recursive": false
   },

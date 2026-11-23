@@ -1,0 +1,13 @@
+{
+  "case": "schema-invalid target: a CIDR is not a dns.resolve target",
+  "base_task": "fixtures/valid/approved-task.dnsx.json",
+  "patch": {
+    "input.targets": [
+      "10.20.0.0/24"
+    ]
+  },
+  "expect": {
+    "code": "INPUT_INVALID",
+    "next_action": "FIX_INPUT"
+  }
+}

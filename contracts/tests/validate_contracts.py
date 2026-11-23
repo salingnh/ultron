@@ -137,13 +137,34 @@ for fixture in index["valid"]:
     for obs in (data.get("results") or {}).get("observations", []):
         if obs["predicate"] not in predicates:
             fail(f"fixtures/{fixture}: predicate {obs['predicate']} không có trong registry")
-manifest = load(ROOT / "fixtures/valid/manifest.subfinder.yaml")
-for pred in manifest["spec"].get("emits", {}).get("predicates", []):
-    if pred not in predicates:
-        fail(f"manifest subfinder: predicate {pred} không có trong registry")
-m = re.fullmatch(r"schema://([a-z0-9-]+)/([a-z0-9-]+)/v(\d+)", manifest["spec"]["inputSchemaRef"])
-if not m or f"capabilities/{m[1]}/{m[2]}.v{m[3]}.schema.json" not in schemas:
-    fail("manifest subfinder: inputSchemaRef không ánh xạ được tới file schema")
+MANIFEST_FIXTURES = ["valid/manifest.subfinder.yaml", "valid/manifest.dnsx.yaml"]
+manifests = {name: load(ROOT / "fixtures" / name) for name in MANIFEST_FIXTURES}
+for name, manifest in manifests.items():
+    for pred in manifest["spec"].get("emits", {}).get("predicates", []):
+        if pred not in predicates:
+            fail(f"fixtures/{name}: predicate {pred} không có trong registry")
+    m = re.fullmatch(r"schema://([a-z0-9-]+)/([a-z0-9-]+)/v(\d+)", manifest["spec"]["inputSchemaRef"])
+    if not m or f"capabilities/{m[1]}/{m[2]}.v{m[3]}.schema.json" not in schemas:
+        fail(f"fixtures/{name}: inputSchemaRef không ánh xạ được tới file schema")
+
+# Mọi output graph-queries phải công bố truncated + limits_applied; nếu không, người đọc không
+# phân biệt được "toàn bộ" với "bị cắt" (05 §cổng G5/G6, 04 §Tiêu chí thêm tool).
+graph_queries = schemas["mcp/graph-queries.v2.schema.json"]["$defs"]
+for qname, query in graph_queries.items():
+    output = query.get("properties", {}).get("output", {})
+    required = set(output.get("required", []))
+    for field in ("truncated", "limits_applied"):
+        if field not in required:
+            fail(f"mcp/graph-queries.v2 {qname}.output: bắt buộc phải có {field}")
+    limits = output.get("properties", {}).get("limits_applied", {})
+    if limits.get("additionalProperties") is not False:
+        fail(f"mcp/graph-queries.v2 {qname}.limits_applied: phải đóng danh sách trường (additionalProperties=false)")
+    if "timeout_ms" not in limits.get("required", []):
+        fail(f"mcp/graph-queries.v2 {qname}.limits_applied: thiếu trần timeout_ms")
+if set(graph_queries) != {
+        "get_asset_neighbors", "get_recent_observations", "get_unverified_hypotheses",
+        "get_package_cve_matches", "summarize_campaign_delta", "get_evidence_excerpt"}:
+    fail(f"mcp/graph-queries.v2: phải giữ đúng sáu truy vấn, đang có {sorted(graph_queries)}")
 
 
 
@@ -163,12 +184,14 @@ def check_manifest(path: Path, data: dict) -> list[str]:
     return out
 
 
-for e in check_manifest(Path("fixtures/valid/manifest.subfinder.yaml"), manifest):
-    fail(e)
-for e in check_manifest_binding(
-        load(ROOT / "fixtures/valid/approved-task.subfinder.json"),
-        (ROOT / "fixtures/valid/manifest.subfinder.yaml").read_bytes()):
-    fail(f"approved-task fixture: {e}")
+for name, manifest in manifests.items():
+    for e in check_manifest(Path(f"fixtures/{name}"), manifest):
+        fail(e)
+for provider in ("subfinder", "dnsx"):
+    for e in check_manifest_binding(
+            load(ROOT / f"fixtures/valid/approved-task.{provider}.json"),
+            (ROOT / f"fixtures/valid/manifest.{provider}.yaml").read_bytes()):
+        fail(f"approved-task {provider} fixture: {e}")
 receipt_ref = openapi["paths"]["/ingestion/results"]["post"]["responses"]["202"]["content"]["application/json"]["schema"]
 if receipt_ref != {"$ref": "../ingestion/ingest-receipt.v2.schema.json"}:
     fail("OpenAPI receipt must reference the shared IngestReceipt schema")

@@ -1,0 +1,14 @@
+{
+  "targets": [
+    "dns:internal.example"
+  ],
+  "record_types": [
+    "A",
+    "AAAA"
+  ],
+  "resolvers": [
+    "10.20.0.53",
+    "2001:db8::53"
+  ],
+  "concurrency": 8
+}

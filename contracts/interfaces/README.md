@@ -27,6 +27,8 @@ def parse(output_dir: Path, task: ApprovedTask, evidence: list[EvidenceObject]) 
 
 Conformance test (`contracts/tests/` + `adapters/<m>/<tool>/fixtures/`): manifest hợp lệ, parser chạy trên fixture cho envelope hợp lệ, chạy hai lần cho kết quả giống hệt, mọi predicate có trong registry, mọi canonical_key qua cổng G1.
 
+Bộ kiểm chạy được từ S1.5b: [test_conformance.py](../tests/test_conformance.py) + [conformance/harness.py](../tests/conformance/harness.py) trên fixture Subfinder và DNSx. Nó kiểm bảy handler: `describe` không side effect; `validate` từ chối input sai (INPUT_INVALID) và vượt trần đã pin (POLICY_DENIED) trước khi gọi OSS; `start` idempotent theo key, từ chối manifest pin thiếu (DEPENDENCY_MISSING) hoặc lệch (POLICY_DENIED) trước side effect; `status` có `retry_after` (0 khi terminal); `cancel` best effort, ghi audit, idempotent và job đã huỷ không sinh envelope (EVIDENCE_INCOMPLETE); `collect` dựng envelope đúng fixture `result-envelope.*.json` với evidence sha256 = byte raw, `seed_targets` = `task.targets`, `input_fingerprint` = `aegis-c14n/1` của input đã chấp nhận, parser chạy hai lần giống hệt và replay giữ `payload_hash`; `health` nêu provider version/ảnh đã pin và phụ thuộc, không tra mạng. Negative fixture cấp registry (capability chưa đăng ký, vượt trần manifest/campaign, target kind không nhận, `task.targets` mở rộng, target ngoài campaign, credential trong input, policy snapshot thiếu, `networkAccess` không đủ) nằm ở [conformance/fixtures/policy](../tests/conformance/fixtures/policy). Đây là kiểm contract tham chiếu, không phải runtime; adapter thật thay `FixtureAdapter` nhưng phải qua đúng bộ kiểm này.
+
 ## 2. ContainerRunner (M06)
 
 ```python
@@ -81,6 +83,8 @@ Container **không** chạm SeaweedFS (mạng thực thi không vào được m�
 1. Tính SHA-256 từng file thường trong `output_dir` (không theo symlink, có trần kích thước và số file — xem mục 2 sandbox), gọi `EvidenceStore.put(campaign_id, job_id, file)` → `s3://evidence/{campaign_id}/{job_id}/{sha256}` (object lock).
 2. Chạy parser của adapter trong tiến trình con không mạng, không credential → `ParsedResults`.
 3. Dựng `ResultEnvelope` và `POST /api/v2/ingestion/results`. `event_id` là UUIDv7 mới mỗi lần nộp; `dedup_key` = `"job:<job_id>:envelope"` (xác định từ job_id) để retry không nhân bản.
+
+Parser thuần không đọc đồng hồ; collector gán `observed_at` theo thời điểm thu và đặt `provenance.seed_targets` bằng nguyên `targets` của ApprovedTask, `provenance.input_fingerprint` bằng sha256 `aegis-c14n/1` của input đã chấp nhận. `coverage.subjects` chỉ chứa asset thực sự được kiểm; seed chưa thành asset ở `seed_targets`. Pin provider trong envelope phải khớp task đã pin.
 
 Object store dùng SeaweedFS qua S3. Collector có đường tải raw lên kho; scanner chỉ ghi output_dir.
 

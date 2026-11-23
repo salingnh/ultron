@@ -11,7 +11,7 @@
       "reason": "Invalid identity in fixture"
     }
   ],
-  "payload_hash": "c40410bc4028e0f824a02514e702e70dfe0e5f67fbcf250803c7403d1da8ca57",
+  "payload_hash": "4aee38c946c7896b8e57ba57b67a3168558e4bd87d0be54a763ca8c61a5fc7c6",
   "hash_version": "aegis-c14n/1",
   "decided_at": "2026-11-15T03:05:00Z"
 }
