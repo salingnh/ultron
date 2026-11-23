@@ -15,7 +15,7 @@
     "old_status": "CANDIDATE",
     "new_status": "CORROBORATED",
     "old_severity": "UNRATED",
-    "new_severity": "NOT-A-SEVERITY",
+    "new_severity": "HIGH",
     "reason": "CVE-2021-23337 được Trivy và Grype cùng báo; KEV chưa liệt kê; EPSS 0.02",
     "evidence_ref": "01934f6a-0000-7000-8000-0000000e0001",
     "changed_by": {
