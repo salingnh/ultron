@@ -1,0 +1,48 @@
+{
+  "severity": "UNRATED",
+  "reasons": [
+    "Lần đánh giá tự động không hoàn tất: provider lỗi kết nối trước khi có kết quả hợp lệ."
+  ],
+  "uncertainty": [
+    "Chưa có đánh giá mức nghiêm trọng từ agent cho revision đầu vào này."
+  ],
+  "recommended_actions": [
+    "Kiểm provider/model đã cấu hình rồi đánh giá lại khi đầu vào đổi."
+  ],
+  "inputs": {
+    "scanner_severity": "high",
+    "exposure": "unknown",
+    "criticality": "unknown"
+  },
+  "trigger": "scan",
+  "input_revision": 3,
+  "dedup_key": "severity:01934f6a-0000-7000-8000-0000000e0002:3",
+  "raw_signals": [
+    {
+      "kind": "finding",
+      "ref": "01934f6a-0000-7000-8000-0000000e0002"
+    },
+    {
+      "kind": "finding_source",
+      "ref": "01934f6a-0000-7000-8000-0000000e0002/01934f6a-0000-7000-8000-0000000c0001/trivy",
+      "value": "scanner_severity=high"
+    },
+    {
+      "kind": "intel",
+      "ref": "nvd:CVE-2021-23337",
+      "value": "snapshot intel chưa đối chiếu"
+    }
+  ],
+  "assessed_by": {
+    "kind": "rule"
+  },
+  "failure": {
+    "code": "TOOL_UNAVAILABLE",
+    "message": "Provider không phản hồi hợp lệ; không có fallback được cấu hình.",
+    "attempt": 1,
+    "finish_reason": "provider_error",
+    "provider": "openai",
+    "model": "configured-model",
+    "session_id": "01934f6a-0000-7000-8000-000000000002"
+  }
+}

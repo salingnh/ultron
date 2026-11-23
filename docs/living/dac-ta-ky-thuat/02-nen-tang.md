@@ -22,7 +22,7 @@ Chờ signal job/tri thức hoặc timer, không busy polling. Pause chặn disp
 
 ## Model
 
-ModelClient nhận provider/model cấu hình trực tiếp, token/time/cost limits cụ thể; kiểm policy dữ liệu trước fallback. Log model/version/token/cost và session/campaign. Cấu hình model không tạo nhóm quyền chạy tool. Chi tiết round-trip tool call và xử lý lỗi còn cần khóa theo backlog.
+ModelClient nhận provider/model cấu hình trực tiếp, token/time/cost limits cụ thể; kiểm policy dữ liệu trước fallback. Log model/version/token/cost và session/campaign. Cấu hình model không tạo nhóm quyền chạy tool. Chi tiết round-trip tool call, chuẩn hóa finish và fallback đã khóa ở [C07](../../../contracts/interfaces/README.md#phần-cần-khóa-của-modelclient-và-severity--c07).
 
 Endpoint tương thích OpenAI/Anthropic có thể local hoặc cloud do vận hành cấu hình. Giữ D20: đổi model không tự tạo replay/quét lại; lịch sử assessment/FindingRun dùng để đối chiếu thay đổi đánh giá. Model lỗi không ngăn người vận hành gửi job scanner xác định qua API/MCP với các kiểm thông thường; agent có thể chờ nhưng job đã nhận và thu bằng chứng vẫn tiếp tục.
 

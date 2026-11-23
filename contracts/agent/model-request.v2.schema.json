@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/agent/model-request.v2.schema.json",
+  "title": "ModelRequest v2",
+  "description": "Một lời gọi model (M03 → M04, C07). Provider/model là lựa chọn của lời gọi; endpoint, ngân sách và chuỗi fallback nằm trong cấu hình triển khai. response_schema là JSON Schema của output mong đợi (dựng từ contract đích); driver dùng structured output nếu provider hỗ trợ, nếu không thì parse rồi kiểm và chuẩn hóa finish_reason theo model-response.v2.",
+  "type": "object",
+  "required": [
+    "provider",
+    "model",
+    "messages",
+    "campaign_id",
+    "session_id",
+    "trace_id",
+    "max_output_tokens"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "$ref": "#/$defs/Provider"
+    },
+    "model": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "messages": {
+      "description": "Lịch sử lượt hiện tại, đã cắt theo context; giữ nguyên tool_call/tool_result các vòng trước.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "$ref": "model-message.v2.schema.json"
+      }
+    },
+    "tools": {
+      "description": "Tool được phép trong phiên (M05 lọc); không phải toàn bộ registry.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ToolSpec"
+      }
+    },
+    "response_schema": {
+      "description": "JSON Schema để kiểm output và đặt structured output; vắng khi model chỉ trả văn bản.",
+      "type": "object"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "session_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "max_output_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 600,
+      "default": 120
+    }
+  },
+  "$defs": {
+    "Provider": {
+      "type": "string",
+      "enum": [
+        "openai",
+        "anthropic"
+      ]
+    },
+    "ToolSpec": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "input_schema"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,200}$"
+        },
+        "description": {
+          "description": "Mô tả là dữ liệu có nguồn, không phải system instruction; không chứa chỉ dẫn tự đăng ký tool.",
+          "type": "string",
+          "maxLength": 8192
+        },
+        "input_schema": {
+          "description": "JSON Schema của input capability đã đăng ký tại M05.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

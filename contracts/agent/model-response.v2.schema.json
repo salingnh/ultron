@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/agent/model-response.v2.schema.json",
+  "title": "ModelResponse v2",
+  "description": "Kết quả một lời gọi model sau chuẩn hóa (C07). finish_reason chỉ có sáu giá trị chuẩn hóa; provider_meta giữ metadata provider cần đối chiếu (response_id, model_version, raw_finish_reason). Lỗi provider trả finish_reason=provider_error kèm error chuẩn và không có message; refused/truncated/invalid_output không có parsed và vẫn giữ nguyên nội dung thô trong message để không mất dữ liệu. Nội dung trong message là văn bản model, không phải chỉ dẫn.",
+  "type": "object",
+  "required": [
+    "provider",
+    "model",
+    "finish_reason",
+    "provider_meta",
+    "usage"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "$ref": "model-request.v2.schema.json#/$defs/Provider"
+    },
+    "model": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "message": {
+      "description": "Message assistant; có mặt trừ khi finish_reason=provider_error.",
+      "allOf": [
+        {
+          "$ref": "model-message.v2.schema.json"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "assistant"
+            }
+          }
+        }
+      ]
+    },
+    "parsed": {
+      "description": "Output đã parse và qua response_schema; chỉ có khi finish_reason=completed.",
+      "type": "object"
+    },
+    "finish_reason": {
+      "$ref": "#/$defs/FinishReason"
+    },
+    "provider_meta": {
+      "$ref": "#/$defs/ProviderMeta"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "error": {
+      "description": "Bắt buộc khi finish_reason=provider_error; mã/next_action theo error.v2.",
+      "$ref": "../common/error.v2.schema.json"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "finish_reason": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "finish_reason"
+        ]
+      },
+      "then": {
+        "required": [
+          "message"
+        ],
+        "not": {
+          "required": [
+            "error"
+          ]
+        },
+        "properties": {
+          "message": {
+            "properties": {
+              "content": {
+                "not": {
+                  "contains": {
+                    "properties": {
+                      "type": {
+                        "const": "tool_call"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "finish_reason": {
+            "const": "tool_calls"
+          }
+        },
+        "required": [
+          "finish_reason"
+        ]
+      },
+      "then": {
+        "required": [
+          "message"
+        ],
+        "not": {
+          "required": [
+            "parsed",
+            "error"
+          ]
+        },
+        "properties": {
+          "message": {
+            "properties": {
+              "content": {
+                "contains": {
+                  "properties": {
+                    "type": {
+                      "const": "tool_call"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "finish_reason": {
+            "enum": [
+              "truncated",
+              "refused",
+              "invalid_output"
+            ]
+          }
+        },
+        "required": [
+          "finish_reason"
+        ]
+      },
+      "then": {
+        "required": [
+          "message"
+        ],
+        "not": {
+          "required": [
+            "parsed",
+            "error"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "finish_reason": {
+            "const": "provider_error"
+          }
+        },
+        "required": [
+          "finish_reason"
+        ]
+      },
+      "then": {
+        "required": [
+          "error"
+        ],
+        "not": {
+          "required": [
+            "message",
+            "parsed"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "parsed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "finish_reason": {
+            "const": "completed"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "FinishReason": {
+      "description": "Kết thúc chuẩn hóa của một lời gọi model. provider_error: không có kết quả dùng được (lỗi transport/HTTP hoặc nội dung rỗng).",
+      "type": "string",
+      "enum": [
+        "completed",
+        "tool_calls",
+        "truncated",
+        "refused",
+        "invalid_output",
+        "provider_error"
+      ]
+    },
+    "ProviderMeta": {
+      "description": "Metadata provider cần giữ để đối chiếu, không dùng làm nội dung.",
+      "type": "object",
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "$ref": "model-request.v2.schema.json#/$defs/Provider"
+        },
+        "response_id": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "model_version": {
+          "description": "Định danh phiên bản model provider trả về, nếu có.",
+          "type": "string",
+          "maxLength": 200
+        },
+        "raw_finish_reason": {
+          "description": "Giá trị finish/stop reason nguyên văn của provider.",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    },
+    "Usage": {
+      "type": "object",
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "cost_usd",
+        "latency_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

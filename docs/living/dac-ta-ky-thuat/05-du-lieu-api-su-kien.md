@@ -115,4 +115,4 @@ Schema và kiểm conformance dùng [validator chung](../../../contracts/validat
 | N05 | Usage tiêu thụ không âm ở schema và DB. Lịch sử sai giữ nguyên và phải báo lỗi toàn vẹn, không giảm consumed budget | Schema từ chối âm, DB từ chối bốn cột âm và nhận zero; upgrade giữ nguyên bản ghi lịch sử sai |
 | N06 | API hiện hành ở G2 xuất JSON; query và response cùng định dạng. SARIF/HTML của G4 có task khóa contract riêng, không tự bật trong API hiện tại | Kiểm enum query và response media type; G4.2 kiểm chuẩn định dạng mở rộng |
 
-Test tại [schema boundaries](../../../contracts/tests/test_schema_boundaries.py) và SQL test trong contracts/db/postgres/tests. Kiểm conformance này không thay thế các phần còn cần khóa về hash, ordering, actor, lifecycle hay ModelClient.
+Test tại [schema boundaries](../../../contracts/tests/test_schema_boundaries.py) và SQL test trong contracts/db/postgres/tests. Kiểm conformance này không thay thế các phần còn cần khóa về hash, ordering, actor hay lifecycle.

@@ -1,0 +1,44 @@
+{
+  "provider": "anthropic",
+  "model": "configured-model",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"severity\":\"MEDIUM\",\"reasons\":[\"Thành phần có CVE nhưng chưa có đường khai thác đã xác nhận\"],\"source_refs\":[{\"kind\":\"evidence\",\"ref\":\"01934f6a-0000-7000-8000-0000000e0001\"}],\"uncertainty\":[\"Chưa kiểm chứng đường khai thác\"],\"recommended_actions\":[\"Kiểm chứng bằng M21\"]}"
+      }
+    ]
+  },
+  "parsed": {
+    "severity": "MEDIUM",
+    "reasons": [
+      "Thành phần có CVE nhưng chưa có đường khai thác đã xác nhận"
+    ],
+    "source_refs": [
+      {
+        "kind": "evidence",
+        "ref": "01934f6a-0000-7000-8000-0000000e0001"
+      }
+    ],
+    "uncertainty": [
+      "Chưa kiểm chứng đường khai thác"
+    ],
+    "recommended_actions": [
+      "Kiểm chứng bằng M21"
+    ]
+  },
+  "finish_reason": "completed",
+  "provider_meta": {
+    "provider": "anthropic",
+    "response_id": "msg_fake_0001",
+    "model_version": "configured-model-2026-01-01",
+    "raw_finish_reason": "end_turn"
+  },
+  "usage": {
+    "input_tokens": 210,
+    "output_tokens": 96,
+    "cost_usd": 0.00105,
+    "latency_ms": 1420
+  }
+}
