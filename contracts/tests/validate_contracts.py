@@ -208,8 +208,8 @@ for t in load(ROOT / "finding/transitions.v2.yaml")["transitions"]:
         if s is not None and s not in statuses:
             fail(f"transitions.v2.yaml: trạng thái lạ {s}")
 codes = schemas["common/error.v2.schema.json"]["$defs"]["ErrorCode"]["enum"]
-if len(codes) != 13:
-    fail(f"Mã lỗi: schema hiện hành có 13 mã, đang có {len(codes)}")
+if len(codes) != 14:
+    fail(f"Mã lỗi: schema hiện hành có 14 mã, đang có {len(codes)}")
 job_status = set(schemas["capability/job.v2.schema.json"]["$defs"]["JobStatus"]["enum"])
 if ddl_enum(r"CREATE TABLE scan_job.*?status\s+text\s+NOT NULL DEFAULT 'QUEUED'\s+") != job_status:
     fail("scan_job.status trong DDL lệch với job.v2")

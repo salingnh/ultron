@@ -28,11 +28,11 @@
       "const": "2.0"
     },
     "event_id": {
-      "description": "ID của lần nộp này, UUIDv7 sinh ở phía collector. Mỗi lần nộp một giá trị mới; KHÔNG dùng làm khóa idempotent (dùng dedup_key).",
+      "description": "ID của lần nộp này, UUIDv7 sinh ở phía collector. Mỗi lần nộp một giá trị mới; KHÔNG dùng làm khóa idempotent (dùng dedup_key) và KHÔNG nằm trong content hash.",
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"
     },
     "dedup_key": {
-      "description": "Khóa idempotent xác định từ job_id (vd 'job:<job_id>:envelope'), tái tạo được khi retry. Cùng dedup_key cùng payload trả kết quả cũ; khác payload trả 409.",
+      "description": "Khóa idempotent xác định từ job_id (vd 'job:<job_id>:envelope'), tái tạo được khi retry. Cùng dedup_key cùng payload_hash trả receipt đã commit đầu tiên; khác payload_hash trả 409 IDEMPOTENCY_CONFLICT. payload_hash = sha256 phép chuẩn hóa aegis-c14n/1 của envelope bỏ event_id, dedup_key và trace (contracts/ingestion/canonicalization.v2.yaml); collector đóng băng snapshot nghiệp vụ trước lần nộp đầu nên retry gửi lại nguyên nội dung.",
       "type": "string",
       "minLength": 1,
       "maxLength": 256
@@ -175,7 +175,7 @@
       "additionalProperties": false,
       "properties": {
         "input_fingerprint": {
-          "description": "sha256 của input đã chuẩn hóa (canonical JSON).",
+          "description": "sha256 của input đã chuẩn hóa theo aegis-c14n/1 (contracts/ingestion/canonicalization.v2.yaml).",
           "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
         },
         "started_at": {

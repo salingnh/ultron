@@ -1,5 +1,6 @@
 {
-  "event_id": "01934f6a-0000-7000-8000-000000000001",
+  "event_id": "01934f6a-0000-7000-8000-00000000e001",
+  "dedup_key": "job:01934f6a-0000-7000-8000-00000000d001:envelope",
   "accepted": true,
   "duplicate": false,
   "revision": 1,
@@ -9,5 +10,8 @@
       "gate": "G1",
       "reason": "Invalid identity in fixture"
     }
-  ]
+  ],
+  "payload_hash": "c40410bc4028e0f824a02514e702e70dfe0e5f67fbcf250803c7403d1da8ca57",
+  "hash_version": "aegis-c14n/1",
+  "decided_at": "2026-11-15T03:05:00Z"
 }
