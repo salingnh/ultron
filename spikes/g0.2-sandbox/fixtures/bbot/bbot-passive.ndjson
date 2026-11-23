@@ -1,0 +1,14 @@
+{"type": "DNS_NAME", "data": "acme-lab.example", "scope_description": [], "module": "TARGET", "timestamp": 1795000000.0}
+{"type": "DNS_NAME", "data": "www.acme-lab.example", "scope_description": ["acme-lab.example"], "resolved_hosts": ["192.0.2.10"], "module": "certspotter", "timestamp": 1795000005.0}
+{"type": "DNS_NAME", "data": "api.acme-lab.example", "scope_description": "['acme-lab.example']", "resolved_hosts": ["192.0.2.11"], "module": "crtsh", "timestamp": 1795000007.5}
+{"type": "DNS_NAME_UNRESOLVED", "data": "dead.acme-lab.example", "scope_description": ["acme-lab.example"], "module": "dnsbrute", "timestamp": 1795000011.0}
+{"type": "IP_ADDRESS", "data": "192.0.2.10", "scope_description": ["www.acme-lab.example"], "module": "dnsresolve", "timestamp": 1795000006.0}
+{"type": "IP_ADDRESS", "data": "192.0.2.11", "scope_description": ["api.acme-lab.example"], "module": "dnsresolve", "timestamp": 1795000008.0}
+{"type": "OPEN_TCP_PORT", "data": "www.acme-lab.example:443", "resolved_hosts": ["192.0.2.10"], "module": "portscan", "timestamp": 1795000020.0}
+{"type": "OPEN_TCP_PORT", "data": "api.acme-lab.example:8443", "resolved_hosts": ["192.0.2.11"], "module": "portscan", "timestamp": 1795000021.0}
+{"type": "URL", "data": "https://www.acme-lab.example/", "resolved_hosts": ["192.0.2.10"], "module": "httpx", "timestamp": 1795000030.0}
+{"type": "HTTP_RESPONSE", "data": "https://www.acme-lab.example/", "status_code": 200, "resolved_hosts": ["192.0.2.10"], "module": "httpx", "timestamp": 1795000031.0}
+{"type": "TECHNOLOGY", "data": "nginx", "host": "www.acme-lab.example", "url": "https://www.acme-lab.example/", "module": "httpx", "timestamp": 1795000032.0}
+{"type": "ASN", "data": "ASN:64500", "host": "192.0.2.10", "netname": "ACME-LAB", "cidr": "192.0.2.0/24", "module": "anubis", "timestamp": 1795000040.0}
+{"type": "EMAIL_ADDRESS", "data": "security@acme-lab.example", "module": "certspotter", "timestamp": 1795000045.0}
+{"type": "FINDING", "data": "spoofable-domain", "host": "acme-lab.example", "severity": "LOW", "module": "badsecrets", "timestamp": 1795000050.0}

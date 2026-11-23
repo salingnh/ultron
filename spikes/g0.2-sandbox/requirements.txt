@@ -1,0 +1,4 @@
+# Spike-only test dependencies (no runtime dependency: aegis_g02 is stdlib-only).
+pytest==9.2.0
+jsonschema[format-nongpl]==4.26.0
+referencing==0.37.0

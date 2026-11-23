@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-11-24",
+  "rule": "AGENTS.md: release must be >=14 days old before entering the internal registry (security patches reviewed separately).",
+  "images": [
+    {
+      "tool": "subfinder",
+      "upstream": "https://github.com/projectdiscovery/subfinder",
+      "upstream_version": "v2.17.0",
+      "release_date": "2026-10-08",
+      "image": "docker.io/projectdiscovery/subfinder:v2.17.0",
+      "digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
+      "license": "MIT",
+      "sbom": "sbom/subfinder-spdx.json",
+      "notes": "Image built 2026-10-08; labels carry org.opencontainers.image.licenses=MIT.",
+      "age_days": 47,
+      "meets_14_day_rule": true,
+      "sbom_sha256": "6a5b2ef9e92a96edab863d3bd4719c0ccbacbc4068bbf14e12573ad6e5fbeabb",
+      "sbom_packages": 134,
+      "pinned_image_tag": "v2.17.0"
+    },
+    {
+      "tool": "dnsx",
+      "upstream": "https://github.com/projectdiscovery/dnsx",
+      "upstream_version": "v1.2.2",
+      "release_date": "2025-02-01",
+      "image": "docker.io/projectdiscovery/dnsx:v1.2.2",
+      "digest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec",
+      "license": "MIT",
+      "sbom": "sbom/dnsx-spdx.json",
+      "notes": "Docker Hub tag lags upstream: latest image tag is v1.2.2 (built 2025-02-01) even though the upstream repo released v1.3.0 (2026-07-16) and v1.3.1 (2026-08-31); no v1.3.x image exists, so the pin is v1.2.2. adapter_version/provider_version must record the gap and G1 must not claim v1.3 behaviour.",
+      "age_days": 661,
+      "meets_14_day_rule": true,
+      "sbom_sha256": "d929d90e4c1941dbbab9810d8758f350f306733442b90c11e4cce1b1d171ddbc",
+      "sbom_packages": 138,
+      "pinned_image_tag": "v1.2.2"
+    },
+    {
+      "tool": "bbot",
+      "upstream": "https://github.com/blacklanternsecurity/bbot",
+      "upstream_version": "v3.0.2",
+      "release_date": "2026-08-24",
+      "image": "docker.io/blacklanternsecurity/bbot:3.0.2",
+      "digest": "sha256:40ed0733e0163feee844d49346eb15e40872fa7008f621358eed9b9a7807382e",
+      "license": "AGPL-3.0",
+      "sbom": "sbom/bbot-spdx.json",
+      "notes": "AGPL-3.0: run only as a separate container, never link into core; keep attribution. v3.1.0 (2026-11-12) is 12 days old on 2026-11-24, so the 14-day rule blocks it until 2026-11-26.",
+      "age_days": 92,
+      "meets_14_day_rule": true,
+      "sbom_sha256": "71065146f10a1b04f197b1f4a18e6f12e901d4d063f7e1cc36cb8319becf4966",
+      "sbom_packages": 277,
+      "pinned_image_tag": "3.0.2"
+    },
+    {
+      "tool": "naabu",
+      "upstream": "https://github.com/projectdiscovery/naabu",
+      "upstream_version": "v2.7.0",
+      "release_date": "2026-10-28",
+      "image": "docker.io/projectdiscovery/naabu:v2.7.0",
+      "digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
+      "license": "MIT",
+      "sbom": "sbom/naabu-spdx.json",
+      "notes": "Raw-socket test only. -s syn silently downgrades to CONNECT inside rootless Podman even with NET_RAW effective; -proxy takes host:port without a scheme.",
+      "age_days": 27,
+      "meets_14_day_rule": true,
+      "sbom_sha256": "ef31af6aa50c180050bc73a6d3a50dc23575c404d040604f305d234376c9f422",
+      "sbom_packages": 146,
+      "pinned_image_tag": "v2.7.0"
+    }
+  ]
+}
