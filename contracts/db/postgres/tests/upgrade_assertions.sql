@@ -72,8 +72,8 @@ BEGIN
   -- 2. One conversion record per legacy snapshot, one new v2 row each, nothing promoted.
   SELECT count(*) INTO converted FROM policy_snapshot_migration;
   IF converted <> 3 THEN RAISE EXCEPTION '% conversion record(s), expected 3 (roe-1, roe-101, roe-102)', converted; END IF;
-  IF (SELECT count(*) FROM policy_snapshot) <> 7 THEN
-    RAISE EXCEPTION 'policy_snapshot row count % after 0009, expected 3 historical + 3 v2 candidates + the post-0009 v2 fixture',
+  IF (SELECT count(*) FROM policy_snapshot) <> 8 THEN
+    RAISE EXCEPTION 'policy_snapshot row count % after 0009, expected 3 historical + 3 v2 candidates + the 2 v2 fixtures',
       (SELECT count(*) FROM policy_snapshot);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM policy_snapshot_migration m

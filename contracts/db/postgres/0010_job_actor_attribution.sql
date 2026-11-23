@@ -1,8 +1,7 @@
 -- C05/S1.5a: actor attribution for the decision and the job.
 -- requested_by is the server-verified initiator (operator|module); proposed_by is the agent session that
 -- proposed the request. Both are assigned by M05 from its own context, never from request or LLM input.
--- Apply after 0007 (0001 suffices for the columns/triggers themselves; see contracts/README.md).
--- Prior rows keep their self-declared actor and carry no proposed_by: history is not
+-- Apply after 0008. Prior rows keep their self-declared actor and carry no proposed_by: history is not
 -- reinterpreted and no operator is invented for it.
 BEGIN;
 SET LOCAL search_path = aegis, public;

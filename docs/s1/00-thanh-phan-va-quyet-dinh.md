@@ -31,9 +31,9 @@ Nghiệm thu yêu cầu schema thống nhất, fixture đúng/sai, clean/upgrade
 | Nội dung | Nguồn chi tiết | Task |
 | --- | --- | --- |
 | Seed reference; hash/idempotency; partial/late/cancel | [Dữ liệu](../living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md) | S1.1/S1.2 |
-| Outbox/revision chịu rollback và commit đảo thứ tự | [Graph](../../contracts/graph/model.md#c04--thứ-tự-công-bố-còn-cần-chứng-minh) | S1.3 |
+| Outbox/revision chịu rollback và commit đảo thứ tự | [Graph](../../contracts/graph/model.md#c04--thứ-tự-công-bố-đã-khóa-ở-s13) | S1.3 |
 | ModelClient round-trip, severity fallback | [Interface](../../contracts/interfaces/README.md#phần-cần-khóa-của-modelclient-và-severity--c07) | S1.4 |
-| Input schema tool và nguồn gốc actor | [Adapter](../living/dac-ta-ky-thuat/04-module-ket-noi-oss.md#contract-tool-và-actor-cần-khóa--c05) | S1.5 |
+| Input schema tool và nguồn gốc actor | [Adapter](../living/dac-ta-ky-thuat/04-module-ket-noi-oss.md#contract-tool-và-actor--c05-đã-khóa-s15a) | S1.5 |
 | Chuyển cấu hình/campaign đã lưu bằng contract cũ | [Migration](../../contracts/README.md#dữ-liệu-và-migration) | S1.6 |
 
 Các mục trên đã được đưa vào nguồn hiện hành, chưa phải đã implement/kiểm xong. Không coi việc xóa tài liệu cũ là đóng các lỗi contract.
