@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 import time
 from dataclasses import dataclass, field
 
@@ -35,6 +36,7 @@ from spike_common import (
     connect,
     graph_snapshot,
     iso,
+    latency_summary,
     load_cypher_statements,
     median,
     neo4j_driver,
@@ -171,6 +173,7 @@ class WriterStats:
     rolled_back_seq: int | None = None
     started: float = 0.0
     finished: float = 0.0
+    commit_latencies: list[float] = field(default_factory=list)
 
 
 def _produce(conn: psycopg.Connection, writer_id: int, cfg: LoadConfig, barrier: threading.Barrier) -> WriterStats:
@@ -188,6 +191,7 @@ def _produce(conn: psycopg.Connection, writer_id: int, cfg: LoadConfig, barrier:
         reopen = (writer_id + j) % 17 == 0
         finding = not hot  # one finding per unique asset; repeated findings would repeat dedup_key
         do_rollback = writer_id == 0 and j == 0
+        began = time.monotonic()
         try:
             with conn.transaction():
                 # asset_id and canonical_key are both unique, and concurrent writers send both:
@@ -291,6 +295,7 @@ def _produce(conn: psycopg.Connection, writer_id: int, cfg: LoadConfig, barrier:
         except _Rollback as rolled:
             stats.rolled_back_seq = rolled.seq
             continue
+        stats.commit_latencies.append(time.monotonic() - began)
         stats.committed += 1
         stats.max_seq = max(stats.max_seq, int(seq))
     stats.finished = time.monotonic()
@@ -300,17 +305,35 @@ def _produce(conn: psycopg.Connection, writer_id: int, cfg: LoadConfig, barrier:
 # ---------------------------------------------------------------------------
 # Projector: dispatcher lease + watermark + outbox_batch + Neo4j upserts
 # ---------------------------------------------------------------------------
-def apply_variant(conn: psycopg.Connection, allocator: str, watermark: str) -> None:
+def apply_variant(conn: psycopg.Connection, allocator: str, watermark: str) -> dict:
     if allocator == "counter":
         apply_sql_file(conn, SQL_DIR / "last_counter.sql")
     elif allocator == "nextval":
         apply_sql_file(conn, SQL_DIR / "allocator_nextval.sql")
     else:
         raise ValueError(f"unknown allocator variant {allocator!r}")
+    impl = "0008-try-lock"
     if watermark == "blocking":
-        apply_sql_file(conn, SQL_DIR / "watermark_blocking.sql")
+        # Prefer the real migration under test when the caller points at it (G0.3b-0013);
+        # the spike-only SQL remains the fallback for older checkouts.
+        path = os.environ.get("G03B_BLOCKING_WATERMARK_SQL")
+        if path:
+            apply_sql_file(conn, Path(path))
+            impl = "0013-blocking"
+        else:
+            apply_sql_file(conn, SQL_DIR / "watermark_blocking.sql")
+            impl = "spike-blocking"
     elif watermark != "try":
         raise ValueError(f"unknown watermark variant {watermark!r}")
+    source = conn.execute(
+        "SELECT pg_get_functiondef('aegis.outbox_watermark_refresh(text,bigint)'::regprocedure)"
+    ).fetchone()[0]
+    blocking = "pg_advisory_xact_lock(" in source and "pg_try_advisory_xact_lock" not in source
+    if watermark == "try" and blocking:
+        raise AssertionError("try variant resolved to a blocking watermark function")
+    if watermark == "blocking" and not blocking:
+        raise AssertionError("blocking variant did not replace the try-lock function")
+    return {"watermark_impl": impl, "blocking": blocking}
 
 
 @dataclass
@@ -324,6 +347,8 @@ class ProjectorStats:
     refresh_advanced: int = 0
     refresh_blocked_with_pending: int = 0
     refresh_idle: int = 0
+    refresh_timeouts: int = 0
+    refresh_seconds: list[float] = field(default_factory=list)
     max_publication_lag: int = 0
     nf_retries: dict = field(default_factory=dict)
     first_event_at: float | None = None
@@ -334,6 +359,8 @@ class ProjectorStats:
 
     def as_dict(self) -> dict:
         out = dict(self.__dict__)
+        waits = out.pop("refresh_seconds", [])
+        out["refresh_wait_seconds"] = latency_summary(waits)
         return out
 
 
@@ -470,9 +497,17 @@ class Projector(threading.Thread):
         while True:
             last = wm.execute("SELECT aegis.spike_publication_last()").fetchone()[0] or 0
             wm_before = wm.execute("SELECT published_upto FROM aegis.outbox_watermark").fetchone()[0]
-            wm_after = wm.execute(
-                "SELECT aegis.outbox_watermark_refresh(%s,%s)", (self.dispatcher, fence)
-            ).fetchone()[0]
+            refresh_began = time.monotonic()
+            try:
+                wm_after = wm.execute(
+                    "SELECT aegis.outbox_watermark_refresh(%s,%s)", (self.dispatcher, fence)
+                ).fetchone()[0]
+            except psycopg.errors.LockNotAvailable:
+                # 0013 bounds the wait on purpose: a timeout is loud and the dispatcher retries.
+                self.stats.refresh_timeouts += 1
+                time.sleep(0.005)
+                continue
+            self.stats.refresh_seconds.append(time.monotonic() - refresh_began)
             st = self.stats
             st.refresh_attempts += 1
             if wm_after > wm_before:
@@ -576,6 +611,7 @@ def _run_producers(db: str, cfg: LoadConfig, target: list[int]) -> tuple[list[Wr
         "rolled_back_seq": next((r.rolled_back_seq for r in done if r.rolled_back_seq is not None), None),
         "wall_seconds": round(finished - started, 3),
         "producer_events_per_second": round(sum(r.committed for r in done) / (finished - started), 1),
+        "commit_latency_seconds": latency_summary([x for r in done for x in r.commit_latencies]),
         "started_at_monotonic": started,
         "finished_at_monotonic": finished,
     }
@@ -756,6 +792,7 @@ def run_load(*, allocator: str, writers: int, events_per_writer: int, runs: int)
                 "outbox_events": counts["outbox_events"],
                 "wall_seconds": info["wall_seconds"],
                 "events_per_second": round(counts["outbox_events"] / info["wall_seconds"], 1),
+                "commit_latency_seconds": info["commit_latency_seconds"],
                 "target_seq": target[0],
             })
     rates = [r["events_per_second"] for r in per_run]
@@ -786,7 +823,7 @@ def run_pipeline(
     }
     with RunDatabase(label) as db:
         with connect(db, autocommit=True) as meta:
-            apply_variant(meta, allocator, watermark)
+            result["watermark_impl"] = apply_variant(meta, allocator, watermark)
         with connect(db) as pg:
             seed_contract_rows(pg)
         driver = neo4j_driver()

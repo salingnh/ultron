@@ -30,6 +30,12 @@ contract tests, not merged into the contracts bundle. The conclusions are in
    (`sql/allocator_nextval.sql`); plus the try-lock watermark of 0008 against a blocking
    exclusive lock (`sql/watermark_blocking.sql`, spike-only) to measure whether the
    watermark starves under 100 writers.
+6. **Writer commit latency (G0.3b-0013)** — every producer transaction is timed from BEGIN to
+   commit and reported as p50/p90/p99/max; the projector reports the distribution of the
+   watermark refresh wait (the exclusive waiter queues behind active writers) and any
+   bounded-wait timeouts. The blocking arm can run the real `0013_outbox_watermark_blocking.sql`
+   instead of the spike-only SQL by setting `G03B_BLOCKING_WATERMARK_SQL=<path to that file>`;
+   the harness verifies the resolved function definition (blocking vs try-lock) before writing.
 
 ## Run
 
@@ -73,7 +79,9 @@ results and snapshots (git-ignored).
 - `sql/last_counter.sql` — read-only `aegis.spike_publication_last()` helper for lag
   observation.
 - `sql/watermark_blocking.sql` — replaces the watermark refresh with a blocking
-  exclusive lock. **Not** a proposed migration.
+  exclusive lock. **Not** a proposed migration; superseded by
+  `contracts/db/postgres/0013_outbox_watermark_blocking.sql`, which the latency run applies via
+  `G03B_BLOCKING_WATERMARK_SQL`.
 
 The spike never edits migrations 0001–0009 or the product projector: the template file and
 `constraints.cypher` are read from `contracts/` and executed verbatim.

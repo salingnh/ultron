@@ -345,3 +345,24 @@ def median(values: list[float]) -> float:
     n = len(ordered)
     mid = n // 2
     return ordered[mid] if n % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def percentile(values: list[float], q: float) -> float:
+    """Nearest-rank percentile (q in (0, 1]); stable for the latency samples reported here."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    rank = max(1, min(len(ordered), int(-(-q * len(ordered) // 1))))
+    return ordered[rank - 1]
+
+
+def latency_summary(values: list[float]) -> dict:
+    if not values:
+        return {"samples": 0}
+    return {
+        "samples": len(values),
+        "p50": round(percentile(values, 0.50), 4),
+        "p90": round(percentile(values, 0.90), 4),
+        "p99": round(percentile(values, 0.99), 4),
+        "max": round(max(values), 4),
+    }
