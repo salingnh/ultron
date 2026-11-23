@@ -1,40 +1,32 @@
 #!/usr/bin/env bash
-# The contract gate of contracts/README.md section "Kiểm tra", driven by the content of the
-# checked-out branch instead of a list kept in this file:
+# The contract gate of contracts/README.md section "Kiểm tra".
 #
-#   * python  - validate_contracts.py and every contracts/tests/test_*.py, on Python 3.12 in
-#               a container, with AEGIS_TEST_PG_DSN pointing at this script's own throwaway
-#               PostgreSQL 16. A test file that skips (or does not finish with unittest's
-#               "OK") fails the job: a skipped harness is not evidence.
-#   * postgres - every contracts/db/postgres/0*.sql migration on an empty database, then
-#               every tests/*.sql test, plus the documented upgrade chain from the v1
-#               fixture. Fixture positions and the two clean-database-only tests are the
-#               only lists here, and each is guarded so a new file cannot be ignored.
+# That README section is the single source of truth: scripts/ci/read-contract-gate.py reads
+# the python suites, the PostgreSQL clean chain and the upgrade-chain order from it, and the
+# gate fails loudly when any of them cannot be parsed or when a file on disk is not covered
+# by it. Nothing in this script keeps a second copy of those lists.
+#
+#   * python   - every suite the README lists, on Python 3.12 in a container, with
+#                AEGIS_TEST_PG_DSN pointing at this script's own throwaway PostgreSQL 16.
+#                A suite named test_*.py that skips, or that does not end with unittest's
+#                "OK", fails the job: a skipped harness is not evidence.
+#   * postgres - the README's clean chain on an empty database, then its upgrade chain on a
+#                second database.
 #
 # Everything runs in rootless podman as the current user; passwords are generated per run.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 require_cmd podman
-
-DB_DIR="$REPO_ROOT/contracts/db/postgres"
-TESTS_DIR="$DB_DIR/tests"
+require_cmd python3
 
 NETWORK=$(ci_container net)
 PG=$(ci_container pg)
 VENV=$(ci_container venv)
 PY=
+PLAN=$(mktemp -t aegis-contract-gate-XXXXXX)
 PG_PASSWORD=$(random_password)
 DSN="postgresql://aegis:${PG_PASSWORD}@${PG}:5432/postgres"
-
-# Fixture position in the upgrade chain: the migration number the fixture runs after.
-# A new fixture must be placed here, otherwise the upgrade chain would silently not run it.
-declare -A FIXTURES_AFTER=(
-  [v1-upgrade.sql]=0001
-  [pre-usage-upgrade.sql]=0003
-)
-# Tests that seed fixed v2 rows and therefore only run on a freshly migrated database.
-CLEAN_ONLY_TESTS="smoke.sql tool_orchestration.sql"
 
 cleanup() {
   local status=$?
@@ -46,52 +38,33 @@ cleanup() {
   remove_container "$PG"
   podman volume rm -f "$VENV" >/dev/null 2>&1 || true
   podman network rm -f "$NETWORK" >/dev/null 2>&1 || true
+  rm -f "$PLAN"
   exit "$status"
 }
 trap cleanup EXIT
 
-# --- what the branch contains -------------------------------------------------
-shopt -s nullglob
-MIGRATIONS=("$DB_DIR"/0*.sql)
-((${#MIGRATIONS[@]} > 0)) || die "no migrations under contracts/db/postgres"
+# --- the plan, read from contracts/README.md ----------------------------------
+python3 "$CI_DIR/read-contract-gate.py" "$REPO_ROOT" >"$PLAN" ||
+  die "cannot read the contract gate plan from contracts/README.md section \"Kiểm tra\""
 
-for fixture in "$TESTS_DIR"/fixtures/*.sql; do
-  name=$(basename "$fixture")
-  [[ -v FIXTURES_AFTER[$name] ]] ||
-    die "fixture $name has no position in the upgrade chain - add it to FIXTURES_AFTER in scripts/ci/contracts-gate.sh"
-done
+mapfile -t REQUIREMENTS < <(awk '$1 == "requirement" { print $2 }' "$PLAN")
+mapfile -t PYTHON_CHECKS < <(awk '$1 == "python" { print $2 }' "$PLAN")
+mapfile -t CLEAN_CHAIN < <(awk '$1 == "clean" { print $2 }' "$PLAN")
+mapfile -t UPGRADE_CHAIN < <(awk '$1 == "upgrade" { print $2 }' "$PLAN")
 
-CLEAN_TESTS=()
-UPGRADE_TESTS=()
-for test_file in "$TESTS_DIR"/*.sql; do
-  name=$(basename "$test_file")
-  [ "$name" = upgrade_assertions.sql ] && continue
-  CLEAN_TESTS+=("$test_file")
-  case " $CLEAN_ONLY_TESTS " in
-  *" $name "*) ;;
-  *) UPGRADE_TESTS+=("$test_file") ;;
-  esac
-done
-((${#CLEAN_TESTS[@]} > 0)) || die "no SQL tests under contracts/db/postgres/tests"
+((${#REQUIREMENTS[@]})) || die "the plan has no requirements file"
+((${#PYTHON_CHECKS[@]})) || die "the plan has no python suites"
+((${#CLEAN_CHAIN[@]})) || die "the plan has no clean chain"
+((${#UPGRADE_CHAIN[@]})) || die "the plan has no upgrade chain"
 
-mapfile -t FIXTURE_NAMES < <(printf '%s\n' "${!FIXTURES_AFTER[@]}" | sort)
-UPGRADE_CHAIN=()
-for migration in "${MIGRATIONS[@]}"; do
-  number=$(basename "$migration")
-  number=${number%%_*}
-  UPGRADE_CHAIN+=("$migration")
-  for fixture in "${FIXTURE_NAMES[@]}"; do
-    if [ "${FIXTURES_AFTER[$fixture]}" = "$number" ]; then
-      UPGRADE_CHAIN+=("$TESTS_DIR/fixtures/$fixture")
-    fi
-  done
-done
+absolute() {
+  local path
+  for path in "$@"; do printf '%s/%s\n' "$REPO_ROOT" "$path"; done
+}
+mapfile -t CLEAN_FILES < <(absolute "${CLEAN_CHAIN[@]}")
+mapfile -t UPGRADE_FILES < <(absolute "${UPGRADE_CHAIN[@]}")
 
-PYTHON_TESTS=()
-for test_file in "$REPO_ROOT"/contracts/tests/test_*.py; do
-  PYTHON_TESTS+=("${test_file#"$REPO_ROOT"/}")
-done
-((${#PYTHON_TESTS[@]} > 0)) || die "no python tests under contracts/tests"
+log "plan from contracts/README.md: ${#PYTHON_CHECKS[@]} python checks, clean chain ${#CLEAN_CHAIN[@]} files, upgrade chain ${#UPGRADE_CHAIN[@]} files"
 
 # --- throwaway PostgreSQL 16 + python 3.12 ------------------------------------
 log "network $NETWORK + postgres $PG (throwaway)"
@@ -118,14 +91,13 @@ output=$(podman run --rm --name "$PY" --label "$CI_SUITE_LABEL" --label "aegis.c
     set -eu
     echo "[ci] $(python3 -V 2>&1)"
     python3 -m venv /opt/venv
-    /opt/venv/bin/pip install --quiet --disable-pip-version-check --root-user-action=ignore \
-      -r contracts/tests/requirements.txt
-    if [ -f contracts/tests/requirements-db.txt ]; then
+    for requirement in "$@"; do
+      echo "[ci] requirements: $requirement"
       /opt/venv/bin/pip install --quiet --disable-pip-version-check --root-user-action=ignore \
-        -r contracts/tests/requirements-db.txt
-    fi' 2>&1) || status=$?
+        -r "$requirement"
+    done' sh "${REQUIREMENTS[@]}" 2>&1) || status=$?
 printf '%s\n' "$output" | sed 's/^/    /' >&2
-((status == 0)) || die "installing contracts/tests/requirements*.txt failed (exit $status)"
+((status == 0)) || die "installing the contract requirements failed (exit $status)"
 PY=
 
 python_run() { # prints the command output, returns its exit status
@@ -137,23 +109,20 @@ python_run() { # prints the command output, returns its exit status
 }
 
 # --- python checks ------------------------------------------------------------
-log "python: contracts/tests/validate_contracts.py"
-output=$(python_run contracts/tests/validate_contracts.py) || {
-  printf '%s\n' "$output" | sed 's/^/    /' >&2
-  die "validate_contracts.py failed"
-}
-printf '%s\n' "$output" | sed 's/^/    /' >&2
-
-for test_file in "${PYTHON_TESTS[@]}"; do
-  log "python: $test_file"
+for check in "${PYTHON_CHECKS[@]}"; do
+  log "python: $check"
   status=0
-  output=$(python_run "$test_file") || status=$?
+  output=$(python_run "$check") || status=$?
   printf '%s\n' "$output" | sed 's/^/    /' >&2
-  ((status == 0)) || die "$test_file failed (exit $status)"
-  grep -qE '^OK$' <<<"$output" || die "$test_file did not finish with unittest's OK"
-  if grep -qE 'skipped=' <<<"$output"; then
-    die "$test_file skipped tests - a skipped harness must fail this job"
-  fi
+  ((status == 0)) || die "$check failed (exit $status)"
+  case $(basename "$check") in
+  test_*.py)
+    grep -qE '^OK$' <<<"$output" || die "$check did not finish with unittest's OK"
+    if grep -qE 'skipped=' <<<"$output"; then
+      die "$check skipped tests - a skipped harness must fail this job"
+    fi
+    ;;
+  esac
 done
 
 # --- SQL chains ---------------------------------------------------------------
@@ -174,12 +143,10 @@ run_chain() {
 podman exec "$PG" psql -q -U aegis -d postgres -c "CREATE DATABASE aegis_clean" >/dev/null
 podman exec "$PG" psql -q -U aegis -d postgres -c "CREATE DATABASE aegis_upgrade" >/dev/null
 
-log "clean chain: $(basename "${MIGRATIONS[0]}") -> $(basename "${MIGRATIONS[-1]}") (${#MIGRATIONS[@]} migrations) + ${#CLEAN_TESTS[@]} SQL tests"
-run_chain aegis_clean "${MIGRATIONS[@]}" "${CLEAN_TESTS[@]}"
+log "clean chain: ${#CLEAN_FILES[@]} files from contracts/README.md"
+run_chain aegis_clean "${CLEAN_FILES[@]}"
 
-log "upgrade chain: $(basename "${UPGRADE_CHAIN[0]}") -> fixtures -> assertions + ${#UPGRADE_TESTS[@]} SQL tests"
-run_chain aegis_upgrade "${UPGRADE_CHAIN[@]}" \
-  "$TESTS_DIR/upgrade_assertions.sql" \
-  "${UPGRADE_TESTS[@]}"
+log "upgrade chain: ${#UPGRADE_FILES[@]} files from contracts/README.md"
+run_chain aegis_upgrade "${UPGRADE_FILES[@]}"
 
-log "contracts gate: PASS (${#MIGRATIONS[@]} migrations, ${#CLEAN_TESTS[@]} clean tests, ${#UPGRADE_TESTS[@]} upgrade tests, $((${#PYTHON_TESTS[@]} + 1)) python checks)"
+log "contract gate: PASS (${#PYTHON_CHECKS[@]} python checks, ${#CLEAN_FILES[@]} clean files, ${#UPGRADE_FILES[@]} upgrade files)"
