@@ -1,0 +1,6 @@
+{
+  "workflow_id": "campaign-g01-44c2b3b5-d577-4dff-ae22-b8aa3d5d09c2",
+  "control": "ChangedCampaignWorkflow (same workflow type, different command sequence)",
+  "rejected": true,
+  "error": "Workflow activation completion failed: Failure { failure: Some(Failure { message: \"[TMPRL1100] Nondeterminism error: Timer machine does not handle this event: HistoryEvent(id: 5, ActivityTaskScheduled)\", source: \"\", stack_trace: \"\", encoded_attributes: None, cause: None, failure_info: Some(ApplicationFailureInfo(ApplicationFailureInfo { r#type: \"\", non_retryable: false, details: None, next_retry_delay: None, category: Unspecified })) }), force_cause: NonDeterministicError }"
+}

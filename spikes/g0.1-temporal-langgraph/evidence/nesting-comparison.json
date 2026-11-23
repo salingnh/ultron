@@ -1,0 +1,15 @@
+{
+  "variant_a_activity_hosted_campaign_cycle": {
+    "events": 29,
+    "bytes": 19467,
+    "max_payload_bytes": 380,
+    "payload_count": 9
+  },
+  "variant_b_workflow_per_session": {
+    "events": 41,
+    "bytes": 32208,
+    "max_payload_bytes": 1396,
+    "payload_count": 14
+  },
+  "note": "Variant A's history covers one CampaignWorkflow cycle (record_workflow_run, fetch_delta, the whole session activity, publish_snapshot); variant B's history is the session workflow alone (6 node activities) and still needs a campaign parent."
+}

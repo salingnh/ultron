@@ -1,0 +1,44 @@
+{
+  "spike": "G0.1 (Temporal/LangGraph nesting, cancel, replay, ready-job scheduling query)",
+  "note": "Dev-only toolchain for the spike. The 14-day release rule (AGENTS.md) is applied voluntarily: every pin below was published at least 14 days before 2026-11-23.",
+  "pins": [
+    {
+      "tool": "temporal-cli",
+      "version": "1.10.0",
+      "released": "2026-11-03",
+      "source": "https://github.com/temporalio/cli/releases/download/v1.10.0/temporal_cli_1.10.0_linux_amd64.tar.gz",
+      "sha256": "521f461f3d108902763bb71e85cd0fd382dc9357b59604ae03da6ae734d16890",
+      "binary_sha256": "6968c86c97d91d4b49e19c0c9b0842bfb5eb2d356f22b989006d1e09164eab5b",
+      "serves": "temporal server 1.32.2, UI 2.56.1 (dev server, SQLite file backend)"
+    },
+    {
+      "tool": "temporalio (Python SDK)",
+      "version": "1.36.1",
+      "released": "2026-11-14",
+      "source": "PyPI, pypi.org/pypi/temporalio/1.36.1"
+    },
+    {
+      "tool": "langgraph",
+      "version": "1.2.24",
+      "released": "2026-11-20",
+      "source": "PyPI, pypi.org/pypi/langgraph/1.2.24"
+    },
+    {
+      "tool": "langgraph-checkpoint-postgres",
+      "version": "3.2.1",
+      "released": "2026-11-14",
+      "source": "PyPI, pypi.org/pypi/langgraph-checkpoint-postgres/3.2.1"
+    },
+    {
+      "tool": "postgres",
+      "version": "16",
+      "source": "docker.io/library/postgres@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f",
+      "role": "throwaway container g01-spike-postgres: real product migrations (aegis), spike fakes (spike), LangGraph checkpoint schema (langgraph)"
+    },
+    {
+      "tool": "python",
+      "version": "3.12.13",
+      "source": "uv managed CPython (matches the G1.1a target runtime)"
+    }
+  ]
+}

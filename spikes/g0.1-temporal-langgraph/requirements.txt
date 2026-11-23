@@ -1,0 +1,7 @@
+# G0.1 spike toolchain, pinned (Python 3.12).
+temporalio==1.36.1
+langgraph==1.2.24
+langgraph-checkpoint-postgres==3.2.1
+psycopg[binary]==3.3.9
+pytest==9.2.0
+pytest-asyncio==1.5.0

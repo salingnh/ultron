@@ -1,0 +1,12 @@
+[project]
+name = "aegis-spike-g01"
+version = "0.0.0"
+description = "G0.1 spike: Temporal/LangGraph nesting, cancel, replay, ready-job query"
+requires-python = "==3.12.*"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
