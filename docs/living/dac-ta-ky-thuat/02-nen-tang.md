@@ -47,7 +47,7 @@ Một phiên xử lý objective hữu hạn theo vòng BuildContext → Plan →
 
 Giữ mặc định thiết kế: khoảng 10–30 observation quan trọng mỗi context, tối đa 30 bước cho một phiên; ngưỡng idle 3–5 chu kỳ theo schema. Planner, Analyst và Verifier là ba trách nhiệm trong phiên agent, không là một hệ phân cấp tác tử. Output suy luận phải qua schema trước khi dùng; số bước/budget/điều kiện dừng do mã cưỡng chế.
 
-Temporal lưu trạng thái điều phối dài hạn; PostgreSQL giữ metadata/query view và lịch sử cần đối soát. Không lấy model conversation làm nguồn trạng thái job. Sau worker restart, đối chiếu job/container hiện có trước dispatch; replay không đồng nghĩa chạy lại scanner. Cách lồng phiên LangGraph và xử lý hủy phải được chứng minh ở spike G0.
+Temporal lưu trạng thái điều phối dài hạn; PostgreSQL giữ metadata/query view và lịch sử cần đối soát. Không lấy model conversation làm nguồn trạng thái job. Sau worker restart, đối chiếu job/container hiện có trước dispatch; replay không đồng nghĩa chạy lại scanner. Cách lồng phiên LangGraph và xử lý hủy đã được chứng minh ở spike G0.1: phiên chạy trong activity `run_agent_session` với checkpoint PostgreSQL theo `session_id`, workflow chỉ giữ session_id/cursor/kết quả ngắn; cancel là signal hủy task activity đang chạy (`WAIT_CANCELLATION_COMPLETED`) rồi workflow chạy `cancel_jobs`; worker chết giữa activity resume từ checkpoint và khóa idempotency giữ một job cho mỗi yêu cầu; replay dùng được làm cổng CI; Continue-As-New mang `cursor`. Không chọn workflow-per-session: lịch sử Temporal lớn hơn và topology graph trở thành mã workflow. Bằng chứng và memo: `spikes/g0.1-temporal-langgraph/` (nhánh `spike/g0.1-temporal-langgraph@8c20a1e`).
 
 ## Lỗi, cảnh báo và quan sát
 

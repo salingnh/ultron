@@ -147,6 +147,8 @@ Trình tự trong **một giao dịch** PostgreSQL: đối chiếu inbox theo de
 
 Workflow ID = `campaign-<campaign_id>`. Task queue: `aegis-orchestrator`, `aegis-agent`. Continue-As-New sau 500 chu kỳ hoặc khi history > 10 MB, mang theo `cursor`. Dispatcher outbox gửi signal `job_completed` khi gặp `job.completed.v2`.
 
+`run_agent_session` phải heartbeat và phải đặt `cancellation_type=WAIT_CANCELLATION_COMPLETED` cùng `heartbeat_timeout` hữu hạn (G0.1 dùng 3 s, poll trạng thái job ≤ 1 s); mặc định `TRY_CANCEL` bỏ activity đang chờ, nên phần dọn checkpoint và lý do dừng phiên bị mất. Hủy activity trả về failure canceled, không phải `asyncio.CancelledError` (memo: `spikes/g0.1-temporal-langgraph/DECISION.md` ở nhánh `spike/g0.1-temporal-langgraph@8c20a1e`).
+
 ## Scheduling
 
 ApprovedTask chứa priority và depends_on do M05 chuẩn hóa. Dependency cùng campaign, không self/cycle; chỉ SUCCEEDED giải phóng job. Sort ready jobs theo priority DESC, created_at ASC, job_id ASC. M06 kiểm chữ ký task và cấu hình sandbox, không tự bỏ dependency. Priority/dependency bất biến sau acceptance.
