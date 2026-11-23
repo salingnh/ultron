@@ -9,12 +9,24 @@
     "campaign_id",
     "status",
     "evidence_refs",
-    "finished_at"
+    "finished_at",
+    "attempt",
+    "generation"
   ],
   "additionalProperties": false,
   "properties": {
     "job_id": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Attempt của lần chạy đã phát sự kiện; consumer bỏ qua/cách ly callback của attempt cũ."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Generation của job khi phát sự kiện (fencing)."
     },
     "campaign_id": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"
