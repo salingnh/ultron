@@ -1,0 +1,33 @@
+{
+  "max_parallel_jobs": 25,
+  "max_duration_hours": 72,
+  "rate_limits": {
+    "requests_per_second_per_host": 5.5,
+    "packets_per_second": 200,
+    "jobs_per_minute": 30
+  },
+  "allowed_windows": [
+    {
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "start": "08:00",
+      "end": "18:00",
+      "timezone": "Asia/Ho_Chi_Minh"
+    }
+  ],
+  "blackout_windows": [
+    {
+      "days": ["sat", "sun"],
+      "start": "00:00",
+      "end": "24:00",
+      "timezone": "Asia/Ho_Chi_Minh"
+    }
+  ],
+  "budget": {
+    "max_llm_cost_usd": 25.5,
+    "max_llm_tokens": 100000,
+    "max_jobs": 500,
+    "max_agent_sessions": 50,
+    "idle_cycles_before_pause": 3
+  },
+  "capability_denylist": ["network.discover_services"]
+}
