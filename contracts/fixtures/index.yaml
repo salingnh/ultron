@@ -23,6 +23,7 @@ valid:
   valid/model-response.tool-calls.openai.json: agent/model-response.v2.schema.json
   valid/model-response.completed.anthropic.json: agent/model-response.v2.schema.json
   valid/model-response.invalid-output.openai.json: agent/model-response.v2.schema.json
+  valid/roe-policy.from-v1.json: campaign/roe-policy.v2.schema.json
 invalid:
   invalid/result-envelope.bad-key.json: ingestion/result-envelope.v2.schema.json
   invalid/result-envelope.fake-keyword-asset.json: ingestion/result-envelope.v2.schema.json
@@ -42,3 +43,4 @@ invalid:
   invalid/capability-input.resolve-unknown-record.json: capabilities/dns/resolve.v2.schema.json
   invalid/capability-input.enumerate-target-cidr.json: capabilities/dns/enumerate-subdomains.v2.schema.json
   invalid/graph-query.asset-neighbors-no-limits.json: mcp/graph-queries.v2.schema.json#/$defs/get_asset_neighbors/properties/output
+  invalid/roe-policy.legacy-v1.json: campaign/roe-policy.v2.schema.json
