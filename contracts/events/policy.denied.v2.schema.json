@@ -30,6 +30,7 @@
       "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
     },
     "targets": {
+      "description": "Mục tiêu thô như request gửi (seed keyword/CIDR/domain hoặc canonical_key), giữ nguyên để audit lý do từ chối; đây không phải TargetRef đã phân giải như task/job.",
       "type": "array",
       "items": {
         "type": "string"

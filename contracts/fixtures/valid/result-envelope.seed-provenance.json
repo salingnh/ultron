@@ -1,0 +1,100 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-00000000e002",
+  "dedup_key": "job:01934f6a-0000-7000-8000-00000000d002:envelope",
+  "job_id": "01934f6a-0000-7000-8000-00000000d002",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "capability": "network.discover_services",
+  "provider": {
+    "name": "naabu",
+    "version": "v2.3.5",
+    "adapter_version": "1.0.0",
+    "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "policy_version": "roe-12",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": [
+      "ip:10.20.0.5"
+    ],
+    "complete": true
+  },
+  "results": {
+    "assets": [
+      {
+        "kind": "ip",
+        "canonical_key": "ip:10.20.0.5",
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "kind": "service",
+        "canonical_key": "service:10.20.0.5:443/tcp",
+        "discovered_from": [
+          "ip:10.20.0.5"
+        ],
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
+    ],
+    "observations": [],
+    "relationships": [
+      {
+        "type": "EXPOSES",
+        "from": "ip:10.20.0.5",
+        "to": "service:10.20.0.5:443/tcp",
+        "observed_at": "2026-11-15T03:10:00Z",
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
+    ],
+    "findings": []
+  },
+  "evidence": [
+    {
+      "local_ref": "raw",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d002/4444444444444444444444444444444444444444444444444444444444444444",
+      "size_bytes": 512,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
+  ],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "5555555555555555555555555555555555555555555555555555555555555555",
+    "started_at": "2026-11-15T03:09:30Z",
+    "finished_at": "2026-11-15T03:10:00Z",
+    "seed_targets": [
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b6"
+      },
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b5"
+      }
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "5bf92f3577b34da6a3ce929d0e0e4736",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-00000000d002",
+    "capability_id": "network.discover_services",
+    "provider_version": "v2.3.5",
+    "policy_version": "roe-12"
+  }
+}

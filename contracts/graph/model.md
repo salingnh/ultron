@@ -9,7 +9,7 @@ Neo4j là **bản chiếu dựng lại được**: projector M23 đọc `outbox_
 | Nhãn | Khóa | Thuộc tính chính | Nguồn PG |
 | --- | --- | --- | --- |
 | `:Asset` + nhãn phụ theo kind | `canonical_key` (unique), `asset_id` (unique) | `kind`, `first_seen`, `last_seen`, `owner`, `exposure`, `criticality`, `campaign_ids[]` | `asset`, `asset_campaign` |
-| `:Target` | `target_id` | `kind`, `raw_value`, `campaign_id` | `campaign_target` (từ khóa, CIDR không có asset) |
+| `:Target` | `target_id` | `kind`, `raw_value`, `campaign_id`, `canonical_key` (NULL cho keyword/CIDR) | `campaign_target` (seed keyword/CIDR không có asset nên không có nhãn `:Asset`) |
 | `:Campaign` | `campaign_id` | `name`, `status` | `campaign` |
 | `:Job` | `job_id` | `capability`, `provider`, `provider_version`, `policy_version`, `status` | `scan_job` |
 | `:Observation` | `observation_id` | `predicate`, `value_summary`, `polarity`, `observed_at`, `confidence` | `observation` (chỉ predicate có `graph: true` trong registry, để đồ thị không phình) |
@@ -33,7 +33,7 @@ Mọi cạnh mang `observed_at`, `valid_from`, `valid_to`, `source_job_id`, `con
 | `HAS_ENDPOINT` | Application → Endpoint | adapter | |
 | `HAS_ARTIFACT` | Application/Repo/RepoSnapshot → Artifact/Image | adapter, M28 | |
 | `CONTAINS_PACKAGE` | Artifact/Image → Package | adapter SBOM | |
-| `DISCOVERED_FROM` | Asset → Asset hoặc Target | M27 (cổng G5) | cạnh nguồn gốc bắt buộc cho mọi tài sản tìm thêm |
+| `DISCOVERED_FROM` | Asset → Asset hoặc Target | M27 (cổng G5) | cạnh nguồn gốc bắt buộc cho mọi tài sản tìm thêm; đích là `:Target` khi nguồn gốc là seed keyword/CIDR (TargetRef `{seed_id}`), không tạo asset giả |
 | `SNAPSHOT_OF` | RepoSnapshot → Repo | adapter |  |
 | `ALIAS_OF` | Asset → Asset | M07 | vd domain CNAME tới domain khác |
 | `AFFECTED_BY` | Package → Vulnerability | M20 | Chỉ là ứng viên (`package_vuln_match`) |

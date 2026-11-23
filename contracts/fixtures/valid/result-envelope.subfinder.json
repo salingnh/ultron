@@ -102,7 +102,9 @@
     "started_at": "2026-11-15T02:59:10Z",
     "finished_at": "2026-11-15T03:00:00Z",
     "seed_targets": [
-      "dns:internal.example"
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b1"
+      }
     ],
     "exit_code": 0
   },

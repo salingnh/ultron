@@ -1,4 +1,4 @@
--- Run 0001 + v1-upgrade fixture + 0002 + 0003 + pre-usage-upgrade fixture + 0004, then this test.
+-- Run 0001 + v1-upgrade fixture + 0002 + 0003 + pre-usage-upgrade fixture + 0004 + 0005, then this test.
 SET search_path=aegis,public;
 DO $$ BEGIN
  IF (SELECT count(*) FROM legacy_contract_snapshot) <> 4 THEN RAISE EXCEPTION 'archive row count mismatch'; END IF;
@@ -7,9 +7,13 @@ DO $$ BEGIN
  IF EXISTS(SELECT 1 FROM scan_job WHERE priority<>50) THEN RAISE EXCEPTION 'wrong priority backfill'; END IF;
  IF NOT EXISTS(SELECT 1 FROM outbox_event WHERE type='job.started.v1') THEN RAISE EXCEPTION 'old event lost'; END IF;
  IF NOT EXISTS(SELECT 1 FROM scan_job WHERE manifest_sha256 IS NULL) THEN RAISE EXCEPTION 'historical job was assigned an invented manifest hash'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM scan_job WHERE job_id='01900000-0000-7000-8000-0000000000d1'
+    AND target_refs IS NULL AND cardinality(targets) > 0 AND targets[1] = 'dns:internal.example') THEN
+   RAISE EXCEPTION 'historical job was given invented target refs or lost its canonical targets';
+ END IF;
  IF NOT EXISTS(SELECT 1 FROM model_usage WHERE usage_id='01900000-0000-7000-8000-000000009905'
     AND input_tokens=-1 AND output_tokens=-2 AND cost_usd=-1 AND latency_ms=-1) THEN
    RAISE EXCEPTION 'historical invalid usage row missing or changed';
  END IF;
- RAISE NOTICE 'upgrade: archived rows, prior values, default priority and historical events PASS';
+ RAISE NOTICE 'upgrade: archived rows, prior values, default priority, legacy targets and historical events PASS';
 END $$;

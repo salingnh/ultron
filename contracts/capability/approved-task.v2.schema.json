@@ -68,10 +68,10 @@
       "type": "object"
     },
     "targets": {
-      "description": "Mục tiêu đã chuẩn hóa thành khóa chuẩn.",
+      "description": "Mục tiêu đã phân giải của task: mỗi phần tử là một TargetRef (seed_id của campaign_target cùng campaign, hoặc canonical_key của asset). M05 sinh danh sách này và giữ nguyên seed gốc; không thay seed bằng khóa chuẩn hay asset giả.",
       "type": "array",
       "items": {
-        "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+        "$ref": "../common/ids.v2.schema.json#/$defs/TargetRef"
       },
       "minItems": 1
     },

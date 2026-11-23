@@ -86,7 +86,7 @@
       ]
     },
     "coverage": {
-      "description": "Những gì job đã thực sự kiểm. M20 dùng để ghi FindingRun seen=false cho finding đang mở trên subject đã kiểm mà lần này không thấy. Thiếu coverage = không kết luận vắng mặt.",
+      "description": "Những gì job đã thực sự kiểm, theo asset (canonical_key): seed chưa thành asset không nằm ở đây mà ở provenance.seed_targets. M20 dùng để ghi FindingRun seen=false cho finding đang mở trên subject đã kiểm mà lần này không thấy. Thiếu coverage = không kết luận vắng mặt.",
       "type": "object",
       "required": [
         "subjects"
@@ -185,10 +185,10 @@
           "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
         },
         "seed_targets": {
-          "description": "Mục tiêu đầu vào của job (G5). Mọi asset mới mặc định discovered_from các khóa này nếu adapter không ghi rõ hơn.",
+          "description": "Mục tiêu đầu vào của job (G5) dưới dạng TargetRef: collector chép nguyên danh sách targets của ApprovedTask, gồm seed_id cho keyword/CIDR/seed chưa thành asset. Mọi asset mới mặc định discovered_from các tham chiếu này nếu adapter không ghi rõ hơn. M27 từ chối seed không thuộc campaign/scope của job.",
           "type": "array",
           "items": {
-            "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+            "$ref": "../common/ids.v2.schema.json#/$defs/TargetRef"
           },
           "minItems": 1
         },
