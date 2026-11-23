@@ -12,7 +12,18 @@ Podman rootless trên một máy, một invocation một container, image pin di
 
 Input có kiểu, không command tùy ý. Credential vận hành được cấp riêng tới sandbox; không vào context agent. Tool output không tin cậy. Collector kiểm file thường, không symlink, áp trần; parser không mạng/credential, tiến trình riêng.
 
-Giữ giới hạn egress theo provider: chỉ kết nối mục tiêu của job và nguồn dữ liệu provider khai báo, ngoài ra mặc định chặn. Phải kiểm cả DNS/redirect và địa chỉ IPv4/IPv6 sau phân giải; việc không dùng allowlist phạm vi không bỏ giới hạn mạng của sandbox. Hình dạng declared sources/target binding và cơ chế cưỡng chế còn cần khóa ở S1.5, chưa được coi networkAccess=egress là đã chứng minh hạn chế đích kết nối.
+Giữ giới hạn egress theo provider: chỉ kết nối mục tiêu của job và nguồn dữ liệu provider khai báo, ngoài ra mặc định chặn. Phải kiểm cả DNS/redirect và địa chỉ IPv4/IPv6 sau phân giải; việc không dùng allowlist phạm vi không bỏ giới hạn mạng của sandbox. Hình dạng declared sources/target binding và cơ chế cưỡng chế đã khóa ở S1.5a (dưới đây); một mình `networkAccess=egress` vẫn không là bằng chứng hạn chế đích kết nối.
+
+### Egress đã khóa (S1.5a, theo kết quả G0.2)
+
+[Provider manifest](../../../contracts/capability/provider-manifest.v2.schema.json) khai `permissions.networkAccess` là `none` hoặc `egress`. GĐ1 chỉ có một chế độ egress (G0.2): container chỉ tới được broker L7 của job; broker phân giải ở control plane, kiểm toàn bộ đáp án A/AAAA rồi pin địa chỉ đã kiểm, nên một tên trả lẫn địa chỉ ngoài binding thì cả tên bị từ chối và redirect sang đích ngoài binding bị chặn ở hop sau. Bằng chứng đo (cgroup v2, mạng nội bộ, deny set, DNS rebinding, collector/parser) ở spike `spikes/g0.2-sandbox/` và báo cáo G0.2; mục này chỉ khóa hình dạng và luật.
+
+- Trường bắt buộc khi `networkAccess=egress`: `egressMode: broker`, `proxyAware: true` (công cụ phải tôn trọng `HTTPS_PROXY`/`ALL_PROXY`; broker là đường ra duy nhất), `egressSources` (khai cả khi rỗng), `targetBinding: required|none`. `targetPorts: from_input` bắt buộc khi `targetBinding=required` và cấm khi `none`. `rawSocket` ghim `false`: GĐ1 không có egress L3 (Naabu tự hạ SYN xuống CONNECT dù có NET_RAW).
+- Không có đích nào thì không có egress: `targetBinding=none` với `egressSources` rỗng bị từ chối. Binding của một job = mục tiêu đã phân giải ∪ `egressSources`; host khai chính xác (không wildcard, không khớp hậu tố), port tĩnh, `protocol` thuộc `https|http|tls|tcp|dns` — UDP/ICMP không biểu diễn được vì broker không relay UDP.
+- Tập luôn chặn là hằng của nền tảng, không phải dữ liệu provider: loopback, link-local/metadata (`169.254.0.0/16`, `::1`, `::ffff:*`), multicast, unspecified, mạng control/data, `target_denylist` của campaign; IPv4 nhúng IPv6 (mapped, NAT64, 6to4, Teredo) được tách ra kiểm lại. Manifest không có trường để khai hay nới tập này và schema từ chối trường lạ trong `permissions`.
+- `networkAccess=none` thì không có cấu hình egress; runtime nhận `network=none`.
+
+Kiểm: [test_egress_actor.py](../../../contracts/tests/test_egress_actor.py) và các fixture âm `contracts/fixtures/invalid/manifest.*.yaml`. Cưỡng chế lúc chạy (broker, ContainerSpec) thuộc G1.3a; chưa được coi schema đã là bằng chứng runtime.
 
 ## Điều phối
 

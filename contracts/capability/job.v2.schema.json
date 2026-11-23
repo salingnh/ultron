@@ -16,6 +16,7 @@
     "created_at",
     "priority",
     "depends_on",
+    "requested_by",
     "adapter_version",
     "manifest_sha256",
     "attempt",
@@ -80,7 +81,19 @@
       }
     },
     "requested_by": {
-      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+      "description": "Người/kênh khởi động job, server gán (operator|module). Hàng lịch sử trước 0010 có thể giữ actor tự khai cũ (kể cả kind=agent): chỉ đọc, không dispatch/replay, không diễn giải lại.",
+      "oneOf": [
+        {
+          "$ref": "../common/ids.v2.schema.json#/$defs/RequestedBy"
+        },
+        {
+          "$ref": "#/$defs/LegacyRequestedBy"
+        }
+      ]
+    },
+    "proposed_by": {
+      "description": "Phiên agent đã đề xuất job (session_id), server gán; vắng mặt khi người vận hành/module gửi trực tiếp hoặc hàng lịch sử trước 0010.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/ProposedBy"
     },
     "rationale": {
       "type": "string"
@@ -139,6 +152,19 @@
     }
   },
   "$defs": {
+    "LegacyRequestedBy": {
+      "description": "Actor tự khai của hàng job trước 0010 (thường là chính phiên agent). Chỉ đọc: hàng này không có pin/proposed_by và không được dispatch/replay; không chuyển ngược thành RequestedBy hay gán một operator thay thế.",
+      "allOf": [
+        {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "agent"
+        }
+      }
+    },
     "JobStatus": {
       "type": "string",
       "enum": [

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/capability/approved-task.v2.schema.json",
   "title": "ApprovedTask v2",
-  "description": "Đầu ra M05, đầu vào M06; chữ ký HMAC bảo vệ toàn bộ nội dung task trừ trường signature. Task bắt buộc ghim manifest_sha256 và adapter_version; M06 đối chiếu manifest bất biến và policy snapshot trước thực thi. Quy tắc runtime ở contracts/interfaces/README.md.",
+  "description": "Đầu ra M05, đầu vào M06; chữ ký HMAC bảo vệ toàn bộ nội dung task trừ trường signature. Task bắt buộc ghim manifest_sha256 và adapter_version; M06 đối chiếu manifest bất biến và policy snapshot trước thực thi. C05: requested_by (initiator) và proposed_by (phiên agent đề xuất) do server gán và thuộc nội dung được ký; danh tính do LLM tự khai không tạo quyền thực thi. Quy tắc runtime ở contracts/interfaces/README.md.",
   "type": "object",
   "required": [
     "task_id",
@@ -80,7 +80,12 @@
       "maxLength": 256
     },
     "requested_by": {
-      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+      "description": "Người/kênh khởi động task, server gán từ principal đã xác minh (operator|module). Giá trị do request/agent khai bị bỏ qua và không bao giờ được dùng để cấp quyền (C05).",
+      "$ref": "../common/ids.v2.schema.json#/$defs/RequestedBy"
+    },
+    "proposed_by": {
+      "description": "Phiên agent đã đề xuất task (session_id), server gán từ ngữ cảnh phiên; vắng mặt khi người vận hành/module gửi trực tiếp. Không phải danh tính do LLM khai.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/ProposedBy"
     },
     "rationale": {
       "type": "string"

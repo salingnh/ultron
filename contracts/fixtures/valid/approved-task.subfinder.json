@@ -8,7 +8,7 @@
   "provider": "subfinder",
   "provider_version": "v2.17.0",
   "adapter_version": "1.0.0",
-  "manifest_sha256": "33c0a417bd54554e4754adb05d3b92277d4941e70908e1d97d937a9792c3bf25",
+  "manifest_sha256": "c4edfe7bc1856660214bd637d0afb71da300aa24735cf1f99372e6ff00d5c097",
   "image_digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000001",
   "input": {
@@ -26,6 +26,10 @@
   "requested_by": {
     "kind": "operator",
     "id": "fixture-operator"
+  },
+  "proposed_by": {
+    "kind": "agent",
+    "id": "01934f6a-0000-7000-8000-0000000000c1"
   },
   "rationale": "Contract fixture; no execution",
   "trace": {

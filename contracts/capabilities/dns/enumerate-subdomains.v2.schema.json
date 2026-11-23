@@ -19,7 +19,7 @@
       "maxItems": 100
     },
     "sources": {
-      "description": "Tập nguồn thụ động; vắng = mặc định của provider. Tên nguồn phải nằm trong tập nguồn manifest đã khai báo khi S1.5a khóa declared sources.",
+      "description": "Tập nguồn thụ động; vắng = mặc định của provider. Mỗi tên phải là một `id` trong `permissions.egressSources` của manifest đã pin (C05, S1.5a); tên ngoài tập đó bị POLICY_DENIED trước khi dispatch.",
       "type": "array",
       "items": {
         "type": "string",

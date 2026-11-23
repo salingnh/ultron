@@ -33,6 +33,7 @@ MIGRATIONS = (
     "0004_usage_nonnegative.sql",
     "0005_job_target_refs.sql",
     "0006_ingestion_hash_receipt.sql",
+    "0010_job_actor_attribution.sql",
 )
 DSN = os.environ.get("AEGIS_TEST_PG_DSN", "").strip()
 CANON = runpy.run_path(str(ROOT / "tests/canonicalization.py"))
@@ -124,18 +125,20 @@ def new_job(conn) -> str:
     with conn.transaction():
         conn.execute(
             "INSERT INTO aegis.policy_decision (decision_id,campaign_id,capability,provider,targets,input,"
-            "decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)"
-            " VALUES (%s,%s,'dns.enumerate_subdomains','subfinder',%s,%s,'approved','c03 fixture',%s,%s,%s,%s,%s)",
+            "decision,rationale,requested_by,proposed_by,policy_version,scope_id,idempotency_key,trace_id)"
+            " VALUES (%s,%s,'dns.enumerate_subdomains','subfinder',%s,%s,'approved','c03 fixture',%s,%s,%s,%s,%s,%s)",
             (decision, CAMP, ["dns:c03.example"], Jsonb({"targets": ["c03.example"]}),
-             Jsonb({"kind": "agent", "id": "fixture"}), POLICY, SCOPE, f"c03:{run}", "6" * 32))
+             Jsonb({"kind": "operator", "id": "fixture-operator"}), Jsonb({"kind": "agent", "id": "fixture-session"}),
+             POLICY, SCOPE, f"c03:{run}", "6" * 32))
         conn.execute(
             "INSERT INTO aegis.scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,"
             "adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,"
-            "input,targets,target_refs,requested_by,rationale,trace_id)"
-            " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'c03 fixture',%s)",
+            "input,targets,target_refs,requested_by,proposed_by,rationale,trace_id)"
+            " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'c03 fixture',%s)",
             (job, CAMP, decision, "sha256:" + "5" * 64, "6" * 64, new_id(), (uuid.uuid4().hex * 2)[:64],
              POLICY, SCOPE, Jsonb({"targets": ["c03.example"]}), ["dns:c03.example"],
-             Jsonb([{"seed_id": SEED}]), Jsonb({"kind": "agent", "id": "fixture"}), "6" * 32))
+             Jsonb([{"seed_id": SEED}]), Jsonb({"kind": "operator", "id": "fixture-operator"}),
+             Jsonb({"kind": "agent", "id": "fixture-session"}), "6" * 32))
     return job
 
 

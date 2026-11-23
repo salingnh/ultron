@@ -8,7 +8,7 @@
   "provider": "dnsx",
   "provider_version": "v1.2.2",
   "adapter_version": "1.0.0",
-  "manifest_sha256": "01e77bafe57336e28146bf644f7e75e71438560fab149ea6607e144f945160f0",
+  "manifest_sha256": "f8559770df07e25b6277aec5038c6e624b4e3ca613c6be3802c896a444136ea1",
   "image_digest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
   "input": {

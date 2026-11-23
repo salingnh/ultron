@@ -282,6 +282,19 @@ class Registry:
         if needs_network and permissions.get("networkAccess") != "egress":
             raise _deny("input cần mạng nhưng manifest đã pin không khai báo egress",
                         "/input")
+        declared = permissions.get("egressSources") or []
+        if merged.get("sources"):
+            unknown = sorted(set(merged["sources"]) - {source["id"] for source in declared})
+            if unknown:
+                raise _deny(f"nguồn {unknown} không nằm trong egressSources của manifest đã pin",
+                            "/input/sources")
+        if merged.get("resolvers"):
+            allowed = {host for source in declared if source.get("protocol") == "dns"
+                       for host in source.get("hosts") or []}
+            unknown = sorted(set(merged["resolvers"]) - allowed)
+            if unknown:
+                raise _deny(f"resolver {unknown} không nằm trong nguồn dns của manifest đã pin "
+                            "(C05 egressSources là tập duy nhất)", "/input/resolvers")
         if permissions.get("credentials"):
             raise ContractError("TOOL_UNAVAILABLE", "CHECK_PROVIDER",
                                 "manifest cần credential vận hành mà harness không cấp", "/permissions")
@@ -748,7 +761,9 @@ def run_policy_suite(context: dict) -> tuple[list[str], int]:
     # Cap source is the *pinned manifest*: flipping egress off must deny network-needing input.
     checks += 1
     manifest = yaml.safe_load(manifests[1])
-    manifest["spec"]["permissions"]["networkAccess"] = "none"
+    # egressMode/proxyAware/egressSources/targetBinding only exist with egress; flipping the network off
+    # means dropping them, not leaving a manifest the pinned shape rejects.
+    manifest["spec"]["permissions"] = {"networkAccess": "none", "rawSocket": False}
     no_egress = Registry([yaml.safe_dump(manifest, sort_keys=False).encode()], context)
     task = load(ROOT / "fixtures/valid/approved-task.dnsx.json")
     task["input"]["resolvers"] = ["10.20.0.53"]  # a declared egress destination
@@ -771,6 +786,10 @@ def run_policy_suite(context: dict) -> tuple[list[str], int]:
             failures.append(f"{provider}: phải khai báo networkAccess=egress")
         if permissions.get("rawSocket"):
             failures.append(f"{provider}: DNS tool không được yêu cầu rawSocket")
+        if permissions.get("egressMode") != "broker" or permissions.get("proxyAware") is not True:
+            failures.append(f"{provider}: egress phải qua broker và proxy-aware (C05)")
+        if not permissions.get("egressSources"):
+            failures.append(f"{provider}: chuỗi DNS thụ động phải khai egressSources")
         if permissions.get("credentials"):
             failures.append(f"{provider}: G1 không cấp credential cho chuỗi DNS")
     return failures, checks

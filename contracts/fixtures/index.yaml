@@ -8,6 +8,7 @@ valid:
   valid/event.intel-revision.json: events/event-envelope.v2.schema.json
   valid/manifest.subfinder.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.dnsx.yaml: capability/provider-manifest.v2.schema.json
+  valid/manifest.target-bound.yaml: capability/provider-manifest.v2.schema.json
   valid/severity-assessment.json: finding/severity-assessment.v2.schema.json
   valid/approved-task.subfinder.json: capability/approved-task.v2.schema.json
   valid/approved-task.dnsx.json: capability/approved-task.v2.schema.json
@@ -30,6 +31,17 @@ invalid:
   invalid/campaign-create.no-targets.json: campaign/campaign-create.v2.schema.json
   invalid/campaign-create.too-long.json: campaign/campaign-create.v2.schema.json
   invalid/manifest.tag-not-digest.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.egress-without-sources.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.egress-not-proxy-aware.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.egress-declared-deny-list.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.egress-raw-socket.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.egress-udp-source.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.none-with-egress.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.target-ports-without-binding.yaml: capability/provider-manifest.v2.schema.json
+  invalid/approved-task.actor-self-declared.json: capability/approved-task.v2.schema.json
+  invalid/approved-task.actor-missing.json: capability/approved-task.v2.schema.json
+  invalid/approved-task.actor-proposer-operator.json: capability/approved-task.v2.schema.json
+  invalid/job.actor-proposer-module.json: capability/job.v2.schema.json
   invalid/event.payload-mismatch.json: events/event-envelope.v2.schema.json
   invalid/finding-secret-without-value.json: ingestion/result-envelope.v2.schema.json#/$defs/FindingCandidate
   invalid/approved-task.target-ref-ambiguous.json: capability/approved-task.v2.schema.json

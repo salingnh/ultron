@@ -30,6 +30,7 @@ MIGRATIONS = (
     "0005_job_target_refs.sql",
     "0006_ingestion_hash_receipt.sql",
     "0007_job_lifecycle.sql",
+    "0010_job_actor_attribution.sql",
 )
 DSN = os.environ.get("AEGIS_TEST_PG_DSN", "").strip()
 
@@ -136,19 +137,21 @@ class JobLifecycleRace(unittest.TestCase):
         with conn.transaction():
             conn.execute(
                 "INSERT INTO aegis.policy_decision (decision_id,campaign_id,capability,provider,targets,input,"
-                "decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)"
-                " VALUES (%s,%s,'dns.enumerate_subdomains','subfinder',%s,%s,'approved','c06 fixture',%s,%s,%s,%s,%s)",
+                "decision,rationale,requested_by,proposed_by,policy_version,scope_id,idempotency_key,trace_id)"
+                " VALUES (%s,%s,'dns.enumerate_subdomains','subfinder',%s,%s,'approved','c06 fixture',%s,%s,%s,%s,%s,%s)",
                 (decision, CAMP, ["dns:c06.example"], Jsonb({"targets": ["c06.example"]}),
-                 Jsonb({"kind": "agent", "id": "fixture"}), POLICY, SCOPE, f"c06:{extra}", "7" * 32))
+                 Jsonb({"kind": "operator", "id": "fixture-operator"}), Jsonb({"kind": "agent", "id": "fixture-session"}),
+                 POLICY, SCOPE, f"c06:{extra}", "7" * 32))
             conn.execute(
                 "INSERT INTO aegis.scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,"
                 "adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,"
-                "input,targets,target_refs,requested_by,rationale,trace_id,status,attempt,started_at)"
-                " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "input,targets,target_refs,requested_by,proposed_by,rationale,trace_id,status,attempt,started_at)"
+                " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
                 "'c06 fixture',%s,%s,1,now())",
                 (job, CAMP, decision, "sha256:" + "5" * 64, "6" * 64, new_id(), (uuid.uuid4().hex * 2)[:64],
                  POLICY, SCOPE, Jsonb({"targets": ["c06.example"]}), ["dns:c06.example"],
-                 Jsonb([{"seed_id": SEED}]), Jsonb({"kind": "agent", "id": "fixture"}), "7" * 32, status))
+                 Jsonb([{"seed_id": SEED}]), Jsonb({"kind": "operator", "id": "fixture-operator"}),
+                 Jsonb({"kind": "agent", "id": "fixture-session"}), "7" * 32, status))
         return job
 
     # --- reference calls -------------------------------------------------------------------

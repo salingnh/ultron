@@ -1,0 +1,18 @@
+{
+  "case": "input.resolvers names an IP outside the dns egressSources of the pinned manifest",
+  "base_task": "fixtures/valid/approved-task.dnsx.json",
+  "patch": {
+    "input": {
+      "targets": [
+        "dns:internal.example"
+      ],
+      "resolvers": [
+        "10.20.0.53"
+      ]
+    }
+  },
+  "expect": {
+    "code": "POLICY_DENIED",
+    "next_action": "FIX_INPUT"
+  }
+}

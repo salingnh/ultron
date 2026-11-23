@@ -45,7 +45,10 @@ class ContainerSpec:
     cpu: float; memory_mb: int; timeout_seconds: int
     max_output_bytes: int                                     # bắt buộc, resolve từ manifest đã pin
     network: Literal["exec", "none"]                           # chỉ mạng thực thi hoặc không mạng
-    raw_socket: bool = False                                   # NET_RAW, chỉ khi manifest cho phép
+    egress_mode: Literal["broker"] | None = None               # từ permissions.egressMode; None khi network=none
+    egress_binding: tuple[str, ...] = ()                       # host:port đã kiểm = target đã phân giải ∪ egressSources
+    egress_proxy: str | None = None                           # broker L7 của job (HTTP CONNECT/SOCKS5), do M06 cấp
+    raw_socket: bool = False                                   # GĐ1 luôn false: không có egress L3 (G0.2)
     read_only_rootfs: bool = True; user: str = "65534:65534"
     pids_limit: int = 512                                      # chống fork bomb
     max_output_files: int = 50000                              # trần số file output
@@ -63,8 +66,10 @@ M05 resolve manifest, ghép inputDefaults rồi validate input, ghi pin cùng jo
 | image_digest, args | runtime.imageDigest và argsTemplate của manifest đã pin; chỉ chèn input đã được M05 kiểm |
 | cpu, memory_mb, timeout_seconds | budget.cpu, memoryMb, timeoutSeconds |
 | max_output_bytes | budget.maxOutputMb × 1048576; thiếu maxOutputMb dùng 256 MiB theo manifest schema |
-| network | permissions.networkAccess none → none; egress → exec |
-| raw_socket | permissions.rawSocket, mặc định false |
+| network | permissions.networkAccess none → none; egress → exec (mạng nội bộ của job, không DNS ngoài) |
+| egress_mode, egress_proxy | permissions.egressMode (GĐ1 chỉ `broker`); M06 cấp proxy/http_proxy cho container, broker là peer duy nhất trên mạng của job |
+| egress_binding | M05 phân giải target thành IP/port đã kiểm rồi hợp với permissions.egressSources; broker chỉ mở tới tập này, đích ngoài tập bị từ chối kèm lý do |
+| raw_socket | GĐ1 cố định false: manifest schema chỉ nhận `rawSocket: false` vì chưa có egress L3 (G0.2) |
 | user/rootfs/PID/file/seccomp | Giới hạn cố định của ContainerSpec ở trên; runtime không đáp ứng thì không dispatch |
 
 policy_version trỏ snapshot cấu hình campaign bất biến để kiểm budget/rate/khung giờ; pin manifest không thay kiểm đó. Job mới lưu manifest_sha256 trong PostgreSQL. Job lịch sử chưa có pin trả null ở API và không được dispatch/replay trước khi được chuyển đổi riêng; không tạo hash giả cho dữ liệu cũ. Semantics idempotency lookup phải giữ lại quyết định/task đã chấp nhận, không resolve manifest mới cho retry.
