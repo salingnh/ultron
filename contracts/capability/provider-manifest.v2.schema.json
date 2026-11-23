@@ -106,7 +106,7 @@
               "$ref": "../common/ids.v2.schema.json#/$defs/ImageDigest"
             },
             "argsTemplate": {
-              "description": "Mảng tham số cố định; chỉ được chèn trường đã khai báo trong input schema bằng ${input.<field>}. Không có shell.",
+              "description": "Mảng argv cố định; một phần tử hoặc là literal, hoặc là đúng một placeholder ${input.<field>} chiếm trọn phần tử (không nối chuỗi, không hai placeholder, không shell). Trường được chèn phải là số nguyên/số/boolean, chuỗi enum cố định, hoặc mảng các kiểu đó: mảng render thành một phần tử argv cho mỗi item theo thứ tự input, không join. Chuỗi tự do, object và mảng chuỗi tự do bị từ chối vì giá trị bắt đầu bằng - sẽ thành cờ lạ; registry kiểm luật này (contracts/tests/validate_contracts.py).",
               "type": "array",
               "items": {
                 "type": "string"

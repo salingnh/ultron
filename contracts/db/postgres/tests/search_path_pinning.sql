@@ -43,10 +43,10 @@ INSERT INTO aegis.campaign (campaign_id,name,objective,current_policy_version,sc
 INSERT INTO aegis.campaign_target VALUES
   ('01900000-0000-7000-8000-000000005f21','01900000-0000-7000-8000-000000005f11',
    'domain','pin.example','dns:pin.example');
-INSERT INTO aegis.policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id) VALUES
-  ('01900000-0000-7000-8000-000000005f31','01900000-0000-7000-8000-000000005f10','dns.enumerate_subdomains','subfinder','{dns:pin.example}','{"targets":["pin.example"]}','approved','OI-1','{"kind":"operator","id":"soc-1"}','roe-191','01900000-0000-7000-8000-000000005f11','s1f-pin:1',repeat('f',32));
+INSERT INTO aegis.policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,target_refs,policy_version,scope_id,idempotency_key,trace_id) VALUES
+  ('01900000-0000-7000-8000-000000005f31','01900000-0000-7000-8000-000000005f10','dns.enumerate_subdomains','subfinder','{dns:pin.example}','{"targets":["pin.example"]}','approved','OI-1','{"kind":"operator","id":"soc-1"}','[{"seed_id":"01900000-0000-7000-8000-000000005f21"},{"canonical_key":"dns:pin.example"}]','roe-191','01900000-0000-7000-8000-000000005f11','s1f-pin:1',repeat('f',32));
 INSERT INTO aegis.scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id) VALUES
-  ('01900000-0000-7000-8000-000000005f41','01900000-0000-7000-8000-000000005f10','01900000-0000-7000-8000-000000005f31','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('d',64),'01900000-0000-7000-8000-000000005f51',repeat('5f',32),'roe-191','01900000-0000-7000-8000-000000005f11','{"targets":["pin.example"]}','{dns:pin.example}','[{"seed_id":"01900000-0000-7000-8000-000000005f21"}]','{"kind":"operator","id":"soc-1"}','OI-1 history probe',repeat('f',32));
+  ('01900000-0000-7000-8000-000000005f41','01900000-0000-7000-8000-000000005f10','01900000-0000-7000-8000-000000005f31','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('d',64),'01900000-0000-7000-8000-000000005f51',repeat('5f',32),'roe-191','01900000-0000-7000-8000-000000005f11','{"targets":["pin.example"]}','{dns:pin.example}','[{"seed_id":"01900000-0000-7000-8000-000000005f21"},{"canonical_key":"dns:pin.example"}]','{"kind":"operator","id":"soc-1"}','OI-1 history probe',repeat('f',32));
 
 -- 3. The exploit precondition is real: a TEMP table of the same name wins an unqualified reference
 --    in this session. The guard must not care.
@@ -74,8 +74,12 @@ BEGIN
                   'job_id','01900000-0000-7000-8000-000000005f42',
                   'decision_id','01900000-0000-7000-8000-000000005f31',
                   'job_fingerprint',repeat('af',32),
+                  'targets','[]'::jsonb,
                   'target_refs',jsonb_build_array(jsonb_build_object('seed_id', foreign_seed))
                 ) FROM aegis.scan_job j WHERE job_id = '01900000-0000-7000-8000-000000005f41');
+  -- The control under test is the seed guard, so the decision-consistency trigger (0012) is off for
+  -- these two statements: it would otherwise answer first and hide the guard's own answer.
+  ALTER TABLE aegis.scan_job DISABLE TRIGGER decision_consistency_required;
   BEGIN
     INSERT INTO aegis.scan_job SELECT (jsonb_populate_record(NULL::aegis.scan_job, probe_job)).*;
     RAISE EXCEPTION 'seed guard was bypassed by a TEMP campaign_target shadow table';
@@ -90,6 +94,7 @@ BEGIN
     RAISE EXCEPTION 'seed guard accepted a seed outside the campaign';
   EXCEPTION WHEN foreign_key_violation THEN blocked := blocked + 1;
   END;
+  ALTER TABLE aegis.scan_job ENABLE TRIGGER decision_consistency_required;
   IF blocked <> 2 THEN
     RAISE EXCEPTION 'seed guard: % / 2 probes blocked', blocked;
   END IF;

@@ -7,9 +7,5 @@
   "policy": {
     "max_parallel_jobs": 10,
     "max_duration_hours": 168
-  },
-  "actor": {
-    "kind": "operator",
-    "id": "a"
   }
 }

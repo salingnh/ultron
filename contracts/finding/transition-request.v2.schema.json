@@ -2,12 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/finding/transition-request.v2.schema.json",
   "title": "Yêu cầu chuyển trạng thái finding v2",
-  "description": "Body của POST /api/v2/findings/{id}/transitions. Kiểm theo transitions.v2.yaml. expected_seq chống ghi đè đồng thời (khác seq hiện tại → 409).",
+  "description": "Body của POST /api/v2/findings/{id}/transitions. Kiểm theo transitions.v2.yaml. expected_seq chống ghi đè đồng thời (khác seq hiện tại → 409). Body KHÔNG mang actor: actor của dòng lịch sử do server gán từ principal đã xác minh (C05), không lấy từ request.",
   "type": "object",
   "required": [
     "to",
     "reason",
-    "actor",
     "expected_seq"
   ],
   "additionalProperties": false,
@@ -22,9 +21,6 @@
     },
     "evidence_id": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"
-    },
-    "actor": {
-      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
     },
     "expected_seq": {
       "type": "integer",

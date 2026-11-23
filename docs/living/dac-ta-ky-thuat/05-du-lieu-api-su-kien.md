@@ -8,7 +8,7 @@
 | Neo4j | Asset và quan hệ có thời gian/provenance; bản chiếu dựng lại được |
 | S3 | Output raw, log, artifact, báo cáo; object bất biến theo SHA-256 |
 
-Mọi cạnh có observed_at/valid_from/valid_to/source_job_id/confidence. Metadata có URI/hash, không nhét raw lớn vào graph. Canonical key phân biệt dns, ip, service, url, image, repo, package; URL định danh được chuẩn hóa, URL raw giữ trong bằng chứng. Seed keyword/CIDR cần contract reference riêng đang còn backlog; không dựng asset giả để ép vào khóa.
+Mọi cạnh có observed_at/valid_from/valid_to/source_job_id/confidence. Metadata có URI/hash, không nhét raw lớn vào graph. Canonical key phân biệt dns, ip, service, url, image, repo, package; URL định danh được chuẩn hóa, URL raw giữ trong bằng chứng. Seed keyword/CIDR đã có contract reference ở C02 (TargetRef `{seed_id}` giữ nguyên kind/raw_value); không dựng asset giả để ép vào khóa.
 
 ## Ghi và trạng thái
 
@@ -30,7 +30,7 @@ Agent dùng MCP capability/query schema, không dùng SQL/Cypher tự do. Ngữ 
 
 `job.started.v2`, `job.completed.v2`, `policy.denied.v2`, `asset.discovered.v2`, `observation.changed.v2`, `artifact.ready.v2`, `knowledge.delta.v2`, `intel.revision.v2`, `finding.changed.v2`.
 
-policy.denied là lỗi điều kiện thực thi/schema/budget/mục tiêu, không là phân loại quyền thao tác. Event có ID/provenance, giao at-least-once. V1 còn trong lịch sử DB, consumer v2 không tự parse như payload v2. Thuật toán watermark và content hash idempotency còn cần khóa; không tuyên bố đã giải quyết bằng migration kiến trúc.
+policy.denied là lỗi điều kiện thực thi/schema/budget/mục tiêu, không là phân loại quyền thao tác. Event có ID/provenance, giao at-least-once. V1 còn trong lịch sử DB, consumer v2 không tự parse như payload v2. Thuật toán watermark và content hash idempotency đã khóa (C03/C04: `aegis-c14n/1`, outbox watermark/fence ở 0008 và [graph/model.md](../../../contracts/graph/model.md#c04--thứ-tự-công-bố-còn-cần-chứng-minh)); migration kiến trúc không thay cho việc kiểm.
 
 ## Mô hình tri thức và định danh
 
@@ -76,7 +76,9 @@ Fingerprint finding dựa asset_id, rule_id, location và ngữ cảnh bằng ch
 
 CVSS, EPSS, KEV, mức phơi nhiễm, criticality và hạn chế coverage là tín hiệu đầu vào để agent đánh giá kèm lý do/nguồn/uncertainty. Không dùng công thức trọng số hay hạng ưu tiên từ nghiên cứu làm severity của sản phẩm. Public PoC, version match hoặc static path không tự nâng finding thành VERIFIED. Xác minh cần bằng chứng tái lập phù hợp loại finding và đối chứng âm; không suy FIXED từ lần quét thiếu coverage.
 
-## Các phần contract còn cần khóa
+## Các contract đã khóa (C02–C08)
+
+Mục này liệt kê tiêu chí nghiệm thu của từng C-item. Trạng thái "đã khóa" nghĩa là schema + DDL + test của contract đã có; chưa phải runtime của dịch vụ sản phẩm.
 
 ### C02 — Seed reference xuyên hợp đồng
 
@@ -84,7 +86,7 @@ CVSS, EPSS, KEV, mức phơi nhiễm, criticality và hạn chế coverage là t
 
 DB: `scan_job.target_refs` bắt buộc với job mới; seed phải là `campaign_target` của đúng campaign/scope (trigger `aegis.require_job_target_refs`), bất biến sau khi nhận, và `asset_provenance.from_target_id` cũng bị chặn seed khác campaign. `scan_job.targets` chỉ còn là hình chiếu canonical-key cho lịch sử/tiện đọc và có thể rỗng khi job chỉ có seed keyword/CIDR. Hàng trước 0005 giữ refs NULL, không được dispatch/replay. `job_fingerprint` băm danh sách TargetRef (không băm hình chiếu `targets text[]`, nếu không hai job keyword/CIDR khác nhau sẽ trùng fingerprint); thành phần còn lại đã khóa ở §C03.
 
-Kiểm chứng: schema + fixture tại [test_seed_reference.py](../../../contracts/tests/test_seed_reference.py) (seed-kinds và seed-provenance hợp lệ; bị từ chối: seed_id+canonical_key cùng lúc, chuỗi khóa cũ, canonical_key giả `keyword:`); DB tại [job_target_refs.sql](../../../contracts/db/postgres/tests/job_target_refs.sql) — seed khác campaign bị chặn, replay không đổi seed đã nhận, CIDR→IP giữ seed gốc ở provenance, 5 dạng list sai bị từ chối. Còn mở: implementation M05/M27 (G1.1c/G1.4a), capability tiêu thụ seed keyword chưa có schema, và M05 ghi `policy_decision.targets` (vẫn `text[]`) cần quy ước khi chỉ có seed keyword/CIDR.
+Kiểm chứng: schema + fixture tại [test_seed_reference.py](../../../contracts/tests/test_seed_reference.py) (seed-kinds và seed-provenance hợp lệ; bị từ chối: seed_id+canonical_key cùng lúc, chuỗi khóa cũ, canonical_key giả `keyword:`); DB tại [job_target_refs.sql](../../../contracts/db/postgres/tests/job_target_refs.sql) — seed khác campaign bị chặn, replay không đổi seed đã nhận, CIDR→IP giữ seed gốc ở provenance, 5 dạng list sai bị từ chối. `policy_decision` cũng mang `target_refs` từ 0012 (bắt buộc với dòng mới, cùng luật seed với job), nên cả request bị từ chối vẫn giữ seed và một quyết định chỉ sinh ra đúng một job có cùng campaign/actor/refs; `targets` của cả hai bảng chỉ là hình chiếu canonical-key và có thể rỗng khi chỉ có seed keyword/CIDR (OI-6). Còn mở: implementation M05/M27 (G1.1c/G1.4a), kiểm `{canonical_key}` có thật là asset đã biết ở tầng DB (hiện M05/M06 chịu trách nhiệm, P3a), và capability tiêu thụ seed keyword chưa có schema.
 
 ### C03 — Idempotency, hash và receipt
 
@@ -123,4 +125,4 @@ Schema và kiểm conformance dùng [validator chung](../../../contracts/validat
 | N05 | Usage tiêu thụ không âm ở schema và DB. Lịch sử sai giữ nguyên và phải báo lỗi toàn vẹn, không giảm consumed budget | Schema từ chối âm, DB từ chối bốn cột âm và nhận zero; upgrade giữ nguyên bản ghi lịch sử sai |
 | N06 | API hiện hành ở G2 xuất JSON; query và response cùng định dạng. SARIF/HTML của G4 có task khóa contract riêng, không tự bật trong API hiện tại | Kiểm enum query và response media type; G4.2 kiểm chuẩn định dạng mở rộng |
 
-Test tại [schema boundaries](../../../contracts/tests/test_schema_boundaries.py) và SQL test trong contracts/db/postgres/tests. Kiểm conformance này không thay thế các phần còn cần khóa về hash, ordering, actor hay lifecycle.
+Test tại [schema boundaries](../../../contracts/tests/test_schema_boundaries.py) và SQL test trong contracts/db/postgres/tests. Kiểm conformance này không thay thế phần còn mở của GĐ1 (OD-5/X-8 cơ chế principal, OI-7 chữ ký ApprovedTask) và không thay runtime của dịch vụ.

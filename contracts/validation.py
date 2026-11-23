@@ -110,6 +110,49 @@ def iana_timezone(value: str) -> bool:
         return False
 
 
+# Platform egress deny set (C05/S1.5a, OI-5). This is a constant of the platform, never provider data:
+# no manifest field can declare or widen it, the registry refuses an `egressSources` host that hits it,
+# and the broker must apply the same list. IPv4 addresses embedded in IPv6 (mapped, NAT64, 6to4,
+# Teredo) are rejected as their own networks, so a provider cannot smuggle `169.254.169.254` in that
+# shape either. Runtime enforcement belongs to G1.3a; this is the reference list the contract checks
+# and the registry share.
+EGRESS_DENY_NETWORKS = tuple(ip_network(n) for n in (
+    "0.0.0.0/8",       # unspecified / this-network
+    "127.0.0.0/8",     # IPv4 loopback
+    "169.254.0.0/16",  # IPv4 link-local / cloud metadata
+    "224.0.0.0/4",     # IPv4 multicast
+    "240.0.0.0/4",     # IPv4 reserved
+    "::/128",          # IPv6 unspecified
+    "::1/128",         # IPv6 loopback
+    "fe80::/10",       # IPv6 link-local (fe80:: - febf::), named explicitly since S1 follow-up
+    "ff00::/8",        # IPv6 multicast
+    "64:ff9b::/96",    # NAT64 well-known prefix
+    "2002::/16",       # 6to4
+    "2001::/32",       # Teredo
+))
+EGRESS_DENY_HOSTS = frozenset({
+    "localhost", "localhost.localdomain", "metadata", "metadata.google.internal", "instance-data",
+    "kubernetes.default", "kubernetes.default.svc",
+})
+
+
+def denied_egress_host(host: str) -> bool:
+    """True when an `egressSources` host is in the platform deny set and must never be connectable."""
+    value = (host or "").strip().lower().rstrip(".")
+    if not value:
+        return True
+    if value in EGRESS_DENY_HOSTS or value.endswith(".localhost"):
+        return True
+    try:
+        address = ip_address(value)
+    except ValueError:
+        return False  # a DNS name: only the exact-name rules above apply; the broker pins its answers
+    candidates = [address]
+    if address.version == 6 and address.ipv4_mapped is not None:
+        candidates.append(address.ipv4_mapped)
+    return any(candidate in network for candidate in candidates for network in EGRESS_DENY_NETWORKS)
+
+
 def format_checker() -> FormatChecker:
     checker = FormatChecker()
     checks = {

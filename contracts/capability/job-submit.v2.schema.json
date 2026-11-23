@@ -2,14 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/capability/job-submit.v2.schema.json",
   "title": "Yêu cầu gửi job v2",
-  "description": "Body của POST /api/v2/jobs: người vận hành (UI) hoặc dịch vụ nội bộ gửi job thủ công. Vẫn đi qua điểm kiểm M05 như lời gọi MCP; không có đường tắt tới M06.",
+  "description": "Body của POST /api/v2/jobs: người vận hành (UI) hoặc dịch vụ nội bộ gửi job thủ công. Vẫn đi qua điểm kiểm M05 như lời gọi MCP; không có đường tắt tới M06. Body KHÔNG mang actor: M05 gán requested_by từ principal đã xác minh của server và REST không bao giờ đặt proposed_by (không có phiên agent đứng sau một lời gọi REST).",
   "type": "object",
   "required": [
     "campaign_id",
     "capability",
     "input",
-    "rationale",
-    "actor"
+    "rationale"
   ],
   "additionalProperties": false,
   "properties": {
@@ -35,10 +34,6 @@
       "type": "string",
       "minLength": 3,
       "maxLength": 2000
-    },
-    "actor": {
-      "description": "Khai báo của client về người gửi; KHÔNG phải nguồn quyền (C05, X-8). Server gán requested_by từ principal nó đã xác minh và bỏ qua giá trị ở đây khi khác; khi request do agent đề xuất, server gán proposed_by từ session của phiên đó. MVP chưa có đăng nhập nên cơ chế xác minh principal còn mở (OD-5); không dùng trường này để cấp quyền.",
-      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
     },
     "priority": {
       "type": "integer",

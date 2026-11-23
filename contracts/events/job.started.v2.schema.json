@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/job.started.v2.schema.json",
   "title": "Payload job.started.v2",
-  "description": "Bên phát: M06. Khóa khử trùng của consumer: job_id.",
+  "description": "Bên phát: M06. Khóa khử trùng của consumer: job_id. Bên nhận: M02 (signal), M26 (SSE UI).",
   "type": "object",
   "required": [
     "job_id",

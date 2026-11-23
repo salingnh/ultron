@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/observation.changed.v2.schema.json",
   "title": "Payload observation.changed.v2",
-  "description": "Bên phát: M27. Khóa khử trùng của consumer: observation_id.",
+  "description": "Bên phát: M27. Khóa khử trùng của consumer: observation_id. Bên nhận: M23 (projector đồ thị), M26 (UI).",
   "type": "object",
   "required": [
     "observation_id",

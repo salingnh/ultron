@@ -2,14 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/campaign/campaign-create.v2.schema.json",
   "title": "Yêu cầu tạo chiến dịch v2",
-  "description": "Body của POST /api/v2/campaigns. Bắt buộc header Idempotency-Key.",
+  "description": "Body của POST /api/v2/campaigns. Bắt buộc header Idempotency-Key. Body KHÔNG mang actor: server gán created_by/requested_by từ principal đã xác minh (C05, X-8).",
   "type": "object",
   "required": [
     "name",
     "targets",
     "policy",
-    "objective",
-    "actor"
+    "objective"
   ],
   "additionalProperties": false,
   "properties": {
@@ -28,10 +27,6 @@
     },
     "policy": {
       "$ref": "roe-policy.v2.schema.json"
-    },
-    "actor": {
-      "description": "Khai báo của client về người tạo campaign; server gán created_by từ principal đã xác minh và không dùng giá trị này làm quyền (C05, X-8).",
-      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
     },
     "labels": {
       "type": "object",
