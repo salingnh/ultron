@@ -1,0 +1,375 @@
+# aegis-norm/1 — the one set of rules that turns a raw observation into an asset identity.
+#
+# Normative source for: every CanonicalKey M07 mints (contracts/common/ids.v2.schema.json#/$defs/
+# CanonicalKey) and the per-kind detail row written next to it (0001: asset_service, asset_url,
+# asset_package). Executable reference: contracts/tests/normalization.py. Golden vectors:
+# contracts/fixtures/golden/identity/normalization.vectors.json.
+#
+# This file is data: the contract tests read it and fail when the reference implementation, the
+# schemas, the DDL detail columns, the docs or the golden vectors disagree with it. Change it only
+# with a new version id (`aegis-norm/2`): a stored canonical_key keeps the rules version that
+# minted it, and two versions are never compared as equal.
+version: aegis-norm/1
+status: locked at G0.3c
+governing_doc: docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#mô-hình-tri-thức-và-định-danh
+
+# What the rules produce, and what they are deliberately not allowed to produce.
+identity_contract:
+  canonical_key_schema: common/ids.v2.schema.json#/$defs/CanonicalKey
+  canonical_key_format: aegis-canonical-key (contracts/validation.py)
+  max_length: 2048
+  minted_by: >-
+    asset_id is minted by M07 only. An adapter computes the canonical_key with this same registry so
+    the ResultEnvelope can carry it, and M07 re-derives the key before resolving asset_id: a key
+    that does not come back unchanged is a non-canonical report and is quarantined, never rewritten.
+    Adapters never choose a key shape of their own.
+  detail_tables:
+    service: asset_service
+    url: asset_url
+    package: asset_package
+  pattern_changes: >-
+    none. Every key aegis-norm/1 mints already matches the v2 CanonicalKey regexes, so ids.v2 and
+    validation.py are unchanged. Two consequences are rules below, not schema edits: an identity
+    URL always carries an explicit port (the `url:`/`app:` patterns and asset_url.port require it),
+    and an IPv4-mapped IPv6 input collapses to its IPv4 address (the `ip:` pattern allows only
+    hex-and-colon IPv6, while Python/RFC 5952 print `::ffff:192.0.2.1` in mixed notation).
+  raw_is_evidence: >-
+    The raw value is never rewritten: it goes to the evidence/alias path (asset_alias namespaces
+    `original`, `idna`, `oci_tag`, `git_branch`, `git_tag`). Only the canonical_key and its detail
+    row are normalized.
+
+versioning:
+  id_pattern: aegis-norm/<n>
+  immutable: >-
+    A released version never changes meaning. Fixing a rule, adding a kind or changing the
+    sensitive-parameter list is a new version, not an edit.
+  no_cross_version_compare: >-
+    Keys minted by two versions are never compared, deduplicated or "upgraded" on read. A version
+    bump needs an explicit re-key migration (new rows plus alias/`reason` on the old ones), which is
+    not designed here.
+  replay: >-
+    Normalization is a pure function of (version, kind, raw). Re-normalizing a stored key must
+    return that same key (the golden suite asserts every expected key is a fixed point), so a
+    replayed job or result resolves to the asset row it produced before.
+
+# Query handling for URL identity. One list for the whole system: adapters, M07, M27 and any
+# parser must import it from here instead of choosing their own.
+query_identity:
+  keep: >-
+    Every remaining parameter, as a sorted (name, value) list ordered by the percent-encoded name
+    and then the percent-encoded value. Duplicate names with different values are distinct content
+    and all survive. An empty query means no `?` in the key.
+  drop: >-
+    A parameter is dropped (both name and value) when its percent-decoded name, lowercased, is in
+    `sensitive_query_params`, starts with a `sensitive_query_param_prefixes` entry, or ends with a
+    `sensitive_query_param_suffixes` entry on a `.`/`-`/`_` boundary. A bare `=` with no name, and
+    empty `&&` pairs, are dropped too.
+  rationale: >-
+    Query tokens, signatures and session ids vary per request while the endpoint does not, so they
+    must not split one asset into many. The raw URL keeps them for evidence. The list errs towards
+    dropping: a canonical key never carries a credential, even when a benign parameter shares the
+    name.
+  plus_is_literal: >-
+    `+` is a literal plus in a URI query, not a space (that decoding belongs to
+    application/x-www-form-urlencoded). It is percent-encoded as `%2B`, so `?a=1+2` and `?a=1%202`
+    stay different identities.
+  fragment: >-
+    The fragment never enters the key. It is client-side routing, not a server resource.
+sensitive_query_params:
+  - access_token
+  - access-token
+  - accesstoken
+  - api_key
+  - api-key
+  - apikey
+  - auth
+  - auth_token
+  - authorization
+  - awsaccesskeyid
+  - client_secret
+  - code
+  - credential
+  - credentials
+  - csrf
+  - csrf_token
+  - csrftoken
+  - expires
+  - id_token
+  - jwt
+  - key
+  - nonce
+  - oauth_token
+  - otp
+  - password
+  - passwd
+  - pwd
+  - sas
+  - secret
+  - session
+  - session_id
+  - sessionid
+  - sig
+  - signature
+  - state
+  - token
+sensitive_query_param_suffixes:
+  - credential
+  - credentials
+  - password
+  - passwd
+  - secret
+  - signature
+  - token
+sensitive_query_param_prefixes:
+  - x-amz-
+  - x-goog-
+
+# kind = AssetKind; prefix = the CanonicalKey namespace; rule = key under `rules`.
+kinds:
+  domain: {prefix: dns, detail: null}
+  ip: {prefix: ip, detail: null}
+  service: {prefix: service, detail: asset_service}
+  application: {prefix: app, detail: null}
+  url: {prefix: url, detail: asset_url}
+  email: {prefix: email, detail: null}
+  package: {prefix: purl, detail: asset_package}
+  oci_image: {prefix: oci, detail: null}
+  repo: {prefix: repo, detail: null}
+  repo_snapshot: {prefix: git, detail: null}
+  artifact: {prefix: artifact, detail: null}
+
+# Kinds the schema allows but aegis-norm/1 deliberately does not normalize. A record of these kinds
+# is quarantined (G1 Identity) with the reason `kind_not_supported` instead of being given an
+# invented shape by one adapter.
+unsupported_kinds:
+  cloud_resource: >-
+    `cloud:` keys need a provider/service/region/account vocabulary that the contract does not own
+    yet (0001 only lists the kind).
+  k8s_workload: >-
+    `k8s:` keys need a cluster identity (and a cluster object) that no schema or module owns yet.
+
+rules:
+  domain:
+    output: "dns:<name>"
+    notes: >-
+      Lowercase ASCII A-label form without a trailing dot. One trailing dot is accepted (absolute
+      name) and removed; two or more are an error. `_` labels are kept for SRV/DKIM/TXT records.
+    steps:
+      - >-
+        Reject empty input, whitespace, control characters and any of `/:@?#%\` (a scheme, port or
+        path belongs to another kind).
+      - >-
+        Strip exactly one trailing dot.
+      - >-
+        Reject an input that parses as an IP literal (`ip_as_domain`) or whose labels are all
+        numeric (`invalid_domain` — those are malformed IPs, not names).
+      - >-
+        Convert to ASCII with the stdlib `idna` codec (IDNA2003 + nameprep, pinned by this version)
+        and lowercase the result.
+      - >-
+        Require total length <= 253 and every label to match
+        `[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?`; reject an empty label.
+  ip:
+    output: "ip:<canonical literal>"
+    notes: >-
+      RFC 5952 for IPv6 (lowercase, longest zero run compressed, no leading zeros), dotted decimal
+      without leading zeros for IPv4. An IPv4-mapped IPv6 input (`::ffff:a.b.c.d`) is the same
+      interface as `a.b.c.d`, so it collapses to the IPv4 key; keeping it as IPv6 is impossible
+      because the `ip:` pattern forbids mixed notation and validation.py rejects non-`str()` forms.
+    steps:
+      - >-
+        Reject empty input and any surrounding whitespace.
+      - >-
+        Reject `%` (interface-local zone id is not asset identity) and `/` (a CIDR is a seed, not
+        an asset; `cidr_not_identity`).
+      - >-
+        Parse with `ipaddress.ip_address`; reject on error (`invalid_ip`).
+      - >-
+        Replace an IPv6 with its `ipv4_mapped` address when present.
+      - >-
+        Emit `str(address)`.
+  service:
+    output: "service:<ip>:<port>/<tcp|udp> (bracketed IPv6 host)"
+    notes: >-
+      The host must be an IP: a hostname service key would let two DNS names for one host become
+      two assets. Callers that already parsed a scanner record join their fields as
+      `host:port/transport` (or the `tcp://host:port` / `udp://host:port` form) and call the same
+      rule.
+    steps:
+      - >-
+        Parse `[scheme://]host[:port][/transport]`; the port is required, the transport comes from
+        either the scheme or the `/transport` suffix.
+      - >-
+        Reject a missing transport and a scheme/suffix disagreement (`invalid_transport`).
+      - >-
+        Normalize the host with the `ip` rule (`invalid_ip` for a domain or a bad literal).
+      - >-
+        Port: ASCII digits, no leading zero, 1..65535 (`invalid_port`).
+      - >-
+        Lowercase the transport; bracket the host when it contains `:`.
+  application:
+    output: "app:<scheme>://<host>:<port>"
+    notes: >-
+      An HTTP endpoint with no resource path. A raw value with a path or query is a `url` record;
+      rejecting it here keeps an adapter from silently dropping the part that distinguishes two
+      endpoints.
+    steps:
+      - >-
+        Lowercase scheme must be `http` or `https` (`invalid_url_scheme`); the default port
+        (80/443) is materialized.
+      - >-
+        Reject userinfo (`url_has_userinfo`), a fragment, a path other than empty or `/`, a query,
+        a backslash and unencoded space/control characters (`invalid_application`).
+      - >-
+        Normalize the host as an IP (canonical literal) or as a domain A-label (`invalid_url`).
+      - >-
+        Emit the explicit port, never the default-implied one.
+  url:
+    output: "url:<scheme>://<host>:<port><path>[?<query>]"
+    notes: >-
+      The identity of a web resource: scheme, host, explicit port, dot-segment-free path and the
+      surviving query parameters in sorted order. The port is always explicit because the `url:`
+      pattern and asset_url.port require it; the default port is materialized, never dropped.
+      `detail.host` is the canonical literal without brackets (asset_url.host) while the key keeps
+      the brackets.
+    steps:
+      - >-
+        Reject unencoded space, control characters and `\` (`invalid_url_char`), then split off the
+        fragment (dropped) and the query.
+      - >-
+        Reject userinfo (`url_has_userinfo`) and any scheme other than http/https
+        (`invalid_url_scheme`).
+      - >-
+        Normalize the host as an IP (canonical literal) or as a domain A-label (`invalid_url`);
+        materialize the port (default 80/443); reject a malformed or out-of-range port.
+      - >-
+        Percent-normalize the path: decode `%XX` for unreserved characters and uppercase every
+        remaining escape (`invalid_url_percent` for a malformed escape), treating `%2F` as
+        content. Then remove dot segments per RFC 3986 §5.2.4, never above the root. An empty path
+        becomes `/`; case and a trailing slash are preserved.
+      - >-
+        Split the query on `&` and each pair on the first `=`, percent-normalize name and value,
+        apply `query_identity`, sort and join.
+  email:
+    output: "email:<local>@<domain>"
+    notes: >-
+      The domain is normalized with the `domain` rule. The local part is kept byte-identical: RFC
+      5321 makes it case-sensitive, and folding it would merge mailboxes that a provider treats as
+      distinct. A case-folded alias belongs to `asset_alias`, not to the key.
+    steps:
+      - >-
+        Reject whitespace/control characters, an empty local part or domain, more than one `@`, a
+        local part longer than 64 characters, or a local part containing `(),:;<>[]"\`.
+      - >-
+        Normalize the domain with the `domain` rule (`invalid_email` on failure).
+  package:
+    output: "purl:pkg:<type>/<namespace>/<name>@<version>[?<qualifiers>][#<subpath>]"
+    notes: >-
+      pURL syntax with a fixed case policy per type, because two spellings of one package must not
+      become two assets: `npm`, `composer` and `pypi` names are lowercase (pypi also collapses
+      `[-_.]+` to `-`, PEP 503); `golang` keeps its namespace and name case on purpose — Go module
+      paths are case-sensitive and the purl-spec lowercase rule would merge distinct modules;
+      every other type keeps the publisher's case. The version is required because
+      asset_package.version is NOT NULL: an unversioned package has no row to live in.
+    steps:
+      - >-
+        Strip an optional `pkg:` prefix, then split the subpath at `#`, the qualifiers at `?` and
+        the version at the last `@` that has no `/` after it (`invalid_purl` on malformed input).
+      - >-
+        Require a type matching `[a-z0-9.+-]+` (lowercased), at least one namespace segment and a
+        name; percent-decode each component as UTF-8.
+      - >-
+        Apply the type case policy; percent-encode unreserved-plus-`/` for namespace segments and
+        unreserved-only for name, version, qualifier keys and values (`%XX` uppercase).
+      - >-
+        Require a non-empty version (`package_version_required`).
+      - >-
+        Lowercase qualifier keys, reject duplicates after lowercasing
+        (`purl_duplicate_qualifier`), then sort qualifiers by key.
+      - >-
+        Split the subpath on `/`, drop empty segments and percent-encode each segment.
+  oci_image:
+    output: "oci:sha256:<hex>"
+    notes: >-
+      A container image is identified by its content digest. `nginx:1.27`, `:latest` or a
+      registry/repo without a digest is mutable and therefore not an identity
+      (`image_tag_not_identity`); the tag and repository go to asset_alias (`oci_tag`). The registry
+      and repository are not in the key, so the same digest pulled from a mirror stays one asset.
+    steps:
+      - >-
+        Take the `@`-separated digest (a bare `sha256:<hex>` is accepted); reject an input without
+        one.
+      - >-
+        Require the `sha256:` algorithm and 64 hex characters (`invalid_digest`); lowercase the hex.
+  repo:
+    output: "repo:<host>[:<port>]/<path>"
+    notes: >-
+      A repository asset (still mutable). Host is lowercased; the path case is folded only on the
+      known case-insensitive hosts (`github.com`, `gitlab.com`, `bitbucket.org`) because their
+      URLs are case-insensitive and would otherwise mint duplicate assets. Accepted forms are a
+      scheme (`https://`, `http://`, `ssh://`, `git://`, optional `user@`), the scp form
+      `user@host:path`, and a bare `host/path`. An explicit port is kept unless it is the scheme
+      default (80/443/22/9418); without a scheme there is nothing to infer from, so a bare
+      `host:port/path` is read as host+port, never as scp. A ref (`@branch`, `#branch`) is not part
+      of this kind; use `repo_snapshot` with a commit.
+    steps:
+      - >-
+        Strip a scheme and any `user@`/`user:pass@` userinfo, including the scp form
+        `git@host:path`; strip `www.`, a trailing `/` and a trailing `.git`.
+      - >-
+        Reject a leftover `@`, `?`, `#`, `%`, backslash or whitespace (`invalid_repo`) and a path
+        with fewer than two non-empty segments.
+      - >-
+        Lowercase the host (validated as a domain literal) and fold the path case on the known
+        case-insensitive hosts; keep a non-default port.
+  repo_snapshot:
+    output: "git:<repo>@<40-hex commit>"
+    notes: >-
+      A branch or tag moves, so only a full commit id identifies a snapshot. A short SHA, `HEAD`,
+      `refs/...` or a branch name is rejected (`mutable_ref_not_identity`) and kept as an alias
+      (`git_branch`/`git_tag`/`original`).
+    steps:
+      - >-
+        Split the commit from the last `@` (scp userinfo excluded) or the `#` fragment.
+      - >-
+        Require exactly 40 hex characters (`mutable_ref_not_identity` otherwise); lowercase it.
+      - >-
+        Normalize the repository part with the `repo` rule.
+  artifact:
+    output: "artifact:sha256:<hex>"
+    notes: >-
+      An arbitrary stored file is identified by its SHA-256. Any origin URI stays metadata on the
+      artifact row.
+    steps:
+      - >-
+        Take the digest from `@sha256:`/`sha256:` or after the last `#`; require 64 hex characters
+        and lowercase them (`invalid_digest`).
+
+# Reason codes are the `detail.reason` of a quarantined record (G1 Identity). They are stable
+# strings; adding one is a contract change (this file plus the reference implementation).
+rejected_reasons:
+  empty_input: input is empty or only whitespace
+  kind_not_supported: no rule for this kind at aegis-norm/1; quarantine, do not invent a shape
+  invalid_domain: not a usable domain name
+  ip_as_domain: the value is an IP literal, so the declared kind is wrong
+  invalid_ip: not a parseable IP literal
+  cidr_not_identity: a CIDR is a campaign seed, not one asset
+  zone_id_not_identity: an interface-local zone id is not asset identity
+  invalid_service: not the `<host>:<port>/<transport>` form
+  invalid_port: not 1..65535 without leading zeros
+  invalid_transport: transport missing or contradictory
+  invalid_application: an endpoint with a resource path belongs to `url`
+  invalid_url: not a usable absolute http(s) URL
+  invalid_url_scheme: scheme other than http/https
+  invalid_url_char: unencoded space, control character or backslash
+  invalid_url_percent: malformed percent escape
+  url_has_userinfo: credentials in the authority are not identity
+  invalid_email: not a usable mail address
+  invalid_purl: not a usable pURL
+  package_version_required: asset_package.version is NOT NULL, so an unversioned package has no row
+  purl_duplicate_qualifier: two qualifiers with the same lowercase key
+  image_tag_not_identity: a tag or branch is mutable and cannot identify an image
+  invalid_digest: digest is not `sha256:` plus 64 hex characters
+  invalid_repo: not a usable repository reference
+  mutable_ref_not_identity: a branch, tag or short id is mutable and cannot identify a snapshot
+  too_long: the canonical key would exceed the schema maxLength of 2048 characters

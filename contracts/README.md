@@ -51,6 +51,7 @@ python3 -I contracts/tests/test_model_client.py
 python3 -I contracts/tests/test_hash_receipt.py
 python3 -I contracts/tests/test_job_lifecycle.py
 python3 -I contracts/tests/test_conformance.py
+python3 -I contracts/tests/test_identity_normalization.py
 AEGIS_TEST_PG_DSN=postgresql://<user>:<pw>@127.0.0.1:<port>/<db> python3 -I contracts/tests/test_outbox_ordering.py
 # test_ingestion_concurrency.py và test_job_lifecycle_race.py tự tạo database dùng một lần (áp migration rồi drop);
 # DSN chỉ cần một server PostgreSQL 16, không cần schema đã migrate.
@@ -81,6 +82,14 @@ Mọi output của [graph-queries.v2](mcp/graph-queries.v2.schema.json) bắt bu
 `attempt`/`generation` là hai fencing token: `attempt` cho lần dispatch lại job chưa terminal, `generation` cho lần tái thực thi job đã terminal. Một callback chỉ terminal hóa đúng `(generation, attempt)` hiện tại qua [`aegis.record_job_callback`](db/postgres/0007_job_lifecycle.sql); kết quả trùng trả `duplicate` (idempotent), callback cũ hoặc trái kết quả đã ghi bị cách ly ở `job_callback_quarantine` cùng evidence refs. Hủy ghi ý định một lần ([`aegis.request_job_cancel`](db/postgres/0007_job_lifecycle.sql)) rồi M06 mới terminal hóa — cancel không bao giờ ghi đè kết quả đã nhận trước đó và job chờ có thể hủy ngay. `partial` là kết quả cuối có coverage chưa đầy đủ; timeout giữ bằng chứng đã thu và envelope một phần, không xoá gì. Mở lại job terminal = thế hệ mới (`generation+1`, `attempt=1`, `QUEUED`, kết quả cũ xoá); mọi thay đổi attempt/generation/cancel/wait reason có dòng lịch sử trong `job_lifecycle_change`.
 
 `wait_reason` ([job.v2](capability/job.v2.schema.json)) trả lời X-4: job `QUEUED` đang bị chặn bởi dependency, campaign pause, budget, khung giờ, concurrency, rate limit, provider hay người vận hành giữ. Danh sách mã do schema và DDL công bố giống nhau (test contract so khớp). Job `QUEUED` không có `wait_reason` là job sẵn sàng dispatch; reason không được tồn tại ngoài `QUEUED`.
+
+## Chuẩn hóa định danh
+
+[Một bộ quy tắc](ingestion/normalization.v2.yaml) sinh canonical key và dòng chi tiết theo loại (asset_service/asset_url/asset_package): `aegis-norm/1`, khóa tại G0.3c. Adapter tính key bằng đúng bộ quy tắc này (envelope mang key), M07 chuẩn hóa lại rồi mới cấp asset_id; key trả về khác bản chuẩn hóa bị cách ly, không tự sửa. Quy tắc phủ domain/IDNA, IPv4/IPv6, service, endpoint, URL, email, pURL, digest image, repo và commit; `cloud_resource`/`k8s_workload` chưa có quy tắc nên bị cách ly (`kind_not_supported`), không tự đặt hình dạng. Đổi quy tắc = `aegis-norm/2`: key đã lưu không bao giờ được so hay nâng cấp chéo version.
+
+Identity của URL luôn có port tường minh (pattern `url:`/`app:` và `asset_url.port` yêu cầu); bỏ fragment; query còn lại sắp theo (name, value). [Danh sách tham số nhạy cảm](ingestion/normalization.v2.yaml) trong cùng tệp là danh sách duy nhất của toàn hệ thống — adapter, M07, M27 phải dùng nó, không tự chọn. Tag image, nhánh/tag repo và commit ngắn là mutable nên bị từ chối làm định danh (`image_tag_not_identity`, `mutable_ref_not_identity`), phần raw đi vào alias. Định dạng `CanonicalKey` trong `common/ids.v2` không đổi.
+
+Golden vectors viết độc lập với implementation: [fixtures/golden/identity](fixtures/golden/identity/normalization.vectors.json). Test chứng minh key đã lưu tự chuẩn hóa lại ra chính nó (replay giữ canonical id), key dựng ra hợp lệ theo `CanonicalKey`, và hai cách viết của một tài sản quy về một key; xem [test_identity_normalization.py](tests/test_identity_normalization.py).
 
 ## Hash và receipt
 
