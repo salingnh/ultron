@@ -1,0 +1,90 @@
+{
+  "provider": "openai",
+  "model": "configured-model",
+  "messages": [
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "text",
+          "text": "Bạn là agent kiểm thử; chỉ chọn tool đã đăng ký và trả lời theo schema."
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Mục tiêu: liệt kê subdomain của example.test trong campaign đã cấp."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Gọi capability dns/enumerate-subdomains."
+        },
+        {
+          "type": "tool_call",
+          "call": {
+            "id": "call_01934f6a0000700080000000a0000001",
+            "name": "dns/enumerate-subdomains",
+            "arguments": {
+              "targets": [
+                "example.test"
+              ]
+            },
+            "arguments_raw": "{\"targets\":[\"example.test\"]}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": [
+        {
+          "type": "tool_result",
+          "result": {
+            "call_id": "call_01934f6a0000700080000000a0000001",
+            "name": "dns/enumerate-subdomains",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"job_id\":\"01934f6a-0000-7000-8000-0000000d0001\",\"status\":\"QUEUED\"}"
+              }
+            ],
+            "is_error": false
+          }
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "dns/enumerate-subdomains",
+      "description": "Subfinder passive subdomain enumeration; input targets là domain trong scope campaign.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "targets"
+        ],
+        "properties": {
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "session_id": "01934f6a-0000-7000-8000-000000000002",
+  "trace_id": "0123456789abcdef0123456789abcdef",
+  "max_output_tokens": 1024,
+  "timeout_seconds": 120
+}

@@ -97,29 +97,39 @@ class EvidenceStore(Protocol):
 
 ## 5. ModelClient (M04)
 
+Hình dạng là contract, không định nghĩa DTO tay lần hai: [message](../agent/model-message.v2.schema.json) (content block, tool call/result), [request](../agent/model-request.v2.schema.json), [response](../agent/model-response.v2.schema.json). Chữ ký Python dưới đây chỉ để đọc.
+
 ```python
 class ModelClient(Protocol):
-    async def complete(self, req: ModelRequest) -> ModelResponse: ...
+    async def complete(self, req: ModelRequest, budget: Budget) -> ModelResponse: ...
+    # BudgetExceeded khi ngân sách chiến dịch hết trước lời gọi; không gọi model.
 
 @dataclass(frozen=True)
-class ModelRequest:
-    provider: Literal["openai", "anthropic"]
-    model: str
-    messages: list[Message]                 # system/user/assistant/tool
-    response_schema: dict | None            # JSON Schema; driver dùng structured output nếu có, nếu không thì kiểm sau
-    tools: list[ToolSpec] | None
+class ModelRequest:              # model-request.v2
+    provider: Literal["openai", "anthropic"]; model: str
+    messages: list[Message]      # system/user/assistant/tool
+    tools: list[ToolSpec] = field(default_factory=list)
+    response_schema: dict | None = None   # JSON Schema đích; driver structured output rồi kiểm
     campaign_id: str; session_id: str; trace_id: str
     max_output_tokens: int; timeout_seconds: float = 120
 
 @dataclass(frozen=True)
-class ModelResponse:
-    content: str | None; parsed: dict | None; tool_calls: list[ToolCall]
-    model: str; provider: Literal["openai", "anthropic"]
-    input_tokens: int; output_tokens: int; cost_usd: float
-    finish_reason: str
+class ModelResponse:             # model-response.v2
+    provider: Literal["openai", "anthropic"]; model: str
+    message: Message | None      # assistant; vắng chỉ khi provider_error
+    parsed: dict | None          # chỉ khi finish_reason=completed
+    finish_reason: FinishReason  # completed|tool_calls|truncated|refused|invalid_output|provider_error
+    provider_meta: ProviderMeta  # response_id/model_version/raw_finish_reason
+    usage: Usage                 # input/output tokens, cost_usd, latency_ms
+    error: Error | None          # bắt buộc khi provider_error
 ```
 
-Hai driver: `OpenAIChatDriver` (Chat Completions) và `AnthropicMessagesDriver` (Messages). Provider, model, base_url và giới hạn thực thi nằm trong cấu hình triển khai trực tiếp. Trước mỗi lời gọi kiểm ngân sách chiến dịch trong mã; vượt thì ném `BudgetExceeded`. Mỗi lời gọi ghi một dòng `model_usage`.
+`Budget` là ngân sách còn lại của campaign lấy từ snapshot policy_version; không nằm trong request.
+
+- Message giữ content block có kiểu: `text`, `tool_call` (`id`, `name`, `arguments` đã parse, `arguments_raw` nguyên văn của provider) và `tool_result` (`call_id` = `tool_call.id`; thiếu tool_call tương ứng thì từ chối). Hai driver map role/system/tool block sang dạng dây OpenAI/Anthropic nhưng gửi lại đúng id, name và arguments/arguments_raw, nên hai vòng tool call trở lên không đổi định danh hay nội dung.
+- Chuẩn hóa finish: openai `stop`→completed, `tool_calls`→tool_calls, `length`→truncated, `content_filter`→refused; anthropic `end_turn`→completed, `tool_use`→tool_calls, `max_tokens`→truncated, `refusal`→refused. Output không parse hoặc không qua `response_schema` → invalid_output; lỗi transport/HTTP hoặc không có nội dung dùng được → provider_error. `tool_calls` phải có ít nhất một tool_call; `completed` không có tool_call; refused/truncated/invalid_output/provider_error không có `parsed`. Văn bản và đối số thô vẫn nằm trong message; riêng provider_error không có message nên raw provider phải giữ ở log/trace.
+- Hai driver: `OpenAIChatDriver` (Chat Completions) và `AnthropicMessagesDriver` (Messages). Endpoint, base_url, bảng giá và giới hạn thực thi nằm trong cấu hình triển khai; cấu hình cũng giữ danh sách fallback có trần. Kiểm ngân sách chiến dịch trước lời gọi trong mã; vượt thì ném `BudgetExceeded`, ghi `model_usage.status=budget_denied` và không gọi provider.
+- Retry/fallback: chỉ fallback khi `provider_error`, chỉ khi cấu hình có fallback và policy dữ liệu cho phép; số lần thử bị chặn bởi cấu hình. Refusal/invalid_output/truncated không được fallback để che lỗi dữ liệu, trả nguyên finish cho M03 xử lý. Mỗi lời gọi (kể cả fallback) ghi một dòng `model_usage` với trạng thái `ok|error|fallback|budget_denied` cùng provider/model/token/cost/latency/trace.
 
 ## 6. Ingestion API (M27) nội bộ
 
@@ -153,8 +163,9 @@ ApprovedTask chứa priority và depends_on do M05 chuẩn hóa. Dependency cùn
 
 ## Phần cần khóa của ModelClient và severity — C07
 
-Chữ ký ModelClient ở trên còn là khung bản nháp; `Message`, `ToolCall`, `ToolResult` và finish_reason chưa đủ để sinh driver hoàn chỉnh. S1.4 phải định nghĩa content blocks, ID liên kết tool call/result, metadata provider cần round-trip; không ép toàn bộ nội dung thành string. Chuẩn hóa completed/tool_calls/truncated/refused/invalid_output/provider_error; retry/fallback có trần và tuân cấu hình dữ liệu/budget.
+Đã khóa ở S1.4 bằng contract và suite offline `contracts/tests/test_model_client.py` (hành vi tham chiếu: `contracts/tests/model_client_ref.py`); chưa có LLM thật.
 
-Severity có input snapshot, trigger (finding mới, evidence mới, intel revision hoặc yêu cầu đánh giá lại), budget và khóa chống trùng theo finding/input revision. Đánh giá thất bại phải ghi lỗi và giữ nguyên lịch sử; đánh giá cũ không được trình bày như kết quả mới. Mục tiêu là lần đánh giá hiện tại có trạng thái chưa đánh giá/UNRATED và tín hiệu thô, không dựng nguồn trích dẫn giả. Hình dạng fallback khi chưa có assessment/source_refs hợp lệ còn phải khóa cùng schema trước S1; chưa tuyên bố contract hiện có đã bao phủ trường hợp này.
-
-Test offline bằng fake driver: ít nhất hai vòng tool call giữ ID/content, output sai schema hoặc bị cắt, refusal, hết budget, fallback provider, lỗi lần đánh giá đầu và đánh giá lại. Không mất raw alert/evidence/history khi model lỗi. Các test/fake này chưa phải implementation đã có trong repo.
+- Message/ToolCall/ToolResult: [model-message.v2](../agent/model-message.v2.schema.json) định nghĩa content block, liên kết tool_result → tool_call.id và round-trip `arguments_raw`; [model-request.v2](../agent/model-request.v2.schema.json) và [model-response.v2](../agent/model-response.v2.schema.json) giữ metadata provider và finish chuẩn hóa. Suite kiểm hai vòng tool call cả hai provider, output sai schema, cắt, refusal, hết ngân sách trước lời gọi, fallback trong cấu hình, và orphan/duplicate tool_result.
+- Severity: mỗi bản ghi có `trigger` (`scan|intel_revision|operator_request|verification`), `input_revision` và `dedup_key = severity:<finding_id>:<input_revision>`; cùng finding và cùng revision trả bản ghi đã có, không gọi model lại, nên đánh giá lại phải có đầu vào mới. `assessed_by`/`inputs`/`trigger`/`input_revision`/`dedup_key` do mã gán; model chỉ sinh phần `$defs/ModelOutput` rồi mã kiểm nguồn trích dẫn.
+- Fallback khi đánh giá thất bại: bản ghi mới `severity=UNRATED`, `failure` (mã lỗi theo error.v2, attempt, finish_reason/provider/model/session khi có lời gọi) và `raw_signals` trỏ finding/finding_source/evidence/intel đã lưu; cấm `source_refs` nên không dựng nguồn giả. Không có `failure` thì `source_refs` bắt buộc. Bảng append-only: bản ghi cũ không đổi, severity cũ không được trình bày như kết quả mới. Hết ngân sách trước lời gọi vẫn tạo UNRATED với `failure.code=POLICY_DENIED`.
+- Ngoài phạm vi S1.4: streaming, content ảnh, block `thinking`/signature của extended thinking (provider trả block lạ bị đánh dấu invalid_output thay vì bỏ im lặng), bảng giá token (cấu hình triển khai) và runtime M04/M20 thật. Các test/fake này chưa phải implementation đã có trong repo.

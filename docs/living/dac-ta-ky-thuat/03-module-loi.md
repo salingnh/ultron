@@ -34,7 +34,7 @@ M18 đọc API/file máy đọc được của NVD, OSV, CISA KEV và FIRST EPSS
 
 Có hai nguồn kích hoạt M20: asset/observation/package thay đổi và intel thay đổi. CVE mới, CVE vào KEV hoặc EPSS thay đổi phải được đối chiếu chọn lọc với tài sản/finding liên quan đã lưu. Đường này hoạt động trên tri thức hiện có, không đợi lịch quét mới. Snapshot cũ vẫn giữ để tái lập đánh giá.
 
-M20 lưu phương pháp match và từng nguồn scanner, không khử nguồn tại adapter. Finding mới, bằng chứng mới, intel mới hoặc yêu cầu đánh giá lại kích hoạt assessment. Cảnh báo phải dùng kết quả hiện tại có nguồn; khi đánh giá lỗi, yêu cầu nghiệp vụ là UNRATED kèm tín hiệu thô. Hình dạng fallback/attempt hiện còn phải khóa ở C07, chưa được coi đã implement.
+M20 lưu phương pháp match và từng nguồn scanner, không khử nguồn tại adapter. Finding mới, bằng chứng mới, intel mới hoặc yêu cầu đánh giá lại kích hoạt assessment. Cảnh báo phải dùng kết quả hiện tại có nguồn; khi đánh giá lỗi, yêu cầu nghiệp vụ là UNRATED kèm tín hiệu thô. Hình dạng fallback/attempt đã khóa ở C07 ([contract](../../../contracts/finding/severity-assessment.v2.schema.json)); M20 chưa triển khai.
 
 M24 nhận thay đổi finding/severity, khử trùng delivery khi retry và gửi Telegram theo template/group id cấu hình. Ngưỡng gửi vẫn cần chốt; không tự mặc định một ngưỡng severity. JSON report và lịch sử triage phải dẫn tới raw/evidence; rescan có bằng chứng mới mới đủ để kết luận FIXED.
 

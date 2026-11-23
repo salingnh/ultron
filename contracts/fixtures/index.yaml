@@ -10,6 +10,11 @@ valid:
   valid/approved-task.subfinder.json: capability/approved-task.v2.schema.json
   valid/approved-task.seed-kinds.json: capability/approved-task.v2.schema.json
   valid/ingest-receipt.json: ingestion/ingest-receipt.v2.schema.json
+  valid/severity-assessment.unrated.json: finding/severity-assessment.v2.schema.json
+  valid/model-request.agent-turn.json: agent/model-request.v2.schema.json
+  valid/model-response.tool-calls.openai.json: agent/model-response.v2.schema.json
+  valid/model-response.completed.anthropic.json: agent/model-response.v2.schema.json
+  valid/model-response.invalid-output.openai.json: agent/model-response.v2.schema.json
 invalid:
   invalid/result-envelope.bad-key.json: ingestion/result-envelope.v2.schema.json
   invalid/result-envelope.fake-keyword-asset.json: ingestion/result-envelope.v2.schema.json
@@ -20,3 +25,8 @@ invalid:
   invalid/finding-secret-without-value.json: ingestion/result-envelope.v2.schema.json#/$defs/FindingCandidate
   invalid/approved-task.target-ref-ambiguous.json: capability/approved-task.v2.schema.json
   invalid/approved-task.target-ref-raw-key.json: capability/approved-task.v2.schema.json
+  invalid/severity-assessment.unrated-with-source-refs.json: finding/severity-assessment.v2.schema.json
+  invalid/severity-assessment.assessed-without-refs.json: finding/severity-assessment.v2.schema.json
+  invalid/severity-assessment.failure-non-unrated.json: finding/severity-assessment.v2.schema.json
+  invalid/model-response.tool-calls-without-call.json: agent/model-response.v2.schema.json
+  invalid/model-response.refused-with-parsed.json: agent/model-response.v2.schema.json

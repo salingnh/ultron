@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/agent/model-message.v2.schema.json",
+  "title": "Message v2 trong hội thoại model",
+  "description": "Một lượt trao đổi với model (C07). Nội dung là content block có kiểu, không ép thành một chuỗi. Vai assistant mang tool_call do model sinh; vai tool mang tool_result liên kết bằng call_id tới tool_call.id. Driver provider chuyển từ/đến dạng dây của OpenAI/Anthropic nhưng giữ nguyên id, name và arguments/arguments_raw khi gửi lại, nên vòng tool call nhiều lượt không đổi định danh. Nội dung tool_result là dữ liệu không tin cậy; M03 bọc nhãn UNTRUSTED_TOOL_OUTPUT khi dựng prompt.",
+  "type": "object",
+  "required": [
+    "role",
+    "content"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "role": {
+      "$ref": "#/$defs/Role"
+    },
+    "content": {
+      "description": "Assistant được phép rỗng khi provider từ chối mà không trả văn bản; các vai còn lại phải có ít nhất một block.",
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/ContentBlock"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "tool"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "content": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "role": {
+            "enum": [
+              "system",
+              "user"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/$defs/TextBlock"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "role": {
+            "const": "tool"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/$defs/ToolResultBlock"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "role": {
+            "const": "assistant"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "content": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/TextBlock"
+                },
+                {
+                  "$ref": "#/$defs/ToolCallBlock"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Role": {
+      "type": "string",
+      "enum": [
+        "system",
+        "user",
+        "assistant",
+        "tool"
+      ]
+    },
+    "ContentBlock": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextBlock"
+        },
+        {
+          "$ref": "#/$defs/ToolCallBlock"
+        },
+        {
+          "$ref": "#/$defs/ToolResultBlock"
+        }
+      ]
+    },
+    "TextBlock": {
+      "type": "object",
+      "required": [
+        "type",
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "description": "Văn bản; log/artifact lớn dùng đoạn trích theo giới hạn context, không nhét toàn bộ raw.",
+          "type": "string",
+          "maxLength": 100000
+        }
+      }
+    },
+    "ToolCallBlock": {
+      "type": "object",
+      "required": [
+        "type",
+        "call"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "tool_call"
+        },
+        "call": {
+          "$ref": "#/$defs/ToolCall"
+        }
+      }
+    },
+    "ToolResultBlock": {
+      "type": "object",
+      "required": [
+        "type",
+        "result"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "tool_result"
+        },
+        "result": {
+          "$ref": "#/$defs/ToolResult"
+        }
+      }
+    },
+    "ToolCall": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "arguments"
+          ]
+        },
+        {
+          "required": [
+            "arguments_raw"
+          ]
+        }
+      ],
+      "properties": {
+        "id": {
+          "description": "ID do provider cấp cho lời gọi; gửi lại nguyên vẹn ở lượt sau.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,200}$"
+        },
+        "name": {
+          "description": "Tên capability/tool đã đăng ký, không phải chuỗi tự do của model.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,200}$"
+        },
+        "arguments": {
+          "description": "Đối số đã parse; vắng khi provider trả chuỗi không phải JSON hợp lệ (khi đó finish_reason=invalid_output).",
+          "type": "object"
+        },
+        "arguments_raw": {
+          "description": "Chuỗi đối số nguyên văn của provider (OpenAI function.arguments) để round-trip không đổi.",
+          "type": "string",
+          "maxLength": 100000
+        }
+      }
+    },
+    "ToolResult": {
+      "type": "object",
+      "required": [
+        "call_id",
+        "name",
+        "content"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "call_id": {
+          "description": "Bằng tool_call.id mà kết quả này trả lời.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,200}$"
+        },
+        "name": {
+          "description": "Tên tool đã gọi; phải khớp ToolCall.name cùng call_id.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,200}$"
+        },
+        "content": {
+          "description": "Nội dung do tool sinh, đã tách thành block; là dữ liệu không tin cậy.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/TextBlock"
+          }
+        },
+        "is_error": {
+          "description": "Tool báo lỗi thay vì kết quả; vẫn giữ nội dung gốc.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  }
+}

@@ -214,6 +214,19 @@ job_status = set(schemas["capability/job.v2.schema.json"]["$defs"]["JobStatus"][
 if ddl_enum(r"CREATE TABLE scan_job.*?status\s+text\s+NOT NULL DEFAULT 'QUEUED'\s+") != job_status:
     fail("scan_job.status trong DDL lệch với job.v2")
 
+severity_schema = schemas["finding/severity-assessment.v2.schema.json"]
+if ddl_enum(r"CREATE TABLE severity_assessment \(.*?severity\s+text") != set(severity_schema["$defs"]["Severity"]["enum"]):
+    fail("severity_assessment.severity trong DDL lệch với severity-assessment.v2")
+if ddl_enum(r"CREATE TABLE severity_assessment \(.*?kind\s+text") != set(severity_schema["properties"]["assessed_by"]["properties"]["kind"]["enum"]):
+    fail("severity_assessment.kind trong DDL lệch với assessed_by.kind của severity-assessment.v2")
+if ddl_enum(r"CREATE TABLE severity_assessment \(.*?trigger\s+text") != set(severity_schema["$defs"]["Trigger"]["enum"]):
+    fail("severity_assessment.trigger trong DDL lệch với trigger của severity-assessment.v2")
+finish_reasons = set(schemas["agent/model-response.v2.schema.json"]["$defs"]["FinishReason"]["enum"])
+if finish_reasons != {"completed", "tool_calls", "truncated", "refused", "invalid_output", "provider_error"}:
+    fail(f"FinishReason của model-response.v2 phải là sáu giá trị chuẩn hóa C07, đang là {sorted(finish_reasons)}")
+if severity_schema["properties"]["failure"]["$ref"].rsplit("/", 1)[-1] != "Failure":
+    fail("severity-assessment.v2: failure phải trỏ tới $defs/Failure")
+
 if errors:
     print(f"THẤT BẠI: {len(errors)} lỗi")
     for e in errors:

@@ -38,6 +38,7 @@ python3 -I contracts/tests/validate_contracts.py
 python3 -I contracts/tests/test_tool_orchestration.py
 python3 -I contracts/tests/test_schema_boundaries.py
 python3 -I contracts/tests/test_seed_reference.py
+python3 -I contracts/tests/test_model_client.py
 psql -v ON_ERROR_STOP=1 -f contracts/db/postgres/0001_init.sql -f contracts/db/postgres/0002_tool_orchestration.sql -f contracts/db/postgres/0003_task_manifest_binding.sql -f contracts/db/postgres/0004_usage_nonnegative.sql -f contracts/db/postgres/0005_job_target_refs.sql -f contracts/db/postgres/tests/smoke.sql -f contracts/db/postgres/tests/tool_orchestration.sql -f contracts/db/postgres/tests/usage_nonnegative.sql -f contracts/db/postgres/tests/job_target_refs.sql
 ```
 
@@ -54,7 +55,6 @@ Schema không thay implementation scheduler, sandbox hoặc kiểm provenance/m�
 - [Hash/receipt, lifecycle](../docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#các-phần-contract-còn-cần-khóa) — C03/C06.
 - [Outbox/revision ordering](graph/model.md#c04--thứ-tự-công-bố-còn-cần-chứng-minh) — C04.
 - [Schema tool và actor](../docs/living/dac-ta-ky-thuat/04-module-ket-noi-oss.md#contract-tool-và-actor-cần-khóa--c05) — C05.
-- [ModelClient/severity](interfaces/README.md#phần-cần-khóa-của-modelclient-và-severity--c07) — C07.
 - Đường chuyển cấu hình/campaign cũ theo phần migration ở trên — S1.6.
 
 Backlog ở TASKS, bằng chứng đã kiểm ở PROGRESS. Tool chưa có schema không được tự đăng ký như đã triển khai. Theo D24, thay đổi hình dạng so với bundle gốc đã lưu/phát hành tăng version; schema version đó bất biến. Bundle v2 đang soạn thay bundle gốc v1, chưa đạt cổng S1; nhãn nháp không cho sửa lại version đã lưu/phát hành. Migration đã áp dụng dùng migration mới. Test cần kiểm xuyên lớp, không dùng riêng số lượng schema để kết luận đáp ứng sản phẩm.

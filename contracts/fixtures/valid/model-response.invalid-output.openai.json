@@ -1,0 +1,25 @@
+{
+  "provider": "openai",
+  "model": "configured-model",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"severity\":\"BANANA\",\"reasons\":[]}"
+      }
+    ]
+  },
+  "finish_reason": "invalid_output",
+  "provider_meta": {
+    "provider": "openai",
+    "response_id": "chatcmpl-fake-0002",
+    "raw_finish_reason": "stop"
+  },
+  "usage": {
+    "input_tokens": 140,
+    "output_tokens": 12,
+    "cost_usd": 0.0002,
+    "latency_ms": 640
+  }
+}
