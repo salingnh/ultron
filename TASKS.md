@@ -1,6 +1,6 @@
 # TASKS
 
-G0 đã xong phần contract, spike và sizing; môi trường dev cùng CI nằm trong PR #14 chờ merge vào `main`. Cổng G0 còn mở ở lab mục tiêu và quyết định của chủ sản phẩm, ghi ở PROGRESS (mục Hồ sơ cổng G0). Thứ tự và nghiệm thu theo [quyết định kiến trúc](docs/s1/00-thanh-phan-va-quyet-dinh.md). Đây là backlog duy nhất. Chỉ làm giai đoạn đang mở trừ phần chủ sản phẩm trực tiếp yêu cầu. Trạng thái kiểm chứng ở PROGRESS, cổng giao hàng ở kế hoạch triển khai.
+G0 đã nghiệm thu phần contract, spike và sizing; kết luận spike G0.1/G0.2/G0.3a, bảng pin và môi trường dev/CI còn chờ merge PR #13/#9/#7/#14 vào `main`. Cổng G0 còn mở ở lab mục tiêu và quyết định của chủ sản phẩm, ghi ở PROGRESS (mục Hồ sơ cổng G0). Thứ tự và nghiệm thu theo [quyết định kiến trúc](docs/s1/00-thanh-phan-va-quyet-dinh.md). Đây là backlog duy nhất. Chỉ làm giai đoạn đang mở trừ phần chủ sản phẩm trực tiếp yêu cầu. Trạng thái kiểm chứng ở PROGRESS, cổng giao hàng ở kế hoạch triển khai.
 
 ## G0 — khóa contract và spike
 
@@ -13,11 +13,14 @@ G0 đã xong phần contract, spike và sizing; môi trường dev cùng CI nằ
 - [x] S1.5 Khóa input/output schema cho chuỗi tool đầu tiên, actor/provenance mọi job, query limits/truncation và registry/adapter conformance; review cổng S1 (C05).
 - [x] S1.6 Khóa đường chuyển campaign/cấu hình đã lưu sang contract hiện hành: snapshot JSON cũ bất biến và current_policy_version không tự thành cấu hình mới. Tạo snapshot hợp lệ, xử lý job đang chạy/chờ và test; không tự resume dữ liệu cũ.
 - [x] S1.7 Đóng N01–N06 ở [C08](docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c08--kiểm-biên-schema-và-openapi): OpenAPI đầy đủ, identity/input, severity event, khung giờ, usage và response đúng phạm vi; kiểm conformance Python 3.12 và migration giữ lịch sử.
-- [x] G0.1 Spike Temporal/LangGraph restart/replay/cancel; quyết định cách lồng phiên theo kết quả.
-- [x] G0.2 Spike Podman/network/resource limits và raw socket; kiểm parser/collector isolation; BBOT thụ động: ánh xạ JSON → ResultEnvelope và giấy phép bản pin; khóa version/digest/giấy phép tool được chọn.
-- [x] G0.3 Spike MCP transport/_meta/idempotency/query và đo latency, graph upsert đồng thời và replay/rebuild; khóa quy tắc chuẩn hóa/identity có golden fixtures.
-- [x] G0.4 Dựng môi trường dev PostgreSQL/Neo4j/S3/Temporal/Podman trên máy đã có, bootstrap bằng một lệnh; nối schema/conformance vào CI; đo capacity/sizing theo mục tiêu NFR, ước lượng backlog từ workload đã khóa. Môi trường/CI nằm trong PR docs #14 chờ merge vào `main`, chưa có trên `integ`.
-- [ ] G0.4c Lab mục tiêu được phép và fixture schema/parser/adapter trên lab: chờ OD-1. Phần còn lại của G0.4 đã xong.
+- [ ] G0.1 Spike Temporal/LangGraph restart/replay/cancel; quyết định cách lồng phiên theo kết quả — đạt nghiệm thu, chờ merge #13 vào `main`.
+- [ ] G0.2 Spike Podman/network/resource limits và raw socket; kiểm parser/collector isolation; BBOT thụ động: ánh xạ JSON → ResultEnvelope và giấy phép bản pin; khóa version/digest/giấy phép tool được chọn — đạt nghiệm thu, chờ merge #9 vào `main`.
+- [ ] G0.3a Spike MCP transport/_meta/idempotency/query và đo latency — đạt nghiệm thu, chờ merge #7 vào `main`.
+- [x] G0.3b Spike graph upsert đồng thời và replay/rebuild (kết luận ở #19, migration 0013 ở #22).
+- [x] G0.3c Khóa quy tắc chuẩn hóa/identity có golden fixtures (#18).
+- [ ] G0.4a/b Dựng môi trường dev PostgreSQL/Neo4j/S3/Temporal/Podman trên máy đã có, bootstrap bằng một lệnh; nối schema/conformance vào CI — đạt nghiệm thu, chờ merge #14 vào `main`.
+- [ ] G0.4c Lab mục tiêu được phép và fixture schema/parser/adapter trên lab: chờ OD-1.
+- [x] G0.4d Đo capacity/sizing theo mục tiêu NFR, ước lượng backlog từ workload đã khóa (#21).
 
 ## G1 — vòng nền tảng
 
@@ -30,7 +33,7 @@ G0 đã xong phần contract, spike và sizing; môi trường dev cùng CI nằ
 Điều kiện phải xong trước khi viết code G1, lấy từ review cổng S1 và kết quả spike G0 (mỗi dòng ghi task G1 sở hữu):
 
 - [ ] E-1: binding egress phải nằm trong ApprovedTask đã ký, hoặc M06 có luật tính lại rõ ràng; hiện hai chỗ của interfaces mô tả khác nhau (chủ: G1.1c/1.3a).
-- [ ] R-5: deny set của broker phải chuẩn hoá literal trước khi so (`127.1`, `2130706433`, `0x7f000001`, `::/96`, `fec0::/10`, `fd00:ec2::254`, `100.100.200.200`) và có test broker (chủ: G1.3a).
+- [ ] R-5: deny set của broker phải chuẩn hoá literal trước khi so (`127.1`, `2130706433`, `0x7f000001`, `::/96`, `fec0::/10`, `fd00:ec2::254`, `100.100.100.200`) và có test broker (chủ: G1.3a).
 - [ ] P3a/P3c: ref `{canonical_key}` chưa buộc vào asset đã biết của campaign, và `input.targets` ↔ `target_refs` mới chỉ là luật M05, chưa có kiểm lại ở M06 (chủ: G1.1c, G1.3a).
 - [ ] OI-7: HMAC của ApprovedTask chưa có canonical signing input, key id/rotation và test verify (chủ: G1.1c).
 - [ ] R-6: dispatcher phải đặt statement/idle-in-transaction timeout để không giữ writer khoá sau mỗi lần refresh watermark (chủ: G1.1d).

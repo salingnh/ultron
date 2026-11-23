@@ -4,7 +4,7 @@
 
 | Hạng mục | Trạng thái |
 | --- | --- |
-| Giai đoạn | G0: contract khóa ở mức schema/DDL/test, spike và sizing xong; cổng G0 còn mở ở lab mục tiêu và quyết định của chủ sản phẩm (xem Hồ sơ cổng G0). Chưa có dịch vụ sản phẩm chạy trọn vòng |
+| Giai đoạn | G0: contract khóa ở mức schema/DDL/test, spike và sizing đã nghiệm thu; kết luận spike G0.1/G0.2/G0.3a, bảng pin và môi trường dev/CI còn chờ merge. Cổng G0 vẫn mở ở lab mục tiêu và quyết định của chủ sản phẩm (xem Hồ sơ cổng G0). Chưa có dịch vụ sản phẩm chạy trọn vòng |
 | Git | `integ/g0-s1-contracts` @ `15c02b9`: đã gộp S1.1–S1.6, S1 follow-up A/B/C, G0.3b, G0.3c, G0.4d, 0013. Nhánh tích hợp chưa merge vào `main`. PR docs-only #7 (G0.3a), #9 (G0.2), #13 (G0.1), #14 (môi trường dev + CI) còn mở vào `main`; mã spike nằm trên nhánh `spike/*` (#10 là bản nháp, không merge) |
 | Kiến trúc | Theo D29: AI agent/MCP/sandbox/metadata/graph/S3/UI; model cấu hình trực tiếp, job dùng priority/dependency |
 | Tài liệu | Một bộ ở đường dẫn chính. Ngày 2026-11-17 hoàn tất ma trận 367 mục đối chiếu với nguồn trước hợp nhất; mỗi mục có đích hiện hành hoặc căn cứ thay thế, phần còn hiệu lực bị rơi đã được bổ sung |
@@ -18,7 +18,7 @@
 
 ## Còn mở
 
-- Cổng G0: lab mục tiêu (G0.4c, chờ OD-1), OD-2 (provider/model LLM), OD-5 (cơ chế operator identity, cũng là OI-4) và Product Team ký cổng. Điều kiện đạt/chưa đạt ở mục Hồ sơ cổng G0.
+- Cổng G0: lab mục tiêu (G0.4c, chờ OD-1), OD-2 (provider/model LLM), OD-5 (cơ chế operator identity, cũng là OI-4), merge PR #13/#9/#7/#14 và Product Team ký cổng. Điều kiện đạt/chưa đạt ở mục Hồ sơ cổng G0.
 - Trước khi viết code G1: tám điều kiện ở TASKS §G1 (E-1, R-5, P3a/P3c, OI-7, R-6, throughput projector, `normalization_version`, OI-4), mỗi điều kiện ghi task G1 sở hữu.
 - Chưa kiểm runtime: xem mục "Chưa kiểm runtime" dưới đây. Schema xanh và số đo spike không thay nghiệm thu runtime.
 
@@ -38,9 +38,9 @@ Lượt chạy 2026-11-24 trên `15c02b9`, venv Python 3.12.13 (jsonschema 4.26.
 
 ### Đã chứng minh bằng spike (số đo, `nhánh@sha`)
 
-- **G0.1** `spike/g0.1-temporal-langgraph@8c20a1e`: 10 test xanh. Worker bị SIGKILL giữa activity thì tiếp tục từ checkpoint, còn 1 job/1 lần dispatch; replay 29 event/19,4 KB tất định, đổi lệnh đầu thì replay báo `TMPRL1100`; cancel job 120 s dừng dưới 20 s; Continue-As-New giữ cursor; ready query p95 1,09 ms trên 5.000 job `QUEUED` dùng index `scan_job_ready_order`. Chọn phiên agent chạy trong activity (29 event/19.467 B) thay vì workflow-per-session (41 event/32.208 B).
-- **G0.2** `spike/g0.2-sandbox@e1c2a25`: 42 unit + 21 test Podman (rootless Podman 5.8.9, cgroup v2 có thật). OOM/pids/cpu/rootfs read-only/uid 65534/cap-drop ALL xác nhận bằng số đo; container không tới được PG/Neo4j/S3/Temporal/loopback/link-local/metadata, gồm cả `::ffff:127.0.0.1`, NAT64/6to4/Teredo; DNS tắt theo job và broker kiểm lại sau redirect; collector chỉ nhận file thường với trần byte/file; parser không mở được socket. Bảng pin 4 tool: subfinder v2.17.0 (MIT), dnsx v1.2.2 (MIT), bbot 3.0.2 (AGPL-3.0), naabu v2.7.0 (MIT), kèm digest và SBOM SPDX. Naabu SYN bị hạ xuống CONNECT rootless dù có `NET_RAW` → G1 giữ `rawSocket=false`.
-- **G0.3a** `spike/g0.3-mcp@6372e4c`: 42 test với MCP 2.3.0 (`2025-11-25`). `_meta` thiếu/sai → `-32602` kèm `error.v2`; 100 lần cùng `idempotency_key` → 1 job (`approved` 1/`duplicate` 99). p95 `tools/call` handler 0,62 ms, HTTP JSON 3,64 ms, SSE 5,54 ms; 16 request đồng thời 272,7 call/s trên fake registry — NFR-04 (<300 ms p95) đạt ở mức fake, chưa phải registry PostgreSQL.
+- **G0.1** `spike/g0.1-temporal-langgraph@8c20a1e` (kết luận ở PR #13, chờ merge): 10 test xanh. Worker bị SIGKILL giữa activity thì tiếp tục từ checkpoint, còn 1 job/1 lần dispatch; replay 29 event/19,4 KB tất định, đổi lệnh đầu thì replay báo `TMPRL1100`; cancel job 120 s dừng dưới 20 s; Continue-As-New giữ cursor; ready query p95 1,09 ms trên 5.000 job `QUEUED` dùng index `scan_job_ready_order`. Chọn phiên agent chạy trong activity (29 event/19.467 B) thay vì workflow-per-session (41 event/32.208 B).
+- **G0.2** `spike/g0.2-sandbox@e1c2a25` (kết luận + bảng pin ở PR #9, chờ merge): 42 unit + 21 test Podman (rootless Podman 5.8.9, cgroup v2 có thật). OOM/pids/cpu/rootfs read-only/uid 65534/cap-drop ALL xác nhận bằng số đo; container không tới được PG/Neo4j/S3/Temporal/loopback/link-local/metadata, gồm cả `::ffff:127.0.0.1`, NAT64/6to4/Teredo; DNS tắt theo job và broker kiểm lại sau redirect; collector chỉ nhận file thường với trần byte/file; parser không mở được socket. Bảng pin 4 tool: subfinder v2.17.0 (MIT), dnsx v1.2.2 (MIT), bbot 3.0.2 (AGPL-3.0), naabu v2.7.0 (MIT), kèm digest và SBOM SPDX. Naabu SYN bị hạ xuống CONNECT rootless dù có `NET_RAW` → G1 giữ `rawSocket=false`.
+- **G0.3a** `spike/g0.3-mcp@6372e4c` (kết luận ở PR #7, chờ merge): 42 test với MCP 2.3.0 (`2025-11-25`). `_meta` thiếu/sai → `-32602` kèm `error.v2`; 100 lần cùng `idempotency_key` → 1 job (`approved` 1/`duplicate` 99). p95 `tools/call` handler 0,62 ms, HTTP JSON 3,64 ms, SSE 5,54 ms; 16 request đồng thời 272,7 call/s trên fake registry — NFR-04 (<300 ms p95) đạt ở mức fake, chưa phải registry PostgreSQL.
 - **G0.3b** `spike/g0.3-graph@cf58b49` (+`a686b80` cho lần đo 0013): 100 writer cùng `canonical_key` → 1 node, 0 retry; 100 key khác nhau 473 ops/s. Rebuild 2.799 event đạt 174,5 event/s, 2.465 node/2.743 cạnh, so từng property và đối chiếu PostgreSQL 0 lệch; replay lại 67 event đã chiếu không đổi graph. 0013 (đã gộp): watermark chờ có trần (`lock_timeout` 5 s, 55P03, không bỏ im lặng) → 0 lần refresh bị chặn so với 921–1.163 lần trước, end-to-end 167 so với 133 event/s, p50 commit 0,185 so với 0,148 s.
 - **G0.3c** (#18 @ `6158696`): `aegis-norm/1` là trục version riêng; 54 vector chấp nhận/37 bị từ chối/7 nhóm thu gọn, 23 test; replay giữ nguyên canonical key.
 - **G0.4a/b** (PR #14 @ `9f25513`, chưa merge): `make dev-up` từ volume rỗng → 4 dịch vụ healthy, migration chạy một lần mỗi file và từ chối sửa migration đã áp; `make dev-down` xoá đúng project của mình. CI đọc danh sách cổng từ `contracts/README.md` nên không có bản sao thứ hai: chạy thử trên nhánh `integ` @ `8ea163d` đạt (13 bộ python, 16 file chuỗi sạch, 18 file chuỗi nâng cấp); CI của chính PR (dựa trên `main`, chưa có S1) chạy 3/7/8, run `45251769962` xanh 1m27s, run `45248059340` với fixture cố ý hỏng thì đỏ.
@@ -61,17 +61,19 @@ Lượt chạy 2026-11-24 trên `15c02b9`, venv Python 3.12.13 (jsonschema 4.26.
 
 | Điều kiện G0 | Trạng thái | Căn cứ |
 | --- | --- | --- |
-| Kết luận spike (Temporal/LangGraph, sandbox, MCP, graph, identity) | đạt | G0.1/G0.2/G0.3a: báo cáo + `spike/*@sha`; kết luận G0.3b/G0.3c đã gộp vào [model.md](contracts/graph/model.md#c04--thứ-tự-công-bố-đã-khóa-ở-s13) và `contracts/ingestion/normalization.v2.yaml`. Kết luận G0.1/G0.2/G0.3a còn ở PR #7/#9/#13 chờ merge vào `main` |
+| Kết luận spike đã gộp: graph (G0.3b), identity (G0.3c) | đạt | [model.md](contracts/graph/model.md#c04--thứ-tự-công-bố-đã-khóa-ở-s13), `contracts/ingestion/normalization.v2.yaml`, 0013 (#19/#22/#18) |
+| Kết luận spike chờ merge: G0.1, G0.2, G0.3a | đạt nghiệm thu, chờ merge #13/#9/#7 | Báo cáo + `spike/*@sha`; văn bản kết luận nằm trong PR tương ứng, chưa trên `integ`/`main` |
 | Schema + DB sạch/nâng cấp | đạt | Migration 0005–0014; hai chuỗi psql ở mục trên (15 bộ/134 test, 56/56 hàm ghim, chuỗi nâng cấp 30 file) |
-| Bảng pin version/digest/license | đạt nội dung, chờ merge | G0.2: 4 tool + digest + SBOM SPDX; văn bản ở PR #9 (`04-module-ket-noi-oss.md` §Chọn provider), chưa trên `integ` |
-| Registry và môi trường dev | registry đạt; môi trường chờ merge | Conformance Subfinder+DNSx đã gộp (S1.5b); `make dev-up/down` + CI ở PR #14 |
-| Lab và fixture | fixture đạt, lab mở | Fixture: 26 hợp lệ/30 bị từ chối, golden hash `aegis-c14n/1`, golden identity `aegis-norm/1`. Lab G0.4c chờ OD-1 |
-| Backlog G1 + sizing lưu trữ lâu dài | đạt | TASKS §G1 (G1.1–G1.5 + 8 điều kiện review); [02-nen-tang.md §Định cỡ](docs/living/dac-ta-ky-thuat/02-nen-tang.md#định-cỡ-dung-lượng-và-tải-g04d) (G0.4d) |
+| Bảng pin version/digest/license | đạt nghiệm thu, chờ merge #9 | G0.2: 4 tool + digest + SBOM SPDX; văn bản ở `04-module-ket-noi-oss.md` §Chọn provider trong PR #9, chưa trên `integ` |
+| Registry (conformance Subfinder+DNSx) | đạt | S1.5b đã gộp: `contracts/tests/test_conformance.py` + fixture DNSx |
+| Môi trường dev + CI | đạt nghiệm thu, chờ merge #14 | `make dev-up/down`, CI đọc cổng từ `contracts/README.md`; PR #14 target `main` |
+| Lab và fixture | fixture đạt (đã gộp), lab mở | 26 fixture hợp lệ/30 bị từ chối, golden hash `aegis-c14n/1`, golden identity `aegis-norm/1`; lab G0.4c chờ OD-1 |
+| Backlog G1 + sizing lưu trữ lâu dài | đạt | TASKS §G1 (G1.1–G1.5 + 8 điều kiện review); [02-nen-tang.md §Định cỡ](docs/living/dac-ta-ky-thuat/02-nen-tang.md#định-cỡ-dung-lượng-và-tải-g04d) (G0.4d, #21 đã gộp) |
 | Contract được review | đạt ở mức contract | Review độc lập S1.5c (re-review 2 @ `15c02b9`): PASS mức contract; blocker R-1/R-2a/R-2b/R-3/R-4 đóng ở 0014. OI-4 chờ OD-5 |
-| Kiểm hạn chế sandbox | đạt bằng spike | G0.2 (63 test) — chưa phải runner sản phẩm (G1.3a) |
-| Kiểm scheduling | đạt bằng spike | G0.1 ready query + dependency/priority; implementation thuộc G1.1d |
+| Kiểm hạn chế sandbox | đạt nghiệm thu, chờ merge #9 | G0.2 (63 test) — chưa phải runner sản phẩm (G1.3a) |
+| Kiểm scheduling | đạt nghiệm thu, chờ merge #13 | G0.1 ready query + dependency/priority; implementation thuộc G1.1d |
 
-**Chưa đạt, chờ chủ sản phẩm:** lab mục tiêu (G0.4c/OD-1), OD-2 (provider/model LLM), OD-5 (operator identity, cũng là OI-4), và Product Team ký cổng. Cổng G0 chỉ được coi là đạt khi các mục này đạt hoặc chủ sản phẩm chấp nhận mở G1 kèm điều kiện đã ghi (kế hoạch, điều kiện ký cổng).
+**Chưa đạt, chờ chủ sản phẩm:** lab mục tiêu (G0.4c/OD-1), OD-2 (provider/model LLM), OD-5 (operator identity, cũng là OI-4), và Product Team ký cổng. Các dòng ghi "chờ merge" chỉ cần merge PR #13/#9/#7/#14, không cần việc mới. Cổng G0 chỉ được coi là đạt khi các mục này đạt hoặc chủ sản phẩm chấp nhận mở G1 kèm điều kiện đã ghi (kế hoạch, điều kiện ký cổng).
 
 ## Tiếp theo
 
