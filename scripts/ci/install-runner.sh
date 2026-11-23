@@ -7,8 +7,12 @@
 #   scripts/ci/uninstall-runner.sh           remove it again
 #
 # Steps: check the gh login, verify and unpack actions/runner (pinned version and sha256)
-# into ~/actions-runner, install runner-loop.sh and ultron-runner.service, enable linger so
+# into ~/ultron-runner, install runner-loop.sh and ultron-runner.service, enable linger so
 # it starts without an interactive login, then start the service.
+#
+# The runner gets its own directory on purpose: on a shared development machine
+# ~/actions-runner may already hold a runner for another repository, and a runner must
+# never adopt another repository's registration.
 #
 # The runner registers ephemeral one-job runners with label `ultron-local` (fresh work
 # folder per job) and receives no secret in its environment; it fetches a one-hour
@@ -23,7 +27,8 @@ RUNNER_SHA256_LINUX_X64=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d55583
 RUNNER_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 
 REPO_SLUG=${ULTRON_REPO:-salingnh/ultron}
-RUNNER_DIR=${ULTRON_RUNNER_DIR:-$HOME/actions-runner}
+RUNNER_DIR=${ULTRON_RUNNER_DIR:-$HOME/ultron-runner}
+UNIT_RUNNER_DIR=$HOME/ultron-runner
 UNIT_NAME=ultron-runner.service
 UNIT_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
 UNIT_PATH="$UNIT_DIR/$UNIT_NAME"
@@ -48,6 +53,10 @@ if [ "${1:-}" = --status ]; then
   require_cmd systemctl
   show_status
   exit 0
+fi
+
+if [ "$RUNNER_DIR" != "$UNIT_RUNNER_DIR" ]; then
+  die "ULTRON_RUNNER_DIR must be $UNIT_RUNNER_DIR: ultron-runner.service starts %h/ultron-runner/run-loop.sh - update both if this must move"
 fi
 
 require_cmd gh
@@ -90,7 +99,7 @@ fi
 
 sleep 3
 show_status
-printf -- '--- systemctl --user status %s ---\n' "$UNIT_NAME"
-systemctl --user --no-pager status "$UNIT_NAME" | head -15 || true
 printf -- '------------------------------------------------------------------------\n'
+printf 'The service log (systemctl --user status %s) carries a one-hour, single-use\n' "$UNIT_NAME"
+printf 'registration token in its command line; the runner needs it only while it registers.\n'
 printf 'Remove it again with scripts/ci/uninstall-runner.sh\n'

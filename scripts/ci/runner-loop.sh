@@ -10,7 +10,7 @@
 # debugging, from the runner directory.
 set -uo pipefail
 
-RUNNER_DIR=${ULTRON_RUNNER_DIR:-$HOME/actions-runner}
+RUNNER_DIR=${ULTRON_RUNNER_DIR:-$HOME/ultron-runner}
 REPO=${ULTRON_REPO:-salingnh/ultron}
 LABEL=${ULTRON_RUNNER_LABEL:-ultron-local}
 RETRY_TOKEN=${ULTRON_RUNNER_TOKEN_RETRY:-60}
@@ -38,6 +38,22 @@ while :; do
     log "cannot get a registration token for $REPO (is 'gh auth login' still valid?); retry in ${RETRY_TOKEN}s"
     sleep "$RETRY_TOKEN"
     continue
+  fi
+
+  # A runner directory must never adopt another repository's registration: on a shared
+  # machine ~/actions-runner can already belong to a different repo.
+  if [ -f "$RUNNER_DIR/.runner" ]; then
+    configured_url=$(sed -n 's/.*"gitHubUrl": "\([^"]*\)".*/\1/p' "$RUNNER_DIR/.runner" | head -1)
+    if [ -n "$configured_url" ] && [ "$configured_url" != "https://github.com/$REPO" ]; then
+      log "refusing to use $RUNNER_DIR: it is registered for $configured_url, not https://github.com/$REPO"
+      exit 1
+    fi
+    # A previous run was interrupted between config.sh and run.sh (or a job killed the
+    # runner): config.sh refuses to run again until the stale registration is removed.
+    log "clearing the stale registration left in $RUNNER_DIR"
+    ./config.sh remove --token "$token" >/dev/null 2>&1 ||
+      log "config.sh remove failed; dropping the local credentials instead"
+    rm -f "$RUNNER_DIR/.runner" "$RUNNER_DIR/.credentials" "$RUNNER_DIR/.credentials_rsaparams"
   fi
 
   # A fresh work folder per registration: nothing from the previous job survives.

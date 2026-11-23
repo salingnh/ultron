@@ -6,7 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/actions-runner/run-loop.sh
+# Own directory: ~/actions-runner on a shared machine may already hold a runner for
+# another repository, and a runner must never adopt another repo's registration.
+ExecStart=%h/ultron-runner/run-loop.sh
 Environment=ULTRON_REPO=salingnh/ultron
 Environment=ULTRON_RUNNER_LABEL=ultron-local
 # No secret is passed in this environment: the loop fetches a one-hour registration token
