@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "https://aegis.io/contracts/"
 DOCS = [json.loads(p.read_text()) for p in ROOT.rglob("*.schema.json")]
 REGISTRY = Registry().with_resources((d["$id"], Resource.from_contents(d)) for d in DOCS)
-FORMAT_CHECKER = runpy.run_path(str(ROOT / "validation.py"))["format_checker"]()
+VALIDATION = runpy.run_path(str(ROOT / "validation.py"))
+FORMAT_CHECKER = VALIDATION["format_checker"]()
+DENIED_EGRESS_HOST = VALIDATION["denied_egress_host"]
 DOCS_ROOT = ROOT.parent / "docs/living/dac-ta-ky-thuat"
 EGRESS_FIELDS = {"egressMode", "proxyAware", "egressSources", "targetBinding", "targetPorts"}
 INITIATOR = {"kind": "operator", "id": "soc-1"}
@@ -227,17 +229,45 @@ class ActorAttribution(unittest.TestCase):
         self.assertEqual(job["requested_by"], task["requested_by"])
         self.assertEqual(job["proposed_by"], task["proposed_by"])
 
+    def test_deny_set_wins_over_declared_egress_sources(self):
+        # OI-5/P7: the platform deny set takes precedence over egressSources, so the registry refuses a
+        # manifest that declares one of those hosts, and fe80::/10 is named explicitly (S-9).
+        for host in ["169.254.169.254", "127.0.0.1", "::1", "::ffff:7f00:1", "fe80::1", "fe80::",
+                     "0.0.0.0", "224.0.0.251", "ff02::1", "::", "64:ff9b::7f00:1", "2002:7f00:1::",
+                     "localhost", "metadata.google.internal"]:
+            with self.subTest(denied=host):
+                self.assertTrue(DENIED_EGRESS_HOST(host), host)
+        for host in ["1.1.1.1", "9.9.9.9", "10.0.0.5", "resolver.example", "8.8.8.8"]:
+            with self.subTest(allowed=host):
+                self.assertFalse(DENIED_EGRESS_HOST(host), host)
+        # The conformance check that the registry runs rejects the fixture (validate_contracts.py holds
+        # that assertion); the fixture is valid JSON Schema on purpose, which is why the check exists.
+        fixture = load("fixtures/invalid/manifest.egress-source-in-deny-set.yaml")
+        self.assertTrue(manifest_validator().is_valid(fixture))
+        source_hosts = [h for s in fixture["spec"]["permissions"]["egressSources"] for h in s["hosts"]]
+        self.assertTrue(any(DENIED_EGRESS_HOST(h) for h in source_hosts))
+        sandbox = (DOCS_ROOT / "02-nen-tang.md").read_text()
+        self.assertIn("fe80::/10", sandbox)
+        self.assertIn("− tập luôn chặn", sandbox)
+
     def test_requests_carry_no_execution_authority(self):
         request = json.loads((ROOT / "mcp/capability-request.v2.schema.json").read_text())
         for field in ["actor", "requested_by", "proposed_by", "operator", "session_id"]:
             with self.subTest(field=field):
                 self.assertNotIn(field, request["properties"])
+        # A REST body carries no actor at all (OI-10): the server derives requested_by from the
+        # principal it verified, and a REST call has no agent session, so proposed_by is never set.
         submit = json.loads((ROOT / "capability/job-submit.v2.schema.json").read_text())
-        description = submit["properties"]["actor"]["description"]
-        self.assertIn("KHÔNG phải nguồn quyền", description)
-        self.assertIn("principal", description)
         create = json.loads((ROOT / "campaign/campaign-create.v2.schema.json").read_text())
-        self.assertIn("server gán created_by", create["properties"]["actor"]["description"])
+        transition = json.loads((ROOT / "finding/transition-request.v2.schema.json").read_text())
+        for name, body in [("job-submit.v2", submit), ("campaign-create.v2", create),
+                           ("transition-request.v2", transition)]:
+            with self.subTest(body=name):
+                self.assertNotIn("actor", body["properties"])
+                self.assertNotIn("actor", body["required"])
+                self.assertIn("KHÔNG mang actor", body["description"])
+        self.assertNotIn("proposed_by", submit["properties"])
+        self.assertNotIn("requested_by", submit["properties"])
         mcp_readme = (ROOT / "mcp/README.md").read_text()
         self.assertIn("không dùng ID do LLM khai làm quyền truy cập", mcp_readme)
 

@@ -116,6 +116,22 @@ class JobLifecycleSchema(unittest.TestCase):
         self.assertFalse(validator("events/event-envelope.v2.schema.json").is_valid(
             json.loads((ROOT / "fixtures/invalid/event.payload-mismatch.json").read_text())))
 
+    def test_ddl_and_schema_publish_one_dispatch_block_code_list(self):
+        # job.v2 and the DDL must publish the same hold codes, in the same order (0011 widens 0009).
+        codes = JOB_SCHEMA["$defs"]["DispatchBlockReason"]["enum"]
+        ddl = (ROOT / "db/postgres/0011_dispatch_hold_and_search_path.sql").read_text()
+        block = ddl.split("WHERE c NOT IN (", 1)[1].split("))", 1)[0]
+        self.assertEqual(re.findall(r"'([A-Z_0-9]+)'", block), codes)
+        self.assertIn("OLD.dispatch_block_reasons IS NOT NULL", ddl)
+        self.assertIn("NOT aegis.is_initiator(j.requested_by)", ddl)
+        # A read model with the hold is valid; an unknown code and a duplicate are not.
+        v = validator("capability/job.v2.schema.json")
+        job = QUEUED
+        held = dict(job, dispatch_block_reasons=["LEGACY_ACTOR", "LEGACY_POLICY_V1"])
+        self.assertEqual(list(v.iter_errors(held)), [])
+        self.assertFalse(v.is_valid(dict(job, dispatch_block_reasons=["LEGACY_WHATEVER"])))
+        self.assertFalse(v.is_valid(dict(job, dispatch_block_reasons=["LEGACY_ACTOR", "LEGACY_ACTOR"])))
+
     def test_ddl_and_schema_publish_one_wait_reason_code_list(self):
         codes = JOB_SCHEMA["$defs"]["WaitReason"]["properties"]["code"]["enum"]
         ddl_block = MIGRATION.split("coalesce(reason->>'code', '') NOT IN (", 1)[1].split(")", 1)[0]

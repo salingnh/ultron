@@ -242,10 +242,10 @@ BEGIN
     RAISE EXCEPTION 'not blocked: promotion back to v1 configuration';
   EXCEPTION WHEN check_violation THEN blocked := blocked + 1;
   END;
-  INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,policy_version,scope_id,idempotency_key,trace_id)
-    VALUES ('01900000-0000-7000-8000-0000000d1681',camp_l,'dns.enumerate_subdomains','subfinder','{dns:legacy.example}','{"targets":["legacy.example"]}','approved','Post-migration v2 job','{"kind":"operator","id":"s16-test"}',new_l,'01900000-0000-7000-8000-0000000d1602','s16:4',repeat('9',32));
+  INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,target_refs,policy_version,scope_id,idempotency_key,trace_id)
+    VALUES ('01900000-0000-7000-8000-0000000d1681',camp_l,'dns.enumerate_subdomains','subfinder','{dns:legacy.example}','{"targets":["legacy.example"]}','approved','Post-migration v2 job','{"kind":"operator","id":"s16-test"}','[{"seed_id":"01900000-0000-7000-8000-0000000d1621"},{"canonical_key":"dns:legacy.example"}]',new_l,'01900000-0000-7000-8000-0000000d1602','s16:4',repeat('9',32));
   INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,input,targets,target_refs,requested_by,rationale,trace_id)
-    VALUES ('01900000-0000-7000-8000-0000000d1682',camp_l,'01900000-0000-7000-8000-0000000d1681','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('d',64),'01900000-0000-7000-8000-0000000d1683',repeat('f4',32),new_l,'01900000-0000-7000-8000-0000000d1602','{"targets":["legacy.example"]}','{dns:legacy.example}','[{"seed_id":"01900000-0000-7000-8000-0000000d1621"}]','{"kind":"operator","id":"s16-test"}','Post-migration v2 job',repeat('9',32));
+    VALUES ('01900000-0000-7000-8000-0000000d1682',camp_l,'01900000-0000-7000-8000-0000000d1681','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('d',64),'01900000-0000-7000-8000-0000000d1683',repeat('f4',32),new_l,'01900000-0000-7000-8000-0000000d1602','{"targets":["legacy.example"]}','{dns:legacy.example}','[{"seed_id":"01900000-0000-7000-8000-0000000d1621"},{"canonical_key":"dns:legacy.example"}]','{"kind":"operator","id":"s16-test"}','Post-migration v2 job',repeat('9',32));
   IF EXISTS (SELECT 1 FROM scan_job WHERE job_id = '01900000-0000-7000-8000-0000000d1682' AND dispatch_block_reasons IS NOT NULL) THEN
     RAISE EXCEPTION 'a new job on adopted v2 configuration was held';
   END IF;

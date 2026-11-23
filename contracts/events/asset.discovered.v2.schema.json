@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/asset.discovered.v2.schema.json",
   "title": "Payload asset.discovered.v2",
-  "description": "Bên phát: M27. Khóa khử trùng của consumer: asset_id+revision.",
+  "description": "Bên phát: M27. Khóa khử trùng của consumer: asset_id+revision. Bên nhận: M23 (projector đồ thị), M26 (UI).",
   "type": "object",
   "required": [
     "asset_id",

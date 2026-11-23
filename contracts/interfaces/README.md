@@ -64,6 +64,7 @@ M05 resolve manifest, ghép inputDefaults rồi validate input, ghi pin cùng jo
 | ContainerSpec | Nguồn cấu hình |
 | --- | --- |
 | image_digest, args | runtime.imageDigest và argsTemplate của manifest đã pin; chỉ chèn input đã được M05 kiểm |
+| args rendering | Mỗi phần tử `argsTemplate` là literal hoặc **đúng một** `${input.<field>}` chiếm trọn phần tử: không nối chuỗi, không hai placeholder trong một phần tử, không shell/quoting. Trường được chèn chỉ là `integer`/`number`/`boolean`, chuỗi có `enum`, hoặc mảng các kiểu đó — chuỗi tự do bị từ chối vì giá trị `-rf` sẽ thành cờ. Mảng render thành một argv element cho mỗi item theo thứ tự input (không join, không tách theo dấu phẩy). Literal được bắt đầu bằng `-`; giá trị được chèn không thể, vì kiểu trên không sinh ra dấu `-` đầu chuỗi. Runtime kiểm lại cùng luật trước khi chạy; sai thì POLICY_DENIED, không tự sửa argv. |
 | cpu, memory_mb, timeout_seconds | budget.cpu, memoryMb, timeoutSeconds |
 | max_output_bytes | budget.maxOutputMb × 1048576; thiếu maxOutputMb dùng 256 MiB theo manifest schema |
 | network | permissions.networkAccess none → none; egress → exec (mạng nội bộ của job, không DNS ngoài) |
@@ -150,7 +151,7 @@ class Ingestion(Protocol):
 
 Nguồn duy nhất cho receipt là [IngestReceipt](../ingestion/ingest-receipt.v2.schema.json); OpenAPI dùng cùng $ref. Mỗi phần tử quarantined có pointer, gate và reason.
 
-Trình tự trong **một giao dịch** PostgreSQL: đối chiếu inbox theo dedup_key/payload_hash và event_id lần nộp → G1–G7 → upsert asset/alias → insert observation/relationship/finding_candidate → insert outbox_event → commit. Projector Neo4j chạy sau commit. Hash/receipt còn phải khóa theo [C03](../../docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c03--idempotency-hash-và-receipt); vòng đời kết quả theo C06 cùng nguồn.
+Trình tự trong **một giao dịch** PostgreSQL: đối chiếu inbox theo dedup_key/payload_hash và event_id lần nộp → G1–G7 → upsert asset/alias → insert observation/relationship/finding_candidate → insert outbox_event → commit. Projector Neo4j chạy sau commit. Hash/receipt đã khóa theo [C03](../../docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c03--idempotency-hash-và-receipt) (0006, `aegis-c14n/1`); vòng đời kết quả theo C06 (0007) cùng nguồn.
 
 ## 7. Temporal (M02) và Activity
 

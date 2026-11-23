@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/intel.revision.v2.schema.json",
   "title": "Payload intel.revision.v2",
-  "description": "Bên phát: M18. Khóa khử trùng của consumer: feed+version.",
+  "description": "Bên phát: M18. Khóa khử trùng của consumer: feed+version. Bên nhận: M20 và M21 (đánh giá lại finding).",
   "type": "object",
   "required": [
     "feed",

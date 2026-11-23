@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/event-envelope.v2.schema.json",
   "title": "Phong bì sự kiện v2",
-  "description": "Mọi sự kiện ghi vào bảng outbox_event trong cùng giao dịch với thay đổi dữ liệu, rồi dispatcher giao at-least-once. Consumer khử trùng theo dedup_key (bảng consumer_inbox).",
+  "description": "Mọi sự kiện ghi vào bảng outbox_event trong cùng giao dịch với thay đổi dữ liệu, rồi dispatcher giao at-least-once. Consumer khử trùng theo dedup_key (bảng consumer_inbox). Bên phát: mọi module ghi outbox; Bên nhận: dispatcher rồi consumer đăng ký theo loại event (ma trận ở contracts/README.md).",
   "type": "object",
   "required": [
     "event_id",

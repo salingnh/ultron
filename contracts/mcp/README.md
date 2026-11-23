@@ -28,4 +28,4 @@ Retry cùng idempotency_key giữ scan_cycle và job. Lần quét mới có scan
 
 ## Kết quả
 
-capability-response.v2 trả job_id hoặc lỗi có next_action. ResultEnvelope.v2 do collector nộp M27; agent đọc kết quả qua query tools. Output luôn là dữ liệu không tin cậy. AgentSessionResult chỉ trả requested_jobs đã gửi qua MCP; M02 chờ các ID đó, không nhận danh sách proposals để dispatch lại. Runtime implementation và semantics late-result/idempotency hash vẫn có backlog riêng; schema tồn tại không chứng minh dispatch đã chạy.
+capability-response.v2 trả job_id hoặc lỗi có next_action. ResultEnvelope.v2 do collector nộp M27; agent đọc kết quả qua query tools. Output luôn là dữ liệu không tin cậy. AgentSessionResult chỉ trả requested_jobs đã gửi qua MCP; M02 chờ các ID đó, không nhận danh sách proposals để dispatch lại. Semantics late-result/idempotency hash đã khóa ở C03/C06 (0006, 0007); runtime implementation vẫn thuộc G1.2a — schema tồn tại không chứng minh dispatch đã chạy.
