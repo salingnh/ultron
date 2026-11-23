@@ -484,8 +484,11 @@ paths:
       - ingestion
       operationId: ingestResult
       summary: Nhận ResultEnvelope (chỉ dịch vụ nội bộ, service token)
-      description: Idempotent theo dedup_key và content hash của kết quả logic; event_id định danh lần nộp. Không cần Idempotency-Key. Hash/receipt phải khóa theo C03 trước S1.
-        Bản ghi không qua cổng G1-G7 bị cách ly, envelope vẫn được nhận.
+      description: 'Idempotent theo dedup_key và payload_hash (aegis-c14n/1) của kết quả logic;
+        event_id chỉ định danh lần nộp. Không cần Idempotency-Key. Collector đóng băng snapshot
+        nghiệp vụ và gửi lại nguyên nội dung khi retry; đổi riêng event_id hoặc trace không tạo
+        nội dung mới. Bản ghi không qua cổng G1-G7 bị cách ly, envelope vẫn được nhận. Quy tắc
+        canonical hóa và trường được băm: ../ingestion/canonicalization.v2.yaml.'
       security:
       - serviceToken: []
       requestBody:
@@ -496,7 +499,7 @@ paths:
               $ref: ../ingestion/result-envelope.v2.schema.json
       responses:
         '202':
-          description: Đã nhận (hoặc đã nhận trước đó)
+          description: Đã nhận, hoặc trả lại receipt đã commit trước đó với duplicate=true (cùng payload_hash).
           content:
             application/json:
               schema:
@@ -504,7 +507,13 @@ paths:
         '400':
           $ref: '#/components/responses/Error'
         '409':
-          $ref: '#/components/responses/Error'
+          description: 'IDEMPOTENCY_CONFLICT: dedup_key đã có nội dung khác (payload_hash khác, hoặc
+            hash chưa có version trước 0006). Server ghi nhận lần nộp vào ingestion_attempt và không
+            thay đổi receipt, revision hay dữ liệu đã nhận; không ghi đè.'
+          content:
+            application/json:
+              schema:
+                $ref: ../common/error.v2.schema.json
   /assets:
     get:
       tags:

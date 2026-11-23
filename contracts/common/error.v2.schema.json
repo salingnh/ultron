@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/common/error.v2.schema.json",
   "title": "Lỗi chuẩn v2",
-  "description": "Lỗi chung cho REST, ResultEnvelope, MCP và job completion. Mã/next_action lấy từ schema này, không khai báo danh sách thứ hai trong tài liệu. Không chuyển FAILED thành SUCCEEDED.",
+  "description": "Lỗi chung cho REST, ResultEnvelope, MCP và job completion. Mã/next_action lấy từ schema này, không khai báo danh sách thứ hai trong tài liệu. Không chuyển FAILED thành SUCCEEDED. IDEMPOTENCY_CONFLICT = cùng khóa idempotent (dedup_key/Idempotency-Key) nhưng nội dung khác: trả 409, không ghi đè kết quả đã commit.",
   "type": "object",
   "required": [
     "code",
@@ -63,6 +63,7 @@
         "OUTPUT_INVALID",
         "EVIDENCE_INCOMPLETE",
         "CANCELLED",
+        "IDEMPOTENCY_CONFLICT",
         "INTERNAL_ERROR"
       ]
     },

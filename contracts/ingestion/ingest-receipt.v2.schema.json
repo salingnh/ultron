@@ -2,29 +2,45 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/ingestion/ingest-receipt.v2.schema.json",
   "title": "IngestReceipt",
-  "description": "Receipt của M27 cho REST và interface nội bộ. quarantined là mảng object pointer/gate/reason; không định nghĩa lại kiểu tại caller.",
+  "description": "Receipt của M27 cho REST và interface nội bộ; dùng duy nhất một kiểu tại mọi caller. Đây là receipt của lần nộp *đầu tiên* đã commit cho một dedup_key: event_id là của lần nộp đó, không phải của lần gọi lại. Lần nộp lại cùng nội dung nhận lại nguyên receipt này với duplicate=true; cùng dedup_key khác nội dung trả 409 IDEMPOTENCY_CONFLICT và không ghi đè. Nội dung được so bằng payload_hash theo contracts/ingestion/canonicalization.v2.yaml (aegis-c14n/1). Ghi nhận từng lần nộp nằm ở ingestion_attempt, không nhét vào receipt.",
   "type": "object",
   "required": [
     "event_id",
+    "dedup_key",
     "accepted",
     "duplicate",
     "revision",
-    "quarantined"
+    "quarantined",
+    "payload_hash",
+    "hash_version",
+    "decided_at"
   ],
+  "additionalProperties": false,
   "properties": {
     "event_id": {
+      "description": "event_id của lần nộp đầu tiên đã commit cho dedup_key này. Lần gọi lại nhận lại chính giá trị này.",
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"
     },
+    "dedup_key": {
+      "description": "Khóa idempotent của kết quả logic mà receipt này trả lời (vd 'job:<job_id>:envelope').",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
     "accepted": {
+      "description": "Kết quả của lần nộp đầu tiên: true = envelope được nhận (kể cả khi một phần bị cách ly), false = dead-letter/unparseable.",
       "type": "boolean"
     },
     "duplicate": {
+      "description": "false ở lần nộp đầu tiên; true khi caller gửi lại đúng nội dung đã commit. Receipt khi đó giữ nguyên event_id/revision/quarantined của lần đầu.",
       "type": "boolean"
     },
     "revision": {
+      "description": "graph_revision của kết quả đã commit; không cấp revision mới cho lần nộp lại.",
       "type": "integer"
     },
     "quarantined": {
+      "description": "Bản ghi bị cách ly của lần nộp đầu tiên: object pointer + cổng + lý do. Không định nghĩa lại kiểu tại caller.",
       "type": "array",
       "items": {
         "type": "object",
@@ -33,6 +49,7 @@
           "gate",
           "reason"
         ],
+        "additionalProperties": false,
         "properties": {
           "pointer": {
             "type": "string"
@@ -53,6 +70,19 @@
           }
         }
       }
+    },
+    "payload_hash": {
+      "description": "sha256 của nội dung nghiệp vụ đã commit: envelope bỏ event_id/dedup_key/trace, chuẩn hóa aegis-c14n/1.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+    },
+    "hash_version": {
+      "description": "Phiên bản canonicalization đã tạo payload_hash. Hash khác version không bao giờ được coi là bằng nhau.",
+      "type": "string",
+      "pattern": "^aegis-c14n/[0-9]+$"
+    },
+    "decided_at": {
+      "description": "Thời điểm commit quyết định của lần nộp đầu tiên; lần nộp lại trả nguyên giá trị này.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
     }
   }
 }
