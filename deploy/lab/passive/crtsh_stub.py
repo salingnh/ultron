@@ -13,7 +13,9 @@ lab network can reach this process, and it serves nothing but the authorized que
 """
 
 import json
+import signal
 import ssl
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -52,6 +54,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    # The stub is PID 1 in its container: without a handler the kernel ignores SIGTERM for
+    # init and `podman stop` waits out its timeout before SIGKILL.
+    def stop(signum, _frame):
+        print(f"signal {signum}: stopping", flush=True)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(TLS_DIR / "crt.sh.crt", TLS_DIR / "crt.sh.key")
     server = ThreadingHTTPServer(("0.0.0.0", 443), Handler)
