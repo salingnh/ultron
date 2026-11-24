@@ -700,14 +700,16 @@ export interface components {
         AssetKind: "domain" | "ip" | "service" | "application" | "url" | "email" | "oci_image" | "repo" | "repo_snapshot" | "artifact" | "package" | "cloud_resource" | "k8s_workload";
         /**
          * Payload asset.discovered.v2
-         * @description Bên phát: M27. Khóa khử trùng của consumer: asset_id+revision. Bên nhận: M23 (projector đồ thị), M26 (UI).
+         * @description Bên phát: M27 (tài sản job tìm thêm, có `causal_job_id`) và M01 (seed của campaign, `revision` 0 và không có `causal_job_id` vì seed do chính campaign phát hiện, không do job nào). Khóa khử trùng của consumer: asset_id + revision (seed thêm campaign_id). Bên nhận: M23 (projector đồ thị), M26 (UI).
          */
         "asset.discovered.v2.schema": {
             asset_id: components["schemas"]["Id"];
             canonical_key: components["schemas"]["CanonicalKey"];
             kind: components["schemas"]["AssetKind"];
+            /** @description Revision đồ thị mà event thuộc về (M27). 0 = seed của campaign, phát trước khi có revision nào; M23 ghi `pg_revision` 0 cho nút đó. */
             revision: number;
-            causal_job_id: components["schemas"]["Id"];
+            /** @description Job đã phát hiện tài sản. Vắng mặt khi tài sản là seed của campaign (M01). */
+            causal_job_id?: components["schemas"]["Id"];
             campaign_id: components["schemas"]["Id"];
             discovered_from: components["schemas"]["CanonicalKey"][];
             first_seen: components["schemas"]["Timestamp"];
