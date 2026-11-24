@@ -31,6 +31,7 @@ UI (terminal khác):
 
 ```bash
 cd ui
+npm ci
 VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
   VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
 ```
@@ -39,12 +40,16 @@ VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
 
 Ba lệnh dưới đây là bằng chứng của cổng G1 (`docs/living/02-ke-hoach-trien-khai.md` dòng 28 và 33). Chúng cần một checkout sạch, rootless Podman và image đã có trên máy (`make lab-up` dùng image Subfinder/DNSx đã pin).
 
+Nếu máy đã có stack `aegis-dev` từ bản trước khi gộp migration (chuỗi 0001–0017): chạy `make dev-reset` trước (xóa volume của `aegis-dev` rồi dựng lại bằng `0001_baseline.sql`); DB theo chuỗi cũ không được nâng cấp tại chỗ.
+
 ```bash
 make run-local      # 1. dựng toàn bộ hệ + lab, in token; để nguyên terminal này
 make demo-g1        # 2. campaign thật -> agent/MCP -> Subfinder -> DNSx -> raw/metadata/graph
 make demo-recovery  # 3. SIGKILL runner giữa job: chạy tiếp, không trùng container/job/envelope
 make soak-start     # 4. soak rút gọn 24 h (SOAK_HOURS=... để đổi), chạy nền
 ```
+
+Tạo thêm một campaign mẫu qua API: `make seed-demo AEGIS_DEV_TOKEN=$(cat .local/operator-token)`. Campaign này dùng target của fixture contract (`internal.example`, `10.20.0.0/24`), lab không trả lời các tên đó, nên nó chạy một lượt enumerate, không có tên mới và tự tạm dừng với lý do "no progress for 3 session(s)" — đó là hành vi đúng. Campaign chạy trọn vòng trên lab là `make demo-g1`.
 
 ### `make demo-g1` — bằng chứng cổng G1
 
