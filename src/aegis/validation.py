@@ -27,6 +27,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol, cast
 
+import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import BaseModel
 from referencing import Registry, Resource
@@ -43,6 +44,7 @@ __all__ = [
     "errors",
     "format_checker",
     "openapi_errors",
+    "openapi_response_validator",
     "problems",
     "schemas",
     "validate",
@@ -181,6 +183,47 @@ def _validator(reference: str) -> Draft202012Validator:
         # own relative $refs ($defs, sibling files) still resolve.
         schema = {"$ref": f"{CONTRACTS_BASE_URI}{path}#{pointer}"}
     return Draft202012Validator(schema, registry=_registry(), format_checker=format_checker())
+
+
+def _absolute_refs(node: Any) -> Any:
+    """Rewrite an OpenAPI document's `../x.schema.json` refs to the contract `$id` URLs."""
+    if isinstance(node, dict):
+        rewritten = {key: _absolute_refs(value) for key, value in node.items()}
+        reference = rewritten.get("$ref")
+        if isinstance(reference, str) and reference.startswith("../"):
+            rewritten["$ref"] = CONTRACTS_BASE_URI + reference.removeprefix("../")
+        return rewritten
+    if isinstance(node, list):
+        return [_absolute_refs(item) for item in node]
+    return node
+
+
+@cache
+def openapi_response_validator(
+    path: str, method: str = "get", status_code: int = 200
+) -> Draft202012Validator:
+    """A validator for an inline OpenAPI response schema, resolved against the contract bundle.
+
+    Some published responses exist only inside `contracts/api/openapi.v2.yaml` (the flow document,
+    the capability catalogue): their schema is inline and refers to sibling contract files by
+    relative path. Those refs are rewritten to the contract `$id` URLs, so the schema validates
+    with the same registry and format checker as every other contract reference.
+    """
+    source = repository_root() / "contracts/api/openapi.v2.yaml"
+    document_: dict[str, Any] = yaml.safe_load(source.read_text(encoding="utf-8"))
+    try:
+        schema = document_["paths"][path][method]["responses"][str(status_code)]["content"][
+            "application/json"
+        ]["schema"]
+    except (KeyError, TypeError) as error:
+        raise ContractUnavailable(
+            f"{path} {method.upper()} {status_code} has no inline JSON response schema ({error})"
+        ) from error
+    return Draft202012Validator(
+        _absolute_refs(schema),
+        registry=_registry(),
+        format_checker=format_checker(),
+    )
 
 
 def problems(reference: str, instance: Any) -> list[tuple[str, str]]:

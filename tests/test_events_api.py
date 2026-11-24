@@ -8,7 +8,10 @@ publication order, never past the watermark. The SSE encoding has its own suite
 
 from __future__ import annotations
 
+import importlib
+import sys
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -21,7 +24,9 @@ from aegis.common.repo import repository_root
 from aegis.m05_registry.ids import uuid7
 from aegis.m26_api import events as events_module
 from aegis.m26_api.app import API_PREFIX
+from aegis.m26_api.app import create_app as create_test_app
 from aegis.m26_api.errors import ERROR_CODES, NEXT_ACTIONS
+from aegis.m26_api.operator import OPERATOR_TOKENS_FILE
 from tests import campaign_support as support
 from tests.db_support import migrated_database, requires_postgres
 from tests.g15a_support import (
@@ -296,10 +301,21 @@ def test_the_flow_response_schema_is_in_the_contracts_own_document() -> None:
     assert "attempt" in node["properties"] and "generation" in node["properties"]
 
 
-def test_every_mounted_operation_requires_the_operator_token() -> None:
-    """Both sides of the contract: the app mounts only operations that verify a bearer token."""
+def test_every_mounted_operation_requires_the_operator_token(
+    dsn: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both sides of the contract: the production app mounts only token-verified operations."""
+    # `aegis.m26_api.main` builds the production app (and registers the adapter manifests) at
+    # import time, so it needs a real database and its settings.
+    monkeypatch.setenv("AEGIS_PG_DSN", dsn)
+    monkeypatch.setenv(OPERATOR_TOKENS_FILE, support.write_token_file(tmp_path / "operators.json"))
+    monkeypatch.setenv("AEGIS_ALLOW_DEV_SIGNING_KEY", "1")
+    sys.modules.pop("aegis.m26_api.main", None)
+    module = importlib.import_module("aegis.m26_api.main")
+    sys.modules.pop("aegis.m26_api.main", None)
+
     contract = _contract()
-    spec = api_app("postgresql://unused/unused").openapi()
+    spec = create_test_app(module.build_registry()).openapi()
     contract_operations = {
         operation["operationId"]: (path, operation)
         for path, item in contract["paths"].items()
@@ -326,6 +342,7 @@ def test_every_mounted_operation_requires_the_operator_token() -> None:
         "cancelJob",
         "getCampaignFlow",
         "streamCampaignEvents",
+        "listCapabilities",
     }
     for operation in mounted:
         operation_id = operation["operationId"]
