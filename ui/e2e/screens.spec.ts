@@ -21,13 +21,16 @@ async function captureScreen(page: Page, filename: string) {
   const localPath = path.join(SCREENSHOT_DIR, filename);
   await page.screenshot({ path: localPath, fullPage: true });
 
-  // Copy to reports directory for review artifacts
-  try {
-    fs.copyFileSync(localPath, path.join(LEADER_DIR_G15C, filename));
-    fs.copyFileSync(localPath, path.join(LEADER_DIR_WIRE, filename));
-    fs.copyFileSync(localPath, path.join(LEADER_DIR_LEGACY, filename));
-  } catch {
-    // ignore if directory permission restricts in some sandboxes
+  // Copy to reports directory for review artifacts only when running real verification
+  // or when explicitly enabled, so CI mock tests never overwrite leader review artifacts.
+  if (process.env.VITE_USE_MOCK === 'false' || process.env.COPY_LEADER_SHOTS === 'true') {
+    try {
+      fs.copyFileSync(localPath, path.join(LEADER_DIR_G15C, filename));
+      fs.copyFileSync(localPath, path.join(LEADER_DIR_WIRE, filename));
+      fs.copyFileSync(localPath, path.join(LEADER_DIR_LEGACY, filename));
+    } catch {
+      // ignore if directory permission restricts in some sandboxes
+    }
   }
 }
 

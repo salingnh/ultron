@@ -29,21 +29,25 @@ export const ProvenancePanel: React.FC<ProvenancePanelProps> = ({ data, onClose 
         </button>
       </div>
 
-      <div className="provenance-item">
-        <span className="provenance-label">Công cụ & Phiên bản (Tool/Version)</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{data.tool}</span>
-          <span className="brand-badge">{data.version}</span>
-          {data.adapterVersion && <span className="brand-badge">adapter {data.adapterVersion}</span>}
+      {data.tool && (
+        <div className="provenance-item">
+          <span className="provenance-label">Công cụ / Năng lực (Tool / Capability)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{data.tool}</span>
+            {data.version && <span className="brand-badge">{data.version}</span>}
+            {data.adapterVersion && <span className="brand-badge">adapter {data.adapterVersion}</span>}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="provenance-item">
-        <span className="provenance-label">Job tạo ra (Job ID)</span>
-        <div style={{ maxWidth: '100%' }}>
-          <CopyableId value={data.jobId} truncate={false} />
+      {data.jobId && (
+        <div className="provenance-item">
+          <span className="provenance-label">Job tạo ra (Job ID / Scan ID)</span>
+          <div style={{ maxWidth: '100%' }}>
+            <CopyableId value={data.jobId} truncate={false} />
+          </div>
         </div>
-      </div>
+      )}
 
       {data.sourceAsset && (
         <div className="provenance-item">
@@ -63,46 +67,62 @@ export const ProvenancePanel: React.FC<ProvenancePanelProps> = ({ data, onClose 
         </div>
       )}
 
-      <div className="provenance-item">
-        <span className="provenance-label">Thời điểm quan sát (Observed At)</span>
-        <span className="mono" style={{ fontSize: 'var(--text-sm)', color: 'var(--ink)' }}>
-          {new Date(data.observedAt).toLocaleString('vi-VN')}
-        </span>
-      </div>
-
-      <div className="provenance-item">
-        <span className="provenance-label">Độ tin cậy (Confidence)</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div
-            style={{
-              flex: 1,
-              height: 8,
-              backgroundColor: 'var(--subtle)',
-              borderRadius: 'var(--radius-sm)',
-              overflow: 'hidden',
-              border: '1px solid var(--line)',
-            }}
-          >
-            <div
-              style={{
-                width: `${data.confidence * 100}%`,
-                height: '100%',
-                backgroundColor: data.confidence >= 0.8 ? 'var(--success)' : 'var(--warning)',
-              }}
-            />
+      {data.predicate && (
+        <div className="provenance-item">
+          <span className="provenance-label">Vị từ & Trạng thái (Predicate & Polarity)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--ink)' }}>{data.predicate}</span>
+            {data.polarity && <span className="brand-badge">{data.polarity}</span>}
           </div>
-          <span className="mono" style={{ fontSize: 'var(--text-xs)', fontWeight: 600 }}>
-            {(data.confidence * 100).toFixed(0)}%
+        </div>
+      )}
+
+      {data.observedAt && (
+        <div className="provenance-item">
+          <span className="provenance-label">Thời điểm quan sát (Observed At)</span>
+          <span className="mono" style={{ fontSize: 'var(--text-sm)', color: 'var(--ink)' }}>
+            {new Date(data.observedAt).toLocaleString('vi-VN')}
           </span>
         </div>
-      </div>
+      )}
 
-      <div className="provenance-item">
-        <span className="provenance-label">Bằng chứng SHA-256 (Evidence SHA-256)</span>
-        <div style={{ marginTop: 2, maxWidth: '100%' }}>
-          <CopyableId value={data.sha256} truncate={false} />
+      {typeof data.confidence === 'number' && (
+        <div className="provenance-item">
+          <span className="provenance-label">Độ tin cậy (Confidence)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              style={{
+                flex: 1,
+                height: 8,
+                backgroundColor: 'var(--subtle)',
+                borderRadius: 'var(--radius-sm)',
+                overflow: 'hidden',
+                border: '1px solid var(--line)',
+              }}
+            >
+              <div
+                style={{
+                  width: `${data.confidence * 100}%`,
+                  height: '100%',
+                  backgroundColor: data.confidence >= 0.8 ? 'var(--success)' : 'var(--warning)',
+                }}
+              />
+            </div>
+            <span className="mono" style={{ fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+              {(data.confidence * 100).toFixed(0)}%
+            </span>
+          </div>
         </div>
-      </div>
+      )}
+
+      {(data.sha256 || (data.evidenceIds && data.evidenceIds.length > 0)) && (
+        <div className="provenance-item">
+          <span className="provenance-label">Bằng chứng SHA-256 (Evidence SHA-256)</span>
+          <div style={{ marginTop: 2, maxWidth: '100%' }}>
+            <CopyableId value={data.sha256 || data.evidenceIds![0]} truncate={false} />
+          </div>
+        </div>
+      )}
 
       {data.evidenceUri && (
         <div className="provenance-item">
@@ -113,6 +133,12 @@ export const ProvenancePanel: React.FC<ProvenancePanelProps> = ({ data, onClose 
               {data.evidenceUri}
             </span>
           </div>
+        </div>
+      )}
+
+      {!data.tool && !data.jobId && !data.sha256 && !(data.evidenceIds && data.evidenceIds.length > 0) && (
+        <div className="provenance-item" style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>
+          Chưa có quan sát ghi nhận từ công cụ (No tool observations recorded)
         </div>
       )}
     </aside>

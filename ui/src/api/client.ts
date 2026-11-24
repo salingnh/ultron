@@ -244,36 +244,28 @@ export const apiClient = {
         const history = await this.getAssetHistory(targetId);
         const latestObs = history.items && history.items.length > 0 ? history.items[0] : null;
 
-        let tool = 'm23_graph';
-        let version = 'v1.0.0';
-        let adapterVersion: string | undefined;
-
-        if (latestObs?.provider) {
-          const parts = latestObs.provider.split(':');
-          tool = parts[0] || 'm23_graph';
-          if (parts[1]) version = parts[1];
-        } else if (latestObs?.capability) {
-          tool = latestObs.capability;
+        if (latestObs) {
+          const tool = latestObs.provider || latestObs.capability || undefined;
+          return {
+            tool,
+            capability: latestObs.capability,
+            provider: latestObs.provider,
+            jobId: latestObs.scan_id,
+            observedAt: latestObs.observed_at,
+            predicate: latestObs.predicate,
+            polarity: latestObs.polarity,
+            evidenceIds: latestObs.evidence_ids,
+            confidence: edge?.confidence,
+            sha256: latestObs.evidence_ids && latestObs.evidence_ids.length > 0 ? latestObs.evidence_ids[0] : undefined,
+            sourceAsset: history.asset.discovered_from?.[0] || edge?.from,
+            targetAsset: history.asset.canonical_key || edge?.to,
+          };
         }
 
-        const sha256 =
-          latestObs?.evidence_ids && latestObs.evidence_ids.length > 0
-            ? latestObs.evidence_ids[0]
-            : '28d8394bdbe0b2de58d0c71d56f2d6763e51d228275dfaf29e1dd293fa0eadc0';
-
         return {
-          tool,
-          version,
-          adapterVersion,
-          jobId: latestObs?.scan_id || '01934f6a-0000-7000-8000-00000000d001',
-          observedAt: latestObs?.observed_at || history.asset.last_seen || history.asset.first_seen,
-          confidence: edge?.confidence ?? 1.0,
-          sha256,
+          observedAt: history.asset.last_seen || history.asset.first_seen,
           sourceAsset: history.asset.discovered_from?.[0] || edge?.from,
           targetAsset: history.asset.canonical_key || edge?.to,
-          evidenceUri: latestObs?.evidence_ids?.[0]
-            ? `evidence://${latestObs.evidence_ids[0]}`
-            : undefined,
         };
       } catch (err) {
         console.warn('Failed to load asset history for provenance:', err);
@@ -281,16 +273,10 @@ export const apiClient = {
     }
 
     if (edge) {
-      const tool = edge.type.toLowerCase().includes('subdomain') ? 'subfinder' : 'dnsx';
       return {
-        tool,
-        version: 'v1.0.0',
         jobId: edge.source_job_id,
-        observedAt: edge.observed_at || edge.valid_from || new Date().toISOString(),
+        observedAt: edge.observed_at || edge.valid_from,
         confidence: edge.confidence,
-        sha256: edge.source_job_id
-          ? `${edge.source_job_id.replace(/-/g, '')}${'0'.repeat(32)}`.slice(0, 64)
-          : 'c40410bc4028e0f824a02514e702e70dfe0e5f67fbcf250803c7403d1da8ca57',
         sourceAsset: edge.from,
         targetAsset: edge.to,
       };
@@ -298,12 +284,7 @@ export const apiClient = {
 
     if (fallbackNode) {
       return {
-        tool: 'discovery',
-        version: 'v1.0.0',
-        jobId: fallbackNode.asset_id,
-        observedAt: fallbackNode.last_seen || fallbackNode.first_seen || new Date().toISOString(),
-        confidence: 1.0,
-        sha256: `${fallbackNode.asset_id.replace(/-/g, '')}${'0'.repeat(32)}`.slice(0, 64),
+        observedAt: fallbackNode.last_seen || fallbackNode.first_seen,
         targetAsset: fallbackNode.canonical_key,
       };
     }
