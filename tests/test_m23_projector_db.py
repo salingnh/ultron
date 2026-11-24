@@ -33,6 +33,7 @@ from tests.m23_support import (
     CAMPAIGN_ID,
     NEO4J_PASSWORD_ENV,
     NEO4J_URI_ENV,
+    assert_deltas_satisfy_contract,
     connect,
     cursor,
     graph_driver,
@@ -163,6 +164,9 @@ def test_projection_end_to_end(database: tuple[str, list[str]]) -> None:
         assert subdomain["properties"]["confidence"] == pytest.approx(0.9)
         # `SET r.valid_to = null` removes the property in Neo4j: an open interval has no valid_to.
         assert "valid_to" not in subdomain["properties"]
+        # The runtime validates deltas with the generated DTO; this is the contract-bundle check
+        # (semantic aegis-* formats included) on what the projector really emitted.
+        assert assert_deltas_satisfy_contract(dsn) >= 1
 
 
 def test_per_key_order_survives_partitioning(database: tuple[str, list[str]]) -> None:
@@ -355,6 +359,7 @@ def test_a_revision_split_across_batches_is_not_published_half_done(
         assert payload["revision"] == revision
         assert len(payload["changed_entities"]) == 2
         assert payload["truncated"] is False
+        assert assert_deltas_satisfy_contract(dsn) >= 1
 
 
 def test_a_revision_larger_than_the_delta_window_is_published_truncated_once(
@@ -426,6 +431,7 @@ def test_a_revision_larger_than_the_delta_window_is_published_truncated_once(
         assert deltas[0]["payload"]["truncated"] is True
         assert 0 < len(deltas[0]["payload"]["changed_entities"]) <= 2
         assert cursor(dsn, "bigdelta#g1#delta") >= 2
+        assert assert_deltas_satisfy_contract(dsn) >= 1
 
 
 def test_rebuild_under_a_new_generation_reproduces_the_original(
@@ -453,6 +459,12 @@ def test_rebuild_under_a_new_generation_reproduces_the_original(
         graph.wipe(driver)
         rebuilt = project_all(dsn, driver, consumer="m23-projector#gtest2", partitions=4)
         assert graph.snapshot(driver) == original
+        # Rebuild output (the second generation re-reads every event) still satisfies the
+        # contract bundle, and re-emitting a revision's delta does not duplicate it.
+        assert assert_deltas_satisfy_contract(dsn) >= 1
+        assert len(outbox(dsn, DELTA)) == len(
+            {str(entry["dedup_key"]) for entry in outbox(dsn, DELTA)}
+        )
         assert rebuilt.events_applied == first.events_applied
         assert cursor(dsn, "m23-projector#gtest1") == original_cursor
 

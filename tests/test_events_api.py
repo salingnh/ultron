@@ -343,22 +343,14 @@ def test_every_mounted_operation_requires_the_operator_token(
         "getCampaignFlow",
         "streamCampaignEvents",
         "listCapabilities",
-        # G1.4b: the two locked graph reads. `openapi.v2` locks their shape but documents no
-        # `security`/401 for them (reported as a contract gap); the app still requires the
-        # operator token, so the invariant below asserts the app side and pins the gap.
+        # G1.4b: the two locked graph reads (asset graph and its history).
         "getAssetGraph",
         "getAssetHistory",
     }
-    graph_contract_gap = {"getAssetGraph", "getAssetHistory"}
     for operation in mounted:
         operation_id = operation["operationId"]
         assert operation["security"] == [{"operatorToken": []}], operation_id
         assert 401 in {int(code) for code in operation["responses"]}, operation_id
-        if operation_id in graph_contract_gap:
-            _, contract_operation = contract_operations[operation_id]
-            assert "security" not in contract_operation, operation_id
-            assert 401 not in {int(code) for code in contract_operation["responses"]}, operation_id
-            continue
         _, contract_operation = contract_operations[operation_id]
         assert contract_operation.get("security") == [{"operatorToken": []}], operation_id
         assert 401 in {int(code) for code in contract_operation["responses"]}, operation_id

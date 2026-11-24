@@ -229,6 +229,23 @@ def two_campaign_subdomains(job_id: str) -> dict[str, Any]:
     }
 
 
+def assert_deltas_satisfy_contract(dsn: str) -> int:
+    """Validate **every** `knowledge.delta.v2` the projector emitted with the JSON-Schema hook.
+
+    The runtime validates with the generated DTO (cheap enough for the hot path, see the report),
+    and Pydantic ignores the semantic `aegis-*` formats; this is the check that the emitted payload
+    still satisfies the contract bundle itself (`aegis.validation` loads `contracts/validation.py`,
+    so `aegis-canonical-key`/`aegis-id` formats are really checked). It is called on the output of
+    the real projector runs (e2e, delta split, rebuild), not on hand-built fixtures.
+    """
+    from aegis import validation
+
+    rows = outbox(dsn, "knowledge.delta.v2")
+    for entry in rows:
+        validation.validate("events/knowledge.delta.v2.schema.json", entry["payload"])
+    return len(rows)
+
+
 def jsonb(value: Mapping[str, Any]) -> Jsonb:
     return Jsonb(dict(value))
 
@@ -241,6 +258,7 @@ __all__ = [
     "PG_DSN_ENV",
     "RAW_EVIDENCE",
     "SEED_ID",
+    "assert_deltas_satisfy_contract",
     "connect",
     "cursor",
     "evidence_entry",

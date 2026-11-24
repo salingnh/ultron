@@ -732,6 +732,8 @@ paths:
       - graph
       operationId: getAssetGraph
       summary: Vùng lân cận có giới hạn (cùng truy vấn get_asset_neighbors của agent)
+      security:
+      - operatorToken: []
       parameters:
       - name: campaign_id
         in: query
@@ -758,6 +760,12 @@ paths:
             application/json:
               schema:
                 $ref: ../mcp/graph-queries.v2.schema.json#/$defs/get_asset_neighbors/properties/output
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /assets/{asset_id}/history:
     parameters:
     - $ref: '#/components/parameters/AssetId'
@@ -766,6 +774,8 @@ paths:
       - graph
       operationId: getAssetHistory
       summary: Dòng thời gian tài sản theo từng lần chạy (observation gắn scan_id)
+      security:
+      - operatorToken: []
       parameters:
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'
@@ -815,6 +825,12 @@ paths:
                             $ref: ../common/ids.v2.schema.json#/$defs/Id
                   next_cursor:
                     type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /findings:
     get:
       tags:
