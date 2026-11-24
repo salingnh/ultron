@@ -11,7 +11,8 @@ SHELL := /bin/bash
 .PHONY: help dev-up dev-down dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
 	deps lint test codegen codegen-check migrate ci-python \
-	temporal-live demo-g15a run-local stop-local seed-demo
+	temporal-live demo-g15a demo-g1 demo-recovery soak-start soak-stop \
+	run-local stop-local seed-demo
 
 help:
 	@printf '%s\n' \
@@ -38,7 +39,12 @@ help:
 	  'make migrate         apply contracts/db/postgres in contracts/README.md order' \
 	  '                     (needs $$AEGIS_PG_DSN; recovery after an interrupted run:' \
 	  '                     python -m aegis.migrations mark-applied VERSION --sha256 SHA)' \
-	  'make ci-python       the python workflow: deps + lint + test + codegen-check'
+	  'make ci-python       the python workflow: deps + lint + test + codegen-check' \
+	  'make demo-g1         end-to-end G1 gate on the lab: campaign -> agent/MCP -> Subfinder ->' \
+	  '                     DNSx -> raw + metadata + graph + events, with the evidence printed' \
+	  'make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate' \
+	  'make soak-start      start the shortened 24 h soak (SOAK_HOURS=... to change) in .local/soak/' \
+	  'make soak-stop       stop the soak; its report stays in .local/soak/report.txt'
 
 dev-up:
 	@scripts/dev/dev-up.sh
@@ -112,6 +118,45 @@ temporal-live:
 # G1.5a acceptance evidence: the flow document and the event stream over HTTP (needs AEGIS_TEST_PG_DSN).
 demo-g15a:
 	@uv run --frozen pytest tests/test_g15a_http_demo.py -q -s
+
+# --- G1 gate: demo, recovery, soak (G1.5c) ------------------------------------
+# Each target reads .local/run-local.env, the file `make run-local` writes: the API URL, the two
+# dev tokens and the endpoints of PostgreSQL/Neo4j/S3. `make run-local` must be up first.
+
+demo-g1:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/demo/demo-g1.py
+
+demo-recovery:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/demo/demo-recovery.py
+
+# The soak runs detached and keeps writing .local/soak/report.{jsonl,txt} until SOAK_HOURS is up
+# (default 24) or `make soak-stop`. Starting it twice is refused, not silently duplicated.
+soak-start:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		mkdir -p .local/soak; \
+		if [ -f .local/soak/soak.pid ] && kill -0 "$$(cat .local/soak/soak.pid)" 2>/dev/null; then \
+			echo "soak: already running (pid $$(cat .local/soak/soak.pid)); report .local/soak/report.txt"; \
+			exit 0; \
+		fi; \
+		rm -f .local/soak/stop; \
+		nohup uv run --frozen python scripts/demo/soak.py >>.local/soak/soak.log 2>&1 & \
+		echo $$! >.local/soak/soak.pid; \
+		sleep 2; \
+		echo "soak: started (pid $$(cat .local/soak/soak.pid))"; \
+		echo "  log    .local/soak/soak.log"; \
+		echo "  report .local/soak/report.txt (jsonl history: .local/soak/report.jsonl)"; \
+		echo "  stop   make soak-stop"
+
+soak-stop:
+	@if [ -f .local/soak/soak.pid ] && kill -0 "$$(cat .local/soak/soak.pid)" 2>/dev/null; then \
+		kill "$$(cat .local/soak/soak.pid)"; \
+		echo "soak: stopping (the final report is written on exit)"; \
+	else \
+		echo "soak: not running"; \
+	fi
+	@touch .local/soak/stop 2>/dev/null || true
 
 # --- Local stack (G1.5a follow-up) --------------------------------------------
 # run-local brings up the dev stack, applies migrations, mints a dev operator token and serves the

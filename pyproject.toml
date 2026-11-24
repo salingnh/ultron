@@ -80,6 +80,7 @@ include = [
   "adapters/**/*.py",
   "scripts/codegen.py",
   "scripts/bench/*.py",
+  "scripts/demo/*.py",
 ]
 # Generated contract DTOs are not hand-edited; their formatting and content are enforced by
 # `make codegen-check` (committed bytes == fresh codegen output), which is stricter than lint.
@@ -95,7 +96,9 @@ known-first-party = ["aegis"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests", "adapters", "scripts/codegen.py", "scripts/bench"]
+files = ["src", "tests", "adapters", "scripts/codegen.py", "scripts/bench", "scripts/demo"]
+# `scripts/demo/*.py` are entry points that import their sibling `support` module by name.
+mypy_path = "scripts/demo"
 strict = true
 warn_unused_ignores = true
 exclude = ['^src/aegis/contracts_gen/']
