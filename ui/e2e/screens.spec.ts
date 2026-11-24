@@ -94,7 +94,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
       await page.goto('/tools');
       await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
       await expect(page.getByText('dns.enumerate_subdomains')).toBeVisible();
-      await expect(page.getByText('subfinder')).toBeVisible();
+      await expect(page.getByText('subfinder', { exact: true })).toBeVisible();
       await captureScreen(page, `06-tool-catalogue-${theme}.png`);
     });
   }
