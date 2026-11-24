@@ -17,9 +17,9 @@ INSERT INTO scan_job (job_id,campaign_id,decision_id,capability,provider,provide
   VALUES ('01900000-0000-7000-8000-0000000000d1','01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-0000000000c1','dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0','sha256:'||repeat('a',64),repeat('9',64),'01900000-0000-7000-8000-0000000000f1',repeat('f',64),'roe-1','01900000-0000-7000-8000-0000000000a1',50,'{}','{dns:internal.example}','[{"seed_id":"01900000-0000-7000-8000-0000000000b1"},{"canonical_key":"dns:internal.example"}]','{"kind":"operator","id":"soc-1"}','{"kind":"agent","id":"01900000-0000-7000-8000-0000000000a2"}','Mở rộng domain hạt giống',repeat('0',32));
 INSERT INTO ingestion_inbox (event_id,dedup_key,job_id,payload_hash,hash_version,status) VALUES ('01900000-0000-7000-8000-0000000000e1','job:01900000-0000-7000-8000-0000000000d1:envelope','01900000-0000-7000-8000-0000000000d1',repeat('b',64),'aegis-c14n/1','received');
 INSERT INTO graph_revision (campaign_id,causal_job_id,envelope_event_id) VALUES ('01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-0000000000d1','01900000-0000-7000-8000-0000000000e1');
-INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen) VALUES
-  ('01900000-0000-7000-8000-0000000000f1','dns:internal.example','domain',now(),now()),
-  ('01900000-0000-7000-8000-0000000000f2','dns:www.internal.example','domain',now(),now());
+INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen,normalization_version) VALUES
+  ('01900000-0000-7000-8000-0000000000f1','dns:internal.example','domain',now(),now(),'aegis-norm/1'),
+  ('01900000-0000-7000-8000-0000000000f2','dns:www.internal.example','domain',now(),now(),'aegis-norm/1');
 INSERT INTO relationship (relationship_id,type,from_asset_id,to_asset_id,observed_at,valid_from,source_job_id,confidence,campaign_id)
   VALUES ('01900000-0000-7000-8000-000000000101','SUBDOMAIN_OF','01900000-0000-7000-8000-0000000000f2','01900000-0000-7000-8000-0000000000f1',now(),now(),'01900000-0000-7000-8000-0000000000d1',0.9,'01900000-0000-7000-8000-000000000001');
 INSERT INTO observation (observation_id,campaign_id,scan_id,envelope_event_id,revision,subject_asset_id,predicate,value,value_hash,provider,provider_version,observed_at)

@@ -120,8 +120,8 @@ BEGIN
   END IF;
 
   -- 8. CIDR -> IP: the ip asset keeps the CIDR seed as its origin in the provenance row.
-  INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen,first_job_id)
-    VALUES (asset_ip,'ip:10.20.0.5','ip',now(),now(),job_main);
+  INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen,first_job_id,normalization_version)
+    VALUES (asset_ip,'ip:10.20.0.5','ip',now(),now(),job_main,'aegis-norm/1');
   INSERT INTO asset_provenance (provenance_id,asset_id,campaign_id,from_target_id,source_job_id,provider,observed_at)
     VALUES ('01900000-0000-7000-8000-000000000181',asset_ip,camp_a,seed_cidr,job_main,'subfinder',now());
   IF NOT EXISTS (SELECT 1 FROM asset_provenance WHERE asset_id = asset_ip AND from_target_id = seed_cidr AND campaign_id = camp_a) THEN
