@@ -216,6 +216,17 @@ describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
     expect(valid).toBe(true);
   });
 
+  it('validates mockHandlers.getAssetHistory matches /assets/{asset_id}/history 200 schema', async () => {
+    const schema = openApiDoc.paths['/assets/{asset_id}/history']?.get?.responses['200']?.content['application/json']?.schema;
+    expect(schema).toBeDefined();
+
+    const validate = ajv.compile(schema);
+    const res = await mockHandlers.getAssetHistory('01934f6a-0000-7000-8000-0000000000f1');
+    const valid = validate(res);
+    expect(validate.errors).toBeNull();
+    expect(valid).toBe(true);
+  });
+
   it('validates mockCapabilities matches /capabilities 200 schema', () => {
     const schema = openApiDoc.paths['/capabilities']?.get?.responses['200']?.content['application/json']?.schema;
     expect(schema).toBeDefined();

@@ -36,11 +36,17 @@ def main() -> None:
                 print("CAMPAIGN_NOT_FOUND")
                 sys.exit(2)
 
+            target_row = conn.execute(
+                "SELECT raw_value FROM campaign_target WHERE scope_id = %s AND kind = 'domain' LIMIT 1",
+                (row[2],),
+            ).fetchone()
+            seed_domain = target_row[0] if target_row else "internal.example"
+
             campaign = SeededCampaign(
                 campaign_id=str(row[0]),
                 policy_version=row[1],
                 scope_id=str(row[2]),
-                seed_domain="internal.example",
+                seed_domain=seed_domain,
                 seed_ip="10.20.0.0/24",
                 known_asset="",
             )
@@ -86,6 +92,23 @@ def main() -> None:
                 print(f"TERMINALISE_OK seq={seq}")
             else:
                 print(f"JOB_NOT_RUNNING current_status={row[4]}")
+        return
+
+    if action == "get_asset":
+        with psycopg.connect(dsn) as conn:
+            row = conn.execute(
+                """
+                SELECT a.asset_id, ac.campaign_id
+                FROM asset a
+                JOIN asset_campaign ac ON a.asset_id = ac.asset_id
+                ORDER BY a.first_seen LIMIT 1
+                """
+            ).fetchone()
+            if row:
+                print(f"ASSET_ID {row[0]}")
+                print(f"CAMPAIGN_ID {row[1]}")
+            else:
+                print("ASSET_NOT_FOUND")
         return
 
     print(f"UNKNOWN_ACTION {action}")

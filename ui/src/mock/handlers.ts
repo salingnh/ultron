@@ -12,6 +12,7 @@ import type {
   ScanJob,
   CampaignFlow,
   AssetGraphResponse,
+  AssetHistoryResponse,
   CapabilitiesResponse,
   ProvenanceDetail,
   CampaignStatus,
@@ -127,6 +128,30 @@ export const mockHandlers = {
     _params?: { campaign_id: string; max_hops?: number; as_of?: string; limit?: number }
   ): Promise<AssetGraphResponse> {
     return mockAssetGraph;
+  },
+
+  async getAssetHistory(
+    assetId: string,
+    _params?: { cursor?: string; limit?: number }
+  ): Promise<AssetHistoryResponse> {
+    const asset = mockAssets.find((a) => a.asset_id === assetId) || mockAssets[0];
+    const prov =
+      mockProvenanceMap[assetId] ||
+      mockProvenanceMap['01934f6a-0000-7000-8000-0000000000f1'];
+    return {
+      asset,
+      items: [
+        {
+          scan_id: prov?.jobId || '01934f6a-0000-7000-8000-00000000d001',
+          capability: prov?.tool === 'subfinder' ? 'recon.subdomains' : 'recon.dns',
+          provider: prov ? `${prov.tool}:${prov.version}` : 'subfinder:v2.17.0',
+          observed_at: prov?.observedAt || asset.last_seen || new Date().toISOString(),
+          predicate: prov?.tool === 'subfinder' ? 'dns.subdomain' : 'dns.record',
+          polarity: 'present',
+          evidence_ids: ['01934f6a-0000-7000-8000-0000000000e1'],
+        },
+      ],
+    };
   },
 
   async listCapabilities(_campaignId?: string): Promise<CapabilitiesResponse> {
