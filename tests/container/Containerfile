@@ -1,0 +1,16 @@
+# Probe image of the M06 tests (G1.3a).
+#
+# It is built once per test session from the digest-pinned Python base and contains exactly what a
+# sandboxed job may see: the probe tool, the probe parser package and the stdlib-only part of
+# `aegis.m06_runner` that the egress broker runs as a container.
+#
+# Build context is the repository root:
+#   podman build -f tests/container/Containerfile -t localhost/aegis-probe:test .
+FROM docker.io/library/python@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+
+COPY src/aegis/__init__.py /app/aegis/__init__.py
+COPY src/aegis/m06_runner /app/aegis/m06_runner
+COPY tests/container/aegis_probe /app/aegis_probe
+
+ENV PYTHONPATH=/app
+WORKDIR /out
