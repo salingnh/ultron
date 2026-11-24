@@ -76,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     errors: list[str] = []
     _log(f"soak: {hours:g}h, one campaign every {interval:g}s, report every {report_every:g}s")
     next_report = time.monotonic() + report_every
+    next_create = time.monotonic()
     try:
         while not stop["asked"] and time.monotonic() < deadline and not STOP.exists():
             now = time.monotonic()
@@ -89,7 +90,14 @@ def main(argv: list[str] | None = None) -> int:
                 _reap_terminal(active, errors)
             except Exception as error:  # noqa: BLE001 - a soak keeps going and records the error
                 errors.append(f"reap: {type(error).__name__}: {error}")
-            if len(active) < max_active and time.monotonic() < deadline:
+            # The rate is the interval, not "as soon as a slot is free": a lab campaign finishes in
+            # seconds, and a soak that refills the slot immediately would run hundreds per hour.
+            if (
+                len(active) < max_active
+                and time.monotonic() >= next_create
+                and time.monotonic() < deadline
+            ):
+                next_create = time.monotonic() + interval
                 try:
                     campaign_id = support.create_campaign(
                         f"G1.5c soak {time.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -109,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
                         cancelled=cancelled,
                         rounds=rounds,
                         errors=errors,
+                        final=False,
                     )
                     _log(
                         "soak: report "
@@ -120,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
                     errors.append(f"report: {type(error).__name__}: {error}")
                     _log(f"soak: report failed: {error}")
                 next_report = time.monotonic() + report_every
-            time.sleep(min(5.0, max(0.2, interval - (time.monotonic() - now))))
+            time.sleep(min(5.0, max(0.2, next_create - time.monotonic())))
     finally:
         signal.signal(signal.SIGTERM, previous)
         row = _report(
@@ -130,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
             cancelled=cancelled,
             rounds=rounds,
             errors=errors,
+            final=True,
         )
         SUMMARY.write_text(json.dumps(row, indent=1, sort_keys=True, default=str) + "\n", "utf-8")
         _log(f"soak: finished ({row['reason']}); report {REPORT_TXT}")
@@ -164,10 +174,13 @@ def _report(
     cancelled: int,
     rounds: int,
     errors: list[str],
+    final: bool,
 ) -> dict[str, Any]:
     connection = support.pg()
     try:
-        row = _collect(connection, started, deadline_reached, created, cancelled, rounds, errors)
+        row = _collect(
+            connection, started, deadline_reached, created, cancelled, rounds, errors, final
+        )
     finally:
         connection.close()
     REPORT_JSONL.parent.mkdir(parents=True, exist_ok=True)
@@ -185,6 +198,7 @@ def _collect(
     cancelled: int,
     rounds: int,
     errors: list[str],
+    final: bool,
 ) -> dict[str, Any]:
     campaigns = support.rows(
         connection, "SELECT status, count(*) AS n FROM campaign GROUP BY 1 ORDER BY 1"
@@ -258,7 +272,9 @@ def _collect(
         "recorded_at": support.now(),
         "soak_started_at": started,
         "reason": (
-            "hours elapsed" if deadline_reached else "stopped (SIGTERM or .local/soak/stop)"
+            ("hours elapsed" if deadline_reached else "stopped (SIGTERM or .local/soak/stop)")
+            if final
+            else "periodic report (the soak is still running)"
         ),
         "rounds": rounds,
         "campaigns": {
