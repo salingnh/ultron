@@ -10,7 +10,8 @@ SHELL := /bin/bash
 
 .PHONY: help dev-up dev-down dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
-	deps lint test codegen codegen-check migrate ci-python
+	deps lint test codegen codegen-check migrate ci-python \
+	temporal-live
 
 help:
 	@printf '%s\n' \
@@ -104,3 +105,6 @@ migrate:
 	@uv run --frozen python -m aegis.migrations
 
 ci-python: deps lint test codegen-check
+
+temporal-live:
+	@scripts/temporal/run-live.sh

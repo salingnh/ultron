@@ -12,6 +12,13 @@ from typing import Any, cast
 
 import pytest
 
+#: `tests/live` needs a Temporal server; the CI `python` job has none, and a skipped check is not
+#: evidence (AEGIS_NO_SKIPS). It is collected only when a target is configured, and the live runner
+#: sets that variable. The committed replay fixture is what the default gate replays instead.
+collect_ignore: list[str] = []
+if not os.environ.get("AEGIS_TEMPORAL_TARGET"):
+    collect_ignore.append("live")
+
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]) -> Any:
