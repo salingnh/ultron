@@ -35,6 +35,10 @@ const statusConfig: Record<string, { label: string; variant: 'success' | 'warnin
   COMPLETED: { label: 'Hoàn thành (Completed)', variant: 'success' },
   WAITING: { label: 'Đang chờ duyệt (Waiting)', variant: 'warning' },
 
+  // Flow Decision status
+  approved: { label: 'Đã duyệt (Approved)', variant: 'success' },
+  rejected: { label: 'Từ chối (Rejected)', variant: 'danger' },
+
   // Health
   healthy: { label: 'Khỏe mạnh (Healthy)', variant: 'success' },
   degraded: { label: 'Suy giảm (Degraded)', variant: 'warning' },

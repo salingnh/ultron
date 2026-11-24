@@ -1,15 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { TruncatedBanner } from '../components/TruncatedBanner';
 import { ProvenancePanel } from '../components/ProvenancePanel';
 import { ErrorDisplay } from '../components/ErrorDisplay';
+import { TokenConfigModal } from '../components/TokenConfigModal';
+import { getOperatorToken } from '../api/client';
 
 describe('Ultron UI Reusable Components', () => {
   it('renders StatusChip with Vietnamese text and correct styling', () => {
     render(<StatusChip status="SUCCEEDED" />);
     expect(screen.getByText('Thành công (Succeeded)')).toBeInTheDocument();
+
+    render(<StatusChip status="approved" />);
+    expect(screen.getByText('Đã duyệt (Approved)')).toBeInTheDocument();
+
+    render(<StatusChip status="rejected" />);
+    expect(screen.getByText('Từ chối (Rejected)')).toBeInTheDocument();
 
     render(<StatusChip status="QUEUED" />);
     expect(screen.getByText('Đang chờ (Queued)')).toBeInTheDocument();
@@ -80,5 +88,20 @@ describe('Ultron UI Reusable Components', () => {
     expect(screen.getByText('Mã lỗi: NETWORK_TIMEOUT')).toBeInTheDocument();
     expect(screen.getByText('Hết thời gian kết nối (30s) khi truy vấn máy chủ DNS')).toBeInTheDocument();
     expect(screen.getByText(/RETRY_LATER/)).toBeInTheDocument();
+  });
+
+  it('renders TokenConfigModal and saves token to localStorage', () => {
+    let isClosed = false;
+    render(<TokenConfigModal isOpen={true} onClose={() => { isClosed = true; }} />);
+
+    expect(screen.getByText('Cấu hình Operator Bearer Token')).toBeInTheDocument();
+    const input = screen.getByLabelText('Nhập Operator Token');
+    expect(input).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'my-secret-operator-token' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu Token' }));
+
+    expect(getOperatorToken()).toBe('my-secret-operator-token');
+    expect(isClosed).toBe(false); // Closes after animation delay
   });
 });

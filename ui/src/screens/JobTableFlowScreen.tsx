@@ -7,8 +7,12 @@ import {
   MiniMap,
   type Node,
   type Edge,
+  type NodeProps,
+  type NodeTypes,
   Position,
   Handle,
+  useReactFlow,
+  ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
@@ -19,9 +23,11 @@ import {
   AlertTriangle,
   XCircle,
   ShieldAlert,
+  Radio,
+  Maximize2,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
-import type { ScanJob, JobStatus, CampaignFlow, FlowNode } from '../api/types';
+import type { ScanJob, JobStatus, CampaignFlow, FlowNode, Campaign } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay } from '../components/ErrorDisplay';
@@ -40,22 +46,31 @@ const waitReasonLabels: Record<string, string> = {
 };
 
 interface JobNodeData extends FlowNode {
+  [key: string]: unknown;
   dispatch_block_reasons?: string[];
 }
 
-// Custom React Flow Node for Jobs
-const CustomJobNode: React.FC<{ data: JobNodeData }> = ({ data }) => {
+// Custom React Flow Node for Campaign, Decision, and Jobs
+const CustomJobNode: React.FC<NodeProps<Node<JobNodeData>>> = ({ data }) => {
   const isJob = data.type === 'job';
+  const isDecision = data.type === 'decision';
+
+  let borderColor = 'var(--line)';
+  if (data.status === 'FAILED' || data.status === 'rejected') borderColor = 'var(--danger)';
+  else if (data.status === 'RUNNING') borderColor = 'var(--accent)';
+  else if (data.status === 'SUCCEEDED' || data.status === 'approved') borderColor = 'var(--success)';
+  else if (data.status === 'CANCELLED') borderColor = 'var(--warning)';
+
   return (
     <div
       style={{
         padding: '10px 14px',
         borderRadius: 'var(--radius-md)',
         backgroundColor: 'var(--surface)',
-        border: `2px solid ${data.status === 'FAILED' ? 'var(--danger)' : data.status === 'RUNNING' ? 'var(--accent)' : data.status === 'SUCCEEDED' ? 'var(--success)' : 'var(--line)'}`,
+        border: `2px solid ${borderColor}`,
         color: 'var(--ink)',
         fontSize: 'var(--text-xs)',
-        minWidth: 220,
+        width: 250,
         boxShadow: 'var(--shadow-md)',
       }}
     >
@@ -67,7 +82,7 @@ const CustomJobNode: React.FC<{ data: JobNodeData }> = ({ data }) => {
         <StatusChip status={data.status} waitReason={data.wait_reason} size="sm" kind={isJob ? 'job' : 'campaign'} />
       </div>
 
-      <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--ink)', marginBottom: 4 }}>
+      <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--ink)', marginBottom: 4, wordBreak: 'break-word' }}>
         {data.label}
       </div>
 
@@ -75,6 +90,12 @@ const CustomJobNode: React.FC<{ data: JobNodeData }> = ({ data }) => {
         <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
           <span className="brand-badge">Lần thử: #{data.attempt || 1}</span>
           <span className="brand-badge">Thế hệ: G{data.generation || 1}</span>
+        </div>
+      )}
+
+      {isDecision && data.started_at && (
+        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 4 }}>
+          Duyệt: {new Date(data.started_at).toLocaleTimeString('vi-VN')}
         </div>
       )}
 
@@ -123,9 +144,86 @@ const CustomJobNode: React.FC<{ data: JobNodeData }> = ({ data }) => {
   );
 };
 
+// Flow view subcomponent wrapped in ReactFlowProvider to use useReactFlow
+const FlowGraphView: React.FC<{
+  nodes: Node[];
+  edges: Edge[];
+  nodeTypes: NodeTypes;
+  onNodeSelect: (id: string) => void;
+}> = ({ nodes, edges, nodeTypes, onNodeSelect }) => {
+  const { fitView } = useReactFlow();
+
+  const handleFit = useCallback(() => {
+    fitView({ padding: 0.15, maxZoom: 1.0, minZoom: 0.8 });
+  }, [fitView]);
+
+  return (
+    <div className="flow-container" style={{ height: 680, position: 'relative' }} aria-label="Luồng phụ thuộc React Flow">
+      <div
+        style={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          zIndex: 5,
+          display: 'flex',
+          gap: 6,
+        }}
+      >
+        <button
+          type="button"
+          className="btn btn-sm"
+          style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--line)', boxShadow: 'var(--shadow-sm)' }}
+          onClick={handleFit}
+          title="Thu phóng vừa vặn khung hình (Fit View)"
+        >
+          <Maximize2 size={13} /> Vừa khung
+        </button>
+      </div>
+
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.15, maxZoom: 1.0, minZoom: 0.8 }}
+        minZoom={0.5}
+        maxZoom={1.5}
+        onNodeClick={(_event, node) => onNodeSelect(node.id)}
+      >
+        <Background color="var(--line)" gap={16} />
+        <Controls />
+        <MiniMap
+          nodeColor={(node) => {
+            const data = node.data as unknown as JobNodeData | undefined;
+            if (data?.status === 'FAILED' || data?.status === 'rejected') return '#ef4444';
+            if (data?.status === 'RUNNING') return '#3b82f6';
+            if (data?.status === 'SUCCEEDED' || data?.status === 'approved') return '#22c55e';
+            if (data?.status === 'CANCELLED') return '#f59e0b';
+            return '#64748b';
+          }}
+          nodeStrokeColor="var(--line)"
+          nodeStrokeWidth={1}
+          nodeBorderRadius={4}
+          maskColor="rgba(0, 0, 0, 0.15)"
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--line)',
+            borderRadius: 'var(--radius-md)',
+            width: 180,
+            height: 110,
+          }}
+        />
+      </ReactFlow>
+    </div>
+  );
+};
+
 export const JobTableFlowScreen: React.FC = () => {
-  const [searchParams] = useSearchParams();
-  const campaignId = searchParams.get('campaign_id') || '01934f6a-0000-7000-8000-000000000001';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlCampaignId = searchParams.get('campaign_id');
+
+  const [campaignList, setCampaignList] = useState<Campaign[]>([]);
+  const [activeCampaignId, setActiveCampaignId] = useState<string>(urlCampaignId || '');
 
   const [viewMode, setViewMode] = useState<'table' | 'flow'>('table');
   const [jobs, setJobs] = useState<ScanJob[]>([]);
@@ -135,39 +233,132 @@ export const JobTableFlowScreen: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [selectedJob, setSelectedJob] = useState<ScanJob | null>(null);
 
+  // SSE Live indicator state
+  const [sseConnected, setSseConnected] = useState(false);
+  const [lastLiveEvent, setLastLiveEvent] = useState<{ type: string; time: string; id: string } | null>(null);
+
   const nodeTypes = useMemo(() => ({ jobNode: CustomJobNode }), []);
 
-  const loadData = useCallback(async () => {
+  // Fetch campaigns to resolve default campaign ID and provide campaign switcher
+  useEffect(() => {
+    apiClient.listCampaigns().then((res) => {
+      setCampaignList(res.items);
+      if (!urlCampaignId) {
+        if (res.items.length > 0) {
+          setActiveCampaignId(res.items[0].campaign_id);
+        } else if (apiClient.isMock) {
+          setActiveCampaignId('01934f6a-0000-7000-8000-000000000001');
+        }
+      }
+    }).catch(() => {
+      if (!urlCampaignId && apiClient.isMock) {
+        setActiveCampaignId('01934f6a-0000-7000-8000-000000000001');
+      }
+    });
+  }, [urlCampaignId]);
+
+  const effectiveCampaignId = activeCampaignId || urlCampaignId || (apiClient.isMock ? '01934f6a-0000-7000-8000-000000000001' : '');
+
+  const loadData = useCallback(async (showLoading: boolean = true) => {
+    if (!effectiveCampaignId) {
+      setLoading(false);
+      return;
+    }
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
       const params = {
-        campaign_id: campaignId,
+        campaign_id: effectiveCampaignId,
         status: statusFilter !== 'ALL' ? (statusFilter as JobStatus) : undefined,
       };
       const [jobsRes, flowRes] = await Promise.all([
         apiClient.listJobs(params),
-        apiClient.getCampaignFlow(campaignId),
+        apiClient.getCampaignFlow(effectiveCampaignId),
       ]);
       setJobs(jobsRes.items);
       setFlowData(flowRes);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu Job hoặc Flow');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  }, [campaignId, statusFilter]);
+  }, [effectiveCampaignId, statusFilter]);
 
   useEffect(() => {
-    loadData();
+    loadData(true);
   }, [loadData]);
+
+  // Subscribe to SSE events for real-time live updates (<2s)
+  useEffect(() => {
+    if (!effectiveCampaignId) return;
+
+    const sub = apiClient.subscribeCampaignEvents({
+      campaignId: effectiveCampaignId,
+      onEvent: (event) => {
+        setLastLiveEvent({
+          type: event.type,
+          time: new Date().toLocaleTimeString('vi-VN'),
+          id: event.id,
+        });
+
+        // Fast path: optimistic local updates from SSE payload
+        const payload = (event.data as { payload?: Record<string, unknown> })?.payload;
+        if (payload && typeof payload === 'object') {
+          const jobId = payload.job_id as string | undefined;
+          const newStatus = payload.status as JobStatus | undefined;
+
+          if (jobId && newStatus) {
+            setJobs((prevJobs) =>
+              prevJobs.map((j) =>
+                j.job_id === jobId
+                  ? {
+                      ...j,
+                      status: newStatus,
+                      finished_at: (payload.finished_at as string) || j.finished_at,
+                      started_at: (payload.started_at as string) || j.started_at,
+                      wait_reason: newStatus === 'RUNNING' || newStatus === 'SUCCEEDED' ? undefined : j.wait_reason,
+                    }
+                  : j
+              )
+            );
+
+            setFlowData((prevFlow) => {
+              if (!prevFlow) return null;
+              return {
+                ...prevFlow,
+                nodes: prevFlow.nodes.map((node) =>
+                  node.id === jobId
+                    ? {
+                        ...node,
+                        status: newStatus,
+                        wait_reason: newStatus === 'RUNNING' || newStatus === 'SUCCEEDED' ? undefined : node.wait_reason,
+                      }
+                    : node
+                ),
+              };
+            });
+          }
+        }
+
+        // Silent background authoritative sync
+        loadData(false);
+      },
+      onStatusChange: (status) => {
+        setSseConnected(status === 'connected');
+      },
+    });
+
+    return () => {
+      sub.close();
+    };
+  }, [effectiveCampaignId, loadData]);
 
   const handleCancelJob = async (jobId: string) => {
     const reason = prompt('Nhập lý do hủy job:', 'Hủy thủ công qua giao diện');
     if (!reason) return;
     try {
       await apiClient.cancelJob(jobId, reason);
-      loadData();
+      loadData(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Hủy job thất bại');
     }
@@ -224,10 +415,10 @@ export const JobTableFlowScreen: React.FC = () => {
     }
 
     const calculatedNodes: Node[] = [];
-    const nodeWidth = 260;
-    const nodeGapX = 80;
-    const levelHeight = 170;
-    const startY = 40;
+    const nodeWidth = 250;
+    const nodeGapX = 40;
+    const levelHeight = 140;
+    const startY = 30;
     const centerX = 500;
 
     for (const [rankStr, nodesInRank] of Object.entries(rankGroups)) {
@@ -243,6 +434,9 @@ export const JobTableFlowScreen: React.FC = () => {
           id: n.id,
           type: 'jobNode',
           position: { x, y },
+          width: 250,
+          height: 110,
+          style: { width: 250 },
           data: {
             ...n,
             type: n.type,
@@ -285,11 +479,54 @@ export const JobTableFlowScreen: React.FC = () => {
             Kế hoạch & Luồng thực thi Job
           </h1>
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--muted)', marginTop: 2 }}>
-            Theo dõi trạng thái, chuỗi phụ thuộc (depends_on), lý do chờ (wait_reason) và lý do chặn điều phối.
+            Theo dõi trạng thái, chuỗi phụ thuộc (depends_on), lý do chờ (wait_reason) và cập nhật trực tiếp qua SSE.
           </p>
         </div>
 
         <div className="filter-group">
+          {/* Campaign Selector if multiple campaigns available */}
+          {campaignList.length > 0 && (
+            <select
+              className="input-search"
+              style={{ minWidth: 200 }}
+              value={effectiveCampaignId}
+              onChange={(e) => {
+                setActiveCampaignId(e.target.value);
+                setSearchParams({ campaign_id: e.target.value });
+              }}
+              aria-label="Chọn chiến dịch"
+            >
+              {campaignList.map((c) => (
+                <option key={c.campaign_id} value={c.campaign_id}>
+                  {c.name} ({c.status})
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* SSE Live Status indicator */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 8px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: sseConnected ? 'var(--success-bg)' : 'var(--subtle)',
+              color: sseConnected ? 'var(--success)' : 'var(--muted)',
+              border: `1px solid ${sseConnected ? 'var(--success)' : 'var(--line)'}`,
+              fontSize: 'var(--text-xs)',
+            }}
+          >
+            <Radio size={12} className={sseConnected ? 'pulse-icon' : ''} />
+            <span style={{ fontWeight: 600 }}>{sseConnected ? 'SSE Live' : 'SSE Đang kết nối'}</span>
+            {lastLiveEvent && (
+              <span style={{ fontSize: '11px', color: 'var(--ink)' }}>
+                ({lastLiveEvent.type})
+              </span>
+            )}
+          </div>
+
           {/* View switcher */}
           <div
             style={{
@@ -339,30 +576,29 @@ export const JobTableFlowScreen: React.FC = () => {
         </div>
       </div>
 
-      {error && <ErrorDisplay error={error} onRetry={loadData} />}
+      {error && <ErrorDisplay error={error} onRetry={() => loadData(true)} />}
 
       {loading ? (
         <div className="state-box">
           <div className="state-title">Đang nạp danh sách job...</div>
         </div>
+      ) : !effectiveCampaignId ? (
+        <div className="state-box">
+          <div className="state-title">Chưa chọn chiến dịch</div>
+          <div className="state-desc">Vui lòng tạo hoặc chọn một chiến dịch để theo dõi danh sách job.</div>
+        </div>
       ) : viewMode === 'flow' ? (
-        <div className="flow-container" style={{ height: 620 }} aria-label="Luồng phụ thuộc React Flow">
-          <ReactFlow
+        <ReactFlowProvider>
+          <FlowGraphView
             nodes={flowNodes}
             edges={flowEdges}
             nodeTypes={nodeTypes}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-            onNodeClick={(_event, node) => {
-              const matchedJob = jobs.find((j) => j.job_id === node.id);
+            onNodeSelect={(nodeId) => {
+              const matchedJob = jobs.find((j) => j.job_id === nodeId);
               if (matchedJob) setSelectedJob(matchedJob);
             }}
-          >
-            <Background color="var(--line)" gap={16} />
-            <Controls />
-            <MiniMap style={{ background: 'var(--surface)', border: '1px solid var(--line)' }} />
-          </ReactFlow>
-        </div>
+          />
+        </ReactFlowProvider>
       ) : (
         <div className="table-container">
           <table className="data-table" aria-label="Bảng chi tiết Job">
@@ -378,141 +614,149 @@ export const JobTableFlowScreen: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job) => (
-                <tr key={job.job_id}>
-                  <td>
-                    <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{job.capability}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
-                      Công cụ: <strong>{job.provider}</strong> ({job.provider_version || 'n/a'})
-                    </div>
-                    <div style={{ marginTop: 4 }}>
-                      <CopyableId value={job.job_id} prefix="Job ID" />
-                    </div>
-                  </td>
-                  <td>
-                    <StatusChip status={job.status} waitReason={job.wait_reason} kind="job" />
-                    {job.error && (
-                      <div style={{ marginTop: 4 }}>
-                        <span className="brand-badge" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
-                          Lỗi: {job.error.code}
-                        </span>
-                        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 2 }}>
-                          {job.error.next_action}
-                        </div>
-                      </div>
-                    )}
-                    {job.cancel && (
-                      <div style={{ marginTop: 4, fontSize: '11px', color: 'var(--warning)' }}>
-                        Ý định hủy: {job.cancel.reason}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ fontSize: 'var(--text-xs)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ color: 'var(--muted)' }}>Ưu tiên:</span>
-                        <strong className="tabular">{job.priority} / 100</strong>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                        <span className="brand-badge">Lần thử: #{job.attempt}</span>
-                        <span className="brand-badge">Gen: G{job.generation}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    {/* Wait Reason rendering */}
-                    {job.wait_reason ? (
-                      <div
-                        style={{
-                          padding: '6px 8px',
-                          backgroundColor: 'var(--warning-bg)',
-                          border: '1px solid var(--warning)',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: 'var(--text-xs)',
-                          maxWidth: 280,
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Clock size={12} />
-                          <span>{waitReasonLabels[job.wait_reason.code] || job.wait_reason.code}</span>
-                        </div>
-                        {job.wait_reason.detail && (
-                          <div style={{ fontSize: '11px', color: 'var(--ink)', marginTop: 2 }}>
-                            {job.wait_reason.detail}
-                          </div>
-                        )}
-                        {job.wait_reason.blocking_job_ids?.length ? (
-                          <div style={{ marginTop: 4, fontSize: '10.5px', color: 'var(--muted)' }}>
-                            Chặn bởi: {job.wait_reason.blocking_job_ids.join(', ')}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {/* Dispatch Block Reasons rendering */}
-                    {job.dispatch_block_reasons?.length ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: job.wait_reason ? 4 : 0 }}>
-                        {job.dispatch_block_reasons.map((reason, idx) => (
-                          <div
-                            key={idx}
-                            style={{
-                              padding: '4px 6px',
-                              backgroundColor: 'var(--danger-bg)',
-                              border: '1px solid var(--danger)',
-                              borderRadius: 'var(--radius-sm)',
-                              fontSize: '11px',
-                              color: 'var(--danger)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 4,
-                            }}
-                          >
-                            <ShieldAlert size={12} />
-                            <strong>{reason}</strong>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {!job.wait_reason && !job.dispatch_block_reasons?.length && (
-                      <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Sẵn sàng / Đang tiến hành</span>
-                    )}
-                  </td>
-                  <td>
-                    {job.depends_on?.length ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {job.depends_on.map((depId, idx) => (
-                          <CopyableId key={idx} value={depId} prefix="Dep" />
-                        ))}
-                      </div>
-                    ) : (
-                      <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Không phụ thuộc</span>
-                    )}
-                  </td>
-                  <td>
-                    <span className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
-                      Tạo: {new Date(job.created_at).toLocaleTimeString('vi-VN')}
-                    </span>
-                    {job.finished_at && (
-                      <div className="mono" style={{ fontSize: '11px', color: 'var(--success)' }}>
-                        Xong: {new Date(job.finished_at).toLocaleTimeString('vi-VN')}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    {(job.status === 'QUEUED' || job.status === 'RUNNING') && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => handleCancelJob(job.job_id)}
-                        title="Hủy job này"
-                      >
-                        <XCircle size={13} /> Hủy Job
-                      </button>
-                    )}
+              {jobs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
+                    Chưa có job nào trong chiến dịch này.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                jobs.map((job) => (
+                  <tr key={job.job_id}>
+                    <td>
+                      <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{job.capability}</div>
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
+                        Công cụ: <strong>{job.provider}</strong> ({job.provider_version || 'n/a'})
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        <CopyableId value={job.job_id} prefix="Job ID" />
+                      </div>
+                    </td>
+                    <td>
+                      <StatusChip status={job.status} waitReason={job.wait_reason} kind="job" />
+                      {job.error && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="brand-badge" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+                            Lỗi: {job.error.code}
+                          </span>
+                          <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 2 }}>
+                            {job.error.next_action}
+                          </div>
+                        </div>
+                      )}
+                      {job.cancel && (
+                        <div style={{ marginTop: 4, fontSize: '11px', color: 'var(--warning)' }}>
+                          Ý định hủy: {job.cancel.reason}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ fontSize: 'var(--text-xs)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ color: 'var(--muted)' }}>Ưu tiên:</span>
+                          <strong className="tabular">{job.priority} / 100</strong>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                          <span className="brand-badge">Lần thử: #{job.attempt}</span>
+                          <span className="brand-badge">Gen: G{job.generation}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {/* Wait Reason rendering */}
+                      {job.wait_reason ? (
+                        <div
+                          style={{
+                            padding: '6px 8px',
+                            backgroundColor: 'var(--warning-bg)',
+                            border: '1px solid var(--warning)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 'var(--text-xs)',
+                            maxWidth: 280,
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Clock size={12} />
+                            <span>{waitReasonLabels[job.wait_reason.code] || job.wait_reason.code}</span>
+                          </div>
+                          {job.wait_reason.detail && (
+                            <div style={{ fontSize: '11px', color: 'var(--ink)', marginTop: 2 }}>
+                              {job.wait_reason.detail}
+                            </div>
+                          )}
+                          {job.wait_reason.blocking_job_ids?.length ? (
+                            <div style={{ marginTop: 4, fontSize: '10.5px', color: 'var(--muted)' }}>
+                              Chặn bởi: {job.wait_reason.blocking_job_ids.join(', ')}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {/* Dispatch Block Reasons rendering */}
+                      {job.dispatch_block_reasons?.length ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: job.wait_reason ? 4 : 0 }}>
+                          {job.dispatch_block_reasons.map((reason, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                padding: '4px 6px',
+                                backgroundColor: 'var(--danger-bg)',
+                                border: '1px solid var(--danger)',
+                                borderRadius: 'var(--radius-sm)',
+                                fontSize: '11px',
+                                color: 'var(--danger)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <ShieldAlert size={12} />
+                              <strong>{reason}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {!job.wait_reason && !job.dispatch_block_reasons?.length && (
+                        <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Sẵn sàng / Đang tiến hành</span>
+                      )}
+                    </td>
+                    <td>
+                      {job.depends_on?.length ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {job.depends_on.map((depId, idx) => (
+                            <CopyableId key={idx} value={depId} prefix="Dep" />
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Không phụ thuộc</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
+                        Tạo: {new Date(job.created_at).toLocaleTimeString('vi-VN')}
+                      </span>
+                      {job.finished_at && (
+                        <div className="mono" style={{ fontSize: '11px', color: 'var(--success)' }}>
+                          Xong: {new Date(job.finished_at).toLocaleTimeString('vi-VN')}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {(job.status === 'QUEUED' || job.status === 'RUNNING') && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleCancelJob(job.job_id)}
+                          title="Hủy job này"
+                        >
+                          <XCircle size={13} /> Hủy Job
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

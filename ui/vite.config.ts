@@ -6,9 +6,21 @@ export default defineConfig({
   server: {
     port: 3100,
     host: true,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_BACKEND_TARGET || 'http://127.0.0.1:8080',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: 3100,
     host: true,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_BACKEND_TARGET || 'http://127.0.0.1:8080',
+        changeOrigin: true,
+      },
+    },
   },
 });

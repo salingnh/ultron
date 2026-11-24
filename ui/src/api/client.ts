@@ -11,11 +11,34 @@ import type {
   AppError,
 } from './types';
 import { mockHandlers } from '../mock/handlers';
+import { subscribeToCampaignEvents, type SSEConnection, type SSEOptions } from './sse';
+
+export const STORAGE_KEY_TOKEN = 'ultron-operator-token';
+
+export function getOperatorToken(): string {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const stored = window.localStorage.getItem(STORAGE_KEY_TOKEN);
+    if (stored && stored.trim()) {
+      return stored.trim();
+    }
+  }
+  return import.meta.env.VITE_BEARER_TOKEN || '';
+}
+
+export function setOperatorToken(token: string): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const trimmed = token.trim();
+    if (trimmed) {
+      window.localStorage.setItem(STORAGE_KEY_TOKEN, trimmed);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEY_TOKEN);
+    }
+    window.dispatchEvent(new CustomEvent('ultron-token-changed', { detail: { token: trimmed } }));
+  }
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v2';
-const BEARER_TOKEN = import.meta.env.VITE_BEARER_TOKEN || '';
-// Default to mock when VITE_USE_MOCK is 'true' or undefined in dev/test, but swappable via config
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
+let mockOverride: boolean | null = null;
 
 export class ApiError extends Error {
   constructor(
@@ -44,8 +67,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json');
   }
 
-  if (BEARER_TOKEN) {
-    headers.set('Authorization', `Bearer ${BEARER_TOKEN}`);
+  const token = getOperatorToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   if (options.method === 'POST' && !headers.has('Idempotency-Key')) {
@@ -68,10 +92,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const apiClient = {
-  isMock: USE_MOCK,
+  get isMock(): boolean {
+    if (mockOverride !== null) return mockOverride;
+    return import.meta.env.VITE_USE_MOCK !== 'false';
+  },
+
+  setMock(val: boolean | null) {
+    mockOverride = val;
+  },
 
   async listCampaigns(params?: { cursor?: string; limit?: number; status?: CampaignStatus }) {
-    if (USE_MOCK) return mockHandlers.listCampaigns(params);
+    if (this.isMock) return mockHandlers.listCampaigns(params);
     const query = new URLSearchParams();
     if (params?.cursor) query.set('cursor', params.cursor);
     if (params?.limit) query.set('limit', String(params.limit));
@@ -81,41 +112,41 @@ export const apiClient = {
   },
 
   async getCampaign(id: string): Promise<Campaign> {
-    if (USE_MOCK) return mockHandlers.getCampaign(id);
+    if (this.isMock) return mockHandlers.getCampaign(id);
     return request<Campaign>(`/campaigns/${encodeURIComponent(id)}`);
   },
 
   async pauseCampaign(id: string, reason?: string): Promise<Campaign> {
-    if (USE_MOCK) return mockHandlers.pauseCampaign(id, reason);
+    if (this.isMock) return mockHandlers.pauseCampaign(id, reason);
     return request<Campaign>(`/campaigns/${encodeURIComponent(id)}/pause`, {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: reason || 'Tạm dừng tác chiến theo yêu cầu điều độ' }),
     });
   },
 
   async resumeCampaign(id: string, reason?: string): Promise<Campaign> {
-    if (USE_MOCK) return mockHandlers.resumeCampaign(id, reason);
+    if (this.isMock) return mockHandlers.resumeCampaign(id, reason);
     return request<Campaign>(`/campaigns/${encodeURIComponent(id)}/resume`, {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: reason || 'Tiếp tục chiến dịch' }),
     });
   },
 
   async cancelCampaign(id: string, reason?: string): Promise<Campaign> {
-    if (USE_MOCK) return mockHandlers.cancelCampaign(id, reason);
+    if (this.isMock) return mockHandlers.cancelCampaign(id, reason);
     return request<Campaign>(`/campaigns/${encodeURIComponent(id)}/cancel`, {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: reason || 'Hủy toàn bộ job và dừng chiến dịch' }),
     });
   },
 
   async getCampaignFlow(id: string): Promise<CampaignFlow> {
-    if (USE_MOCK) return mockHandlers.getCampaignFlow(id);
+    if (this.isMock) return mockHandlers.getCampaignFlow(id);
     return request<CampaignFlow>(`/campaigns/${encodeURIComponent(id)}/flow`);
   },
 
   async listJobs(params: { campaign_id: string; status?: JobStatus; cursor?: string; limit?: number }) {
-    if (USE_MOCK) return mockHandlers.listJobs(params);
+    if (this.isMock) return mockHandlers.listJobs(params);
     const query = new URLSearchParams();
     query.set('campaign_id', params.campaign_id);
     if (params.status) query.set('status', params.status);
@@ -125,20 +156,20 @@ export const apiClient = {
   },
 
   async getJob(id: string): Promise<ScanJob> {
-    if (USE_MOCK) return mockHandlers.getJob(id);
+    if (this.isMock) return mockHandlers.getJob(id);
     return request<ScanJob>(`/jobs/${encodeURIComponent(id)}`);
   },
 
   async cancelJob(id: string, reason?: string): Promise<ScanJob> {
-    if (USE_MOCK) return mockHandlers.cancelJob(id, reason);
+    if (this.isMock) return mockHandlers.cancelJob(id, reason);
     return request<ScanJob>(`/jobs/${encodeURIComponent(id)}/cancel`, {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: reason || 'Hủy thủ công qua giao diện' }),
     });
   },
 
   async listAssets(params?: { campaign_id?: string; kind?: string; q?: string; cursor?: string; limit?: number }) {
-    if (USE_MOCK) return mockHandlers.listAssets(params);
+    if (this.isMock) return mockHandlers.listAssets(params);
     const query = new URLSearchParams();
     if (params?.campaign_id) query.set('campaign_id', params.campaign_id);
     if (params?.kind) query.set('kind', params.kind);
@@ -153,7 +184,7 @@ export const apiClient = {
     assetId: string,
     params: { campaign_id: string; max_hops?: number; as_of?: string; limit?: number }
   ): Promise<AssetGraphResponse> {
-    if (USE_MOCK) return mockHandlers.getAssetGraph(assetId, params);
+    if (this.isMock) return mockHandlers.getAssetGraph(assetId, params);
     const query = new URLSearchParams();
     query.set('campaign_id', params.campaign_id);
     if (params.max_hops) query.set('max_hops', String(params.max_hops));
@@ -163,12 +194,15 @@ export const apiClient = {
   },
 
   async listCapabilities(): Promise<CapabilitiesResponse> {
-    if (USE_MOCK) return mockHandlers.listCapabilities();
+    if (this.isMock) return mockHandlers.listCapabilities();
     return request<CapabilitiesResponse>('/capabilities');
   },
 
   async getProvenance(targetId: string): Promise<ProvenanceDetail | null> {
-    // In mock mode returns from mock map, in real backend could be resolved from job or result envelope
     return mockHandlers.getProvenance(targetId);
+  },
+
+  subscribeCampaignEvents(options: SSEOptions): SSEConnection {
+    return subscribeToCampaignEvents(options);
   },
 };

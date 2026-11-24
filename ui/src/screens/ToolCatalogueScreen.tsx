@@ -20,6 +20,10 @@ export const ToolCatalogueScreen: React.FC = () => {
   }, []);
 
   const loadCapabilities = async () => {
+    if (!apiClient.isMock) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -31,6 +35,39 @@ export const ToolCatalogueScreen: React.FC = () => {
       setLoading(false);
     }
   };
+
+  if (!apiClient.isMock) {
+    return (
+      <div>
+        <div className="filter-bar">
+          <div>
+            <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--ink)' }}>
+              Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)
+            </h1>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--muted)', marginTop: 2 }}>
+              Đăng ký năng lực (Capabilities Registry M05), bộ điều hợp (Adapters), phiên bản và trạng thái sức khỏe vận hành.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="status-chip warning" style={{ fontSize: '11px', padding: '2px 8px' }}>
+              Chưa có API (Đang chờ GET /capabilities)
+            </span>
+          </div>
+        </div>
+
+        <div className="state-box" style={{ marginTop: 32, padding: '48px 24px' }}>
+          <Wrench size={44} style={{ color: 'var(--muted)', marginBottom: 14 }} />
+          <div className="state-title" style={{ fontSize: 'var(--text-lg)', marginBottom: 6 }}>
+            Chưa có API backend cho Danh mục Công cụ
+          </div>
+          <div className="state-desc" style={{ maxWidth: 540, margin: '0 auto', lineHeight: 1.6 }}>
+            Endpoint <code>GET /capabilities</code> đang được hoàn thiện và tích hợp vào router của backend.
+            Trong chế độ Real API, giao diện tuân thủ nguyên tắc trung thực dữ liệu (Data Honesty), không hiển thị dữ liệu giả lập (mock).
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
