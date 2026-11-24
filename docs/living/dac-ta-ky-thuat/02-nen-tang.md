@@ -47,9 +47,9 @@ Giới hạn đã biết, chưa được coi là đã giải quyết:
 
 ## Điều phối
 
-Temporal chứa ID/reference, không raw lớn. Activity idempotent; retry có giới hạn. Pause/resume/cancel lưu lịch sử. Scheduler lấy ready jobs (dependency thành công, đủ ngân sách/khung giờ/rate/concurrency), sắp priority DESC, created_at ASC, job_id ASC. Dependency thất bại làm job chờ có lý do; không tự bỏ dependency.
+Temporal chứa ID/reference, không raw lớn. Activity idempotent; retry có giới hạn. Pause/resume/cancel lưu lịch sử. Scheduler lấy ready jobs (dependency thành công, đủ ngân sách/rate/concurrency), sắp priority DESC, created_at ASC, job_id ASC. Dependency thất bại làm job chờ có lý do; không tự bỏ dependency.
 
-Chờ signal job/tri thức hoặc timer, không busy polling. Pause chặn dispatch mới, giữ/thu job đang chạy theo snapshot; cancel chuyển intent tới worker và đối soát kết quả theo C06. Khi kết thúc campaign phải có snapshot cuối và lý do dừng. Allowed/blackout windows là tùy chọn: không cấu hình thì không tự thêm khung giờ; đã cấu hình thì phải cưỡng chế trước dispatch.
+Chờ signal job/tri thức hoặc timer, không busy polling. Pause chặn dispatch mới, giữ/thu job đang chạy theo snapshot; cancel chuyển intent tới worker và đối soát kết quả theo C06. Khi kết thúc campaign phải có snapshot cuối và lý do dừng. Khung giờ cho phép (allowed/blackout windows) đã bỏ khỏi G1 theo quyết định chủ sản phẩm 2026-11-24; làm lại ở G2 (TASKS).
 
 ## Model
 

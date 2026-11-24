@@ -22,7 +22,7 @@ Tên tool = capability ID; arguments theo capability-request.v2: input, rational
 2. Ghép inputDefaults, kiểm lại inputSchemaRef, mục tiêu được phép, nguồn gốc và giới hạn thực thi.
 3. Kiểm dependency tồn tại/cùng campaign, không self/cycle. Job tạo kèm toàn bộ dependency trong một giao dịch; không thêm cạnh sau dispatch.
 4. Ghim adapter_version/manifest_sha256 theo [quy tắc runtime](../interfaces/README.md#manifest-bất-biến-và-cấu-hình-thực-thi), ghi actor/rationale, tạo ApprovedTask có chữ ký và job_id. Trả ngay, không chờ tool kết thúc.
-5. Scheduler chỉ dispatch job có tiền nhiệm SUCCEEDED, đủ ngân sách/rate/concurrency/khung giờ; sort priority DESC, created_at ASC, job_id ASC.
+5. Scheduler chỉ dispatch job có tiền nhiệm SUCCEEDED, đủ ngân sách/rate/concurrency; sort priority DESC, created_at ASC, job_id ASC.
 
 Retry cùng idempotency_key giữ scan_cycle và job. Lần quét mới có scan_cycle mới. Fingerprint có đúng một định nghĩa tại [canonicalization.v2.yaml](../ingestion/canonicalization.v2.yaml): sha256 aegis-c14n/1 của campaign, capability/cấu hình, provider/upstream/adapter version, image/manifest pin, danh sách `target_refs` (TargetRef, không phải hình chiếu `targets`), input và scan_cycle. Priority/dependency không thay định danh phép quét; nếu trùng job nhưng yêu cầu scheduling khác, trả lỗi xung đột thay vì âm thầm dùng cấu hình cũ. Metadata/history không ghi đè.
 

@@ -30,7 +30,7 @@ Mã FR giữ liên hệ với các yêu cầu nghiệp vụ trước khi hợp n
 | ID | Yêu cầu | Module | Task/cổng | Bằng chứng cần có |
 | --- | --- | --- | --- | --- |
 | FR-001 | Tạo campaign từ domain, IP/CIDR, URL, email, keyword | M01 | S1.1, G1.1 | Giữ seed gốc, snapshot cấu hình và actor; seed reference xuyên luồng |
-| FR-002 | Ngân sách, rate/concurrency và khung giờ | M01/M05 | G1.1, G2.3 | Mọi job dùng đúng snapshot; ngoài khung hoặc hết budget thì không dispatch |
+| FR-002 | Ngân sách, rate/concurrency (khung giờ hoãn sang G2) | M01/M05 | G1.1, G2.3 | Mọi job dùng đúng snapshot; hết budget thì không dispatch |
 | FR-003 | Tìm provider tương thích capability/schema | M05 | S1.5, G1.3 | Từ chối capability/input lạ; tool thứ hai không sửa lõi |
 | FR-004 | Start/status/cancel/collect thống nhất | M06 | G1.3 | Một invocation một container; retry không nhân job; hủy/timeout có kết quả trung thực |
 | FR-005 | Agent nhiều vòng, context hữu hạn và checkpoint | M03/M04 | S1.4, G1.2 | Restart tiếp tục từ state, ledger và idempotency key |

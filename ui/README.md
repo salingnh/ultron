@@ -11,7 +11,7 @@ Operations console for Ultron security orchestration, implementing Item #51 (Car
 
 2. **Job Table & Flow Graph (`/jobs`)**
    - Dual-view toggle between tabular list and React Flow interactive dependency graph.
-   - Visualizes job wait reasons (`DEPENDENCY_PENDING`, `WINDOW_CLOSED`, `DEPENDENCY_FAILED`) and dispatch block reasons (`LEGACY_POLICY_V1`, `LEGACY_MISSING_TARGET_REFS`).
+   - Visualizes job wait reasons (`DEPENDENCY_PENDING`, `DEPENDENCY_FAILED`) and dispatch block reasons (`LEGACY_POLICY_V1`, `LEGACY_MISSING_TARGET_REFS`).
    - Displays retry attempts, generations, and capability references.
 
 3. **Asset Graph & Provenance Panel (`/assets`)**
