@@ -1,25 +1,30 @@
 #!/usr/bin/env bash
 # Ephemeral self-hosted runner loop for this repository (label `ultron-local`).
 #
-# Each iteration registers a one-job runner with a fresh work folder, runs exactly one job
-# and lets the registration expire, so no job can read the workspace, env or git refs left
-# by another job. The registration token is fetched with the operator's `gh` login at run
-# time; no token, PAT or other secret is stored in the unit or in this repository.
+# One loop runs per runner instance (scripts/ci/install-runner.sh --instance N): each
+# iteration registers a one-job runner with this instance's name prefix and a fresh work
+# folder, runs exactly one job and lets the registration expire. Several instances therefore
+# run several jobs at the same time without sharing a workspace, an environment or a git
+# ref, and without one job reading another's files.
 #
-# Started by ultron-runner.service (scripts/ci/install-runner.sh); run it directly only for
-# debugging, from the runner directory.
+# The registration token is fetched with the operator's `gh` login at run time; no token,
+# PAT or other secret is stored in the unit or in this repository.
+#
+# Started by ultron-runner-<n>.service; run it directly only for debugging, from the runner
+# directory.
 set -uo pipefail
 
-RUNNER_DIR=${ULTRON_RUNNER_DIR:-$HOME/ultron-runner}
+INSTANCE=${ULTRON_RUNNER_INSTANCE:-1}
+RUNNER_DIR=${ULTRON_RUNNER_DIR:-$HOME/ultron-runner-$INSTANCE}
 REPO=${ULTRON_REPO:-salingnh/ultron}
 LABEL=${ULTRON_RUNNER_LABEL:-ultron-local}
 RETRY_TOKEN=${ULTRON_RUNNER_TOKEN_RETRY:-60}
 RETRY_REGISTER=${ULTRON_RUNNER_REGISTER_RETRY:-30}
 
-log() { printf '[runner %s] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
+log() { printf '[runner %s %s] %s\n' "$INSTANCE" "$(date -u +%FT%TZ)" "$*" >&2; }
 
 cd "$RUNNER_DIR" 2>/dev/null || {
-  log "runner directory $RUNNER_DIR is missing - run scripts/ci/install-runner.sh"
+  log "runner directory $RUNNER_DIR is missing - run scripts/ci/install-runner.sh --instance $INSTANCE"
   exit 1
 }
 
@@ -62,7 +67,7 @@ while :; do
   if ! ./config.sh --unattended \
     --url "https://github.com/$REPO" \
     --token "$token" \
-    --name "ultron-local-$(date -u +%s)-$RANDOM" \
+    --name "ultron-local-$INSTANCE-$(date -u +%s)-$RANDOM" \
     --labels "$LABEL" \
     --ephemeral \
     --work _work; then
