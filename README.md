@@ -31,6 +31,7 @@ UI (terminal khác):
 
 ```bash
 cd ui
+npm ci
 VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
   VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
 ```
@@ -46,16 +47,6 @@ make run-local      # 1. dựng toàn bộ hệ + lab, in token; để nguyên t
 make demo-g1        # 2. campaign thật -> agent/MCP -> Subfinder -> DNSx -> raw/metadata/graph
 make demo-recovery  # 3. SIGKILL runner giữa job: chạy tiếp, không trùng container/job/envelope
 make soak-start     # 4. soak rút gọn 24 h (SOAK_HOURS=... để đổi), chạy nền
-```
-
-Mở giao diện (terminal khác, sau khi `make run-local` đã in token):
-
-```bash
-cd ui
-npm ci
-VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
-  VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
-# mở http://localhost:5173
 ```
 
 Tạo thêm một campaign mẫu qua API: `make seed-demo AEGIS_DEV_TOKEN=$(cat .local/operator-token)`. Campaign này dùng target của fixture contract (`internal.example`, `10.20.0.0/24`), lab không trả lời các tên đó, nên nó chạy một lượt enumerate, không có tên mới và tự tạm dừng với lý do "no progress for 3 session(s)" — đó là hành vi đúng. Campaign chạy trọn vòng trên lab là `make demo-g1`.
