@@ -3,6 +3,9 @@ import type {
   ScanJob,
   CampaignFlow,
   AssetGraphResponse,
+  AssetGraphNode,
+  AssetGraphEdge,
+  AssetHistoryResponse,
   Asset,
   CapabilitiesResponse,
   ProvenanceDetail,
@@ -177,7 +180,15 @@ export const apiClient = {
     if (params?.cursor) query.set('cursor', params.cursor);
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString() ? `?${query.toString()}` : '';
-    return request<{ items: Asset[]; next_cursor?: string }>(`/assets${qs}`);
+    try {
+      return await request<{ items: Asset[]; next_cursor?: string }>(`/assets${qs}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // GET /assets is marked deferred in contract (x-aegis-status: deferred)
+        return { items: [] };
+      }
+      throw err;
+    }
   },
 
   async getAssetGraph(
@@ -193,14 +204,92 @@ export const apiClient = {
     return request<AssetGraphResponse>(`/assets/${encodeURIComponent(assetId)}/graph?${query.toString()}`);
   },
 
+  async getAssetHistory(
+    assetId: string,
+    params?: { cursor?: string; limit?: number }
+  ): Promise<AssetHistoryResponse> {
+    if (this.isMock) return mockHandlers.getAssetHistory(assetId, params);
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<AssetHistoryResponse>(`/assets/${encodeURIComponent(assetId)}/history${qs}`);
+  },
+
   async listCapabilities(campaignId?: string): Promise<CapabilitiesResponse> {
     if (this.isMock) return mockHandlers.listCapabilities(campaignId);
     const query = campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : '';
     return request<CapabilitiesResponse>(`/capabilities${query}`);
   },
 
-  async getProvenance(targetId: string): Promise<ProvenanceDetail | null> {
-    return mockHandlers.getProvenance(targetId);
+  async getProvenance(
+    targetId: string,
+    options?: {
+      edge?: AssetGraphEdge;
+      fallbackAsset?: AssetGraphNode;
+    }
+  ): Promise<ProvenanceDetail | null> {
+    if (this.isMock) {
+      return mockHandlers.getProvenance(targetId);
+    }
+
+    const edge = options?.edge;
+    const fallbackNode = options?.fallbackAsset;
+
+    // UUID regex check (Id in common/ids.v2.schema.json)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+
+    if (isUuid) {
+      try {
+        const history = await this.getAssetHistory(targetId);
+        const latestObs = history.items && history.items.length > 0 ? history.items[0] : null;
+
+        if (latestObs) {
+          const tool = latestObs.provider || latestObs.capability || undefined;
+          return {
+            tool,
+            capability: latestObs.capability,
+            provider: latestObs.provider,
+            jobId: latestObs.scan_id,
+            observedAt: latestObs.observed_at,
+            predicate: latestObs.predicate,
+            polarity: latestObs.polarity,
+            evidenceIds: latestObs.evidence_ids,
+            confidence: edge?.confidence,
+            sha256: latestObs.evidence_ids && latestObs.evidence_ids.length > 0 ? latestObs.evidence_ids[0] : undefined,
+            sourceAsset: history.asset.discovered_from?.[0] || edge?.from,
+            targetAsset: history.asset.canonical_key || edge?.to,
+          };
+        }
+
+        return {
+          observedAt: history.asset.last_seen || history.asset.first_seen,
+          sourceAsset: history.asset.discovered_from?.[0] || edge?.from,
+          targetAsset: history.asset.canonical_key || edge?.to,
+        };
+      } catch (err) {
+        console.warn('Failed to load asset history for provenance:', err);
+      }
+    }
+
+    if (edge) {
+      return {
+        jobId: edge.source_job_id,
+        observedAt: edge.observed_at || edge.valid_from,
+        confidence: edge.confidence,
+        sourceAsset: edge.from,
+        targetAsset: edge.to,
+      };
+    }
+
+    if (fallbackNode) {
+      return {
+        observedAt: fallbackNode.last_seen || fallbackNode.first_seen,
+        targetAsset: fallbackNode.canonical_key,
+      };
+    }
+
+    return null;
   },
 
   subscribeCampaignEvents(options: SSEOptions): SSEConnection {

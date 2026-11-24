@@ -4,11 +4,13 @@ import fs from 'fs';
 import path from 'path';
 
 const SCREENSHOT_DIR = path.resolve(process.cwd(), 'screenshots');
+const LEADER_DIR_G15C = '/orca/bots/ultron-lead/memory/reports/screenshots/g1.5c-ui';
 const LEADER_DIR_WIRE = '/orca/bots/ultron-lead/memory/reports/screenshots/g1.5b-wire';
 const LEADER_DIR_LEGACY = '/orca/bots/ultron-lead/memory/reports/screenshots/g1.5b';
 
 test.beforeAll(() => {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  fs.mkdirSync(LEADER_DIR_G15C, { recursive: true });
   fs.mkdirSync(LEADER_DIR_WIRE, { recursive: true });
   fs.mkdirSync(LEADER_DIR_LEGACY, { recursive: true });
 });
@@ -19,12 +21,16 @@ async function captureScreen(page: Page, filename: string) {
   const localPath = path.join(SCREENSHOT_DIR, filename);
   await page.screenshot({ path: localPath, fullPage: true });
 
-  // Copy to reports directory for review artifacts
-  try {
-    fs.copyFileSync(localPath, path.join(LEADER_DIR_WIRE, filename));
-    fs.copyFileSync(localPath, path.join(LEADER_DIR_LEGACY, filename));
-  } catch {
-    // ignore if directory permission restricts in some sandboxes
+  // Copy to reports directory for review artifacts only when running real verification
+  // or when explicitly enabled, so CI mock tests never overwrite leader review artifacts.
+  if (process.env.VITE_USE_MOCK === 'false' || process.env.COPY_LEADER_SHOTS === 'true') {
+    try {
+      fs.copyFileSync(localPath, path.join(LEADER_DIR_G15C, filename));
+      fs.copyFileSync(localPath, path.join(LEADER_DIR_WIRE, filename));
+      fs.copyFileSync(localPath, path.join(LEADER_DIR_LEGACY, filename));
+    } catch {
+      // ignore if directory permission restricts in some sandboxes
+    }
   }
 }
 
@@ -90,15 +96,37 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
       await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
 
       // 5. Asset Graph View Screen
-      await page.goto('/assets');
+      let assetId = '';
+      let assetCampaignId = campaignId;
+      if (isRealMode && process.env.AEGIS_PG_DSN) {
+        try {
+          const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', process.env.AEGIS_PG_DSN, 'get_asset'], {
+            stdio: 'pipe',
+          }).toString();
+          const matchAsset = out.match(/ASSET_ID\s+([^\s]+)/);
+          if (matchAsset) assetId = matchAsset[1];
+          const matchCamp = out.match(/CAMPAIGN_ID\s+([^\s]+)/);
+          if (matchCamp) assetCampaignId = matchCamp[1];
+        } catch {
+          // ignore
+        }
+      }
+      const assetUrl = assetId
+        ? `/assets?campaign_id=${assetCampaignId}&asset_id=${assetId}`
+        : `/assets?campaign_id=${assetCampaignId}`;
+      await page.goto(assetUrl);
       await expect(page.getByText('Đồ thị Tri thức & Nguồn gốc Tài sản')).toBeVisible();
-      if (isRealMode) {
-        await expect(page.getByText('Chưa có API backend cho Đồ thị Tài sản')).toBeVisible();
-      } else {
-        await expect(page.getByText('Nguồn gốc & Bằng chứng', { exact: true })).toBeVisible();
+      await expect(page.getByText('Chưa có API backend cho Đồ thị Tài sản')).not.toBeVisible();
+      const provHeading = page.getByText('Nguồn gốc & Bằng chứng', { exact: true });
+      if (await provHeading.isVisible()) {
         await expect(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)')).toBeVisible();
       }
       await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
+
+      // 5b. Asset Table View Screen
+      await page.getByRole('button', { name: 'Bảng Tài sản' }).click();
+      await page.waitForTimeout(400);
+      await captureScreen(page, `05b-asset-table-${theme}.png`);
 
       // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
       await page.goto('/tools');

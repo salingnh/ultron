@@ -121,6 +121,35 @@ describe('ApiClient (Mock & Contract Operations)', () => {
     expect(prov?.sha256).toBe('1e1c8bcdd33168e15528d61a006bf5e5e5a31e5b8e4d4d4f1f10ad0876240a9f');
   });
 
+  it('retrieves asset history with observations and evidence ids', async () => {
+    const history = await apiClient.getAssetHistory('01934f6a-0000-7000-8000-0000000000f1');
+    expect(history.asset).toBeDefined();
+    expect(history.asset.canonical_key).toBe('dns:internal.example');
+    expect(history.items.length).toBeGreaterThan(0);
+    expect(history.items[0].scan_id).toBeDefined();
+    expect(history.items[0].observed_at).toBeDefined();
+  });
+
+  it('handles edge provenance derivation', async () => {
+    const edge = {
+      type: 'SUBDOMAIN_OF',
+      from: 'dns:vpn.internal.example',
+      to: 'dns:internal.example',
+      valid_from: '2026-11-20T08:12:30Z',
+      valid_to: null,
+      source_job_id: '01934f6a-0000-7000-8000-00000000d001',
+      confidence: 1.0,
+    };
+    // Test provenance fallback for edge
+    apiClient.setMock(false);
+    const edgeProv = await apiClient.getProvenance('edge-dns:vpn.internal.example-dns:internal.example', { edge });
+    expect(edgeProv).toBeDefined();
+    expect(edgeProv?.jobId).toBe(edge.source_job_id);
+    expect(edgeProv?.sourceAsset).toBe(edge.from);
+    expect(edgeProv?.targetAsset).toBe(edge.to);
+    apiClient.setMock(null);
+  });
+
   it('lists capabilities in registry catalogue', async () => {
     const res = await apiClient.listCapabilities();
     expect(res.items.some((c) => c.capability === 'dns.enumerate_subdomains')).toBe(true);

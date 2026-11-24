@@ -45,6 +45,50 @@ When `VITE_USE_MOCK=false`, requests are sent directly to `VITE_API_BASE` using 
 
 ## Getting Started
 
+### Hướng dẫn Chạy thử (Walkthrough Guide)
+
+Dành cho người vận hành khảo sát toàn diện giao diện Ultron Operations Console trên môi trường cục bộ:
+
+#### 1. Khởi động Backend API & Ngăn xếp dịch vụ phụ trợ
+
+```bash
+# Khởi động PostgreSQL 16, Neo4j 5.26, SeaweedFS, Temporal và uvicorn M26 API
+make run-local
+
+# (Tùy chọn) Khởi tạo chiến dịch mẫu và dữ liệu ban đầu
+make seed-demo
+```
+
+#### 2. Cấu hình Operator Token (Xác thực Người vận hành)
+
+1. Khi `make run-local` hoàn tất, token người vận hành (Bearer token) sẽ được in ra terminal.
+2. Mở giao diện Ultron tại `http://localhost:5173`.
+3. Nhấp vào nút **Token: Chưa cấu hình** (hoặc **Cấu hình Token**) ở góc trên bên phải thanh tiêu đề.
+4. Dán mã Bearer token và nhấn **Lưu Token**. Trạng thái sẽ chuyển sang **Token: Đã cấu hình** (lưu an toàn trong `localStorage`).
+
+#### 3. Khởi chạy Giao diện Frontend
+
+```bash
+cd ui
+npm install
+
+# Chế độ Real API (kết nối trực tiếp backend http://127.0.0.1:8000)
+VITE_USE_MOCK=false npm run dev
+
+# Hoặc chế độ Mock Mode (dữ liệu mẫu hợp đồng OpenAPI v2)
+VITE_USE_MOCK=true npm run dev
+```
+
+#### 4. Khảo sát các màn hình chính
+
+- **Quản lý Chiến dịch (`/campaigns`)**: Xem danh sách chiến dịch, trạng thái, tạo mới, tạm dừng, tiếp tục hoặc hủy chiến dịch.
+- **Kế hoạch & Luồng Job (`/jobs`)**: Chuyển đổi giữa bảng Job chi tiết và Đồ thị Luồng tương tác (React Flow).
+- **Đồ thị Tri thức & Nguồn gốc Tài sản (`/assets`)**:
+  - Khảo sát các đỉnh (Node: tên miền, IP) và cạnh quan hệ (Edge: SUBDOMAIN_OF, RESOLVES_TO).
+  - Nhấp vào bất kỳ Node hoặc Edge để mở **Bảng điều khiển Nguồn gốc (Provenance Panel)** ở cạnh phải, hiển thị đầy đủ công cụ trinh sát, phiên bản, Job ID, thời điểm quan sát, độ tin cậy và mã băm bằng chứng SHA-256 không bị che giấu.
+  - Chuyển sang **Bảng Tài sản** để xem dưới dạng bảng mật độ cao kèm bộ lọc theo loại tài sản (`domain`, `ip`) và tìm kiếm canonical key.
+- **Danh mục Công cụ (`/tools`)**: Xem trạng thái đăng ký M05, phiên bản OCI container sandbox và sức khỏe các công cụ trinh sát.
+
 ### Prerequisites
 
 - Node.js >= 20.x

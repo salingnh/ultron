@@ -54,15 +54,20 @@ export type Timestamp = components['schemas']['Timestamp'];
 
 // Provenance detail model
 export interface ProvenanceDetail {
-  tool: string;
-  version: string;
+  tool?: string;
+  version?: string;
   adapterVersion?: string;
-  jobId: string;
-  observedAt: string;
-  confidence: number;
-  sha256: string;
+  jobId?: string;
+  observedAt?: string;
+  confidence?: number;
+  sha256?: string;
   sourceAsset?: string;
   targetAsset?: string;
   evidenceUri?: string;
   rawRef?: string;
+  capability?: string;
+  provider?: string;
+  predicate?: string;
+  polarity?: string;
+  evidenceIds?: string[];
 }
