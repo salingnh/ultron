@@ -98,12 +98,25 @@ def main() -> None:
         with psycopg.connect(dsn) as conn:
             row = conn.execute(
                 """
-                SELECT a.asset_id, ac.campaign_id
-                FROM asset a
-                JOIN asset_campaign ac ON a.asset_id = ac.asset_id
-                ORDER BY a.first_seen LIMIT 1
+                SELECT a.asset_id, c.campaign_id
+                FROM campaign c
+                JOIN asset_campaign ac ON c.campaign_id = ac.campaign_id
+                JOIN asset a ON ac.asset_id = a.asset_id
+                JOIN observation o ON a.asset_id = o.subject_asset_id AND o.campaign_id = c.campaign_id
+                WHERE c.status = 'COMPLETED'
+                ORDER BY c.created_at DESC, a.first_seen ASC
+                LIMIT 1
                 """
             ).fetchone()
+            if not row:
+                row = conn.execute(
+                    """
+                    SELECT a.asset_id, ac.campaign_id
+                    FROM asset a
+                    JOIN asset_campaign ac ON a.asset_id = ac.asset_id
+                    ORDER BY a.first_seen LIMIT 1
+                    """
+                ).fetchone()
             if row:
                 print(f"ASSET_ID {row[0]}")
                 print(f"CAMPAIGN_ID {row[1]}")

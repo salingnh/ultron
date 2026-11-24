@@ -37,7 +37,7 @@ Configuration is managed via environment variables (create `.env` in `ui/` if ov
 
 | Variable | Description | Default |
 |---|---|---|
-| `VITE_API_BASE` | Base URL of Ultron backend API | `http://localhost:8000` |
+| `VITE_API_BASE` | Base URL of Ultron backend API | `/api/v2` (or `http://127.0.0.1:8000/api/v2`) |
 | `VITE_USE_MOCK` | Enable contract fixture mock handlers (`true`/`false`) | `true` |
 | `VITE_BEARER_TOKEN` | Bearer token for authenticated requests | (empty) |
 
@@ -52,19 +52,20 @@ Dành cho người vận hành khảo sát toàn diện giao diện Ultron Opera
 #### 1. Khởi động Backend API & Ngăn xếp dịch vụ phụ trợ
 
 ```bash
-# Khởi động PostgreSQL 16, Neo4j 5.26, SeaweedFS, Temporal và uvicorn M26 API
+# Khởi động toàn bộ hệ G1 (PostgreSQL 16, Neo4j, SeaweedFS, Temporal, lab DNS và uvicorn M26 API)
 make run-local
 
-# (Tùy chọn) Khởi tạo chiến dịch mẫu và dữ liệu ban đầu
-make seed-demo
+# Chạy demo G1 để sinh dữ liệu thật (campaigns, jobs, assets, graph, provenance)
+make demo-g1
 ```
 
 #### 2. Cấu hình Operator Token (Xác thực Người vận hành)
 
-1. Khi `make run-local` hoàn tất, token người vận hành (Bearer token) sẽ được in ra terminal.
-2. Mở giao diện Ultron tại `http://localhost:5173`.
+1. Khi `make run-local` hoàn tất, token người vận hành (Bearer token) sẽ được in ra terminal (và lưu trong `.local/operator-token`).
+2. Mở giao diện Ultron tại `http://localhost:3100`.
 3. Nhấp vào nút **Token: Chưa cấu hình** (hoặc **Cấu hình Token**) ở góc trên bên phải thanh tiêu đề.
 4. Dán mã Bearer token và nhấn **Lưu Token**. Trạng thái sẽ chuyển sang **Token: Đã cấu hình** (lưu an toàn trong `localStorage`).
+*(Hoặc có thể truyền trực tiếp qua biến môi trường `VITE_BEARER_TOKEN` khi khởi chạy lệnh `npm run dev`)*.
 
 #### 3. Khởi chạy Giao diện Frontend
 
@@ -72,8 +73,9 @@ make seed-demo
 cd ui
 npm install
 
-# Chế độ Real API (kết nối trực tiếp backend http://127.0.0.1:8000)
-VITE_USE_MOCK=false npm run dev
+# Chế độ Real API (kết nối trực tiếp backend http://127.0.0.1:8000/api/v2)
+VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
+  VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
 
 # Hoặc chế độ Mock Mode (dữ liệu mẫu hợp đồng OpenAPI v2)
 VITE_USE_MOCK=true npm run dev

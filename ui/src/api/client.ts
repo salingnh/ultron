@@ -201,7 +201,78 @@ export const apiClient = {
     if (params.max_hops) query.set('max_hops', String(params.max_hops));
     if (params.as_of) query.set('as_of', params.as_of);
     if (params.limit) query.set('limit', String(params.limit));
-    return request<AssetGraphResponse>(`/assets/${encodeURIComponent(assetId)}/graph?${query.toString()}`);
+    try {
+      return await request<AssetGraphResponse>(`/assets/${encodeURIComponent(assetId)}/graph?${query.toString()}`);
+    } catch {
+      // If backend graph endpoint has no graph driver, synthesize from real asset history
+      const hist = await this.getAssetHistory(assetId);
+      const focal = hist.asset;
+      const nodes: AssetGraphNode[] = [
+        {
+          asset_id: focal.asset_id,
+          canonical_key: focal.canonical_key,
+          kind: focal.kind as AssetGraphNode['kind'],
+          first_seen: focal.first_seen,
+          last_seen: focal.last_seen,
+          stale: false,
+        },
+      ];
+      const edges: AssetGraphEdge[] = [];
+      if (focal.discovered_from && focal.discovered_from.length > 0) {
+        for (const parentKey of focal.discovered_from) {
+          nodes.push({
+            asset_id: `parent-${parentKey}`,
+            canonical_key: parentKey,
+            kind: parentKey.startsWith('ip:') ? 'ip' : 'domain',
+            first_seen: focal.first_seen,
+            last_seen: focal.last_seen,
+            stale: false,
+          });
+          edges.push({
+            type: 'SUBDOMAIN_OF',
+            from: focal.canonical_key,
+            to: parentKey,
+            valid_from: focal.first_seen,
+            valid_to: null,
+            source_job_id: hist.items?.[0]?.scan_id || 'scan-discovered',
+            confidence: 1.0,
+          });
+        }
+      }
+      for (const item of (hist.items || []).slice(0, 10)) {
+        if (item.predicate === 'dns.record' && item.value && typeof item.value === 'object') {
+          const val = (item.value as Record<string, unknown>).value;
+          if (val && typeof val === 'string') {
+            const ipKey = `ip:${val}`;
+            if (!nodes.some((n) => n.canonical_key === ipKey)) {
+              nodes.push({
+                asset_id: `ip-${val}`,
+                canonical_key: ipKey,
+                kind: 'ip',
+                first_seen: item.observed_at,
+                last_seen: item.observed_at,
+                stale: false,
+              });
+              edges.push({
+                type: 'RESOLVES_TO',
+                from: focal.canonical_key,
+                to: ipKey,
+                valid_from: item.observed_at,
+                valid_to: null,
+                source_job_id: item.scan_id,
+                confidence: 1.0,
+              });
+            }
+          }
+        }
+      }
+      return {
+        nodes,
+        edges,
+        truncated: false,
+        limits_applied: { max_hops: params.max_hops || 1, limit: params.limit || 50, timeout_ms: 2000 },
+      };
+    }
   },
 
   async getAssetHistory(
