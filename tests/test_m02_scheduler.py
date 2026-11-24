@@ -329,3 +329,27 @@ def test_m05_cancel_of_a_queued_job_with_a_wait_reason_clears_it_first() -> None
             )
         assert canceled["status"] == "CANCELLED"
         assert wait_reason(dsn, waiting) is None
+
+
+def test_dispatch_reports_every_pending_job_of_the_campaign() -> None:
+    """`DispatchPlan.pending` is what keeps the workflow from starting a session while a job runs.
+
+    It must come from the committed rows (a job claimed in this tick, a job still QUEUED, a job in
+    flight) and must drop a job as soon as it is terminal: a signal that arrives while the campaign
+    is between ticks would otherwise leave the loop waiting for an event that already happened.
+    """
+    with migrated_database() as dsn:
+        campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+        with service(dsn) as jobs:
+            first = accept_job(jobs, campaign)
+            second = accept_job(jobs, campaign, priority=10)
+        with scheduler_for(dsn) as scheduler:
+            plan = scheduler.dispatch(campaign.campaign_id)
+            assert set(plan.pending) == {first, second}
+            assert set(plan.claimed) == {first}, "one slot: only the higher priority job runs"
+
+            run_job(dsn, first)
+            complete_job(dsn, first)
+            plan = scheduler.dispatch(campaign.campaign_id)
+            assert first not in plan.pending, "a terminal job is not pending"
+            assert plan.claimed == (second,)

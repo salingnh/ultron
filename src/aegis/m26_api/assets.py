@@ -35,7 +35,7 @@ from fastapi import status as http_status
 from aegis import validation
 from aegis.m23_graph import queries
 from aegis.m26_api.app import API_PREFIX
-from aegis.m26_api.db import connection as db_connection
+from aegis.m26_api.db import ConnectionDep
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
 from aegis.m26_api.operator import Principal, require_principal
 from aegis.m26_api.registry import RouterEntry, RouterRegistry
@@ -177,7 +177,7 @@ def get_asset_graph(
     asset_id: str,
     campaign_id: Annotated[str, Query(alias="campaign_id")],
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
     max_hops: Annotated[int, Query(ge=1, le=2)] = 1,
     as_of: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -225,7 +225,7 @@ def get_asset_history(
     response: Response,
     asset_id: str,
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, Any]:

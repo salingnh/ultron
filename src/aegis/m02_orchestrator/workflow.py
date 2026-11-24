@@ -179,6 +179,9 @@ class CampaignWorkflow:
             )
             self._queued = plan.queued
             self._in_flight = plan.in_flight
+            # The committed rows are the truth about what is still running: a `job_completed`
+            # signal that arrived between two ticks cannot leave the loop waiting for it.
+            self._pending = set(plan.pending)
             if plan.stop is not None:
                 return await self._stop(inp, plan)
 

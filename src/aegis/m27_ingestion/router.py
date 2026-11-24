@@ -97,8 +97,13 @@ def _error(
     operation_id="ingestResult",
     responses={
         400: {"description": "Envelope refused (dead-lettered); see Error.code and Error.field"},
+        401: {"description": "Missing or wrong internal service token (X-Aegis-Service-Token)"},
         409: {"description": "IDEMPOTENCY_CONFLICT: same dedup_key, different content"},
     },
+    # The contract publishes this operation with the `serviceToken` scheme, not the operator's
+    # bearer: the served document must say the same (FastAPI has no scheme declaration for a custom
+    # header, so the security requirement is stated here, the way jobs.py states operatorToken).
+    openapi_extra={"security": [{"serviceToken": []}]},
 )
 def ingest_result(
     payload: dict[str, Any],

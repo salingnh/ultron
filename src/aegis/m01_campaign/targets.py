@@ -39,6 +39,7 @@ __all__ = [
     "SEED_ARRAY_KINDS",
     "SeedIdentityError",
     "SeedTarget",
+    "insert_seed_assets",
     "insert_seeds",
     "seed_canonical_key",
     "seed_targets",
@@ -368,6 +369,58 @@ def seed_targets(targets: Mapping[str, Sequence[str]]) -> list[SeedTarget]:
             row_kind = _kind_of(array, raw)
             rows.append(SeedTarget(row_kind, raw, seed_canonical_key(row_kind, raw)))
     return rows
+
+
+def insert_seed_assets(
+    connection: psycopg.Connection[Any],
+    *,
+    campaign_id: str,
+    seeds: Sequence[SeedTarget],
+) -> list[str]:
+    """Make the campaign's seed targets assets from the start; returns the asset ids touched.
+
+    `0001_init.sql` gives `asset.first_job_id` the meaning "NULL = the asset is a seed target", so
+    the seed is expected to be an asset before any job runs. Without it M27 cannot resolve the seed
+    as the subject of a coverage entry or as the parent of a `SUBDOMAIN_OF` edge, and quarantines
+    both (G5 `unknown_subject_asset` / `unknown_relationship_endpoint`) - which is exactly what the
+    G1.5c demo found. A seed whose `aegis-norm/1` rules give it no identity (keyword, cidr, ...) has
+    no canonical key and no asset; nothing is invented here.
+    """
+    touched: list[str] = []
+    for row in seeds:
+        if row.canonical_key is None:
+            continue
+        existing = connection.execute(
+            "SELECT asset_id, kind FROM aegis.asset WHERE canonical_key = %s",
+            (row.canonical_key,),
+        ).fetchone()
+        if existing is not None:
+            asset_id = str(existing["asset_id"])
+            if str(existing["kind"]) != row.kind:
+                # A key keeps the kind it was first seen with (M27 quarantines the same conflict);
+                # a seed that disagrees does not overwrite the inventory.
+                continue
+        else:
+            asset_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO aegis.asset
+                  (asset_id, canonical_key, kind, first_seen, last_seen, first_job_id,
+                   normalization_version)
+                VALUES (%s, %s, %s, now(), now(), NULL, %s)
+                """,
+                (asset_id, row.canonical_key, row.kind, NORM_VERSION),
+            )
+        connection.execute(
+            """
+            INSERT INTO aegis.asset_campaign (asset_id, campaign_id, first_seen, first_job_id)
+            VALUES (%s, %s, now(), NULL)
+            ON CONFLICT (asset_id, campaign_id) DO NOTHING
+            """,
+            (asset_id, campaign_id),
+        )
+        touched.append(asset_id)
+    return touched
 
 
 def insert_seeds(

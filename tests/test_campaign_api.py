@@ -583,3 +583,47 @@ def test_the_operator_token_is_never_stored(dsn: str, client: TestClient) -> Non
     for row in audit:
         assert token not in row["actor"] and token not in row["details"]
     assert token not in str(created)
+
+
+@requires_postgres
+def test_the_seed_targets_become_assets(dsn: str, client: TestClient) -> None:
+    """0001 gives `asset.first_job_id` the meaning "NULL = a seed target", so the seed is an asset.
+
+    The G1.5c demo showed why it matters: M27 cannot resolve a coverage subject (or the parent of a
+    `SUBDOMAIN_OF` edge) that is not an asset, and quarantines both. The seed becomes an asset in
+    the same transaction that creates the campaign, and a second campaign reuses the row.
+    """
+    body = support.campaign_body(
+        targets={"domains": ["seed-assets.example"], "ips": ["10.99.0.5"], "keywords": ["acme"]}
+    )
+    before = support.count(dsn, "asset")
+    first = support.create_campaign(client, key="seed-assets-1", body=body)
+    assert first.status_code == 202, first.text
+    campaign_id = first.json()["campaign_id"]
+    assert support.count(dsn, "asset") == before + 2, "a keyword seed has no identity and no asset"
+
+    assets = support.fetch_all(
+        dsn,
+        "SELECT canonical_key, kind, first_job_id FROM aegis.asset"
+        " WHERE canonical_key IN ('dns:seed-assets.example', 'ip:10.99.0.5') ORDER BY 1",
+    )
+    assert [row["canonical_key"] for row in assets] == ["dns:seed-assets.example", "ip:10.99.0.5"]
+    assert [row["kind"] for row in assets] == ["domain", "ip"]
+    assert all(row["first_job_id"] is None for row in assets), "a seed asset has no job yet"
+    linked = support.fetch_all(
+        dsn,
+        "SELECT asset_id FROM aegis.asset_campaign WHERE campaign_id = %s",
+        (campaign_id,),
+    )
+    assert len(linked) == 2, "the campaign must be linked to both seed assets"
+
+    after = support.count(dsn, "asset")
+    second = support.create_campaign(client, key="seed-assets-2", body=body)
+    assert second.status_code == 202, second.text
+    assert support.count(dsn, "asset") == after, "a second campaign must reuse the asset rows"
+    campaign_two = support.fetch_all(
+        dsn,
+        "SELECT asset_id FROM aegis.asset_campaign WHERE campaign_id = %s",
+        (second.json()["campaign_id"],),
+    )
+    assert len(campaign_two) == 2

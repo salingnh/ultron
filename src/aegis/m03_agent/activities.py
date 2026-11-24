@@ -30,7 +30,7 @@ from aegis.m03_agent import config as config_module
 from aegis.m03_agent import session as session_module
 from aegis.m03_agent.mcp import McpToolClient, ToolClient
 
-__all__ = ["ACTIVITIES", "build_model", "configure", "run_agent_session"]
+__all__ = ["ACTIVITIES", "build_model", "configure", "configure_from_env", "run_agent_session"]
 
 #: Set by `configure()` (the worker entry point) or by a test before it starts a worker.
 _deps: session_module.SessionDeps | None = None
@@ -103,6 +103,16 @@ def configure(
         model=resolved_model,
     )
     return _deps
+
+
+def configure_from_env() -> session_module.SessionDeps:
+    """The composition root `python -m aegis.m02_orchestrator.worker` runs before it starts.
+
+    The worker hosts this module's activity; it does not know what a session needs. Reading the
+    environment here keeps that knowledge in M03 and makes a misconfigured worker fail at start-up
+    instead of on the first activity (see `aegis.m02_orchestrator.worker._configure_from_env`).
+    """
+    return configure()
 
 
 def _heartbeat(stage: str, fields: Mapping[str, Any]) -> None:

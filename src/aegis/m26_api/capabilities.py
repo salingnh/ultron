@@ -36,8 +36,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from aegis import validation
 from aegis.m05_registry.manifest import ManifestRecord
 from aegis.m05_registry.registry import ManifestRegistry, PostgresManifestRegistry
-from aegis.m26_api.db import connection as db_connection
-from aegis.m26_api.db import database_dsn_of
+from aegis.m26_api.db import ConnectionDep, database_dsn_of
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
 from aegis.m26_api.operator import Principal, require_principal
 from aegis.m26_api.registry import RouterRegistry
@@ -177,7 +176,7 @@ def list_capabilities(
     response: Response,
     principal: Annotated[Principal, Depends(require_principal)],
     registry: Annotated[ManifestRegistry, Depends(get_manifest_registry)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
     campaign_id: Annotated[str | None, Query()] = None,
 ) -> dict[str, Any]:
     """Admitted capabilities with their current providers, filtered by a campaign's RoE."""

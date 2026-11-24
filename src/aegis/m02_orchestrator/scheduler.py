@@ -50,12 +50,16 @@ from .windows import utcnow, windows_open
 
 __all__ = [
     "IN_FLIGHT_STATUSES",
+    "JOB_TERMINAL_STATUSES",
     "PostgresScheduler",
     "SchedulerError",
     "TERMINAL_STATUSES",
 ]
 
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
+#: `scan_job.status` values a job never leaves (contracts/db/postgres/0001_init.sql). A campaign
+#: with one of these jobs finished it; every other job status is still pending.
+JOB_TERMINAL_STATUSES = ("SUCCEEDED", "FAILED", "CANCELLED")
 IN_FLIGHT_STATUSES = ("VALIDATING", "DISPATCHED", "RUNNING", "COLLECTING")
 
 MODULE_ACTOR = {"kind": "module", "id": "M02"}
@@ -77,6 +81,14 @@ SELECT job_id, priority, created_at, attempt, wait_reason
    AND dispatch_block_reasons IS NULL
    AND cancel_requested_at IS NULL
  ORDER BY priority DESC, created_at ASC, job_id ASC
+"""
+
+_PENDING_SQL = """
+SELECT job_id
+  FROM scan_job
+ WHERE campaign_id = %s
+   AND status <> ALL(%s)
+ ORDER BY created_at, job_id
 """
 
 _DEPS_SQL = """
@@ -188,11 +200,13 @@ class PostgresScheduler:
 
             queue = _rows(conn, _QUEUE_SQL, (campaign_id,))
             in_flight = self._in_flight(conn, campaign_id)
+            pending = self._pending(conn, campaign_id)
 
             if status in TERMINAL_STATUSES:
                 return DispatchPlan(
                     campaign_id=campaign_id,
                     status=status,
+                    pending=pending,
                     queued=len(queue),
                     in_flight=in_flight,
                     stop=f"campaign_{status.lower()}",
@@ -220,6 +234,7 @@ class PostgresScheduler:
                     campaign_id=campaign_id,
                     status=status,
                     paused=True,
+                    pending=pending,
                     waiting=tuple(waiting + blocked),
                     queued=len(queue),
                     in_flight=in_flight,
@@ -231,6 +246,7 @@ class PostgresScheduler:
                 return DispatchPlan(
                     campaign_id=campaign_id,
                     status=status,
+                    pending=pending,
                     waiting=tuple(waiting + blocked),
                     queued=len(queue),
                     in_flight=in_flight,
@@ -248,6 +264,7 @@ class PostgresScheduler:
                 return DispatchPlan(
                     campaign_id=campaign_id,
                     status=status,
+                    pending=pending,
                     waiting=tuple(waiting + blocked),
                     queued=len(queue),
                     in_flight=in_flight,
@@ -300,6 +317,7 @@ class PostgresScheduler:
                 campaign_id=campaign_id,
                 status=status,
                 claimed=tuple(claimed),
+                pending=tuple(sorted(set(pending) | set(claimed))),
                 waiting=tuple(waiting),
                 queued=len(queue),
                 in_flight=in_flight + len(claimed),
@@ -362,6 +380,11 @@ class PostgresScheduler:
         return bool(changed)
 
     # --- internals -----------------------------------------------------------------------
+    def _pending(self, conn: psycopg.Connection[Any], campaign_id: str) -> tuple[str, ...]:
+        """Every non-terminal job of the campaign, as of this tick (the DB is the truth)."""
+        rows = _rows(conn, _PENDING_SQL, (campaign_id, list(JOB_TERMINAL_STATUSES)))
+        return tuple(str(row["job_id"]) for row in rows)
+
     def _in_flight(self, conn: psycopg.Connection[Any], campaign_id: str) -> int:
         row = _row(conn, _IN_FLIGHT_SQL, (campaign_id, list(IN_FLIGHT_STATUSES)))
         return int(row["count"]) if row is not None else 0

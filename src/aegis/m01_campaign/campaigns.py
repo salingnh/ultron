@@ -20,7 +20,7 @@ from psycopg.types.json import Jsonb
 
 from .audit import record_audit
 from .ids import new_id
-from .targets import SeedTarget, insert_seeds
+from .targets import SeedTarget, insert_seed_assets, insert_seeds
 
 __all__ = [
     "CreatedCampaign",
@@ -137,6 +137,11 @@ def create_campaign(
             Jsonb(dict(actor)),
         ),
     )
+    # The seed targets become assets in the same transaction (see `insert_seed_assets`), after the
+    # campaign row exists: `asset_campaign` has a non-deferrable foreign key to it. M27 can then
+    # resolve a seed as a coverage subject and as a relationship parent, and the asset graph has
+    # the campaign's seeds before the first job runs.
+    insert_seed_assets(connection, campaign_id=campaign_id, seeds=seeds)
     connection.execute(
         """
         INSERT INTO aegis.campaign_status_change
