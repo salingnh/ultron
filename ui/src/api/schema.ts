@@ -52,7 +52,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Đổi RoE, sinh policy_version mới (bản cũ không bị sửa) */
+        /**
+         * Đổi RoE, sinh policy_version mới (bản cũ không bị sửa)
+         * @description Append một policy_snapshot mới (policy_version mới do DB cấp) rồi adopt làm current_policy_version; dòng cũ không bị sửa. Lý do ghi vào audit row cùng giao dịch. Campaign đã terminal (COMPLETED/FAILED/CANCELLED) trả 409.
+         */
         post: operations["updateCampaignPolicy"];
         delete?: never;
         options?: never;
@@ -71,7 +74,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Tạm dừng (signal Temporal) */
+        /**
+         * Tạm dừng
+         * @description Ghi campaign.status=PAUSED kèm một dòng campaign_status_change và audit actor trong cùng giao dịch. Tín hiệu pause tới workflow Temporal do M02 phát (G1.1d); gọi lại khi đã PAUSED trả 200 với trạng thái hiện tại và không ghi thêm lịch sử.
+         */
         post: operations["pauseCampaign"];
         delete?: never;
         options?: never;
@@ -90,7 +96,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Tiếp tục */
+        /**
+         * Tiếp tục
+         * @description Ghi campaign.status=RUNNING (đặt started_at lần đầu) kèm lịch sử và audit; tín hiệu resume tới workflow do M02 phát (G1.1d). Gọi lại khi đã chạy trả 200.
+         */
         post: operations["resumeCampaign"];
         delete?: never;
         options?: never;
@@ -109,7 +118,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Hủy và phát lệnh hủy tới job */
+        /**
+         * Hủy chiến dịch
+         * @description Ghi campaign.status=CANCELLED (đặt ended_at) kèm lịch sử và audit; lệnh hủy tới job đang chạy do M02 phát (G1.1d). Gọi lại khi đã CANCELLED trả 200 với trạng thái hiện tại; campaign đã COMPLETED/FAILED trả 409.
+         */
         post: operations["cancelCampaign"];
         delete?: never;
         options?: never;
@@ -567,40 +579,6 @@ export interface components {
                 CampaignStatus: "CREATED" | "RUNNING" | "WAITING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED";
             };
         };
-        /**
-         * Yêu cầu tạo chiến dịch v2
-         * @description Body của POST /api/v2/campaigns. Bắt buộc header Idempotency-Key. Body KHÔNG mang actor: server gán created_by/requested_by từ principal đã xác minh (C05, X-8).
-         */
-        "campaign-create.v2.schema": {
-            name: string;
-            objective: string;
-            targets: components["schemas"]["Targets"];
-            policy: components["schemas"]["roe-policy.v2.schema"];
-            labels?: {
-                [key: string]: string;
-            };
-            $defs: {
-                /** @description Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. */
-                Targets: {
-                    domains?: string[];
-                    /** @description IP hoặc CIDR. */
-                    ips?: components["schemas"]["IPOrCIDR"][];
-                    urls?: string[];
-                    emails?: string[];
-                    keywords?: string[];
-                } | {
-                    domains: unknown;
-                } | {
-                    ips: unknown;
-                } | {
-                    urls: unknown;
-                } | {
-                    emails: unknown;
-                } | {
-                    keywords: unknown;
-                };
-            };
-        };
         /** @enum {string} */
         ErrorCode: "INPUT_INVALID" | "OUT_OF_SCOPE" | "POLICY_DENIED" | "RATE_LIMITED" | "TOOL_UNAVAILABLE" | "DEPENDENCY_MISSING" | "NETWORK_TIMEOUT" | "EXECUTION_TIMEOUT" | "RESOURCE_LIMIT" | "OUTPUT_INVALID" | "EVIDENCE_INCOMPLETE" | "CANCELLED" | "IDEMPOTENCY_CONFLICT" | "INTERNAL_ERROR";
         /**
@@ -633,6 +611,40 @@ export interface components {
                  * @enum {string}
                  */
                 NextAction: "RETRY" | "RETRY_LATER" | "FIX_INPUT" | "WAIT_WINDOW" | "CHECK_PROVIDER" | "REVIEW_QUARANTINE" | "ESCALATE" | "NONE";
+            };
+        };
+        /**
+         * Yêu cầu tạo chiến dịch v2
+         * @description Body của POST /api/v2/campaigns. Bắt buộc header Idempotency-Key. Body KHÔNG mang actor: server gán created_by/requested_by từ principal đã xác minh (C05, X-8).
+         */
+        "campaign-create.v2.schema": {
+            name: string;
+            objective: string;
+            targets: components["schemas"]["Targets"];
+            policy: components["schemas"]["roe-policy.v2.schema"];
+            labels?: {
+                [key: string]: string;
+            };
+            $defs: {
+                /** @description Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. */
+                Targets: {
+                    domains?: string[];
+                    /** @description IP hoặc CIDR. */
+                    ips?: components["schemas"]["IPOrCIDR"][];
+                    urls?: string[];
+                    emails?: string[];
+                    keywords?: string[];
+                } | {
+                    domains: unknown;
+                } | {
+                    ips: unknown;
+                } | {
+                    urls: unknown;
+                } | {
+                    emails: unknown;
+                } | {
+                    keywords: unknown;
+                };
             };
         };
         /**
@@ -1563,6 +1575,8 @@ export interface operations {
                     "application/json": components["schemas"]["CampaignPage"];
                 };
             };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
         };
     };
     createCampaign: {
@@ -1583,6 +1597,8 @@ export interface operations {
             /** @description Đã nhận; workflow khởi động bất đồng bộ. */
             202: {
                 headers: {
+                    /** @description `true` khi cùng Idempotency-Key + cùng body trả lại kết quả đã commit. */
+                    "Idempotent-Replayed"?: "true";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1596,6 +1612,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
     };
@@ -1619,6 +1636,7 @@ export interface operations {
                     "application/json": components["schemas"]["campaign.v2.schema"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -1653,6 +1671,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
     };
@@ -1668,6 +1689,9 @@ export interface operations {
         requestBody: components["requestBodies"]["ReasonRequest"];
         responses: {
             200: components["responses"]["CampaignState"];
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
     };
@@ -1683,6 +1707,9 @@ export interface operations {
         requestBody: components["requestBodies"]["ReasonRequest"];
         responses: {
             200: components["responses"]["CampaignState"];
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
     };
@@ -1698,6 +1725,10 @@ export interface operations {
         requestBody: components["requestBodies"]["ReasonRequest"];
         responses: {
             200: components["responses"]["CampaignState"];
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     streamCampaignEvents: {
