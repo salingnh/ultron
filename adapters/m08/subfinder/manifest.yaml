@@ -1,0 +1,87 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: subfinder
+  version: 1.0.0
+  module: M08
+  license: MIT
+  upstream: https://github.com/projectdiscovery/subfinder
+spec:
+  capability: dns.enumerate_subdomains
+  providerVersion: v2.17.0
+  runtime:
+    type: container
+    image: registry.internal/aegis/subfinder
+    imageDigest: sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf
+    argsTemplate:
+    - -silent
+    - -json
+    - -o
+    - /out/result.jsonl
+    - -dL
+    - /in/targets.txt
+    - -t
+    - ${input.concurrency}
+    - -rl
+    - ${input.rate_limit}
+    outputPath: /out
+  inputSchemaRef: schema://dns/enumerate-subdomains/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - domain
+  permissions:
+    scopeRequired: false
+    networkAccess: egress
+    egressMode: broker
+    proxyAware: true
+    egressSources:
+    - id: crtsh
+      hosts:
+      - crt.sh
+      ports:
+      - 443
+      protocol: https
+      purpose: passive certificate transparency
+    - id: otx
+      hosts:
+      - otx.alienvault.com
+      ports:
+      - 443
+      protocol: https
+      purpose: passive DNS
+    targetBinding: none
+    rawSocket: false
+  budget:
+    timeoutSeconds: 900
+    maxConcurrency: 4
+    cpu: 1
+    memoryMb: 512
+    maxOutputMb: 64
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m08.subfinder.parser:parse
+    outputFormat: jsonl
+  emits:
+    assetKinds:
+    - domain
+    predicates:
+    - asset.seen
+    relationships:
+    - SUBDOMAIN_OF
+    findings: false
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation
+  inputDefaults:
+    recursive: false

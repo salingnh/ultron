@@ -445,13 +445,16 @@ def build_envelope(task: dict, manifest: dict, scenario: dict, parsed: dict,
 class FixtureAdapter:
     """The seven adapter handlers over fixture files. A real adapter must satisfy the same checks."""
 
-    def __init__(self, registry: Registry, scenario: dict, audit: Audit):
+    def __init__(self, registry: Registry, scenario: dict, audit: Audit, parser=None):
         self.registry = registry
         self.scenario = scenario
         self.audit = audit
         self.manifest_raw = registry.by_sha[self._scenario_sha()][0]
         self.manifest = registry.by_sha[self._scenario_sha()][1]
-        self.parser = PARSERS[scenario["provider"]]
+        # `parser` is the real adapter entrypoint (`adapters.<module>.<tool>:<func>`, G1.3b); the
+        # reference parser below is the fallback for the contract suite. Everything else - the
+        # pins, the policy checks and the envelope comparison - stays the same for both.
+        self.parser = parser or PARSERS[scenario["provider"]]
         self.handles: dict[str, dict] = {}
         self.calls = {"describe": 0, "validate": 0, "start": 0, "status": 0,
                       "cancel": 0, "collect": 0, "health": 0}
@@ -577,13 +580,14 @@ def _expect_error(name: str, fn, code: str, next_action: str, failures: list[str
     return None
 
 
-def run_provider_suite(provider: str, context: dict) -> tuple[list[str], int]:
+def run_provider_suite(provider: str, context: dict, parser=None) -> tuple[list[str], int]:
+    """Run the seven-handler suite; `parser` replaces the reference parser (a real adapter)."""
     scenario = load(CONF / "fixtures" / f"{provider}.json")
     task = load(ROOT / scenario["task"])
     envelope_fixture = load(ROOT / scenario["envelope"])
     audit = Audit()
     registry = Registry([(ROOT / scenario["manifest"]).read_bytes()], context)
-    adapter = FixtureAdapter(registry, scenario, audit)
+    adapter = FixtureAdapter(registry, scenario, audit, parser=parser)
     failures: list[str] = []
     checks = 0
 
