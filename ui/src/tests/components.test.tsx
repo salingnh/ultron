@@ -1,12 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { TruncatedBanner } from '../components/TruncatedBanner';
 import { ProvenancePanel } from '../components/ProvenancePanel';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { TokenConfigModal } from '../components/TokenConfigModal';
-import { getOperatorToken } from '../api/client';
+import { CampaignDetailScreen } from '../screens/CampaignDetailScreen';
+import { apiClient, getOperatorToken } from '../api/client';
 
 describe('Ultron UI Reusable Components', () => {
   it('renders StatusChip with Vietnamese text and correct styling', () => {
@@ -106,5 +108,25 @@ describe('Ultron UI Reusable Components', () => {
 
     expect(getOperatorToken()).toBe('my-secret-operator-token');
     expect(isClosed).toBe(false); // Closes after animation delay
+  });
+
+  it('renders "Chưa có dữ liệu ngân sách" when campaign has no budget data', async () => {
+    vi.spyOn(apiClient, 'getCampaign').mockResolvedValueOnce({
+      campaign_id: 'campaign-no-budget',
+      name: 'Chiến dịch không có ngân sách',
+      status: 'RUNNING',
+      policy_version: 'roe-1',
+      created_at: '2026-11-20T08:00:00Z',
+    } as unknown as import('../api/types').Campaign);
+
+    render(
+      <MemoryRouter initialEntries={['/campaigns/campaign-no-budget']}>
+        <Routes>
+          <Route path="/campaigns/:id" element={<CampaignDetailScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Chưa có dữ liệu ngân sách')).toBeInTheDocument();
   });
 });

@@ -181,7 +181,7 @@ export const CampaignDetailScreen: React.FC = () => {
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
               <CopyableId value={campaign.campaign_id} prefix="Campaign ID" />
-              <CopyableId value={campaign.scope_id} prefix="Scope ID" />
+              {campaign.scope_id && <CopyableId value={campaign.scope_id} prefix="Scope ID" />}
             </div>
           </div>
 
@@ -393,7 +393,7 @@ export const CampaignDetailScreen: React.FC = () => {
             <BarChart3 size={18} style={{ color: 'var(--accent)' }} />
             <span>Ngân sách & Bộ đếm Tác chiến</span>
           </div>
-          {campaign.budget_remaining && (
+          {campaign.budget_remaining && (campaign.budget_remaining.llm_cost_usd !== undefined || campaign.budget_remaining.hours !== undefined) ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
               <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Chi phí LLM còn lại</div>
@@ -408,9 +408,13 @@ export const CampaignDetailScreen: React.FC = () => {
                 </div>
               </div>
             </div>
+          ) : (
+            <div style={{ color: 'var(--muted)', fontSize: 'var(--text-sm)', marginBottom: 14 }}>
+              Chưa có dữ liệu ngân sách
+            </div>
           )}
 
-          {campaign.counters && (
+          {campaign.counters ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Tài sản phát hiện</div>
@@ -424,6 +428,10 @@ export const CampaignDetailScreen: React.FC = () => {
                   {campaign.counters.jobs_running} / {campaign.counters.jobs_total}
                 </div>
               </div>
+            </div>
+          ) : (
+            <div style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>
+              Chưa có dữ liệu bộ đếm
             </div>
           )}
         </div>
