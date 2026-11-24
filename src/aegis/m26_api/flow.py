@@ -19,10 +19,10 @@ Contract: `contracts/api/openapi.v2.yaml` -> `getCampaignFlow` (`x-aegis-status:
 `finding_batch` is part of the published node enum but no producer exists in G1 (findings are G2);
 this read model never invents one. Asset/provenance endpoints are G1.4b and are not served here.
 
-Authorisation: the contract publishes no `security` for this operation (unlike the seven G1.1b
-campaign operations), so the route matches the contract and stays open inside the private
-ingress/VPN perimeter. Adding `operatorToken` + `401` here is a contract change; it is reported as
-a gap rather than implemented one-sided.
+Authorisation: the operation reads the same campaign data the seven G1.1b campaign operations do,
+so it requires the same verified operator bearer token (OD-5): `security: operatorToken` and `401`
+are published for `getCampaignFlow` and the route depends on `require_principal`. The actor of a
+read is not written anywhere; authentication only decides who may look.
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ from aegis.common.repo import repository_root
 from aegis.m01_campaign.campaigns import timestamp
 from aegis.m26_api.db import connection as db_connection
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
+from aegis.m26_api.operator import Principal, require_principal
 from aegis.m26_api.registry import RouterRegistry
 from aegis.m26_api.tracing import TRACEPARENT_HEADER, current_trace_id, traceparent
 
@@ -50,6 +51,7 @@ __all__ = ["FLOW_OPERATIONS", "campaign_flow", "register", "router"]
 FLOW_OPERATIONS = ("getCampaignFlow",)
 
 ID_REFERENCE = "common/ids.v2.schema.json#/$defs/Id"
+ERROR_401 = {"description": "Lỗi chuẩn (error.v2): thiếu hoặc sai operator token"}
 API_PREFIX = "/api/v2"
 LABEL_MAX = 200
 MORE_TARGETS_MAX = 20
@@ -358,11 +360,13 @@ def campaign_flow(connection: psycopg.Connection[Any], campaign_id: str) -> dict
         "Dữ liệu màn hình luồng quét (React Flow) - phiên agent, quyết định policy, "
         "job và quan hệ cha con"
     ),
+    responses={401: ERROR_401},
 )
 def get_campaign_flow(
     request: Request,
     response: Response,
     campaign_id: str,
+    principal: Annotated[Principal, Depends(require_principal)],
     db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
 ) -> dict[str, Any]:
     """Nodes and edges of one campaign (campaign, session, decision, job) plus a change token."""

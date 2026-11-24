@@ -34,9 +34,11 @@ Deployment note: `aegis.outbox_dispatch_lease`/`aegis.outbox_watermark_refresh` 
 owner, as in the dev stack and tests). Without it the endpoint answers 503 `DEPENDENCY_MISSING`
 instead of streaming an empty history forever.
 
-Authorisation: the contract publishes no `security` for this operation (unlike the seven G1.1b
-campaign operations), so the route matches the contract and stays open inside the private
-ingress/VPN perimeter; see `flow.py` and the G1.5a report for the contract gap.
+Authorisation: the stream exposes the same campaign data as the campaign REST API, so it requires
+the same verified operator bearer token (OD-5) - `security: operatorToken` + `401` in the contract
+and `require_principal` on the route. A stream sends `Authorization` on its request (a browser
+`EventSource` cannot set headers, so a UI that uses one needs a fetch-based reader); an
+unauthenticated request is answered `401` before any stream is opened.
 """
 
 from __future__ import annotations
@@ -54,7 +56,7 @@ from typing import Annotated, Any
 
 import psycopg
 from anyio import to_thread
-from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from psycopg.rows import dict_row
 
@@ -63,6 +65,7 @@ from aegis.contracts_gen.events.event_envelope_v2_schema import Type as EventTyp
 from aegis.m01_campaign.campaigns import timestamp
 from aegis.m26_api.db import database_dsn_of
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
+from aegis.m26_api.operator import Principal, require_principal
 from aegis.m26_api.registry import RouterRegistry
 from aegis.m26_api.tracing import TRACEPARENT_HEADER, current_trace_id, traceparent
 
@@ -83,6 +86,7 @@ EVENTS_OPERATIONS = ("streamCampaignEvents",)
 
 API_PREFIX = "/api/v2"
 ID_REFERENCE = "common/ids.v2.schema.json#/$defs/Id"
+ERROR_401 = {"description": "Lỗi chuẩn (error.v2): thiếu hoặc sai operator token"}
 
 #: This service's own consumer identity; a rebuild bumps the generation instead of reusing a name.
 STREAM_CONSUMER = "m26-sse"
@@ -364,11 +368,13 @@ async def _stream(
         "Dòng thời gian; SSE khi Accept text/event-stream, JSON phân trang khi Accept "
         "application/json"
     ),
+    responses={401: ERROR_401},
 )
 def stream_campaign_events(
     request: Request,
     response: Response,
     campaign_id: str,
+    principal: Annotated[Principal, Depends(require_principal)],
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,

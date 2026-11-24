@@ -22,6 +22,7 @@ from aegis.m05_registry.ids import uuid7
 from aegis.m26_api import events as events_module
 from aegis.m26_api.app import API_PREFIX
 from aegis.m26_api.errors import ERROR_CODES, NEXT_ACTIONS
+from tests import campaign_support as support
 from tests.db_support import migrated_database, requires_postgres
 from tests.g15a_support import (
     accept_jobs,
@@ -49,8 +50,18 @@ def client(dsn: str) -> TestClient:
     return TestClient(api_app(dsn))
 
 
-def _events(client: TestClient, campaign_id: str, **params: Any) -> Any:
-    return client.get(f"{API_PREFIX}/campaigns/{campaign_id}/events", params=params)
+def _events(
+    client: TestClient,
+    campaign_id: str,
+    *,
+    headers: dict[str, str] | None = None,
+    **params: Any,
+) -> Any:
+    return client.get(
+        f"{API_PREFIX}/campaigns/{campaign_id}/events",
+        params=params,
+        headers=support.auth() if headers is None else headers,
+    )
 
 
 def _publish(dsn: str, campaign_id: str, jobs: list[dict[str, Any]]) -> list[int]:
@@ -254,7 +265,11 @@ def test_both_operations_expose_the_contracts_identifiers_and_parameters() -> No
         assert parameters(spec, f"{API_PREFIX}{path}", app_operation) == parameters(
             contract, path, contract_operation
         )
-        assert set(app_operation["responses"]) == {"200"}, operation_id
+        assert set(app_operation["responses"]) == {"200", "401"}, operation_id
+        assert set(contract_operation["responses"]) == {"200", "401"}, operation_id
+        assert (
+            app_operation["security"] == contract_operation["security"] == [{"operatorToken": []}]
+        ), operation_id
         # The shape is locked and this card is the one that locked it.
         # `x-aegis-status` absent means locked (the contract's own rule); flow names G1.5a.
         assert contract_operation.get("x-aegis-status", "locked") == "locked", operation_id
@@ -279,3 +294,43 @@ def test_the_flow_response_schema_is_in_the_contracts_own_document() -> None:
     wait_reason = node["properties"]["wait_reason"]["$ref"]
     assert wait_reason.endswith("job.v2.schema.json#/$defs/WaitReason")
     assert "attempt" in node["properties"] and "generation" in node["properties"]
+
+
+def test_every_mounted_operation_requires_the_operator_token() -> None:
+    """Both sides of the contract: the app mounts only operations that verify a bearer token."""
+    contract = _contract()
+    spec = api_app("postgresql://unused/unused").openapi()
+    contract_operations = {
+        operation["operationId"]: (path, operation)
+        for path, item in contract["paths"].items()
+        for method, operation in item.items()
+        if method in {"get", "post"} and isinstance(operation, dict) and "operationId" in operation
+    }
+    mounted = [
+        operation
+        for item in spec["paths"].values()
+        for method, operation in item.items()
+        if method in {"get", "post"} and isinstance(operation, dict) and "operationId" in operation
+    ]
+    assert {operation["operationId"] for operation in mounted} == {
+        "createCampaign",
+        "listCampaigns",
+        "getCampaign",
+        "updateCampaignPolicy",
+        "pauseCampaign",
+        "resumeCampaign",
+        "cancelCampaign",
+        "submitJob",
+        "listJobs",
+        "getJob",
+        "cancelJob",
+        "getCampaignFlow",
+        "streamCampaignEvents",
+    }
+    for operation in mounted:
+        operation_id = operation["operationId"]
+        assert operation["security"] == [{"operatorToken": []}], operation_id
+        assert 401 in {int(code) for code in operation["responses"]}, operation_id
+        _, contract_operation = contract_operations[operation_id]
+        assert contract_operation.get("security") == [{"operatorToken": []}], operation_id
+        assert 401 in {int(code) for code in contract_operation["responses"]}, operation_id

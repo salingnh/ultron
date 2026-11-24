@@ -39,6 +39,7 @@ pytestmark = requires_postgres
 
 API = "/api/v2"
 EVIDENCE_ENV = "AEGIS_G15A_DEMO_OUT"
+AUTH = support.auth()
 
 
 @pytest.fixture()
@@ -85,14 +86,17 @@ def test_the_flow_and_the_event_stream_over_http(dsn: str) -> None:
         "api": "uvicorn on 127.0.0.1",
         "database": "throwaway PostgreSQL 16",
     }
-    with serve(api_app(dsn)) as base, httpx.Client(base_url=base, timeout=10.0) as client:
+    authorization = f"Bearer {support.OPERATORS['op-soc-1']}"
+    with (
+        serve(api_app(dsn)) as base,
+        httpx.Client(
+            base_url=base, timeout=10.0, headers={"authorization": authorization}
+        ) as client,
+    ):
         created = client.post(
             f"{API}/campaigns",
             json=support.campaign_body(name="G1.5a demo"),
-            headers={
-                "authorization": f"Bearer {support.OPERATORS['op-soc-1']}",
-                "Idempotency-Key": "g15a-demo-create",
-            },
+            headers={"Idempotency-Key": "g15a-demo-create"},
         )
         assert created.status_code == 202, created.text
         campaign = SeededCampaign(
@@ -128,7 +132,7 @@ def test_the_flow_and_the_event_stream_over_http(dsn: str) -> None:
 
         stream_url = f"{base}{API}/campaigns/{campaign.campaign_id}/events"
         started_at = time.monotonic()
-        with open_sse(stream_url, read_timeout=5.0) as stream:
+        with open_sse(stream_url, read_timeout=5.0, extra_headers=AUTH) as stream:
             sequence = _terminalise(dsn, first)
             message = stream.next()
             latency = time.monotonic() - started_at
@@ -150,7 +154,9 @@ def test_the_flow_and_the_event_stream_over_http(dsn: str) -> None:
             "under_two_seconds": latency < 2.0,
         }
 
-        with open_sse(stream_url, last_event_id=message.id, read_timeout=5.0) as stream:
+        with open_sse(
+            stream_url, last_event_id=message.id, read_timeout=5.0, extra_headers=AUTH
+        ) as stream:
             later = _terminalise(dsn, second)
             resumed = stream.next()
         assert resumed.id == str(later), "the reconnect must continue exactly after the checkpoint"

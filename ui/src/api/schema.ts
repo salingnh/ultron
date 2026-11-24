@@ -141,6 +141,8 @@ export interface paths {
         /**
          * Dòng thời gian; SSE khi Accept text/event-stream, JSON phân trang khi Accept application/json
          * @description SSE: mỗi message `id: <outbox seq>`, `event: <type>`, `data: <EventEnvelope JSON>`. Client nối lại bằng `Last-Event-ID`.
+         *     Cần operator token như mọi thao tác campaign (OD-5); thiếu hoặc sai token trả 401 trước khi mở stream.
+         *
          *     Server gửi `event: heartbeat` mỗi 15 giây.
          */
         get: operations["streamCampaignEvents"];
@@ -1764,6 +1766,7 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
         };
     };
     getCampaignFlow: {
@@ -1812,6 +1815,7 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
         };
     };
     listCapabilities: {
@@ -1872,6 +1876,7 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
         };
     };
     submitJob: {
@@ -1908,6 +1913,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
             429: components["responses"]["Error"];
@@ -1933,6 +1939,7 @@ export interface operations {
                     "application/json": components["schemas"]["job.v2.schema"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -1956,6 +1963,7 @@ export interface operations {
                     "application/json": components["schemas"]["job.v2.schema"];
                 };
             };
+            401: components["responses"]["Error"];
         };
     };
     ingestResult: {

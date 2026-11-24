@@ -23,6 +23,7 @@ from aegis.m01_campaign.campaigns import timestamp
 from aegis.m05_registry.ids import uuid7
 from aegis.m26_api import flow as flow_module
 from aegis.m26_api.app import API_PREFIX, create_app
+from aegis.m26_api.operator import TokenAuthenticator
 from aegis.m26_api.registry import RouterRegistry
 from tests import campaign_support as support
 from tests.db_support import (
@@ -50,11 +51,19 @@ def dsn() -> Iterator[str]:
 def _client(dsn: str) -> TestClient:
     registry = RouterRegistry()
     flow_module.register(registry)
-    return TestClient(create_app(registry, database_dsn=dsn))
+    app = create_app(
+        registry,
+        operator_authenticator=TokenAuthenticator(support.operator_tokens()),
+        database_dsn=dsn,
+    )
+    return TestClient(app)
 
 
-def _get(client: TestClient, campaign_id: str) -> Any:
-    return client.get(f"{API_PREFIX}/campaigns/{campaign_id}/flow")
+def _get(client: TestClient, campaign_id: str, *, headers: dict[str, str] | None = None) -> Any:
+    return client.get(
+        f"{API_PREFIX}/campaigns/{campaign_id}/flow",
+        headers=support.auth() if headers is None else headers,
+    )
 
 
 def _wait_reason(dsn: str, job_id: str, blocking: str) -> None:
@@ -282,3 +291,18 @@ def test_a_row_that_violates_the_contract_fails_loudly_instead_of_shipping() -> 
         assert response.status_code == 500, response.text
         assert response.json()["code"] == "INTERNAL_ERROR"
         assert "getCampaignFlow" in response.json()["message"]
+
+
+def test_the_flow_requires_the_operator_token(dsn: str) -> None:
+    campaign = open_campaign(dsn, name="flow auth")
+    client = _client(dsn)
+    for headers, expected in (
+        ({}, 401),
+        ({"authorization": "Bearer not-a-token"}, 401),
+        (support.auth("op-soc-2"), 200),
+    ):
+        response = _get(client, campaign.campaign_id, headers=headers)
+        assert response.status_code == expected, (headers, response.text)
+        if expected == 401:
+            assert response.json()["code"] == "INPUT_INVALID"
+            assert response.headers["www-authenticate"] == "Bearer"

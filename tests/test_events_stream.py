@@ -20,6 +20,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from aegis.m26_api import events
+from tests import campaign_support as support
 from tests.db_support import migrated_database, requires_postgres
 from tests.g15a_support import (
     accept_jobs,
@@ -29,12 +30,13 @@ from tests.g15a_support import (
     job_started_payload,
     open_campaign,
 )
-from tests.http_support import open_sse, serve
+from tests.http_support import SseStream, open_sse, serve
 from tests.m02_support import run_job
 
 pytestmark = requires_postgres
 
 SSE_ACCEPT = {"accept": "text/event-stream"}
+AUTH = support.auth()
 
 
 @pytest.fixture()
@@ -51,6 +53,10 @@ def api(dsn: str) -> Iterator[str]:
 
 def _stream_url(api: str, campaign_id: str) -> str:
     return f"{api}/api/v2/campaigns/{campaign_id}/events"
+
+
+def _open(url: str, **kwargs: Any) -> SseStream:
+    return open_sse(url, extra_headers=AUTH, **kwargs)
 
 
 def _publish(dsn: str, campaign_id: str, jobs: list[dict[str, Any]]) -> list[int]:
@@ -101,7 +107,7 @@ def test_a_committed_job_status_change_reaches_a_connected_client_within_two_sec
     (job,) = accept_jobs(dsn, campaign, 1)
     run_job(dsn, job["job_id"])
 
-    with open_sse(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
+    with _open(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
         started_at = time.monotonic()
         sequence = _complete_with_event(dsn, job)
         message = stream.next()
@@ -122,12 +128,12 @@ def test_reconnect_with_last_event_id_loses_nothing_and_duplicates_nothing(
     jobs = accept_jobs(dsn, campaign, 2)
     first = _publish(dsn, campaign.campaign_id, jobs[:1])
 
-    with open_sse(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
+    with _open(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
         checkpoint_message = stream.next()
     assert checkpoint_message.id == str(first[0])
 
     later = _publish(dsn, campaign.campaign_id, jobs[1:])
-    with open_sse(
+    with _open(
         _stream_url(api, campaign.campaign_id),
         last_event_id=checkpoint_message.id,
         read_timeout=5.0,
@@ -146,7 +152,7 @@ def test_a_resume_point_from_another_event_log_generation_is_refused(dsn: str, a
     campaign = open_campaign(dsn, name="sse generation")
     response = httpx.get(
         _stream_url(api, campaign.campaign_id),
-        headers={**SSE_ACCEPT, "last-event-id": "987654321"},
+        headers={**SSE_ACCEPT, **AUTH, "last-event-id": "987654321"},
         timeout=5.0,
     )
     assert response.status_code == 400, response.text
@@ -158,7 +164,7 @@ def test_a_resume_point_from_another_event_log_generation_is_refused(dsn: str, a
 def test_heartbeats_keep_an_idle_stream_alive(dsn: str, api: str, monkeypatch: Any) -> None:
     monkeypatch.setattr(events, "HEARTBEAT_SECONDS", 0.3)
     campaign = open_campaign(dsn, name="sse heartbeat")
-    with open_sse(_stream_url(api, campaign.campaign_id), read_timeout=3.0) as stream:
+    with _open(_stream_url(api, campaign.campaign_id), read_timeout=3.0) as stream:
         started_at = time.monotonic()
         heartbeat = stream.next()
         elapsed = time.monotonic() - started_at
@@ -172,7 +178,7 @@ def test_a_stream_only_sees_its_own_campaign(dsn: str, api: str) -> None:
     mine = open_campaign(dsn, name="sse mine")
     theirs = open_campaign(dsn, name="sse theirs")
     _publish(dsn, theirs.campaign_id, accept_jobs(dsn, theirs, 1))
-    with open_sse(_stream_url(api, mine.campaign_id), read_timeout=0.8) as stream:
+    with _open(_stream_url(api, mine.campaign_id), read_timeout=0.8) as stream:
         with pytest.raises(httpx.ReadTimeout):
             stream.next()
 
@@ -182,7 +188,10 @@ def test_the_response_identifies_the_stream_generation_and_forbids_buffering(
 ) -> None:
     campaign = open_campaign(dsn, name="sse headers")
     with httpx.stream(
-        "GET", _stream_url(api, campaign.campaign_id), headers=SSE_ACCEPT, timeout=5.0
+        "GET",
+        _stream_url(api, campaign.campaign_id),
+        headers={**SSE_ACCEPT, **AUTH},
+        timeout=5.0,
     ) as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
@@ -197,10 +206,28 @@ def test_a_disconnected_client_releases_its_database_connection(dsn: str, api: s
     campaign = open_campaign(dsn, name="sse disconnect")
     _publish(dsn, campaign.campaign_id, accept_jobs(dsn, campaign, 1))
     before = _backends(dsn)
-    with open_sse(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
+    with _open(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
         stream.next()
         assert _backends(dsn) > before, "the stream holds one connection while it is open"
     deadline = time.monotonic() + 5.0
     while _backends(dsn) > before and time.monotonic() < deadline:
         time.sleep(0.1)
     assert _backends(dsn) == before, "the stream must close its connection when the client leaves"
+
+
+def test_the_stream_requires_the_operator_token(dsn: str, api: str) -> None:
+    campaign = open_campaign(dsn, name="sse auth")
+    url = _stream_url(api, campaign.campaign_id)
+    for headers, expected in (
+        (SSE_ACCEPT, 401),
+        ({**SSE_ACCEPT, "authorization": "Bearer not-a-token"}, 401),
+        ({**SSE_ACCEPT, **AUTH}, 200),
+    ):
+        with httpx.stream("GET", url, headers=headers, timeout=5.0) as response:
+            assert response.status_code == expected
+            if expected == 401:
+                assert response.headers["www-authenticate"] == "Bearer"
+                assert json.loads(response.read())["code"] == "INPUT_INVALID"
+            else:
+                assert response.headers["content-type"].startswith("text/event-stream")
+                assert next(response.iter_lines()) == ": m26-sse#g1 ready"
