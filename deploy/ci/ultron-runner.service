@@ -1,16 +1,17 @@
 [Unit]
-Description=GitHub Actions runner (ultron, ephemeral, label ultron-local)
+Description=GitHub Actions runner (ultron, ephemeral, label ultron-local, instance @INSTANCE@)
 Documentation=https://github.com/salingnh/ultron/blob/main/scripts/ci/install-runner.sh
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-# Own directory: ~/actions-runner on a shared machine may already hold a runner for
-# another repository, and a runner must never adopt another repo's registration.
-ExecStart=%h/ultron-runner/run-loop.sh
+# One instance per directory: a runner must never adopt another repository's or another
+# instance's registration. Generated from this template by scripts/ci/install-runner.sh.
+ExecStart=%h/@RUNNER_DIR@/run-loop.sh
 Environment=ULTRON_REPO=salingnh/ultron
 Environment=ULTRON_RUNNER_LABEL=ultron-local
+Environment=ULTRON_RUNNER_INSTANCE=@INSTANCE@
 # No secret is passed in this environment: the loop fetches a one-hour registration token
 # with `gh` and every job only inherits PATH, HOME, XDG_RUNTIME_DIR and similar.
 Restart=always
