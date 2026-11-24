@@ -365,7 +365,7 @@ def test_a_retried_activity_call_returns_the_recorded_outcome(
 def test_the_trimmed_prompt_never_starts_on_an_orphan_tool_result() -> None:
     from aegis.m03_agent.prompt import trim_messages
 
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "system"},
         {"role": "user"},
         {"role": "assistant", "content": [{"type": "tool_call"}]},
