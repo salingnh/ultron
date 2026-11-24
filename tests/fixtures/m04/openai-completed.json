@@ -1,0 +1,11 @@
+{
+  "id": "chatcmpl-fake-0002",
+  "model": "configured-model-2026-01-01",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": { "role": "assistant", "content": "Đã gửi job, chờ kết quả." }
+    }
+  ],
+  "usage": { "prompt_tokens": 180, "completion_tokens": 9 }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "chatcmpl-fake-assessment",
+  "model": "configured-model-2026-01-01",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"severity\":\"HIGH\",\"reasons\":[\"Thành phần nằm trong dải ảnh hưởng và dịch vụ hướng Internet\"],\"source_refs\":[{\"kind\":\"evidence\",\"ref\":\"01934f6a-0000-7000-8000-0000000e0001\"}],\"uncertainty\":[\"Chưa xác định đường khai thác thực tế\"],\"recommended_actions\":[\"Yêu cầu rescan sau khi nâng phiên bản\"]}"
+      }
+    }
+  ],
+  "usage": { "prompt_tokens": 300, "completion_tokens": 90 }
+}
