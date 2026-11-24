@@ -18,6 +18,7 @@ import os
 
 from fastapi import FastAPI
 
+from aegis.m26_api import jobs
 from aegis.m26_api.app import create_app
 from aegis.m26_api.campaigns import register
 from aegis.m26_api.operator import (
@@ -33,9 +34,10 @@ PG_DSN_ENV = "AEGIS_PG_DSN"
 
 
 def build_registry() -> RouterRegistry:
-    """Every router this service mounts. G1.1c (jobs) and G1.5a (events/flow) add one line."""
+    """Every router this service mounts. G1.5a (events/flow) adds one line."""
     registry = RouterRegistry()
     register(registry)
+    jobs.register(registry)
     return registry
 
 
@@ -48,11 +50,15 @@ def create_production_app() -> FastAPI:
     if not tokens_path:
         raise RuntimeError(f"{OPERATOR_TOKENS_FILE} is required to verify operator tokens")
     tokens = OperatorTokens.from_file(tokens_path)
-    return create_app(
+    app = create_app(
         build_registry(),
         operator_authenticator=TokenAuthenticator(tokens),
         database_dsn=dsn,
     )
+    # M05 needs its own configured objects (manifest registry, signing ring); a manifest or key
+    # problem aborts start-up instead of surfacing as an "unknown capability" on the first job.
+    jobs.install_job_service(app, jobs.build_job_service(dsn))
+    return app
 
 
 app = create_production_app()

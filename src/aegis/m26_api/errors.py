@@ -67,6 +67,7 @@ class ApiError(Exception):
         next_action: str = "NONE",
         field: str | None = None,
         headers: dict[str, str] | None = None,
+        retry_after_seconds: int | None = None,
     ) -> None:
         if code not in ERROR_CODES:
             raise ValueError(f"error code {code!r} is not published by common/error.v2")
@@ -78,6 +79,7 @@ class ApiError(Exception):
         self.next_action = next_action
         self.field = field
         self.headers = dict(headers or {})
+        self.retry_after_seconds = retry_after_seconds
         super().__init__(message)
 
 
@@ -88,6 +90,7 @@ def error_payload(
     next_action: str,
     trace_id: str,
     field: str | None = None,
+    retry_after_seconds: int | None = None,
 ) -> dict[str, Any]:
     """The `error.v2` body (keys with a null value are omitted, never sent as null)."""
     payload: dict[str, Any] = {
@@ -98,6 +101,9 @@ def error_payload(
     }
     if field:
         payload["field"] = field
+    if retry_after_seconds is not None:
+        payload["retry_after_seconds"] = retry_after_seconds
+        payload["retryable"] = True
     return payload
 
 
@@ -137,6 +143,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 message=error.message,
                 next_action=error.next_action,
                 field=error.field,
+                retry_after_seconds=error.retry_after_seconds,
                 trace_id=trace_id,
             ),
             status_code=error.status_code,

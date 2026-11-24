@@ -15,8 +15,8 @@ from aegis.m05_registry.errors import M05Error
 from aegis.m05_registry.registry import PostgresManifestRegistry
 from aegis.m05_registry.service import PostgresJobService
 from aegis.m05_registry.signing import KeyRing
+from aegis.m26_api import jobs
 from aegis.m26_api.app import API_PREFIX, create_app
-from aegis.m26_api.jobs import install_job_service, router
 from aegis.m26_api.operator import OperatorAuthenticationError, Principal
 from aegis.m26_api.registry import RouterRegistry
 from tests.db_support import connect, migrated_database, requires_postgres, seed_campaign
@@ -53,9 +53,9 @@ def client(dsn: str) -> Iterator[TestClient]:
         lambda: connect(dsn), registry=registry, key_ring=KeyRing.dev(), binder=FakeBinder()
     )
     routers = RouterRegistry()
-    routers.register("jobs", router, prefix=API_PREFIX)
+    jobs.register(routers)
     app = create_app(routers, operator_authenticator=AcceptingAuthenticator())
-    install_job_service(app, service)
+    jobs.install_job_service(app, service)
     yield TestClient(app, raise_server_exceptions=False)
 
 
