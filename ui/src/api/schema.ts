@@ -2063,6 +2063,9 @@ export interface operations {
                     "application/json": components["schemas"]["output"];
                 };
             };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     getAssetHistory: {
@@ -2103,6 +2106,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     listFindings: {

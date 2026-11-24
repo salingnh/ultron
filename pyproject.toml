@@ -33,6 +33,8 @@ dependencies = [
   # behaviour this card implements.
   "langgraph==1.2.24",
   "langgraph-checkpoint-postgres==3.2.1",
+  # M23 projector and graph.* queries (G1.4b): the driver G0.3b measured Neo4j 5.26 through.
+  "neo4j==5.28.4",
 ]
 
 [dependency-groups]
@@ -72,7 +74,13 @@ target-version = "py312"
 # The backend skeleton owns these paths. The pre-existing contract scripts and contracts/*.py are
 # not reformatted here: they are gated by the contract CI job, and a lint-only rewrite of them
 # would be an out-of-scope change.
-include = ["src/**/*.py", "tests/**/*.py", "adapters/**/*.py", "scripts/codegen.py"]
+include = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  "adapters/**/*.py",
+  "scripts/codegen.py",
+  "scripts/bench/*.py",
+]
 # Generated contract DTOs are not hand-edited; their formatting and content are enforced by
 # `make codegen-check` (committed bytes == fresh codegen output), which is stricter than lint.
 extend-exclude = ["src/aegis/contracts_gen"]
@@ -87,7 +95,7 @@ known-first-party = ["aegis"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests", "adapters", "scripts/codegen.py"]
+files = ["src", "tests", "adapters", "scripts/codegen.py", "scripts/bench"]
 strict = true
 warn_unused_ignores = true
 exclude = ['^src/aegis/contracts_gen/']
