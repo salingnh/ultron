@@ -46,15 +46,40 @@ def test_registered_router_is_mounted_under_its_prefix() -> None:
     assert [entry.name for entry in registry.entries] == ["campaigns"]
 
 
-def test_duplicate_router_name_or_prefix_is_refused() -> None:
+def test_duplicate_router_name_or_route_is_refused() -> None:
     registry = RouterRegistry()
     registry.register("campaigns", APIRouter(), prefix=API_PREFIX)
     with pytest.raises(ValueError, match="already registered"):
         registry.register("campaigns", APIRouter(), prefix="/other")
-    with pytest.raises(ValueError, match="already registered"):
-        registry.register("jobs", APIRouter(), prefix=API_PREFIX)
     with pytest.raises(ValueError, match="must not be empty"):
         registry.register("", APIRouter(), prefix="/empty")
+
+
+def test_modules_share_the_api_prefix_but_not_a_route() -> None:
+    registry = RouterRegistry()
+    campaigns = APIRouter()
+
+    @campaigns.get("/campaigns")
+    def list_campaigns() -> list[str]:
+        return []
+
+    jobs = APIRouter()
+
+    @jobs.get("/jobs")
+    def list_jobs() -> list[str]:
+        return []
+
+    registry.register("campaigns", campaigns, prefix=API_PREFIX)
+    registry.register("jobs", jobs, prefix=API_PREFIX)
+    app = create_app(registry)
+    assert TestClient(app).get(f"{API_PREFIX}/campaigns").json() == []
+    assert TestClient(app).get(f"{API_PREFIX}/jobs").json() == []
+
+    duplicate = RouterRegistry()
+    duplicate.register("campaigns", campaigns, prefix=API_PREFIX)
+    duplicate.register("campaigns-again", campaigns, prefix=API_PREFIX)
+    with pytest.raises(ValueError, match="claimed by both"):
+        create_app(duplicate)
 
 
 class _AcceptingAuthenticator:

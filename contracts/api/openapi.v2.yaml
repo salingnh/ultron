@@ -523,9 +523,12 @@ paths:
       tags:
       - jobs
       operationId: listJobs
-      x-aegis-status: deferred
-      x-aegis-reason: 'Read model danh sách job chưa khóa; GET /jobs/{job_id} đã khóa và mang dispatch_block_reasons.'
-      x-aegis-owner: G1.1c
+      x-aegis-status: locked
+      description: 'Danh sách job của một chiến dịch, khóa ở G1.1c cùng `/jobs`. Thứ tự keyset
+        `(created_at, job_id)` tăng dần; `next_cursor` vắng = hết trang. `status` lọc theo
+        JobStatus. Job trong danh sách mang cùng hình dạng job.v2 như `GET /jobs/{job_id}`
+        (kể cả `wait_reason` và `dispatch_block_reasons`), nên màn hình job lỗi không cần
+        một endpoint thứ hai.'
       summary: Danh sách job (màn hình job lỗi)
       parameters:
       - name: campaign_id
