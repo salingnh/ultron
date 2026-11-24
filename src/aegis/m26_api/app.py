@@ -7,19 +7,42 @@ the versioned path the contract uses (`/api/v2/openapi.json`) and answers a live
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from aegis.m26_api.errors import install_error_handlers
 from aegis.m26_api.operator import OperatorAuthenticator
 from aegis.m26_api.registry import RouterRegistry
 
-__all__ = ["API_PREFIX", "OPENAPI_PATH", "create_app"]
+__all__ = [
+    "API_PREFIX",
+    "CORS_HEADERS",
+    "CORS_ORIGINS_ENV",
+    "OPENAPI_PATH",
+    "cors_origins_from_env",
+    "create_app",
+]
 
 API_PREFIX = "/api/v2"
 OPENAPI_PATH = f"{API_PREFIX}/openapi.json"
+
+#: Origins allowed to call the API from a browser (comma-separated, empty = no CORS at all).
+CORS_ORIGINS_ENV = "AEGIS_CORS_ORIGINS"
+#: Request headers the browser client sends (operator token, idempotent writes, SSE resume, trace).
+CORS_HEADERS = ("Authorization", "Content-Type", "Idempotency-Key", "Last-Event-ID", "traceparent")
+#: Response headers a browser client may read (trace id, replay marker, stream generation, retry).
+CORS_EXPOSE_HEADERS = ("traceparent", "Idempotent-Replayed", "X-Aegis-Consumer", "Retry-After")
+
+
+def cors_origins_from_env(environ: Mapping[str, str] | None = None) -> list[str]:
+    """The browser origins from `AEGIS_CORS_ORIGINS`; unset means "no cross-origin access"."""
+    source = os.environ if environ is None else environ
+    raw = (source.get(CORS_ORIGINS_ENV) or "").strip()
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 def _drop_default_422(app: FastAPI) -> None:
@@ -49,6 +72,7 @@ def create_app(
     *,
     operator_authenticator: OperatorAuthenticator | None = None,
     database_dsn: str | None = None,
+    cors_origins: Sequence[str] | None = None,
 ) -> FastAPI:
     """Build the API app from `registry` (empty by default until a card registers routers).
 
@@ -71,6 +95,17 @@ def create_app(
     app.state.database_dsn = database_dsn
     install_error_handlers(app)
     _drop_default_422(app)
+    if cors_origins:
+        # An explicit allowlist, never "*": the operator token travels in a header, so a browser
+        # origin that is not named here must not be able to read a response or send a preflight.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            allow_methods=["GET", "POST"],
+            allow_headers=list(CORS_HEADERS),
+            expose_headers=list(CORS_EXPOSE_HEADERS),
+            max_age=600,
+        )
 
     @app.get("/healthz", tags=["ops"], operation_id="healthz", include_in_schema=False)
     def healthz() -> dict[str, Any]:

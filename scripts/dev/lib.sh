@@ -28,6 +28,10 @@ SEAWEEDFS_CONTAINER="$DEV_PROJECT-seaweedfs"
 # shellcheck disable=SC2034 # used by sourcing scripts
 TEMPORAL_CONTAINER="$DEV_PROJECT-temporal"
 
+# The lab is its own compose project (scripts/lab, which owns these names); scripts/dev only needs
+# the project name to tell whether run-local started it.
+LAB_PROJECT=aegis-lab
+
 log() { printf '[dev] %s\n' "$*"; }
 die() { printf '[dev] error: %s\n' "$*" >&2; exit 1; }
 

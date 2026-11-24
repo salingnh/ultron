@@ -11,7 +11,7 @@ SHELL := /bin/bash
 .PHONY: help dev-up dev-down dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
 	deps lint test codegen codegen-check migrate ci-python \
-	temporal-live demo-g15a
+	temporal-live demo-g15a run-local stop-local seed-demo
 
 help:
 	@printf '%s\n' \
@@ -112,3 +112,17 @@ temporal-live:
 # G1.5a acceptance evidence: the flow document and the event stream over HTTP (needs AEGIS_TEST_PG_DSN).
 demo-g15a:
 	@uv run --frozen pytest tests/test_g15a_http_demo.py -q -s
+
+# --- Local stack (G1.5a follow-up) --------------------------------------------
+# run-local brings up the dev stack, applies migrations, mints a dev operator token and serves the
+# API for the UI; stop-local stops only what it started. State lives in .local/ (git-ignored).
+
+run-local:
+	@scripts/dev/run-local.sh
+
+stop-local:
+	@scripts/dev/stop-local.sh
+
+seed-demo:
+	@scripts/dev/seed-demo.py --api-url "$${AEGIS_API_URL:-http://127.0.0.1:8000}" \
+		--token "$${AEGIS_DEV_TOKEN:?set AEGIS_DEV_TOKEN to the token make run-local printed}"
