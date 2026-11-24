@@ -18,7 +18,14 @@ load_env
 require_cmd uv "install uv (https://docs.astral.sh/uv/)"
 export AEGIS_PG_DSN="postgresql://$AEGIS_PG_USER:$AEGIS_PG_PASSWORD@127.0.0.1:$AEGIS_PG_PORT/$AEGIS_PG_DB"
 
-log "postgres schema version: $(psql_value "SELECT coalesce(max(version), 'none') FROM aegis_migrations.contract_migration")"
+# A brand-new database has no bookkeeping table yet: that is "nothing applied", not a psql error
+# (a first-time `make run-local` used to print `ERROR: relation "aegis_migrations.contract_migration"
+# does not exist` and an empty version here, which reads like a broken stack).
+if [ "$(psql_value "SELECT to_regclass('aegis_migrations.contract_migration') IS NULL")" = t ]; then
+  log "postgres schema: no migrations applied yet"
+else
+  log "postgres schema version: $(psql_value "SELECT coalesce(max(version), 'none') FROM aegis_migrations.contract_migration")"
+fi
 
 # --- Neo4j constraints -------------------------------------------------------
 log "neo4j constraints: applying (idempotent)"
