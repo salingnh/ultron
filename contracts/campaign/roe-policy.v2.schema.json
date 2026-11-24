@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/campaign/roe-policy.v2.schema.json",
   "title": "Campaign execution settings v2",
-  "description": "Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency, thời gian và danh sách mục tiêu bị loại. Không dùng phân loại thao tác.",
+  "description": "Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency và danh sách mục tiêu bị loại. Không dùng phân loại thao tác. Khung giờ cho phép (allowed/blackout windows) đã bị bỏ khỏi contract theo quyết định chủ 2026-11-24 (G1 chỉ cần luồng chạy được); snapshot cũ còn khung giờ là lịch sử, không được chạy.",
   "type": "object",
   "required": [
     "max_parallel_jobs",
@@ -52,22 +52,6 @@
         }
       }
     },
-    "allowed_windows": {
-      "description": "Tùy chọn. Rỗng hoặc vắng = được quét mọi lúc.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/TimeWindow"
-      },
-      "maxItems": 50
-    },
-    "blackout_windows": {
-      "description": "Nếu có thì mọi job bị chặn trong khung giờ này với WAIT_WINDOW; kiểm cùng allowed_windows trước dispatch.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/TimeWindow"
-      },
-      "maxItems": 50
-    },
     "budget": {
       "type": "object",
       "additionalProperties": false,
@@ -106,51 +90,5 @@
       "uniqueItems": true
     }
   },
-  "$defs": {
-    "TimeWindow": {
-      "type": "object",
-      "required": [
-        "days",
-        "start",
-        "end",
-        "timezone"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "days": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri",
-              "sat",
-              "sun"
-            ]
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
-        "start": {
-          "type": "string",
-          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
-        },
-        "end": {
-          "type": "string",
-          "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$"
-        },
-        "timezone": {
-          "description": "Tên IANA, vd Asia/Ho_Chi_Minh.",
-          "type": "string",
-          "minLength": 1,
-          "format": "aegis-iana-timezone",
-          "maxLength": 255
-        }
-      },
-      "description": "Khoảng nửa mở [start,end) theo giờ địa phương; days là ngày bắt đầu. End < start kéo sang ngày kế; start=end là khoảng rỗng. 24:00 chỉ hợp lệ ở end, chỉ cuối ngày bắt đầu. So thời gian thực sau khi đổi sang timezone; giờ DST lặp khớp cả hai lần, giờ bị bỏ không tạo thời điểm."
-    }
-  }
+  "$defs": {}
 }

@@ -27,22 +27,12 @@ __all__ = [
     "accept_job",
     "adopt_policy",
     "complete_job",
-    "open_policy",
     "run_job",
     "scheduler_for",
     "service",
     "set_campaign_status",
     "wait_reason",
 ]
-
-
-def open_policy(**overrides: Any) -> dict[str, Any]:
-    """A valid roe-policy.v2 document with the sample windows removed (tests opt in per case)."""
-    document = policy_document()
-    document.pop("allowed_windows", None)
-    document.pop("blackout_windows", None)
-    document.update(overrides)
-    return document
 
 
 @dataclass
@@ -111,7 +101,7 @@ def complete_job(
 
 def adopt_policy(dsn: str, campaign_id: str, **overrides: Any) -> str:
     """Append a v2 policy snapshot and make it current (the M01 adopt operation, test form)."""
-    document = open_policy(**overrides)
+    document = policy_document(**overrides)
     with connect(dsn) as conn, conn.transaction():
         row = conn.execute("SELECT aegis.next_policy_version()").fetchone()
         assert row is not None

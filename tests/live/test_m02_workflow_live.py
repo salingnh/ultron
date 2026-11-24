@@ -38,7 +38,7 @@ from aegis.m02_orchestrator.types import (
     workflow_id,
 )
 from aegis.m02_orchestrator.workflow import CampaignWorkflow
-from tests.db_support import connect, migrated_database, seed_campaign
+from tests.db_support import connect, migrated_database, policy_document, seed_campaign
 from tests.live.session_activities import ACTIVITIES as SESSION_ACTIVITIES
 from tests.live.session_activities import SessionScript
 from tests.live.session_activities import configure as configure_script
@@ -46,7 +46,6 @@ from tests.m02_support import (
     accept_job,
     complete_job,
     insert_outbox_event,
-    open_policy,
     run_job,
     service,
 )
@@ -151,7 +150,7 @@ def _completed_event(campaign_id: str, job_id: str, status: str = "SUCCEEDED") -
 
 
 def test_dispatch_dependency_completion_and_replay_fixture(temporal_target: str, dsn: str) -> None:
-    campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+    campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=1))
     with service(dsn) as jobs:
         parent = accept_job(jobs, campaign, priority=10)
         child = accept_job(jobs, campaign, priority=90, depends_on=[parent])
@@ -220,7 +219,7 @@ def test_dispatch_dependency_completion_and_replay_fixture(temporal_target: str,
 def test_pause_and_resume_arrive_through_the_campaign_watcher(
     temporal_target: str, dsn: str
 ) -> None:
-    campaign = seed_campaign(dsn, status="PAUSED", policy=open_policy(max_parallel_jobs=1))
+    campaign = seed_campaign(dsn, status="PAUSED", policy=policy_document(max_parallel_jobs=1))
     with service(dsn) as jobs:
         job = accept_job(jobs, campaign)
     configure_script(campaign.campaign_id, SessionScript())
@@ -264,7 +263,7 @@ def test_pause_and_resume_arrive_through_the_campaign_watcher(
 def test_cancel_stops_a_running_session_and_writes_the_campaign_state(
     temporal_target: str, dsn: str
 ) -> None:
-    campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+    campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=1))
     script = configure_script(
         campaign.campaign_id,
         SessionScript(outcomes=[SessionOutcome(cursor=0, cycle=0)], delay_seconds=60),
@@ -304,7 +303,7 @@ def test_an_idle_session_pauses_the_campaign_with_a_reason(temporal_target: str,
     """
     campaign = seed_campaign(
         dsn,
-        policy=open_policy(
+        policy=policy_document(
             max_parallel_jobs=1,
             budget={
                 "max_jobs": 50,
@@ -350,7 +349,7 @@ def test_an_idle_session_pauses_the_campaign_with_a_reason(temporal_target: str,
 
 
 def test_continue_as_new_carries_the_cycle_and_cursor(temporal_target: str, dsn: str) -> None:
-    campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+    campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=1))
     script = configure_script(
         campaign.campaign_id,
         SessionScript(
@@ -393,7 +392,7 @@ def test_continue_as_new_carries_the_cycle_and_cursor(temporal_target: str, dsn:
 
 
 def test_already_terminal_campaign_ends_immediately(temporal_target: str, dsn: str) -> None:
-    campaign = seed_campaign(dsn, status="CANCELLED", policy=open_policy(max_parallel_jobs=1))
+    campaign = seed_campaign(dsn, status="CANCELLED", policy=policy_document(max_parallel_jobs=1))
     configure_script(campaign.campaign_id, SessionScript())
 
     async def scenario() -> None:

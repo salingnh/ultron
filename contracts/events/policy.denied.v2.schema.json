@@ -43,7 +43,7 @@
       "$ref": "../common/error.v2.schema.json"
     },
     "rule": {
-      "description": "Luật policy đã từ chối, vd schema, rate_limit, blackout_window, dependency_invalid, capability_unknown.",
+      "description": "Luật policy đã từ chối, vd schema, rate_limit, dependency_invalid, capability_unknown.",
       "type": "string"
     },
     "requested_by": {

@@ -73,13 +73,13 @@ def test_every_contract_schema_has_a_generated_module() -> None:
 def test_semantic_format_is_enforced_by_the_shared_hook() -> None:
     # Pydantic ignores `format: aegis-iana-timezone` (it is not a JSON Schema standard format), so
     # this proves the shared hook in contracts/validation.py is what rejects it, not a regex copy.
-    payload = load_fixture("valid/roe-policy.from-v1.json")
-    payload["allowed_windows"][0]["timezone"] = "Mars/Phobos"
-    model = root_dto("campaign/roe-policy.v2.schema.json").model_validate(payload)
+    payload = load_fixture("valid/campaign-create.json")
+    payload["targets"]["domains"] = ["-not-a-domain.example"]
+    model = root_dto("campaign/campaign-create.v2.schema.json").model_validate(payload)
     with pytest.raises(validation.ContractViolation) as violation:
-        validation.validate_model("campaign/roe-policy.v2.schema.json", model)
-    assert "aegis-iana-timezone" in str(violation.value)
-    assert any("aegis-iana-timezone" in error for error in violation.value.errors)
+        validation.validate_model("campaign/campaign-create.v2.schema.json", model)
+    assert "aegis-domain-seed" in str(violation.value)
+    assert any("aegis-domain-seed" in error for error in violation.value.errors)
 
 
 def test_generated_dto_refuses_unknown_field() -> None:

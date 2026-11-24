@@ -38,7 +38,6 @@ const waitReasonLabels: Record<string, string> = {
   DEPENDENCY_FAILED: 'Job tiền nhiệm thất bại (Failed)',
   CAMPAIGN_PAUSED: 'Chiến dịch đang tạm dừng',
   BUDGET_EXHAUSTED: 'Hết hạn mức ngân sách',
-  WINDOW_CLOSED: 'Ngoài khung giờ cho phép',
   CONCURRENCY_LIMIT: 'Đạt trần job đồng thời',
   RATE_LIMITED: 'Giới hạn tốc độ yêu cầu',
   PROVIDER_UNAVAILABLE: 'Công cụ chưa sẵn sàng',

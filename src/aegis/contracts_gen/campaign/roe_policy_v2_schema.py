@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import BaseModel, ConfigDict, Field, RootModel, confloat, conint, constr
 
 from ..common import ids_v2_schema
@@ -39,28 +37,6 @@ class Budget(BaseModel):
     )
 
 
-class Day(StrEnum):
-    mon = "mon"
-    tue = "tue"
-    wed = "wed"
-    thu = "thu"
-    fri = "fri"
-    sat = "sat"
-    sun = "sun"
-
-
-class TimeWindow(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    days: list[Day] = Field(..., min_length=1)
-    start: constr(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
-    end: constr(pattern=r"^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$")
-    timezone: constr(min_length=1, max_length=255) = Field(
-        ..., description="Tên IANA, vd Asia/Ho_Chi_Minh."
-    )
-
-
 class RoePolicy(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -73,14 +49,6 @@ class RoePolicy(BaseModel):
     max_parallel_jobs: conint(ge=1, le=50)
     max_duration_hours: conint(ge=1, le=168)
     rate_limits: RateLimits | None = None
-    allowed_windows: list[TimeWindow] | None = Field(
-        None, description="Tùy chọn. Rỗng hoặc vắng = được quét mọi lúc.", max_length=50
-    )
-    blackout_windows: list[TimeWindow] | None = Field(
-        None,
-        description="Nếu có thì mọi job bị chặn trong khung giờ này với WAIT_WINDOW; kiểm cùng allowed_windows trước dispatch.",
-        max_length=50,
-    )
     budget: Budget | None = None
     capability_denylist: list[ids_v2_schema.CapabilityId] | None = Field(
         None, description="Tùy chọn: capability không được dùng trong chiến dịch này."

@@ -7,11 +7,9 @@ from __future__ import annotations
 
 import socket
 from ipaddress import ip_address, ip_network
-from importlib.resources import files
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jsonschema import FormatChecker
 from openapi_spec_validator import OpenAPIV31SpecValidator
@@ -21,7 +19,6 @@ DOMAIN = re.compile(
     r"(?=.{1,253}\Z)(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9])?\.)*"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z"
 )
-TIMEZONES = frozenset(files("tzdata").joinpath("zones").read_text().splitlines())
 
 
 def domain_name(value: str) -> bool:
@@ -101,16 +98,6 @@ def canonical_key(value: str) -> bool:
     return True
 
 
-def iana_timezone(value: str) -> bool:
-    if value not in TIMEZONES:
-        return False
-    try:
-        ZoneInfo(value)
-        return True
-    except (ZoneInfoNotFoundError, ValueError):
-        return False
-
-
 # Platform egress deny set (C05/S1.5a, OI-5). This is a constant of the platform, never provider data:
 # no manifest field can declare or widen it, the registry refuses an `egressSources` host that hits it,
 # and the broker must apply the same list. IPv4 addresses embedded in IPv6 (mapped, NAT64, 6to4,
@@ -187,7 +174,6 @@ def format_checker() -> FormatChecker:
         "aegis-domain-seed": domain_seed,
         "aegis-ip-address": ip_literal,
         "aegis-ip-or-cidr": ip_or_cidr,
-        "aegis-iana-timezone": iana_timezone,
     }
     for name, check in checks.items():
         def validate(value, check=check):

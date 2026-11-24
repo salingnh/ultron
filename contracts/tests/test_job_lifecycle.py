@@ -26,6 +26,18 @@ JOB_SCHEMA = json.loads((ROOT / "capability/job.v2.schema.json").read_text())
 QUEUED = json.loads((ROOT / "fixtures/valid/job.queued-waiting.json").read_text())
 CANCELLED = json.loads((ROOT / "fixtures/valid/job.cancelled-with-intent.json").read_text())
 MIGRATION = (ROOT / "db/postgres/0007_job_lifecycle.sql").read_text()
+#: The newest definition of `aegis.is_wait_reason`, by file number. The code list lives there: 0007
+#: created it and a later migration may narrow it (0017 dropped WINDOW_CLOSED with the RoE time
+#: windows), while 0007 stays byte-identical history like every applied migration.
+WAIT_REASON_MIGRATIONS = sorted(
+    (ROOT / "db/postgres").glob("[0-9][0-9][0-9][0-9]_*.sql"),
+    key=lambda path: path.name,
+)
+WAIT_REASON_DDL = next(
+    path.read_text()
+    for path in reversed(WAIT_REASON_MIGRATIONS)
+    if "FUNCTION aegis.is_wait_reason" in path.read_text()
+)
 
 
 def validator(target: str) -> Draft202012Validator:
@@ -143,7 +155,7 @@ class JobLifecycleSchema(unittest.TestCase):
 
     def test_ddl_and_schema_publish_one_wait_reason_code_list(self):
         codes = JOB_SCHEMA["$defs"]["WaitReason"]["properties"]["code"]["enum"]
-        ddl_block = MIGRATION.split("coalesce(reason->>'code', '') NOT IN (", 1)[1].split(")", 1)[0]
+        ddl_block = WAIT_REASON_DDL.split("coalesce(reason->>'code', '') NOT IN (", 1)[1].split(")", 1)[0]
         ddl_codes = re.findall(r"'([A-Z_]+)'", ddl_block)
         self.assertEqual(ddl_codes, codes)
         for fragment in [

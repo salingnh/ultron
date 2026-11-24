@@ -1,4 +1,4 @@
-"""M02 scheduler acceptance: priority, dependency, budget/window/rate/concurrency, wait reasons."""
+"""M02 scheduler acceptance: priority, dependency, budget/rate/concurrency, wait reasons."""
 
 from __future__ import annotations
 
@@ -8,13 +8,18 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from psycopg.rows import dict_row
 
-from tests.db_support import connect, migrated_database, requires_postgres, seed_campaign
+from tests.db_support import (
+    connect,
+    migrated_database,
+    policy_document,
+    requires_postgres,
+    seed_campaign,
+)
 from tests.m02_support import (
     FixedClock,
     accept_job,
     adopt_policy,
     complete_job,
-    open_policy,
     run_job,
     scheduler_for,
     service,
@@ -23,8 +28,6 @@ from tests.m02_support import (
 )
 
 pytestmark = requires_postgres
-
-DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
 def _queued(dsn: str, campaign_id: str) -> list[str]:
@@ -56,7 +59,7 @@ def _history(dsn: str, job_id: str) -> list[tuple[str, str]]:
 def test_priority_order_claims_and_a_dependency_is_never_overtaken() -> None:
     """A higher-priority dependent job waits for its predecessor before any lower-priority job."""
     with migrated_database() as dsn:
-        campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=10))
+        campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=10))
         with service(dsn) as jobs:
             parent = accept_job(jobs, campaign, priority=10)
             dependent = accept_job(jobs, campaign, priority=99, depends_on=[parent])
@@ -119,52 +122,21 @@ def test_paused_campaign_claims_nothing_and_reports_the_reason() -> None:
         assert wait_reason(dsn, job) is not None
 
 
-def test_allowed_and_blackout_windows_block_dispatch() -> None:
-    now = datetime.now(UTC)
-    # An allowed window on a different local day than "now": dispatch is closed.
-    with migrated_database() as dsn:
-        other_day = DAY_KEYS[(now.astimezone(UTC).weekday() + 3) % 7]
-        policy = open_policy(
-            allowed_windows=[
-                {"days": [other_day], "start": "00:00", "end": "24:00", "timezone": "UTC"}
-            ]
-        )
-        campaign = seed_campaign(dsn, policy=policy)
-        with service(dsn) as jobs:
-            job = accept_job(jobs, campaign)
-        with scheduler_for(dsn) as scheduler:
-            plan = scheduler.dispatch(campaign.campaign_id)
-        assert plan.claimed == ()
-        assert [(item.job_id, item.code) for item in plan.waiting] == [(job, "WINDOW_CLOSED")]
-
-    with migrated_database() as dsn:
-        today = DAY_KEYS[now.astimezone(UTC).weekday()]
-        policy = open_policy(
-            blackout_windows=[
-                {"days": [today], "start": "00:00", "end": "24:00", "timezone": "UTC"}
-            ]
-        )
-        campaign = seed_campaign(dsn, policy=policy)
-        with service(dsn) as jobs:
-            job = accept_job(jobs, campaign)
-        with scheduler_for(dsn) as scheduler:
-            plan = scheduler.dispatch(campaign.campaign_id)
-        assert plan.claimed == ()
-        assert [(item.job_id, item.code) for item in plan.waiting] == [(job, "WINDOW_CLOSED")]
-
-
 def test_duration_budget_blocks_dispatch_and_stops_the_workflow() -> None:
+    # The campaign started nine hours before the instant the scheduler decides at: both times come
+    # from the same injected clock (`FixedClock`), so the test does not depend on the wall clock it
+    # runs at (the database's `now()` is a second clock and must not be mixed in).
+    clock = FixedClock(datetime(2026, 11, 24, 3, 0, tzinfo=UTC))
     with migrated_database() as dsn:
-        campaign = seed_campaign(dsn, policy=open_policy(max_duration_hours=8))
+        campaign = seed_campaign(dsn, policy=policy_document(max_duration_hours=8))
         with service(dsn) as jobs:
             job = accept_job(jobs, campaign)
         with connect(dsn) as conn, conn.transaction():
             conn.execute(
-                "UPDATE campaign SET started_at = now() - interval '9 hours' "
-                "WHERE campaign_id = %s",
-                (campaign.campaign_id,),
+                "UPDATE campaign SET started_at = %s WHERE campaign_id = %s",
+                (clock() - timedelta(hours=9), campaign.campaign_id),
             )
-        with scheduler_for(dsn) as scheduler:
+        with scheduler_for(dsn, clock) as scheduler:
             plan = scheduler.dispatch(campaign.campaign_id)
         assert plan.stop == "duration_budget_exhausted"
         assert plan.claimed == ()
@@ -173,7 +145,7 @@ def test_duration_budget_blocks_dispatch_and_stops_the_workflow() -> None:
 
 def test_concurrency_limit_releases_the_next_job_when_one_finishes() -> None:
     with migrated_database() as dsn:
-        campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+        campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=1))
         with service(dsn) as jobs:
             first = accept_job(jobs, campaign, priority=80)
             second = accept_job(jobs, campaign, priority=20)
@@ -194,7 +166,7 @@ def test_concurrency_limit_releases_the_next_job_when_one_finishes() -> None:
 
 def test_rate_limit_blocks_after_the_per_minute_allowance() -> None:
     with migrated_database() as dsn:
-        campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=10))
+        campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=10))
         with service(dsn) as jobs:
             first = accept_job(jobs, campaign, priority=90)
             second = accept_job(jobs, campaign, priority=10)
@@ -255,7 +227,7 @@ def test_an_unchanged_wait_reason_keeps_its_first_since_timestamp() -> None:
 
 def test_cancel_intent_terminalises_queued_jobs_and_marks_running_ones() -> None:
     with migrated_database() as dsn:
-        campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+        campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=1))
         with service(dsn) as jobs:
             queued = accept_job(jobs, campaign, priority=10)
             running = accept_job(jobs, campaign, priority=90)
@@ -317,7 +289,7 @@ def test_m05_cancel_of_a_queued_job_with_a_wait_reason_clears_it_first() -> None
     """G1.1d interaction: a QUEUED job may carry a wait reason, which 0014 forbids after cancel."""
     campaign = None
     with migrated_database() as dsn:
-        campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+        campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=1))
         with service(dsn) as jobs:
             busy = accept_job(jobs, campaign, priority=90)
             waiting = accept_job(jobs, campaign, priority=10)
@@ -339,7 +311,7 @@ def test_dispatch_reports_every_pending_job_of_the_campaign() -> None:
     is between ticks would otherwise leave the loop waiting for an event that already happened.
     """
     with migrated_database() as dsn:
-        campaign = seed_campaign(dsn, policy=open_policy(max_parallel_jobs=1))
+        campaign = seed_campaign(dsn, policy=policy_document(max_parallel_jobs=1))
         with service(dsn) as jobs:
             first = accept_job(jobs, campaign)
             second = accept_job(jobs, campaign, priority=10)

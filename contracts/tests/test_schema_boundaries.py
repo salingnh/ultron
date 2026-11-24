@@ -94,17 +94,6 @@ class SchemaBoundaries(unittest.TestCase):
                 with self.subTest(field=field, severity=severity):
                     self.assertEqual(v.is_valid(data), severity not in {"BANANA", "high"})
 
-    def test_n04_clock_and_iana_timezone(self):
-        v = validator("campaign/roe-policy.v2.schema.json#/$defs/TimeWindow")
-        base = {"days": ["mon"], "start": "08:00", "end": "10:00", "timezone": "Asia/Ho_Chi_Minh"}
-        for changes, valid in [({"end": "24:00"}, True), ({"end": "23:59"}, True),
-                               ({"start": "22:00", "end": "02:00"}, True),
-                               ({"timezone": "UTC"}, True), ({"timezone": "America/New_York"}, True),
-                               ({"end": "24:01"}, False), ({"end": "24:59"}, False),
-                               ({"start": "24:00"}, False), ({"end": "25:00"}, False),
-                               ({"timezone": "Mars/Olympus"}, False), ({"timezone": "../UTC"}, False)]:
-            with self.subTest(changes=changes): self.assertEqual(v.is_valid(dict(base, **changes)), valid)
-
     def test_n05_nonnegative_consumed_usage(self):
         v = validator("agent/session-result.v2.schema.json#/properties/usage")
         base = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0}
