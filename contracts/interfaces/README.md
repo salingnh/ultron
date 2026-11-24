@@ -46,7 +46,7 @@ class ContainerSpec:
     max_output_bytes: int                                     # bắt buộc, resolve từ manifest đã pin
     network: Literal["exec", "none"]                           # chỉ mạng thực thi hoặc không mạng
     egress_mode: Literal["broker"] | None = None               # từ permissions.egressMode; None khi network=none
-    egress_binding: tuple[str, ...] = ()                       # host:port đã kiểm = target đã phân giải ∪ egressSources
+    egress_binding: tuple[str, ...] = ()                       # đọc từ task đã ký (E-1), không tính lại
     egress_proxy: str | None = None                           # broker L7 của job (HTTP CONNECT/SOCKS5), do M06 cấp
     raw_socket: bool = False                                   # GĐ1 luôn false: không có egress L3 (G0.2)
     read_only_rootfs: bool = True; user: str = "65534:65534"
@@ -57,7 +57,11 @@ class ContainerSpec:
 
 ### Manifest bất biến và cấu hình thực thi
 
-ApprovedTask bắt buộc có `adapter_version` và `manifest_sha256`. Hash là SHA-256 của nguyên byte file manifest UTF-8 đã được registry nhận: không parse rồi serialize lại để tính hash. Registry M05 giữ bản manifest bất biến theo hash để job chờ, retry và replay dùng cùng bản, kể cả sau khi triển khai adapter mới.
+ApprovedTask bắt buộc có `adapter_version` và `manifest_sha256`. Hash là SHA-256 của nguyên byte file manifest UTF-8 đã được registry nhận: không parse rồi serialize lại để tính hash. Registry M05 giữ bản manifest bất biến theo hash để job chờ, retry và replay dùng cùng bản, kể cả sau khi triển khai adapter mới. Từ G1.1c registry là bảng `aegis.provider_manifest`: khóa là hash, một `CHECK` chứng minh hash mô tả đúng byte đã lưu, bảng append-only, và cùng `(capability, provider, provider_version, adapter_version)` không được đăng ký hai lần với byte khác.
+
+**Chữ ký (OI-7).** Nội dung được ký = `aegis-c14n/1` của `{"purpose": "aegis.io/approved-task/v2", "signature_key_id": <id>, "task": <task bỏ trường signature>}`; `signature` = `hmac-sha256:` + hex(HMAC-SHA256(khóa[key id], utf8(nội dung đó))). `signature_key_id` nằm trong nội dung được ký nên không thể đổi khóa của task đã ký. Xoay khóa: thêm khóa mới với id mới, ký task mới bằng khóa đang hoạt động, vẫn verify task cũ bằng khóa cũ; khóa và id là cấu hình của server, không nằm trong task, log hay fixture. M06 lấy task đã ghim (`scan_job.approved_task`), verify HMAC trước khi dựng ContainerSpec, và từ chối khi khóa không có trong ring hoặc chữ ký không khớp.
+
+**Egress binding (E-1).** `egress_binding` của task là tập đích broker được phép mở, do M05 tính và ghim **trong nội dung được ký**: `mode` (`broker|none`), `target_binding` của manifest, `entries` (host:port, đã sắp xếp, đã trừ tập luôn chặn) và `target_addresses` (IP đã phân giải khi `targetBinding=required`; rỗng khi `none`). M06 dùng đúng giá trị này và không tính lại; broker vẫn phân giải lại tên lúc kết nối và từ chối địa chỉ nằm ngoài tập đã ghim. Registry từ chối manifest khai `egressSources` thuộc tập luôn chặn, nên binding không bao giờ chứa đích bị cấm.
 
 M05 resolve manifest, ghép inputDefaults rồi validate input, ghi pin cùng job và ký toàn bộ task trừ trường signature. `manifest_sha256` thuộc dữ liệu được ký. M06 lấy manifest theo hash, tính lại hash và đối chiếu capability/provider/adapter_version/provider_version/image_digest với task. Thiếu bản đã pin thì dừng với DEPENDENCY_MISSING; hash hoặc định danh không khớp thì POLICY_DENIED. Không thay bằng manifest latest hay defaults của bản triển khai mới. [Kiểm conformance offline](../tests/manifest_binding.py) kiểm pin/định danh; chưa phải mã executor hay kiểm HMAC runtime.
 
@@ -69,7 +73,7 @@ M05 resolve manifest, ghép inputDefaults rồi validate input, ghi pin cùng jo
 | max_output_bytes | budget.maxOutputMb × 1048576; thiếu maxOutputMb dùng 256 MiB theo manifest schema |
 | network | permissions.networkAccess none → none; egress → exec (mạng nội bộ của job, không DNS ngoài) |
 | egress_mode, egress_proxy | permissions.egressMode (GĐ1 chỉ `broker`); M06 cấp proxy/http_proxy cho container, broker là peer duy nhất trên mạng của job |
-| egress_binding | M05 phân giải target thành IP/port đã kiểm rồi hợp với permissions.egressSources; broker chỉ mở tới tập này, đích ngoài tập bị từ chối kèm lý do |
+| egress_binding | Đọc từ ApprovedTask đã ký (`egress_binding`), M06 không tính lại (E-1); M05 đã phân giải target thành IP/port đã kiểm rồi hợp với permissions.egressSources và trừ tập luôn chặn. Broker chỉ mở tới tập này, đích ngoài tập bị từ chối kèm lý do |
 | raw_socket | GĐ1 cố định false: manifest schema chỉ nhận `rawSocket: false` vì chưa có egress L3 (G0.2) |
 | user/rootfs/PID/file/seccomp | Giới hạn cố định của ContainerSpec ở trên; runtime không đáp ứng thì không dispatch |
 

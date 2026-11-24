@@ -54,6 +54,16 @@
     "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "signature": "hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "none",
+    "entries": [
+      "crt.sh:443",
+      "otx.alienvault.com:443"
+    ],
+    "target_addresses": []
+  },
   "priority": 50,
   "depends_on": []
 }
