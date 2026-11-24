@@ -181,7 +181,7 @@ export const AssetGraphScreen: React.FC = () => {
             {viewMode === 'graph' ? (
               <div className="graph-container" style={{ height: 600 }}>
                 {/* SVG-based interactive graph representation */}
-                <svg width="100%" height="100%" viewBox="0 0 800 580" style={{ cursor: 'grab' }}>
+                <svg width="100%" height="100%" viewBox="0 0 920 600" style={{ cursor: 'grab' }}>
                   <defs>
                     <marker
                       id="arrowhead"
@@ -209,15 +209,15 @@ export const AssetGraphScreen: React.FC = () => {
                   {graphData?.edges.map((edge, idx) => {
                     // Precomputed coordinates for pleasant graph layout
                     const coords: Record<string, { x: number; y: number }> = {
-                      'dns:internal.example': { x: 400, y: 140 },
-                      'dns:vpn.internal.example': { x: 220, y: 300 },
-                      'ip:203.0.113.10': { x: 220, y: 460 },
-                      'dns:app.internal.example': { x: 420, y: 320 },
-                      'dns:auth.internal.example': { x: 600, y: 300 },
+                      'dns:internal.example': { x: 460, y: 110 },
+                      'dns:vpn.internal.example': { x: 190, y: 290 },
+                      'ip:203.0.113.10': { x: 190, y: 470 },
+                      'dns:app.internal.example': { x: 460, y: 320 },
+                      'dns:auth.internal.example': { x: 730, y: 290 },
                     };
 
                     const fromPt = coords[edge.from] || { x: 200 + idx * 80, y: 200 };
-                    const toPt = coords[edge.to] || { x: 400, y: 150 };
+                    const toPt = coords[edge.to] || { x: 460, y: 120 };
 
                     const edgeKey = `edge-${edge.from}-${edge.to}`;
                     const isSelected = selectedItem?.id === edgeKey;
@@ -233,6 +233,7 @@ export const AssetGraphScreen: React.FC = () => {
                         role="button"
                         aria-label={`Cạnh ${edge.type} từ ${edge.from} tới ${edge.to}`}
                       >
+                        <title>{`${edge.type}: ${edge.from} -> ${edge.to}`}</title>
                         <line
                           x1={fromPt.x}
                           y1={fromPt.y}
@@ -243,9 +244,9 @@ export const AssetGraphScreen: React.FC = () => {
                           markerEnd={isSelected ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
                         />
                         <rect
-                          x={midX - 45}
+                          x={midX - 52}
                           y={midY - 10}
-                          width={90}
+                          width={104}
                           height={20}
                           rx={4}
                           fill="var(--surface)"
@@ -268,28 +269,33 @@ export const AssetGraphScreen: React.FC = () => {
                   {/* Nodes */}
                   {graphData?.nodes.map((node, idx) => {
                     const coords: Record<string, { x: number; y: number }> = {
-                      'dns:internal.example': { x: 400, y: 140 },
-                      'dns:vpn.internal.example': { x: 220, y: 300 },
-                      'ip:203.0.113.10': { x: 220, y: 460 },
-                      'dns:app.internal.example': { x: 420, y: 320 },
-                      'dns:auth.internal.example': { x: 600, y: 300 },
+                      'dns:internal.example': { x: 460, y: 110 },
+                      'dns:vpn.internal.example': { x: 190, y: 290 },
+                      'ip:203.0.113.10': { x: 190, y: 470 },
+                      'dns:app.internal.example': { x: 460, y: 320 },
+                      'dns:auth.internal.example': { x: 730, y: 290 },
                     };
 
-                    const pt = coords[node.canonical_key] || { x: 150 + idx * 120, y: 250 };
+                    const pt = coords[node.canonical_key] || { x: 150 + idx * 140, y: 250 };
                     const isSelected = selectedItem?.id === node.asset_id;
+
+                    const displayKey = node.canonical_key.length > 26
+                      ? node.canonical_key.substring(0, 24) + '…'
+                      : node.canonical_key;
 
                     return (
                       <g
                         key={node.asset_id}
-                        transform={`translate(${pt.x - 90}, ${pt.y - 35})`}
+                        transform={`translate(${pt.x - 115}, ${pt.y - 34})`}
                         onClick={() => handleSelectNode(node)}
                         style={{ cursor: 'pointer' }}
                         role="button"
                         aria-label={`Tài sản ${node.canonical_key}`}
                       >
+                        <title>{`${node.canonical_key} (${node.asset_id})`}</title>
                         <rect
-                          width={180}
-                          height={70}
+                          width={230}
+                          height={68}
                           rx={8}
                           fill="var(--surface)"
                           stroke={isSelected ? 'var(--accent)' : 'var(--line)'}
@@ -298,13 +304,13 @@ export const AssetGraphScreen: React.FC = () => {
                         />
                         {/* Kind icon indicator */}
                         <circle
-                          cx={20}
+                          cx={22}
                           cy={22}
                           r={10}
                           fill={node.kind === 'domain' ? 'var(--accent-bg)' : 'var(--success-bg)'}
                         />
                         <text
-                          x={20}
+                          x={22}
                           y={26}
                           textAnchor="middle"
                           fontSize="11"
@@ -316,20 +322,19 @@ export const AssetGraphScreen: React.FC = () => {
 
                         {/* Canonical key */}
                         <text
-                          x={38}
-                          y={25}
+                          x={40}
+                          y={26}
                           fontSize="11"
                           fontWeight="600"
                           fontFamily="var(--font-mono)"
                           fill="var(--ink)"
                         >
-                          {node.canonical_key.length > 18
-                            ? node.canonical_key.substring(0, 16) + '..'
-                            : node.canonical_key}
+                          <title>{node.canonical_key}</title>
+                          {displayKey}
                         </text>
 
                         {/* Kind label */}
-                        <text x={18} y={52} fontSize="10" fill="var(--muted)">
+                        <text x={20} y={50} fontSize="10" fill="var(--muted)">
                           Loại: <tspan fontWeight="bold">{node.kind}</tspan>
                         </text>
 

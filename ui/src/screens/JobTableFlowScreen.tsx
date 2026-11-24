@@ -64,7 +64,7 @@ const CustomJobNode: React.FC<{ data: JobNodeData }> = ({ data }) => {
         <span style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--muted)' }}>
           {data.type}
         </span>
-        <StatusChip status={data.status} size="sm" />
+        <StatusChip status={data.status} waitReason={data.wait_reason} size="sm" kind={isJob ? 'job' : 'campaign'} />
       </div>
 
       <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--ink)', marginBottom: 4 }}>
@@ -173,30 +173,108 @@ export const JobTableFlowScreen: React.FC = () => {
     }
   };
 
-  // Convert flowData to React Flow Nodes & Edges
-  const flowNodes: Node[] = useMemo(() => {
-    if (!flowData?.nodes) return [];
-    return flowData.nodes.map((n, idx) => ({
-      id: n.id,
-      type: 'jobNode',
-      position: { x: (idx % 3) * 280 + 50, y: Math.floor(idx / 3) * 180 + 50 },
-      data: {
-        ...n,
-        type: n.type,
-      },
-    }));
-  }, [flowData]);
+  // Convert flowData to React Flow Nodes & Edges with hierarchical DAG layout
+  const { flowNodes, flowEdges } = useMemo(() => {
+    if (!flowData?.nodes) return { flowNodes: [], flowEdges: [] };
 
-  const flowEdges: Edge[] = useMemo(() => {
-    if (!flowData?.edges) return [];
-    return flowData.edges.map((e, idx) => ({
-      id: `edge-${idx}`,
+    // Compute in-degree and adjacency for topological DAG ranking
+    const inDegree: Record<string, number> = {};
+    const adj: Record<string, string[]> = {};
+    for (const node of flowData.nodes) {
+      inDegree[node.id] = 0;
+      adj[node.id] = [];
+    }
+    for (const edge of flowData.edges) {
+      if (inDegree[edge.to] !== undefined) {
+        inDegree[edge.to] = (inDegree[edge.to] || 0) + 1;
+      }
+      if (adj[edge.from]) {
+        adj[edge.from].push(edge.to);
+      }
+    }
+
+    // Assign rank/level using topological traversal
+    const ranks: Record<string, number> = {};
+    const queue: string[] = [];
+    for (const node of flowData.nodes) {
+      if (inDegree[node.id] === 0) {
+        ranks[node.id] = 0;
+        queue.push(node.id);
+      }
+    }
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      const currRank = ranks[curr] || 0;
+      for (const next of adj[curr] || []) {
+        ranks[next] = Math.max(ranks[next] || 0, currRank + 1);
+        inDegree[next]--;
+        if (inDegree[next] === 0) {
+          queue.push(next);
+        }
+      }
+    }
+
+    // Group nodes by rank
+    const rankGroups: Record<number, FlowNode[]> = {};
+    for (const node of flowData.nodes) {
+      const r = ranks[node.id] ?? 0;
+      if (!rankGroups[r]) rankGroups[r] = [];
+      rankGroups[r].push(node);
+    }
+
+    const calculatedNodes: Node[] = [];
+    const nodeWidth = 260;
+    const nodeGapX = 80;
+    const levelHeight = 170;
+    const startY = 40;
+    const centerX = 500;
+
+    for (const [rankStr, nodesInRank] of Object.entries(rankGroups)) {
+      const r = parseInt(rankStr, 10);
+      const count = nodesInRank.length;
+      const totalWidth = count * nodeWidth + (count - 1) * nodeGapX;
+      const startX = centerX - totalWidth / 2;
+
+      nodesInRank.forEach((n, idx) => {
+        const x = startX + idx * (nodeWidth + nodeGapX);
+        const y = startY + r * levelHeight;
+        calculatedNodes.push({
+          id: n.id,
+          type: 'jobNode',
+          position: { x, y },
+          data: {
+            ...n,
+            type: n.type,
+          },
+        });
+      });
+    }
+
+    const calculatedEdges: Edge[] = flowData.edges.map((e, idx) => ({
+      id: `edge-${e.from}-${e.to}-${idx}`,
       source: e.from,
       target: e.to,
+      type: 'smoothstep',
       label: e.kind,
       animated: e.kind === 'depends_on',
-      style: { stroke: 'var(--line)', strokeWidth: 2 },
+      style: { stroke: 'var(--accent)', strokeWidth: 2 },
+      labelStyle: {
+        fill: 'var(--ink)',
+        fontWeight: 600,
+        fontSize: 11,
+        fontFamily: 'var(--font-mono)',
+      },
+      labelBgStyle: {
+        fill: 'var(--surface)',
+        stroke: 'var(--line)',
+        strokeWidth: 1,
+      },
+      labelBgPadding: [8, 4] as [number, number],
+      labelBgBorderRadius: 4,
     }));
+
+    return { flowNodes: calculatedNodes, flowEdges: calculatedEdges };
   }, [flowData]);
 
   return (
@@ -268,12 +346,13 @@ export const JobTableFlowScreen: React.FC = () => {
           <div className="state-title">Đang nạp danh sách job...</div>
         </div>
       ) : viewMode === 'flow' ? (
-        <div className="flow-container" aria-label="Luồng phụ thuộc React Flow">
+        <div className="flow-container" style={{ height: 620 }} aria-label="Luồng phụ thuộc React Flow">
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
             nodeTypes={nodeTypes}
             fitView
+            fitViewOptions={{ padding: 0.2 }}
             onNodeClick={(_event, node) => {
               const matchedJob = jobs.find((j) => j.job_id === node.id);
               if (matchedJob) setSelectedJob(matchedJob);
@@ -311,7 +390,7 @@ export const JobTableFlowScreen: React.FC = () => {
                     </div>
                   </td>
                   <td>
-                    <StatusChip status={job.status} />
+                    <StatusChip status={job.status} waitReason={job.wait_reason} kind="job" />
                     {job.error && (
                       <div style={{ marginTop: 4 }}>
                         <span className="brand-badge" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>

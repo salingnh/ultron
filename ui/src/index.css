@@ -407,11 +407,14 @@ table.data-table tr:hover td {
 
 /* Provenance Drawer/Panel */
 .provenance-panel {
-  width: 360px;
+  width: 380px;
+  max-width: 100%;
+  box-sizing: border-box;
   background-color: var(--surface);
   border-left: 1px solid var(--line);
   padding: 16px;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -437,6 +440,8 @@ table.data-table tr:hover td {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .provenance-label {
@@ -450,20 +455,34 @@ table.data-table tr:hover td {
   font-size: var(--text-sm);
   color: var(--ink);
   word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 /* ID/Hash with Copy */
 .copyable-field {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
+  max-width: 100%;
+  box-sizing: border-box;
   background-color: var(--subtle);
-  padding: 2px 6px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--ink);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.copyable-field .mono {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
 }
 
 .copy-btn {

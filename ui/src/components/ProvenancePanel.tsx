@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, X, FileText, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, X, FileText } from 'lucide-react';
 import type { ProvenanceDetail } from '../api/types';
 import { CopyableId } from './CopyableId';
 
@@ -40,20 +40,26 @@ export const ProvenancePanel: React.FC<ProvenancePanelProps> = ({ data, onClose 
 
       <div className="provenance-item">
         <span className="provenance-label">Job tạo ra (Job ID)</span>
-        <CopyableId value={data.jobId} truncate={false} />
+        <div style={{ maxWidth: '100%' }}>
+          <CopyableId value={data.jobId} truncate={false} />
+        </div>
       </div>
 
       {data.sourceAsset && (
         <div className="provenance-item">
           <span className="provenance-label">Tài sản nguồn (Source Asset)</span>
-          <CopyableId value={data.sourceAsset} truncate={false} />
+          <div style={{ maxWidth: '100%' }}>
+            <CopyableId value={data.sourceAsset} truncate={false} />
+          </div>
         </div>
       )}
 
       {data.targetAsset && (
         <div className="provenance-item">
           <span className="provenance-label">Tài sản đích (Target Asset)</span>
-          <CopyableId value={data.targetAsset} truncate={false} />
+          <div style={{ maxWidth: '100%' }}>
+            <CopyableId value={data.targetAsset} truncate={false} />
+          </div>
         </div>
       )}
 
@@ -93,41 +99,22 @@ export const ProvenancePanel: React.FC<ProvenancePanelProps> = ({ data, onClose 
 
       <div className="provenance-item">
         <span className="provenance-label">Bằng chứng SHA-256 (Evidence SHA-256)</span>
-        <div style={{ marginTop: 2 }}>
+        <div style={{ marginTop: 2, maxWidth: '100%' }}>
           <CopyableId value={data.sha256} truncate={false} />
         </div>
-        <span style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: 4 }}>
-          Giá trị hash đầy đủ (unmasked) xác thực kết quả thực thi theo AGENTS & DESIGN.
-        </span>
       </div>
 
       {data.evidenceUri && (
         <div className="provenance-item">
           <span className="provenance-label">URI Bằng chứng (Storage URI)</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <FileText size={14} style={{ color: 'var(--muted)' }} />
-            <span className="mono" style={{ fontSize: '12px', wordBreak: 'break-all' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
+            <FileText size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+            <span className="mono" style={{ fontSize: '12px', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
               {data.evidenceUri}
             </span>
           </div>
         </div>
       )}
-
-      <div
-        style={{
-          marginTop: 10,
-          padding: 10,
-          backgroundColor: 'var(--subtle)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--text-xs)',
-          color: 'var(--muted)',
-          display: 'flex',
-          gap: 6,
-        }}
-      >
-        <CheckCircle2 size={16} style={{ color: 'var(--success)', flexShrink: 0 }} />
-        <span>Kết quả đã qua kiểm định chữ ký ApprovedTask và xác thực phong bì ResultEnvelope.</span>
-      </div>
     </aside>
   );
 };
