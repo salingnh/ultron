@@ -16,7 +16,7 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -291,6 +291,60 @@ def test_cancel_stops_a_running_session_and_writes_the_campaign_state(
             assert script.cancelled, (
                 "the in-flight session activity must be cancelled, not abandoned"
             )
+
+    asyncio.run(scenario())
+
+
+def test_an_idle_session_pauses_the_campaign_with_a_reason(temporal_target: str, dsn: str) -> None:
+    """G1.2c acceptance: the idle threshold pauses the campaign, and the reason is recorded.
+
+    M03 owns "is this cycle idle" (`SessionOutcome.idle`); M02 owns the threshold
+    (`budget.idle_cycles_before_pause`) and the pause. This drives the real workflow with a session
+    activity that reports idle every time, so the boundary between the two is what is proven.
+    """
+    campaign = seed_campaign(
+        dsn,
+        policy=open_policy(
+            max_parallel_jobs=1,
+            budget={
+                "max_jobs": 50,
+                "max_llm_tokens": 100000,
+                "max_llm_cost_usd": 5,
+                "idle_cycles_before_pause": 3,
+            },
+        ),
+    )
+    script = configure_script(
+        campaign.campaign_id,
+        SessionScript(outcomes=[]),  # the fake's default answer is `idle=True`, no stop reason
+    )
+
+    async def scenario() -> None:
+        client = await Client.connect(temporal_target)
+        stop = asyncio.Event()
+        handle = await client.start_workflow(
+            CampaignWorkflow.run,
+            CampaignRunInput(campaign_id=campaign.campaign_id, tick_seconds=0.1),
+            id=workflow_id(campaign.campaign_id),
+            task_queue=ORCHESTRATOR_QUEUE,
+        )
+        async with running(client, dsn, stop):
+            await _wait_state(handle, "PAUSED", timeout=30)
+            view = await handle.query(CampaignWorkflow.status)
+            assert view.idle_cycles >= 3
+            assert view.paused is True
+            assert view.stop_reason is None  # a pause, not a terminal stop
+            with connect(dsn) as conn:
+                row = conn.execute(
+                    "SELECT status, status_reason FROM campaign WHERE campaign_id = %s",
+                    (campaign.campaign_id,),
+                ).fetchone()
+            assert row is not None
+            assert row[0] == "PAUSED"
+            assert row[1] == f"no progress for {view.idle_cycles} session(s)"
+            assert len(script.finished) >= 3
+        with suppress(Exception):
+            await handle.cancel()
 
     asyncio.run(scenario())
 

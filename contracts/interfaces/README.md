@@ -173,6 +173,13 @@ Workflow ID = `campaign-<campaign_id>`. Task queue: `aegis-orchestrator`, `aegis
 
 `run_agent_session` phải heartbeat và phải đặt `cancellation_type=WAIT_CANCELLATION_COMPLETED` cùng `heartbeat_timeout` hữu hạn (G0.1 dùng 3 s, poll trạng thái job ≤ 1 s); mặc định `TRY_CANCEL` bỏ activity đang chờ, nên phần dọn checkpoint và lý do dừng phiên bị mất. Hủy activity trả về failure canceled, không phải `asyncio.CancelledError` (memo: `spikes/g0.1-temporal-langgraph/DECISION.md` ở nhánh `spike/g0.1-temporal-langgraph@8c20a1e`).
 
+Phiên M03 (G1.2c) chạy vòng `BuildContext → Plan → SelectTool → Dispatch → AwaitResult → Analyze → DecideNext` trong activity, mỗi nút một checkpoint; các ràng buộc dưới đây là phần thực thi của interface, không phải lời khuyên:
+
+- `agent_session` là authority: M03 tạo hàng `RUNNING` (objective dùng chung của chiến dịch, `revision_from = cursor`) **trước** lời gọi MCP đầu tiên; liên kết bền giữa nhãn phiên của M02 (`<campaign_id>:cycle-<n>`, không phải `Id`) và `session_id` UUIDv7 nằm ở `campaign_ledger` `cycle_started`, nên activity chạy lại không mở phiên thứ hai và `run_agent_session` idempotent theo `session_id`.
+- Không có đường dispatch thứ hai: chỉ `tools/call` trên biên MCP (M05) tạo job; lựa chọn của model bị kiểm với `tools/list` của chính phiên và schema input đã công bố, `objective_id` do phiên gán, từ chối mang mã `error.v2` và không được dispatch. `requested_jobs` trong `AgentSessionResult` chỉ chứa id job đến từ MCP.
+- Budget bước/chi phí/token và trần số job do mã cưỡng chế (M04 từ chối trước lời gọi provider); dừng phiên ghi `stop_reason` theo `session-result.v2` (`budget_exhausted`/`step_limit`/`objective_met`), còn "không có bằng chứng mới" trả `decision=wait` với `idle` để M02 tự pause kèm lý do theo `budget.idle_cycles_before_pause` — phiên không tự pause campaign.
+- Kết quả job không đến trong cùng phiên: MCP nhận job không đồng bộ, M02 chờ `job_completed` rồi mở phiên kế tiếp; `AwaitResult` chỉ thu câu trả lời MCP (gửi lại **cùng** idempotency key nếu câu trả lời bị mất, nên vẫn một job).
+
 ## Scheduling
 
 ApprovedTask chứa priority và depends_on do M05 chuẩn hóa. Dependency cùng campaign, không self/cycle; chỉ SUCCEEDED giải phóng job. Sort ready jobs theo priority DESC, created_at ASC, job_id ASC. M06 kiểm chữ ký task và cấu hình sandbox, không tự bỏ dependency. Priority/dependency bất biến sau acceptance.
