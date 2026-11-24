@@ -55,9 +55,11 @@ addopts = "-ra --strict-markers"
 # `podman` tests need rootless Podman and cgroup v2 delegation; they skip only where podman is
 # absent, and `AEGIS_NO_SKIPS=1` (CI) turns that skip into a failure, so the sandbox suite really
 # runs in CI (G1.3a acceptance).
-markers = ["podman: needs rootless Podman to start real job containers"]
+markers = [
+  "podman: needs rootless Podman to start real job containers",
+  "live: needs a running Temporal server (AEGIS_TEMPORAL_TARGET); not in the default gate",
+]
 pythonpath = ["src", "."]
-markers = ["live: needs a running Temporal server (AEGIS_TEMPORAL_TARGET); not in the default gate"]
 
 [tool.ruff]
 line-length = 100

@@ -19,6 +19,7 @@ The order is the contract's (interfaces/README.md §3):
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,10 +35,19 @@ from aegis.m06_runner import collector, parser_host
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner import spec as specs
 from aegis.m06_runner.collector import CollectionError, CollectionResult
+from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle, LifecycleError
 from aegis.m06_runner.podman import JobLayout, PodmanRunner, RunnerError, WaitResult
 from aegis.m06_runner.values import text
+from aegis.m28_evidence.catalog import CatalogError, EvidenceCatalog
 
 EnvelopeStatus = Literal["succeeded", "partial", "failed", "cancelled"]
+OutcomeStatus = Literal["succeeded", "partial", "failed", "cancelled", "skipped"]
+DB_STATUS = {
+    "succeeded": "SUCCEEDED",
+    "partial": "SUCCEEDED",  # partial is a final result with incomplete coverage (C06)
+    "failed": "FAILED",
+    "cancelled": "CANCELLED",
+}
 TERMINAL_FAILURES = {"oom": "RESOURCE_LIMIT", "timeout": "EXECUTION_TIMEOUT"}
 
 
@@ -64,7 +74,7 @@ class JobOutcome:
     """What happened to one job; `error` is set whenever `status` is not succeeded/partial."""
 
     job_id: str
-    status: EnvelopeStatus
+    status: OutcomeStatus
     wait: WaitResult | None = None
     run: RunState | None = None
     collected: CollectionResult | None = None
@@ -94,6 +104,9 @@ class JobRunner:
         extra_parser_prefixes: Sequence[str] = (),
         extra_parser_python_path: Sequence[str] = (),
         use_parser_netns: bool = True,
+        lifecycle: JobLifecycle | None = None,
+        catalog: EvidenceCatalog | None = None,
+        cancel_poll_seconds: float = 2.0,
     ) -> None:
         self.runner = runner
         self.store = store
@@ -102,6 +115,9 @@ class JobRunner:
         self.extra_parser_prefixes = tuple(extra_parser_prefixes)
         self.extra_parser_python_path = tuple(extra_parser_python_path)
         self.use_parser_netns = use_parser_netns
+        self.lifecycle = lifecycle
+        self.catalog = catalog
+        self.cancel_poll_seconds = cancel_poll_seconds
 
     # -- public -----------------------------------------------------------------------------
 
@@ -134,67 +150,141 @@ class JobRunner:
         return spec, policy
 
     def execute(self, plan: JobPlan, *, cancel: Callable[[], bool] | None = None) -> JobOutcome:
+        claim: JobClaim | None = None
+        if self.lifecycle is not None:
+            claim = self.lifecycle.claim(plan.job_id)
+            if claim is None:
+                # Not VALIDATING any more (already dispatched by another worker, or cancelled).
+                return JobOutcome(job_id=plan.job_id, status="skipped", error="NOT_VALIDATING")
+            if self.lifecycle.cancel_requested(plan.job_id):
+                # A cancel intent recorded before the container started wins: never run it.
+                self.lifecycle.finish(claim, "CANCELLED")
+                return JobOutcome(
+                    job_id=plan.job_id,
+                    status="cancelled",
+                    error="CANCELLED",
+                    errors=[
+                        envelopes.error_object(
+                            "CANCELLED",
+                            "the job was cancelled before its sandbox started",
+                            next_action="NONE",
+                        )
+                    ],
+                )
+        signal = _CancelSignal(
+            cancel, self.lifecycle, plan.job_id, interval_seconds=self.cancel_poll_seconds
+        )
+        outcome = JobOutcome(job_id=plan.job_id, status="failed")
         try:
-            spec, policy = self.prepare(plan)
-        except (specs.SpecError, RunnerError) as error:
-            code = getattr(error, "code", "INTERNAL_ERROR")
-            return JobOutcome(
-                job_id=plan.job_id,
-                status="failed",
-                errors=[envelopes.error_object(code, str(error), next_action="FIX_INPUT")],
-                error=str(error),
-            )
-        layout = self.runner.layout(plan.job_id).create()
-        self._write_inputs(layout.input, plan.input)
-        try:
-            if policy.mode == "egress":
-                self.runner.start_broker(plan.job_id, policy)
-            started_at = envelopes.now_timestamp()
-            handle = self.runner.run(spec)
-        except RunnerError as error:
-            # Nothing of this job may stay on the host (network, broker, half-started container).
-            self.runner.discard(plan.job_id)
-            return JobOutcome(
-                job_id=plan.job_id,
-                status="failed",
-                errors=[
+            try:
+                spec, policy = self.prepare(plan)
+            except (specs.SpecError, RunnerError) as error:
+                code = getattr(error, "code", "INTERNAL_ERROR")
+                outcome.errors.append(
+                    envelopes.error_object(code, str(error), next_action="FIX_INPUT")
+                )
+                outcome.error = str(error)
+                return outcome
+            layout = self.runner.layout(plan.job_id).create()
+            self._write_inputs(layout.input, plan.input)
+            try:
+                if policy.mode == "egress":
+                    self.runner.start_broker(plan.job_id, policy)
+                started_at = envelopes.now_timestamp()
+                handle = self.runner.run(spec)
+            except RunnerError as error:
+                # Nothing of this job may stay on the host (network, broker, half-started job).
+                self.runner.discard(plan.job_id)
+                outcome.errors.append(
                     envelopes.error_object(
                         "INTERNAL_ERROR",
                         "the sandbox could not start the job",
                         technical_cause=str(error)[:4000],
                     )
-                ],
-                error=str(error),
-            )
-        outcome = JobOutcome(job_id=plan.job_id, status="failed")
-        try:
-            wait = self.runner.wait(handle, spec.timeout_seconds, cancel=cancel)
-            outcome.wait = wait
-            outcome.run = wait.state
-            if wait.cancelled:
-                # The contract does not build an envelope from a cancelled job's partial evidence;
-                # what the tool wrote is still collected below and kept for the record.
-                outcome.status = "cancelled"
-                outcome.error = "CANCELLED"
-                outcome.errors.append(
-                    envelopes.error_object(
-                        "CANCELLED",
-                        "job cancelled by the coordinator; the envelope is not built",
-                        next_action="NONE",
-                    )
                 )
-            self._collect(plan, spec, layout, outcome)
-            if wait.cancelled:
+                outcome.error = str(error)
                 return outcome
-            self._parse(plan, layout, outcome)
-            status, errors = self._status_of(outcome)
-            outcome.status = status
-            outcome.errors.extend(errors)
-            if outcome.collected is not None and outcome.parser is not None:
-                self._build_and_submit(plan, layout, outcome, started_at)
-            return outcome
+            try:
+                if claim is not None and self.lifecycle is not None:
+                    if not self.lifecycle.running(claim):
+                        self.runner.stop(handle)
+                        outcome.status = "skipped"
+                        outcome.error = "JOB_NOT_CLAIMABLE"
+                        return outcome
+                wait = self.runner.wait(handle, spec.timeout_seconds, cancel=signal)
+                outcome.wait = wait
+                outcome.run = wait.state
+                if wait.cancelled:
+                    # The contract does not build an envelope from a cancelled job's partial
+                    # evidence; what the tool wrote is still collected below and kept.
+                    outcome.status = "cancelled"
+                    outcome.error = "CANCELLED"
+                    outcome.errors.append(
+                        envelopes.error_object(
+                            "CANCELLED",
+                            "job cancelled by the coordinator; the envelope is not built",
+                            next_action="NONE",
+                        )
+                    )
+                if claim is not None and self.lifecycle is not None:
+                    self.lifecycle.collecting(claim)
+                self._collect(plan, spec, layout, outcome)
+                if wait.cancelled:
+                    return outcome
+                self._parse(plan, layout, outcome)
+                status, errors = self._status_of(outcome)
+                outcome.status = status
+                outcome.errors.extend(errors)
+                if outcome.collected is not None and outcome.parser is not None:
+                    self._build_and_submit(plan, layout, outcome, started_at)
+                return outcome
+            finally:
+                self.runner.remove(handle)
         finally:
-            self.runner.remove(handle)
+            self._terminalize(claim, outcome)
+
+    def _terminalize(self, claim: JobClaim | None, outcome: JobOutcome) -> None:
+        """Record the terminal result; M06 is the only writer of these states (C06)."""
+        if claim is None or self.lifecycle is None:
+            return
+        if outcome.status == "skipped":
+            return
+        status = DB_STATUS[outcome.status]
+        error: dict[str, Any] | None = None
+        if status == "FAILED":
+            error = (
+                outcome.errors[0]
+                if outcome.errors
+                else envelopes.error_object(
+                    "INTERNAL_ERROR",
+                    outcome.error or "the job failed without a recorded cause",
+                )
+            )
+        event_id = None
+        if outcome.receipt is not None:
+            event_id = text(outcome.receipt.event_id)
+        try:
+            self.lifecycle.finish(
+                claim,
+                status,
+                envelope_event_id=event_id,
+                error=error,
+                evidence_refs=[
+                    {"evidence_id": stored.evidence_id, "sha256": stored.sha256, "uri": stored.uri}
+                    for stored in outcome.evidence
+                ],
+            )
+        except LifecycleError as failure:
+            # The sandbox result is already recorded in the outcome; a rejected callback (for
+            # example a stale attempt) is quarantined by the database, so surface it, never mask it.
+            outcome.errors.append(
+                envelopes.error_object(
+                    "INTERNAL_ERROR",
+                    "the terminal job callback was not recorded",
+                    technical_cause=str(failure)[:4000],
+                )
+            )
+            outcome.error = outcome.error or str(failure)
 
     def resubmit(self, plan: JobPlan) -> IngestReceipt | None:
         """Send the frozen envelope snapshot of a previous attempt again (dedup by content)."""
@@ -263,7 +353,29 @@ class JobRunner:
                     item, uri=stored.uri, classification=str(plan.classification)
                 )
             )
-            if not self.store.verify(stored.evidence_id):
+            verified = self.store.verify(stored.evidence_id)
+            if self.catalog is not None:
+                try:
+                    evidence_id = self.catalog.record(
+                        stored,
+                        size_bytes=item.size_bytes,
+                        source_tool=str(plan.task.provider),
+                        verified=verified,
+                    )
+                    self.catalog.check(
+                        evidence_id, verified, None if verified else "sha256 mismatch"
+                    )
+                except CatalogError as error:
+                    outcome.error = f"EVIDENCE_INCOMPLETE: {error}"
+                    outcome.errors.append(
+                        envelopes.error_object(
+                            "EVIDENCE_INCOMPLETE",
+                            "the evidence metadata row was not recorded",
+                            technical_cause=str(error)[:4000],
+                        )
+                    )
+                    return
+            if not verified:
                 outcome.error = f"EVIDENCE_INCOMPLETE: {item.sha256} did not verify"
                 outcome.errors.append(
                     envelopes.error_object(
@@ -408,3 +520,37 @@ class JobRunner:
                     technical_cause=str(error),
                 )
             )
+
+
+class _CancelSignal:
+    """M06's cancel check: the caller's callback plus a throttled cancel-intent read (C06).
+
+    The database is asked at most every `interval_seconds`, not on every 0.2 s poll: a cancel
+    intent is a human action and the scheduler also terminalizes a job cancelled before dispatch.
+    """
+
+    def __init__(
+        self,
+        caller: Callable[[], bool] | None,
+        lifecycle: JobLifecycle | None,
+        job_id: str,
+        *,
+        interval_seconds: float = 2.0,
+    ) -> None:
+        self._caller = caller
+        self._lifecycle = lifecycle
+        self._job_id = job_id
+        self._interval = max(interval_seconds, 0.1)
+        self._checked_at: float | None = None
+        self._requested = False
+
+    def __call__(self) -> bool:
+        if self._caller is not None and self._caller():
+            return True
+        if self._lifecycle is None:
+            return False
+        now = time.monotonic()
+        if self._checked_at is None or now - self._checked_at >= self._interval:
+            self._checked_at = now
+            self._requested = self._lifecycle.cancel_requested(self._job_id)
+        return self._requested

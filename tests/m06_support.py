@@ -168,15 +168,12 @@ def probe_manifest(
     if egress_sources is not None:
         payload["spec"]["permissions"]["egressSources"] = egress_sources
     if not egress:
-        payload["spec"]["permissions"].update(
-            {
-                "networkAccess": "none",
-                "egressMode": None,
-                "egressSources": None,
-                "targetBinding": None,
-            }
-        )
-        payload["spec"]["permissions"].pop("targetPorts", None)
+        # The contract forbids explicit nulls here (additionalProperties false + const rules):
+        # omitting the egress fields is how `networkAccess: none` is expressed.
+        permissions = payload["spec"]["permissions"]
+        permissions["networkAccess"] = "none"
+        for key in ("egressMode", "proxyAware", "egressSources", "targetBinding", "targetPorts"):
+            permissions.pop(key, None)
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
     value = ProviderManifest.model_validate(payload)
     if not egress:

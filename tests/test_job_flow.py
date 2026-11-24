@@ -18,7 +18,9 @@ import pytest
 from aegis.common.ports import ContainerSpec
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner.job import JobPlan, JobRunner
+from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle
 from aegis.m06_runner.podman import PodmanRunner
+from aegis.m06_runner.values import text
 from tests.fakes.evidence_store import FakeEvidenceStore
 
 from . import m06_support
@@ -90,7 +92,12 @@ def _plan(
 
 
 def _job_runner(
-    runner: PodmanRunner, store: FakeEvidenceStore, ingestion_url: str | None, token: str = "token"
+    runner: PodmanRunner,
+    store: FakeEvidenceStore,
+    ingestion_url: str | None,
+    token: str = "token",
+    *,
+    lifecycle: JobLifecycle | None = None,
 ) -> JobRunner:
     ingestion = (
         envelopes.HttpIngestionClient(ingestion_url, token) if ingestion_url is not None else None
@@ -100,7 +107,42 @@ def _job_runner(
         store,
         ingestion=ingestion,
         extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
+        lifecycle=lifecycle,
     )
+
+
+class RecordingLifecycle(JobLifecycle):
+    """A lifecycle double: records the calls, no database (the DB tests live elsewhere)."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def claim(self, job_id: str) -> JobClaim | None:
+        self.calls.append(("claim", job_id))
+        return JobClaim(job_id=job_id, generation=1, attempt=1)
+
+    def running(self, claim: JobClaim) -> bool:
+        self.calls.append(("running", claim.job_id))
+        return True
+
+    def collecting(self, claim: JobClaim) -> bool:
+        self.calls.append(("collecting", claim.job_id))
+        return True
+
+    def cancel_requested(self, job_id: str) -> bool:
+        return False
+
+    def finish(
+        self,
+        claim: JobClaim,
+        status: str,
+        *,
+        envelope_event_id: str | None = None,
+        error: object = None,
+        evidence_refs: object = (),
+    ) -> str:
+        self.calls.append(("finish", (status, envelope_event_id)))
+        return "terminalized"
 
 
 def test_job_uploads_evidence_and_submits_one_envelope(
@@ -142,6 +184,33 @@ def test_job_uploads_evidence_and_submits_one_envelope(
     assert (runner.layout(plan.job_id).output / "result.jsonl").exists()
     snapshot = runner.layout(plan.job_id).root / "envelope.json"
     assert json.loads(snapshot.read_text())["dedup_key"] == f"job:{plan.job_id}:envelope"
+
+
+def test_the_lifecycle_seam_is_reported_in_order(
+    runner: PodmanRunner, probe_image: str, ingestion: m06_support.FakeIngestion
+) -> None:
+    """M06 consumes VALIDATING: claim, RUNNING, COLLECTING, then SUCCEEDED with the receipt id."""
+    lifecycle = RecordingLifecycle()
+    plan = _plan(probe_image)
+    job_runner = _job_runner(
+        runner,
+        FakeEvidenceStore(),
+        ingestion.base_url,
+        ingestion.service_token,
+        lifecycle=lifecycle,
+    )
+    outcome = job_runner.execute(plan)
+    assert outcome.status == "succeeded", outcome.error
+    assert outcome.receipt is not None
+    event_id = text(outcome.receipt.event_id)
+    assert [name for name, _value in lifecycle.calls] == [
+        "claim",
+        "running",
+        "collecting",
+        "finish",
+    ]
+    assert lifecycle.calls[0] == ("claim", plan.job_id)
+    assert lifecycle.calls[-1] == ("finish", ("SUCCEEDED", event_id))
 
 
 def test_resubmit_sends_the_frozen_snapshot_again(
