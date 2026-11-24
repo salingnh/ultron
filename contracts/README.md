@@ -45,7 +45,7 @@ Một schema chỉ được coi là đã phát hành khi biết ai phát và ai 
 | [events/job.started.v2](events/job.started.v2.schema.json) | M06 | M02 (signal dependency/agent), M26 (SSE UI) | |
 | [events/job.completed.v2](events/job.completed.v2.schema.json) | M06 | M02, M26 | |
 | [events/policy.denied.v2](events/policy.denied.v2.schema.json) | M05 | M26 (UI/SSE), M03 (phiên bị từ chối) | |
-| [events/asset.discovered.v2](events/asset.discovered.v2.schema.json) | M27 | M23 (projector), M26 | |
+| [events/asset.discovered.v2](events/asset.discovered.v2.schema.json) | M27; M01 cho seed của campaign (`revision` 0, không `causal_job_id`, `dedup_key` `<asset_id>:0:<campaign_id>`, cùng giao dịch tạo campaign) | M23 (projector; revision 0 chiếu node, không phát `knowledge.delta.v2`), M26 | |
 | [events/observation.changed.v2](events/observation.changed.v2.schema.json) | M27 | M23, M26 | |
 | [events/knowledge.delta.v2](events/knowledge.delta.v2.schema.json) | M23 | M02 (context bundle), M03 | |
 | [events/intel.revision.v2](events/intel.revision.v2.schema.json) | M18 | M20, M21 (đánh giá lại) | |
