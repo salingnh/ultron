@@ -1,0 +1,93 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { apiClient } from '../api/client';
+import { resetMockData } from '../mock/handlers';
+
+describe('ApiClient (Mock & Contract Operations)', () => {
+  beforeEach(() => {
+    resetMockData();
+  });
+
+  it('lists campaigns with status filtering', async () => {
+    const res = await apiClient.listCampaigns();
+    expect(res.items.length).toBeGreaterThanOrEqual(3);
+
+    const running = await apiClient.listCampaigns({ status: 'RUNNING' });
+    expect(running.items.every((c) => c.status === 'RUNNING')).toBe(true);
+  });
+
+  it('retrieves single campaign by ID', async () => {
+    const campaign = await apiClient.getCampaign('01934f6a-0000-7000-8000-000000000001');
+    expect(campaign.campaign_id).toBe('01934f6a-0000-7000-8000-000000000001');
+    expect(campaign.name).toContain('Chiến dịch Recon');
+    expect(campaign.policy?.max_parallel_jobs).toBe(5);
+  });
+
+  it('pauses, resumes, and cancels a campaign', async () => {
+    const campaignId = '01934f6a-0000-7000-8000-000000000001';
+
+    // Pause
+    const paused = await apiClient.pauseCampaign(campaignId, 'Tạm dừng điều độ');
+    expect(paused.status).toBe('PAUSED');
+    expect(paused.status_reason).toBe('Tạm dừng điều độ');
+
+    // Resume
+    const resumed = await apiClient.resumeCampaign(campaignId, 'Tiếp tục rà quét');
+    expect(resumed.status).toBe('RUNNING');
+    expect(resumed.status_reason).toBe('Tiếp tục rà quét');
+
+    // Cancel
+    const cancelled = await apiClient.cancelCampaign(campaignId, 'Hủy toàn bộ');
+    expect(cancelled.status).toBe('CANCELLED');
+    expect(cancelled.status_reason).toBe('Hủy toàn bộ');
+  });
+
+  it('lists jobs for a campaign with wait_reason and dispatch_block_reasons', async () => {
+    const res = await apiClient.listJobs({ campaign_id: '01934f6a-0000-7000-8000-000000000001' });
+    expect(res.items.length).toBeGreaterThanOrEqual(6);
+
+    const queuedWithWait = res.items.find((j) => j.wait_reason !== undefined);
+    expect(queuedWithWait).toBeDefined();
+    expect(queuedWithWait?.wait_reason?.code).toBe('DEPENDENCY_PENDING');
+
+    const blockedJob = res.items.find((j) => j.dispatch_block_reasons && j.dispatch_block_reasons.length > 0);
+    expect(blockedJob).toBeDefined();
+    expect(blockedJob?.dispatch_block_reasons).toContain('LEGACY_POLICY_V1');
+  });
+
+  it('cancels a job with cancel intent', async () => {
+    const cancelledJob = await apiClient.cancelJob('01934f6a-0000-7000-8000-00000000d001', 'Hủy do phát hiện bất thường');
+    expect(cancelledJob.status).toBe('CANCELLED');
+    expect(cancelledJob.cancel?.reason).toBe('Hủy do phát hiện bất thường');
+    expect(cancelledJob.cancel?.requested_by.kind).toBe('operator');
+  });
+
+  it('retrieves flow nodes and edges for campaign', async () => {
+    const flow = await apiClient.getCampaignFlow('01934f6a-0000-7000-8000-000000000001');
+    expect(flow.revision).toBe(14);
+    expect(flow.nodes.length).toBeGreaterThan(0);
+    expect(flow.edges.length).toBeGreaterThan(0);
+  });
+
+  it('retrieves asset graph with truncation and provenance details', async () => {
+    const graph = await apiClient.getAssetGraph('01934f6a-0000-7000-8000-0000000000f1', {
+      campaign_id: '01934f6a-0000-7000-8000-000000000001',
+      max_hops: 1,
+      limit: 50,
+    });
+    expect(graph.truncated).toBe(true);
+    expect(graph.nodes.length).toBeGreaterThan(0);
+    expect(graph.edges.length).toBeGreaterThan(0);
+
+    const prov = await apiClient.getProvenance('01934f6a-0000-7000-8000-0000000000f2');
+    expect(prov).toBeDefined();
+    expect(prov?.tool).toBe('subfinder');
+    expect(prov?.version).toBe('v2.17.0');
+    expect(prov?.sha256).toBe('1e1c8bcdd33168e15528d61a006bf5e5e5a31e5b8e4d4d4f1f10ad0876240a9f');
+  });
+
+  it('lists capabilities in registry catalogue', async () => {
+    const res = await apiClient.listCapabilities();
+    expect(res.items.some((c) => c.capability === 'dns.enumerate_subdomains')).toBe(true);
+    expect(res.items.some((c) => c.capability === 'dns.resolve')).toBe(true);
+  });
+});

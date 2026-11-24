@@ -1,0 +1,75 @@
+# UI verification checks (G1.5b) on the self-hosted runner of this repository.
+#
+# Runs lint, typecheck, tests, production build, OpenAPI codegen check, and Playwright
+# visual e2e tests for frontend code under `ui/`.
+#
+# Hardening - the runner is self-hosted, so untrusted code must never reach it:
+#   * the job only runs on push, workflow_dispatch or a pull request whose head is in this
+#     repository; fork pull requests are skipped at job level (see `if:` below);
+#   * no pull_request_target, read-only token, clean checkout without credentials.
+name: ui
+
+on:
+  push:
+    branches: [main, 'integ/**']
+  pull_request:
+    branches: [main, 'integ/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    name: ui (lint, typecheck, test, build, codegen:check, e2e)
+    # Fork pull requests never run here: their code is not trusted on a self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, ultron-local]
+    timeout-minutes: 20
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Install UI dependencies
+        run: |
+          cd ui
+          npm ci
+
+      - name: Check OpenAPI codegen in sync
+        run: |
+          cd ui
+          npm run codegen:check
+
+      - name: Typecheck
+        run: |
+          cd ui
+          npm run typecheck
+
+      - name: Lint
+        run: |
+          cd ui
+          npm run lint
+
+      - name: Unit & Contract validation tests
+        run: |
+          cd ui
+          npm test
+
+      - name: Production build
+        run: |
+          cd ui
+          npm run build
+
+      - name: Playwright E2E visual tests (headless)
+        run: |
+          cd ui
+          npm run test:e2e
