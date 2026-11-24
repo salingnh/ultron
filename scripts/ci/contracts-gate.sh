@@ -2,16 +2,16 @@
 # The contract gate of contracts/README.md section "Kiểm tra".
 #
 # That README section is the single source of truth: scripts/ci/read-contract-gate.py reads
-# the python suites, the PostgreSQL clean chain and the upgrade-chain order from it, and the
-# gate fails loudly when any of them cannot be parsed or when a file on disk is not covered
-# by it. Nothing in this script keeps a second copy of those lists.
+# the python suites and the PostgreSQL clean chain from it, and the gate fails loudly when
+# either cannot be parsed or when a file on disk is not covered by it. Nothing in this script
+# keeps a second copy of those lists. There is one chain: the contract schema is one baseline
+# migration, and a database built by the replaced chain is reset, not upgraded.
 #
 #   * python   - every suite the README lists, on Python 3.12 in a container, with
 #                AEGIS_TEST_PG_DSN pointing at this script's own throwaway PostgreSQL 16.
 #                A suite named test_*.py that skips, or that does not end with unittest's
 #                "OK", fails the job: a skipped harness is not evidence.
-#   * postgres - the README's clean chain on an empty database, then its upgrade chain on a
-#                second database.
+#   * postgres - the README's clean chain on an empty database.
 #
 # Everything runs in rootless podman as the current user; passwords are generated per run.
 set -euo pipefail
@@ -50,21 +50,18 @@ python3 "$CI_DIR/read-contract-gate.py" "$REPO_ROOT" >"$PLAN" ||
 mapfile -t REQUIREMENTS < <(awk '$1 == "requirement" { print $2 }' "$PLAN")
 mapfile -t PYTHON_CHECKS < <(awk '$1 == "python" { print $2 }' "$PLAN")
 mapfile -t CLEAN_CHAIN < <(awk '$1 == "clean" { print $2 }' "$PLAN")
-mapfile -t UPGRADE_CHAIN < <(awk '$1 == "upgrade" { print $2 }' "$PLAN")
 
 ((${#REQUIREMENTS[@]})) || die "the plan has no requirements file"
 ((${#PYTHON_CHECKS[@]})) || die "the plan has no python suites"
 ((${#CLEAN_CHAIN[@]})) || die "the plan has no clean chain"
-((${#UPGRADE_CHAIN[@]})) || die "the plan has no upgrade chain"
 
 absolute() {
   local path
   for path in "$@"; do printf '%s/%s\n' "$REPO_ROOT" "$path"; done
 }
 mapfile -t CLEAN_FILES < <(absolute "${CLEAN_CHAIN[@]}")
-mapfile -t UPGRADE_FILES < <(absolute "${UPGRADE_CHAIN[@]}")
 
-log "plan from contracts/README.md: ${#PYTHON_CHECKS[@]} python checks, clean chain ${#CLEAN_CHAIN[@]} files, upgrade chain ${#UPGRADE_CHAIN[@]} files"
+log "plan from contracts/README.md: ${#PYTHON_CHECKS[@]} python checks, clean chain ${#CLEAN_CHAIN[@]} files"
 
 # --- throwaway PostgreSQL 16 + python 3.12 ------------------------------------
 log "network $NETWORK + postgres $PG (throwaway)"
@@ -141,12 +138,8 @@ run_chain() {
 }
 
 podman exec "$PG" psql -q -U aegis -d postgres -c "CREATE DATABASE aegis_clean" >/dev/null
-podman exec "$PG" psql -q -U aegis -d postgres -c "CREATE DATABASE aegis_upgrade" >/dev/null
 
 log "clean chain: ${#CLEAN_FILES[@]} files from contracts/README.md"
 run_chain aegis_clean "${CLEAN_FILES[@]}"
 
-log "upgrade chain: ${#UPGRADE_FILES[@]} files from contracts/README.md"
-run_chain aegis_upgrade "${UPGRADE_FILES[@]}"
-
-log "contract gate: PASS (${#PYTHON_CHECKS[@]} python checks, ${#CLEAN_FILES[@]} clean files, ${#UPGRADE_FILES[@]} upgrade files)"
+log "contract gate: PASS (${#PYTHON_CHECKS[@]} python checks, ${#CLEAN_FILES[@]} clean files)"

@@ -608,44 +608,6 @@ def test_ingestion_p95_for_sub_megabyte_envelopes_is_under_thirty_seconds() -> N
         assert p95 < 30.0, f"P95 {p95:.2f}s exceeds the 30s NFR"
 
 
-@requires_postgres
-def test_0015_upgrade_keeps_historical_assets_untagged() -> None:
-    from aegis.migrations import apply_migrations, contract_migrations
-
-    migrations = contract_migrations()
-    version_15 = next(
-        index
-        for index, item in enumerate(migrations)
-        if item.version.endswith("0015_asset_normalization_version.sql")
-    )
-    with throwaway_database() as dsn, psycopg.connect(dsn, autocommit=True) as connection:
-        connection.execute("SET search_path = aegis, public")
-        apply_migrations(connection, migrations[:version_15])
-        connection.execute(
-            "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen) VALUES"
-            " ('01900000-0000-7000-8000-000000001601','dns:historical.example',"
-            "'domain',now(),now())"
-        )
-        apply_migrations(connection, migrations[version_15:])
-        tagged = _one(
-            connection,
-            "SELECT normalization_version FROM asset"
-            " WHERE canonical_key = 'dns:historical.example'",
-        )
-        assert tagged == (None,), "a pre-0015 key is never relabelled as aegis-norm/1"
-        with pytest.raises(psycopg.errors.CheckViolation):
-            connection.execute(
-                "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen) VALUES"
-                " ('01900000-0000-7000-8000-000000001602','dns:new.example','domain',now(),now())"
-            )
-        connection.execute(
-            "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen,"
-            " normalization_version) VALUES"
-            " ('01900000-0000-7000-8000-000000001603','dns:new.example','domain',now(),now(),"
-            " 'aegis-norm/1')"
-        )
-
-
 def test_the_service_implements_the_ingestion_port() -> None:
     from aegis.common.ports import Ingestion
 

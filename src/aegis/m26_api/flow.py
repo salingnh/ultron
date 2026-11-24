@@ -102,10 +102,10 @@ def _maybe_time(value: Any) -> str | None:
 def _requested_targets(row: dict[str, Any]) -> list[str]:
     """The targets the job was asked for, in the request's own order.
 
-    `scan_job.targets` is the legacy canonical-key projection and may be empty (a seed-only
-    TargetRef has no canonical key), so the merged input is the first source: those are the values
-    the operator/MCP call named. Only strings are used; a capability that takes structured targets
-    is labelled by the capability alone.
+    `scan_job.targets` is the canonical-key projection of `target_refs` and may be empty (a
+    seed-only TargetRef has no canonical key), so the merged input is the first source: those are
+    the values the operator/MCP call named. Only strings are used; a capability that takes
+    structured targets is labelled by the capability alone.
     """
     payload = row.get("input")
     requested = payload.get("targets") if isinstance(payload, dict) else None

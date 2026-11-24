@@ -84,7 +84,7 @@ hashes:
       - input
       - scan_cycle
     exclude:
-      targets: legacy canonical-key projection; two keyword/CIDR seeds would collide (S1.1)
+      targets: canonical-key projection of target_refs; two keyword/CIDR seeds would collide (S1.1)
       priority: scheduling, not identification of the scanned data (AGENTS.md:54)
       depends_on: scheduling
       job_id: assigned after the fingerprint decides replay

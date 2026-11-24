@@ -1084,7 +1084,7 @@ class PostgresJobService:
             """
             SELECT job_id, campaign_id, capability, provider, provider_version, status, attempt,
                    generation, cancel_requested_at, cancel_requested_by, cancel_reason, wait_reason,
-                   dispatch_block_reasons, job_fingerprint, scan_cycle, policy_version, scope_id,
+                   job_fingerprint, scan_cycle, policy_version, scope_id,
                    target_refs, requested_by, proposed_by, rationale, created_at, started_at,
                    finished_at, envelope_event_id, error, priority, adapter_version, manifest_sha256
               FROM scan_job WHERE job_id = %s
@@ -1101,13 +1101,13 @@ class PostgresJobService:
             "status": str(row[5]),
             "attempt": int(row[6]),
             "generation": int(row[7]),
-            "job_fingerprint": str(row[13]),
-            "policy_version": str(row[15]),
-            "scope_id": str(row[16]),
-            "requested_by": row[18],
-            "created_at": _isoformat(row[21]),
-            "priority": int(row[26]),
-            "adapter_version": str(row[27]),
+            "job_fingerprint": str(row[12]),
+            "policy_version": str(row[14]),
+            "scope_id": str(row[15]),
+            "requested_by": row[17],
+            "created_at": _isoformat(row[20]),
+            "priority": int(row[25]),
+            "adapter_version": str(row[26]),
             "depends_on": [
                 str(dep[0])
                 for dep in conn.execute(
@@ -1121,16 +1121,15 @@ class PostgresJobService:
             "provider_version": row[4],
             "cancel": None,
             "wait_reason": row[11],
-            "dispatch_block_reasons": row[12],
-            "scan_cycle": None if row[14] is None else str(row[14]),
-            "targets": row[17],
-            "proposed_by": row[19],
-            "rationale": row[20],
-            "started_at": None if row[22] is None else _isoformat(row[22]),
-            "finished_at": None if row[23] is None else _isoformat(row[23]),
-            "envelope_event_id": None if row[24] is None else str(row[24]),
-            "error": row[25],
-            "manifest_sha256": row[28],
+            "scan_cycle": None if row[13] is None else str(row[13]),
+            "targets": row[16],
+            "proposed_by": row[18],
+            "rationale": row[19],
+            "started_at": None if row[21] is None else _isoformat(row[21]),
+            "finished_at": None if row[22] is None else _isoformat(row[22]),
+            "envelope_event_id": None if row[23] is None else str(row[23]),
+            "error": row[24],
+            "manifest_sha256": row[27],
         }
         if row[8] is not None:
             optional["cancel"] = {

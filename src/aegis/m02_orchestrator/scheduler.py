@@ -8,8 +8,6 @@ The contract fixes the order and the gates (02-nen-tang §Scheduling, interfaces
 * a dispatch is a state change the scheduler commits: `QUEUED -> VALIDATING` plus one
   `job_status_change` row. M06 (G1.3a) picks up `VALIDATING` jobs, starts the sandbox and moves
   them on; the scheduler never runs a container;
-* jobs held by the contract (`dispatch_block_reasons IS NOT NULL`, 0011/0014) are not part of the
-  dispatchable queue at all: they are filtered out, not given a wait reason (contract text);
 * every other blocked job gets exactly one `wait_reason` (the job.v2 shape, X-4), and a job that
   stays blocked for the same reason keeps its original `since`;
 * `priority DESC, created_at ASC, job_id ASC` decides which ready jobs fill the free slots.
@@ -59,7 +57,7 @@ __all__ = [
 ]
 
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
-#: `scan_job.status` values a job never leaves (contracts/db/postgres/0001_init.sql). A campaign
+#: `scan_job.status` values a job never leaves (contracts/db/postgres/0001_baseline.sql). A campaign
 #: with one of these jobs finished it; every other job status is still pending.
 JOB_TERMINAL_STATUSES = ("SUCCEEDED", "FAILED", "CANCELLED")
 IN_FLIGHT_STATUSES = ("VALIDATING", "DISPATCHED", "RUNNING", "COLLECTING")
@@ -80,7 +78,6 @@ SELECT job_id, priority, created_at, attempt, wait_reason
   FROM scan_job
  WHERE campaign_id = %s
    AND status = 'QUEUED'
-   AND dispatch_block_reasons IS NULL
    AND cancel_requested_at IS NULL
  ORDER BY priority DESC, created_at ASC, job_id ASC
 """
@@ -500,7 +497,6 @@ class PostgresScheduler:
                SET status = 'VALIDATING', wait_reason = NULL
              WHERE job_id = %s
                AND status = 'QUEUED'
-               AND dispatch_block_reasons IS NULL
                AND cancel_requested_at IS NULL
              RETURNING job_id
             """,

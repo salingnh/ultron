@@ -11,7 +11,7 @@ G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trườ
 - [x] S1.3 Chọn và chứng minh outbox/revision ordering chịu rollback/commit đảo thứ tự, với nhiều connection và quyền ghi (C04).
 - [x] S1.4 Hoàn thiện Message/ToolCall/ToolResult, finish/error và fallback severity; fake driver kiểm round-trip, invalid/truncated/refused và lần đầu chưa có assessment (C07).
 - [x] S1.5 Khóa input/output schema cho chuỗi tool đầu tiên, actor/provenance mọi job, query limits/truncation và registry/adapter conformance; review cổng S1 (C05).
-- [x] S1.6 Khóa đường chuyển campaign/cấu hình đã lưu sang contract hiện hành: snapshot JSON cũ bất biến và current_policy_version không tự thành cấu hình mới. Tạo snapshot hợp lệ, xử lý job đang chạy/chờ và test; không tự resume dữ liệu cũ.
+- [x] S1.6 Khóa đường chuyển campaign/cấu hình đã lưu sang contract hiện hành: snapshot JSON cũ bất biến và current_policy_version không tự thành cấu hình mới. Tạo snapshot hợp lệ, xử lý job đang chạy/chờ và test; không tự resume dữ liệu cũ. — Đã bỏ 2026-11-24: chuỗi migration gộp thành `0001_baseline.sql`, không còn đường chuyển dữ liệu cũ (chưa có DB thật).
 - [x] S1.7 Đóng N01–N06 ở [C08](docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c08--kiểm-biên-schema-và-openapi): OpenAPI đầy đủ, identity/input, severity event, khung giờ, usage và response đúng phạm vi; kiểm conformance Python 3.12 và migration giữ lịch sử.
 - [x] G0.1 Spike Temporal/LangGraph restart/replay/cancel; quyết định cách lồng phiên theo kết quả (#13).
 - [x] G0.2 Spike Podman/network/resource limits và raw socket; kiểm parser/collector isolation; BBOT thụ động: ánh xạ JSON → ResultEnvelope và giấy phép bản pin; khóa version/digest/giấy phép tool được chọn (#9).

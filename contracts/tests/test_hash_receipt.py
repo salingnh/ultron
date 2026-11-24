@@ -140,15 +140,14 @@ class ReceiptContract(unittest.TestCase):
     def test_hash_composition_is_one_statement_in_registry_ddl_and_docs(self):
         fields = list(CANON["JOB_FINGERPRINT_FIELDS"])
         self.assertEqual(REGISTRY_DOC["hashes"]["job.fingerprint"]["fields"], fields)
-        migration = (ROOT / "db/postgres/0006_ingestion_hash_receipt.sql").read_text()
-        comment = migration.split("COMMENT ON COLUMN scan_job.job_fingerprint IS", 1)[1].split(";", 1)[0]
+        migration = (ROOT / "db/postgres/0001_baseline.sql").read_text()
+        comment = migration.split("COMMENT ON COLUMN aegis.scan_job.job_fingerprint IS", 1)[1].split(";", 1)[0]
         self.assertIn("{" + ",".join(fields) + "}", comment)
         self.assertIn("never the targets canonical-key projection", comment)
         self.assertIn("aegis-c14n/1", comment)
         self.assertIn("X-1", comment)
         readme = (ROOT / "README.md").read_text()
         self.assertIn("canonicalization.v2.yaml", readme)
-        self.assertIn("0006_ingestion_hash_receipt.sql", readme)
         doc = (ROOT.parent / "docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md").read_text()
         self.assertIn("canonicalization.v2.yaml", doc)
         self.assertIn("aegis-c14n/1", doc)

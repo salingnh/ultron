@@ -386,9 +386,7 @@ class IngestionService(Ingestion):
             )
         committed_event, committed_hash, committed_version, receipt = existing
 
-        if committed_version is None:
-            reason = "legacy_unversioned_hash"
-        elif committed_version != canonical.HASH_VERSION:
+        if committed_version != canonical.HASH_VERSION:
             reason = "hash_version_mismatch"
         elif committed_hash != payload_hash:
             reason = "hash_mismatch"

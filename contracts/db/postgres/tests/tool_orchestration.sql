@@ -23,7 +23,7 @@ BEGIN
  INSERT INTO policy_decision SELECT (jsonb_populate_record(NULL::policy_decision,to_jsonb(p)||jsonb_build_object('decision_id','01900000-0000-7000-8000-0000000000c5','idempotency_key','manifest:5'))).* FROM policy_decision p LIMIT 1;
  BEGIN
   INSERT INTO scan_job SELECT (jsonb_populate_record(NULL::scan_job,to_jsonb(j)||jsonb_build_object('job_id','01900000-0000-7000-8000-0000000000d5','decision_id','01900000-0000-7000-8000-0000000000c5','job_fingerprint',repeat('5',64),'manifest_sha256',NULL))).* FROM scan_job j LIMIT 1;
- EXCEPTION WHEN check_violation THEN pin_blocked:=pin_blocked+1; END;
+ EXCEPTION WHEN not_null_violation THEN pin_blocked:=pin_blocked+1; END;
  BEGIN
   INSERT INTO scan_job SELECT (jsonb_populate_record(NULL::scan_job,to_jsonb(j)||jsonb_build_object('job_id','01900000-0000-7000-8000-0000000000d5','decision_id','01900000-0000-7000-8000-0000000000c5','job_fingerprint',repeat('5',64),'manifest_sha256',repeat('X',64)))).* FROM scan_job j LIMIT 1;
  EXCEPTION WHEN check_violation THEN pin_blocked:=pin_blocked+1; END;

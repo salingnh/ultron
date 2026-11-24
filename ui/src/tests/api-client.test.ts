@@ -77,17 +77,17 @@ describe('ApiClient (Mock & Contract Operations)', () => {
     expect(cancelled.status_reason).toBe('Hủy toàn bộ');
   });
 
-  it('lists jobs for a campaign with wait_reason and dispatch_block_reasons', async () => {
+  it('lists jobs for a campaign with the reason a queued job is waiting', async () => {
     const res = await apiClient.listJobs({ campaign_id: '01934f6a-0000-7000-8000-000000000001' });
     expect(res.items.length).toBeGreaterThanOrEqual(6);
 
-    const queuedWithWait = res.items.find((j) => j.wait_reason !== undefined);
-    expect(queuedWithWait).toBeDefined();
-    expect(queuedWithWait?.wait_reason?.code).toBe('DEPENDENCY_PENDING');
-
-    const blockedJob = res.items.find((j) => j.dispatch_block_reasons && j.dispatch_block_reasons.length > 0);
-    expect(blockedJob).toBeDefined();
-    expect(blockedJob?.dispatch_block_reasons).toContain('LEGACY_POLICY_V1');
+    const queuedWithWait = res.items.filter((j) => j.wait_reason !== undefined);
+    expect(queuedWithWait.length).toBeGreaterThan(0);
+    const dependencyWaits = queuedWithWait.filter((j) => j.wait_reason?.code === 'DEPENDENCY_PENDING');
+    expect(dependencyWaits.length).toBeGreaterThan(0);
+    for (const job of dependencyWaits) {
+      expect(job.wait_reason?.blocking_job_ids?.length).toBeGreaterThan(0);
+    }
   });
 
   it('cancels a job with cancel intent', async () => {

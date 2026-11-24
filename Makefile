@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help dev-up dev-down dev-status dev-logs contracts-gate graph-check ci-local \
+.PHONY: help dev-up dev-down dev-reset dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-recovery soak-start soak-stop \
@@ -19,6 +19,8 @@ help:
 	  'make dev-up          start PostgreSQL 16, Neo4j 5.26, SeaweedFS (S3) and Temporal;' \
 	  '                     apply migrations, graph constraints and the raw bucket' \
 	  'make dev-down        remove only the aegis-dev compose project (containers + volumes)' \
+	  'make dev-reset       dev-down then dev-up: a database from the replaced migration chain is' \
+	  '                     reset (the contract schema has one baseline migration)' \
 	  'make dev-status      health and endpoints of the dev stack (non-zero if not healthy)' \
 	  'make dev-logs        follow the dev stack logs' \
 	  'make lab-up          start the authorized lab: lab zone DNS + local passive-source stub' \
@@ -51,6 +53,12 @@ dev-up:
 
 dev-down:
 	@scripts/dev/dev-down.sh
+
+# The contract schema is one baseline migration, so a database built by the replaced 0001..0016 chain
+# is reset instead of upgraded: drop the dev project's volumes and apply the baseline again.
+dev-reset:
+	@scripts/dev/dev-down.sh
+	@scripts/dev/dev-up.sh
 
 dev-status:
 	@scripts/dev/dev-status.sh

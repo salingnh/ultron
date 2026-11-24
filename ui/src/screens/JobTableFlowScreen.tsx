@@ -20,9 +20,7 @@ import {
   Table,
   Filter,
   Clock,
-  AlertTriangle,
   XCircle,
-  ShieldAlert,
   Radio,
   Maximize2,
 } from 'lucide-react';
@@ -46,7 +44,6 @@ const waitReasonLabels: Record<string, string> = {
 
 interface JobNodeData extends FlowNode {
   [key: string]: unknown;
-  dispatch_block_reasons?: string[];
 }
 
 // Custom React Flow Node for Campaign, Decision, and Jobs
@@ -117,26 +114,6 @@ const CustomJobNode: React.FC<NodeProps<Node<JobNodeData>>> = ({ data }) => {
           <span>{waitReasonLabels[data.wait_reason.code] || data.wait_reason.code}</span>
         </div>
       )}
-
-      {data.dispatch_block_reasons?.length ? (
-        <div
-          style={{
-            marginTop: 6,
-            padding: '4px 6px',
-            backgroundColor: 'var(--danger-bg)',
-            color: 'var(--danger)',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--danger)',
-            fontSize: '11px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          <AlertTriangle size={11} />
-          <span>Chặn dispatch: {data.dispatch_block_reasons[0]}</span>
-        </div>
-      ) : null}
 
       <Handle type="source" position={Position.Bottom} style={{ background: 'var(--line)' }} />
     </div>
@@ -662,8 +639,8 @@ export const JobTableFlowScreen: React.FC = () => {
                       </div>
                     </td>
                     <td>
-                      {/* Reason text only for QUEUED with wait_reason or dispatch_block_reasons; show '—' for terminal and other jobs */}
-                      {job.status === 'QUEUED' && (job.wait_reason || job.dispatch_block_reasons?.length) ? (
+                      {/* Reason text only for a QUEUED job with a wait_reason; show '—' otherwise */}
+                      {job.status === 'QUEUED' && job.wait_reason ? (
                         <div>
                           {job.wait_reason ? (
                             <div
@@ -693,29 +670,7 @@ export const JobTableFlowScreen: React.FC = () => {
                             </div>
                           ) : null}
 
-                          {job.dispatch_block_reasons?.length ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: job.wait_reason ? 4 : 0 }}>
-                              {job.dispatch_block_reasons.map((reason, idx) => (
-                                <div
-                                  key={idx}
-                                  style={{
-                                    padding: '4px 6px',
-                                    backgroundColor: 'var(--danger-bg)',
-                                    border: '1px solid var(--danger)',
-                                    borderRadius: 'var(--radius-sm)',
-                                    fontSize: '11px',
-                                    color: 'var(--danger)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                  }}
-                                >
-                                  <ShieldAlert size={12} />
-                                  <strong>{reason}</strong>
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
+
                         </div>
                       ) : (
                         <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>—</span>

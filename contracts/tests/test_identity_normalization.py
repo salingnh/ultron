@@ -28,7 +28,7 @@ NORM = runpy.run_path(str(ROOT / "tests/normalization.py"))
 VECTORS = json.loads((ROOT / "fixtures/golden/identity/normalization.vectors.json").read_text())
 REGISTRY_DOC = yaml.safe_load((ROOT / "ingestion/normalization.v2.yaml").read_text())
 IDS = json.loads((ROOT / "common/ids.v2.schema.json").read_text())
-DDL = (ROOT / "db/postgres/0001_init.sql").read_text()
+DDL = (ROOT / "db/postgres/0001_baseline.sql").read_text()
 README = (ROOT / "README.md").read_text()
 SPEC = (ROOT.parent / "docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md").read_text()
 
@@ -54,9 +54,9 @@ def strings(node):
 
 
 def ddl_columns(table: str) -> list[str]:
-    match = re.search(rf"CREATE TABLE {table} \((.*?)\n\);", DDL, re.S)
+    match = re.search(rf"CREATE TABLE aegis\.{table} \((.*?)\n\);", DDL, re.S)
     if match is None:
-        raise AssertionError(f"no CREATE TABLE {table} in 0001_init.sql")
+        raise AssertionError(f"no CREATE TABLE aegis.{table} in 0001_baseline.sql")
     columns = []
     for line in match.group(1).splitlines():
         token = line.strip().split(" ")[0] if line.strip() else ""

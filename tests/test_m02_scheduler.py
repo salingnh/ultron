@@ -182,31 +182,6 @@ def test_rate_limit_blocks_after_the_per_minute_allowance() -> None:
             assert blocked[second].code == "RATE_LIMITED"
 
 
-def test_held_jobs_are_not_in_the_dispatchable_queue_and_get_no_wait_reason() -> None:
-    with migrated_database() as dsn:
-        campaign = seed_campaign(dsn)
-        with service(dsn) as jobs:
-            healthy = accept_job(jobs, campaign, priority=10)
-            held = accept_job(jobs, campaign, priority=90)
-        # The hold is immutable through `cols_only` (0014) and in production only the migration
-        # backfill writes it, so the test briefly disables that one guard on its own throwaway
-        # database to reproduce the legacy row shape the scheduler must exclude.
-        with connect(dsn) as conn, conn.transaction():
-            conn.execute("ALTER TABLE scan_job DISABLE TRIGGER cols_only")
-            conn.execute(
-                "UPDATE scan_job SET dispatch_block_reasons = ARRAY['LEGACY_ACTOR'] "
-                "WHERE job_id = %s",
-                (held,),
-            )
-            conn.execute("ALTER TABLE scan_job ENABLE TRIGGER cols_only")
-        with scheduler_for(dsn) as scheduler:
-            plan = scheduler.dispatch(campaign.campaign_id)
-        assert plan.claimed == (healthy,)
-        assert [item.job_id for item in plan.waiting] == []
-        assert wait_reason(dsn, held) is None
-        assert _status(dsn, held) == "QUEUED"
-
-
 def test_an_unchanged_wait_reason_keeps_its_first_since_timestamp() -> None:
     with migrated_database() as dsn:
         campaign = seed_campaign(dsn)
