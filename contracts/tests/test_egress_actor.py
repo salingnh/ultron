@@ -205,7 +205,7 @@ class ActorAttribution(unittest.TestCase):
         no_extra["requested_by"] = dict(INITIATOR, display_name="SOC")
         self.assertFalse(v.is_valid(no_extra))
 
-    def test_job_read_model_carries_both_actors_and_keeps_history_read_only(self):
+    def test_job_read_model_carries_both_actors(self):
         v = validator("capability/job.v2.schema.json")
         job = load("fixtures/valid/job.queued-waiting.json")
         self.assertEqual(list(v.iter_errors(job)), [])
@@ -214,12 +214,8 @@ class ActorAttribution(unittest.TestCase):
         cancelled = load("fixtures/valid/job.cancelled-with-intent.json")
         self.assertEqual(list(v.iter_errors(cancelled)), [])
         self.assertFalse(v.is_valid(load("fixtures/invalid/job.actor-proposer-module.json")))
-        # A row predating 0010 keeps the actor that was recorded, and stays a read-only legacy record.
-        legacy = copy.deepcopy(job)
-        legacy["requested_by"] = {"kind": "agent", "id": "planner"}
-        legacy["manifest_sha256"] = None
-        del legacy["proposed_by"]
-        self.assertEqual(list(v.iter_errors(legacy)), [])
+        # The stored row cannot differ from this shape: the DDL refuses an agent initiator on INSERT.
+        self.assertFalse(v.is_valid(dict(job, requested_by={"kind": "agent", "id": "planner"})))
         # Without an initiator there is nothing to trace the job back to.
         untraceable = copy.deepcopy(job)
         del untraceable["requested_by"]
@@ -272,23 +268,20 @@ class ActorAttribution(unittest.TestCase):
         self.assertIn("không dùng ID do LLM khai làm quyền truy cập", mcp_readme)
 
     def test_ddl_and_docs_lock_the_same_actor_rule(self):
-        migration = (ROOT / "db/postgres/0010_job_actor_attribution.sql").read_text()
+        migration = (ROOT / "db/postgres/0001_baseline.sql").read_text()
         for fragment in ["aegis.is_initiator", "aegis.is_proposer",
-                         "CREATE TRIGGER initiator_required BEFORE INSERT ON policy_decision",
-                         "CREATE TRIGGER initiator_required BEFORE INSERT ON scan_job",
-                         "ALTER TABLE policy_decision ADD COLUMN proposed_by jsonb",
-                         "ALTER TABLE scan_job ADD COLUMN proposed_by jsonb",
-                         "CHECK (proposed_by IS NULL OR aegis.is_proposer(proposed_by))"]:
+                         "CREATE TRIGGER initiator_required BEFORE INSERT ON aegis.policy_decision",
+                         "CREATE TRIGGER initiator_required BEFORE INSERT ON aegis.scan_job",
+                         "proposed_by jsonb,",
+                         "CREATE TRIGGER proposer_session_required BEFORE INSERT ON aegis.scan_job"]:
             with self.subTest(ddl=fragment):
                 self.assertIn(fragment, migration)
         test = (ROOT / "db/postgres/tests/job_actor.sql").read_text()
         for fragment in ["proposer was rewritable after acceptance", "invented proposer", "blocked <> 6"]:
             with self.subTest(sql_test=fragment):
                 self.assertIn(fragment, test)
-        assertions = (ROOT / "db/postgres/tests/upgrade_assertions.sql").read_text()
-        self.assertIn("historical job actor was rewritten or given an invented proposer", assertions)
         chain = (ROOT / "README.md").read_text()
-        for name in ["0010_job_actor_attribution.sql", "tests/job_actor.sql", "tests/test_egress_actor.py"]:
+        for name in ["0001_baseline.sql", "tests/job_actor.sql", "tests/test_egress_actor.py"]:
             with self.subTest(chain=name):
                 self.assertIn(name, chain)
         c05 = (DOCS_ROOT / "04-module-ket-noi-oss.md").read_text()

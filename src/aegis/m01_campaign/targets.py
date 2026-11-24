@@ -379,8 +379,8 @@ def insert_seed_assets(
 ) -> list[str]:
     """Make the campaign's seed targets assets from the start; returns the asset ids touched.
 
-    `0001_init.sql` gives `asset.first_job_id` the meaning "NULL = the asset is a seed target", so
-    the seed is expected to be an asset before any job runs. Without it M27 cannot resolve the seed
+    `asset.first_job_id` means "NULL = the asset is a seed target", so the seed is expected to be an
+    asset before any job runs. Without it M27 cannot resolve the seed
     as the subject of a coverage entry or as the parent of a `SUBDOMAIN_OF` edge, and quarantines
     both (G5 `unknown_subject_asset` / `unknown_relationship_endpoint`) - which is exactly what the
     G1.5c demo found. A seed whose `aegis-norm/1` rules give it no identity (keyword, cidr, ...) has

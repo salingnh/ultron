@@ -203,7 +203,7 @@ export interface paths {
         };
         /**
          * Danh sách job (màn hình job lỗi)
-         * @description Danh sách job của một chiến dịch, khóa ở G1.1c cùng `/jobs`. Thứ tự keyset `(created_at, job_id)` tăng dần; `next_cursor` vắng = hết trang. `status` lọc theo JobStatus. Job trong danh sách mang cùng hình dạng job.v2 như `GET /jobs/{job_id}` (kể cả `wait_reason` và `dispatch_block_reasons`), nên màn hình job lỗi không cần một endpoint thứ hai.
+         * @description Danh sách job của một chiến dịch, khóa ở G1.1c cùng `/jobs`. Thứ tự keyset `(created_at, job_id)` tăng dần; `next_cursor` vắng = hết trang. `status` lọc theo JobStatus. Job trong danh sách mang cùng hình dạng job.v2 như `GET /jobs/{job_id}` (kể cả `wait_reason`), nên màn hình job lỗi không cần một endpoint thứ hai.
          */
         get: operations["listJobs"];
         put?: never;
@@ -851,11 +851,6 @@ export interface components {
             blocking_job_ids?: components["schemas"]["Id"][];
             since: components["schemas"]["Timestamp"];
         };
-        /**
-         * @description Mã lý do giữ job. LEGACY_ACTOR: requested_by không phải initiator do server gán (hàng 0010 không thể chấp nhận); LEGACY_POLICY_V1: cấu hình v1; LEGACY_MISSING_MANIFEST_PIN: nhận trước 0003; LEGACY_MISSING_TARGET_REFS: nhận trước 0005; LEGACY_PROPOSER_LABEL: proposed_by là nhãn chứ không phải session_id (hàng trước 0012); LEGACY_TARGET_PROJECTION: targets chứa khóa mà target_refs không giải thích được (hàng trước 0012).
-         * @enum {string}
-         */
-        DispatchBlockReason: "LEGACY_POLICY_V1" | "LEGACY_MISSING_MANIFEST_PIN" | "LEGACY_MISSING_TARGET_REFS" | "LEGACY_ACTOR" | "LEGACY_PROPOSER_LABEL" | "LEGACY_TARGET_PROJECTION";
         Sha256: string;
         /** @description Tham chiếu mục tiêu của job/task: hoặc seed của campaign (seed_id = campaign_target.target_id, giữ nguyên kind/raw_value ở campaign_target), hoặc canonical_key của asset đã biết. Đúng một trong hai khóa. Keyword/CIDR không có canonical_key nên phải dùng seed_id; không tạo asset giả cho seed. Bên đọc dùng seed_id để truy nguồn gốc (G5) và ghi provenance, không suy ra khóa chuẩn từ seed. */
         TargetRef: {
@@ -867,11 +862,6 @@ export interface components {
         RequestedBy: {
             /** @enum {unknown} */
             kind?: "operator" | "module";
-        } & components["schemas"]["Actor"];
-        /** @description Actor tự khai của hàng job trước 0010 (thường là chính phiên agent). Chỉ đọc: hàng này không có proposed_by (pin và target_refs có thể có nếu được tạo sau 0003/0005) và bị DDL giữ với lý do LEGACY_ACTOR (0011) nên không được dispatch/replay, cũng không mở lại generation mới; không chuyển ngược thành RequestedBy hay gán một operator thay thế. */
-        LegacyRequestedBy: {
-            /** @constant */
-            kind?: "agent";
         } & components["schemas"]["Actor"];
         /** @description Phiên agent đã đề xuất task (proposer), do server gán từ ngữ cảnh phiên (params._meta session_id của MCP; M03 cho vòng lặp agent), không từ trường do LLM khai. id là session_id của phiên đề xuất. Chỉ có khi một agent đề xuất: request do người vận hành/module gửi trực tiếp không có proposer và không được bịa một phiên agent. */
         ProposedBy: {
@@ -902,8 +892,6 @@ export interface components {
             generation: number;
             cancel?: components["schemas"]["CancelIntent"];
             wait_reason?: components["schemas"]["WaitReason"];
-            /** @description Lý do job bị giữ nên không được dispatch (S1.6, mở rộng ở 0011). Vắng mặt/null = dispatch được; có giá trị = job được nhận trước luật hiện hành và chỉ còn ghi được kết quả terminal hoặc hủy. Danh sách đã sắp xếp, không trùng; DDL ghi một lần và giữ bất biến, `aegis.guard_dispatch_block` chặn khởi chạy job đang bị giữ. Mã do [DispatchBlockReason](#/$defs/DispatchBlockReason) công bố, khớp danh sách trong DDL (test contract so khớp). */
-            dispatch_block_reasons?: components["schemas"]["DispatchBlockReason"][] | null;
             job_fingerprint: components["schemas"]["Sha256"];
             /** @description Định danh lần quét, thành phần của job_fingerprint. */
             scan_cycle?: components["schemas"]["Id"];
@@ -911,9 +899,9 @@ export interface components {
             scope_id: components["schemas"]["Id"];
             /** @description Mục tiêu đã phân giải của job (TargetRef: seed_id hoặc canonical_key). Giữ nguyên seed gốc của campaign; đây là nguồn của G5/provenance, không phải allowlist. */
             targets?: components["schemas"]["TargetRef"][];
-            /** @description Người/kênh khởi động job, server gán (operator|module). Hàng lịch sử trước 0010 có thể giữ actor tự khai cũ (kể cả kind=agent): chỉ đọc, không diễn giải lại. Actor mà 0010 không thể chấp nhận (kind agent hoặc sai shape) bị DDL giữ với lý do LEGACY_ACTOR (0011), nên hàng đó không dispatch/replay và không mở lại generation mới. */
-            requested_by: components["schemas"]["RequestedBy"] | components["schemas"]["LegacyRequestedBy"];
-            /** @description Phiên agent đã đề xuất job (session_id), server gán; vắng mặt khi người vận hành/module gửi trực tiếp hoặc hàng lịch sử trước 0010. */
+            /** @description Người/kênh khởi động job, server gán (operator|module). DDL áp `aegis.is_initiator` ngay khi INSERT và giữ cột bất biến sau khi nhận, nên một job chỉ có thể mang initiator hợp lệ. */
+            requested_by: components["schemas"]["RequestedBy"];
+            /** @description Phiên agent đã đề xuất job (session_id), server gán; vắng mặt khi người vận hành/module gửi trực tiếp. */
             proposed_by?: components["schemas"]["ProposedBy"];
             rationale?: string;
             created_at: components["schemas"]["Timestamp"];
@@ -933,19 +921,9 @@ export interface components {
              */
             depends_on: components["schemas"]["Id"][];
             adapter_version: components["schemas"]["SemVer"];
-            /** @description Pin manifest của job mới; null chỉ cho job lịch sử chưa chuyển đổi, không được dispatch/replay. */
-            manifest_sha256: components["schemas"]["Sha256"] | null;
+            /** @description Pin manifest bất biến của job; DDL đặt NOT NULL vì một job không có pin thì không dispatch được. */
+            manifest_sha256: components["schemas"]["Sha256"];
             $defs: {
-                /**
-                 * @description Mã lý do giữ job. LEGACY_ACTOR: requested_by không phải initiator do server gán (hàng 0010 không thể chấp nhận); LEGACY_POLICY_V1: cấu hình v1; LEGACY_MISSING_MANIFEST_PIN: nhận trước 0003; LEGACY_MISSING_TARGET_REFS: nhận trước 0005; LEGACY_PROPOSER_LABEL: proposed_by là nhãn chứ không phải session_id (hàng trước 0012); LEGACY_TARGET_PROJECTION: targets chứa khóa mà target_refs không giải thích được (hàng trước 0012).
-                 * @enum {string}
-                 */
-                DispatchBlockReason: "LEGACY_POLICY_V1" | "LEGACY_MISSING_MANIFEST_PIN" | "LEGACY_MISSING_TARGET_REFS" | "LEGACY_ACTOR" | "LEGACY_PROPOSER_LABEL" | "LEGACY_TARGET_PROJECTION";
-                /** @description Actor tự khai của hàng job trước 0010 (thường là chính phiên agent). Chỉ đọc: hàng này không có proposed_by (pin và target_refs có thể có nếu được tạo sau 0003/0005) và bị DDL giữ với lý do LEGACY_ACTOR (0011) nên không được dispatch/replay, cũng không mở lại generation mới; không chuyển ngược thành RequestedBy hay gán một operator thay thế. */
-                LegacyRequestedBy: {
-                    /** @constant */
-                    kind?: "agent";
-                } & components["schemas"]["Actor"];
                 /** @enum {string} */
                 JobStatus: "QUEUED" | "VALIDATING" | "DISPATCHED" | "RUNNING" | "COLLECTING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
                 /** @description Ý định hủy đã ghi nhận (cancel intent). Bản thân nó không đổi trạng thái: job terminal khi M06 gọi terminal hóa. Ý định không bao giờ ghi đè một kết quả terminal đã nhận trước đó; nó vẫn nằm trong lịch sử. */

@@ -4,25 +4,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, conint, constr
 
 from ..common import error_v2_schema, ids_v2_schema
-from ..common.ids_v2_schema import Actor
-
-
-class DispatchBlockReason(StrEnum):
-    LEGACY_POLICY_V1 = "LEGACY_POLICY_V1"
-    LEGACY_MISSING_MANIFEST_PIN = "LEGACY_MISSING_MANIFEST_PIN"
-    LEGACY_MISSING_TARGET_REFS = "LEGACY_MISSING_TARGET_REFS"
-    LEGACY_ACTOR = "LEGACY_ACTOR"
-    LEGACY_PROPOSER_LABEL = "LEGACY_PROPOSER_LABEL"
-    LEGACY_TARGET_PROJECTION = "LEGACY_TARGET_PROJECTION"
-
-
-class LegacyRequestedBy(Actor):
-    kind: Literal["agent"] = "agent"
 
 
 class JobStatus(StrEnum):
@@ -93,12 +78,6 @@ class Job(BaseModel):
     )
     cancel: CancelIntent | None = None
     wait_reason: WaitReason | None = None
-    dispatch_block_reasons: list[DispatchBlockReason] | None = Field(
-        None,
-        description="Lý do job bị giữ nên không được dispatch (S1.6, mở rộng ở 0011). Vắng mặt/null = dispatch được; có giá trị = job được nhận trước luật hiện hành và chỉ còn ghi được kết quả terminal hoặc hủy. Danh sách đã sắp xếp, không trùng; DDL ghi một lần và giữ bất biến, `aegis.guard_dispatch_block` chặn khởi chạy job đang bị giữ. Mã do [DispatchBlockReason](#/$defs/DispatchBlockReason) công bố, khớp danh sách trong DDL (test contract so khớp).",
-        max_length=6,
-        min_length=1,
-    )
     job_fingerprint: ids_v2_schema.Sha256
     scan_cycle: ids_v2_schema.Id | None = Field(
         None, description="Định danh lần quét, thành phần của job_fingerprint."
@@ -109,13 +88,13 @@ class Job(BaseModel):
         None,
         description="Mục tiêu đã phân giải của job (TargetRef: seed_id hoặc canonical_key). Giữ nguyên seed gốc của campaign; đây là nguồn của G5/provenance, không phải allowlist.",
     )
-    requested_by: ids_v2_schema.RequestedBy | LegacyRequestedBy = Field(
+    requested_by: ids_v2_schema.RequestedBy = Field(
         ...,
-        description="Người/kênh khởi động job, server gán (operator|module). Hàng lịch sử trước 0010 có thể giữ actor tự khai cũ (kể cả kind=agent): chỉ đọc, không diễn giải lại. Actor mà 0010 không thể chấp nhận (kind agent hoặc sai shape) bị DDL giữ với lý do LEGACY_ACTOR (0011), nên hàng đó không dispatch/replay và không mở lại generation mới.",
+        description="Người/kênh khởi động job, server gán (operator|module). DDL áp `aegis.is_initiator` ngay khi INSERT và giữ cột bất biến sau khi nhận, nên một job chỉ có thể mang initiator hợp lệ.",
     )
     proposed_by: ids_v2_schema.ProposedBy | None = Field(
         None,
-        description="Phiên agent đã đề xuất job (session_id), server gán; vắng mặt khi người vận hành/module gửi trực tiếp hoặc hàng lịch sử trước 0010.",
+        description="Phiên agent đã đề xuất job (session_id), server gán; vắng mặt khi người vận hành/module gửi trực tiếp.",
     )
     rationale: str | None = None
     created_at: ids_v2_schema.Timestamp
@@ -134,7 +113,7 @@ class Job(BaseModel):
         max_length=100,
     )
     adapter_version: ids_v2_schema.SemVer
-    manifest_sha256: ids_v2_schema.Sha256 | None = Field(
+    manifest_sha256: ids_v2_schema.Sha256 = Field(
         ...,
-        description="Pin manifest của job mới; null chỉ cho job lịch sử chưa chuyển đổi, không được dispatch/replay.",
+        description="Pin manifest bất biến của job; DDL đặt NOT NULL vì một job không có pin thì không dispatch được.",
     )

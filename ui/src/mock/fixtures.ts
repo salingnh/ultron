@@ -329,11 +329,16 @@ export const mockJobs: ScanJob[] = [
     job_fingerprint: '9a1f4b7c0e3d5a8f1e4b7c0e3d5a8f1e4b7c0e3d5a8f1e4b7c0e3d5a8f1e4b7c',
     policy_version: 'roe-1',
     scope_id: '01934f6a-0000-7000-8000-0000000000a1',
-    targets: [{ canonical_key: 'dns:legacy.internal.example' }],
-    requested_by: { kind: 'operator', id: 'legacy-system' },
-    rationale: 'Job tiếp nhận từ phiên bản chính sách cũ cần nâng cấp',
+    targets: [{ canonical_key: 'dns:queued.internal.example' }],
+    requested_by: { kind: 'operator', id: 'sec-admin-01' },
+    rationale: 'Chờ tiền nhiệm SUCCEEDED trước khi dispatch',
     created_at: '2026-11-20T08:00:00Z',
-    dispatch_block_reasons: ['LEGACY_POLICY_V1', 'LEGACY_MISSING_TARGET_REFS'],
+    wait_reason: {
+      code: 'DEPENDENCY_PENDING',
+      detail: 'Job tiền nhiệm 01934f6a-0000-7000-8000-00000000d007 chưa SUCCEEDED',
+      since: '2026-11-20T08:00:05Z',
+      blocking_job_ids: ['01934f6a-0000-7000-8000-00000000d007'],
+    },
   },
 ];
 

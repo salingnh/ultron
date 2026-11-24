@@ -23,7 +23,6 @@ export type ScanJob = Omit<components['schemas']['job.v2.schema'], '$defs' | 'er
 export type JobStatus = components['schemas']['JobStatus'];
 export type WaitReason = components['schemas']['WaitReason'];
 export type WaitReasonCode = WaitReason['code'];
-export type DispatchBlockReason = components['schemas']['job.v2.schema']['$defs']['DispatchBlockReason'];
 export type CancelIntent = components['schemas']['CancelIntent'];
 
 // Graph & Asset types

@@ -23,7 +23,11 @@ Concurrency and crash safety:
   marker (applied by hand or by an older runner) are detected as duplicate-object errors from the
   file itself and reported the same way;
 * an applied file whose bytes changed is a hard error (`MigrationDrift`), because the repository
-  rule is "an applied migration is never edited - add a new one".
+  rule is "an applied migration is never edited - add a new one";
+* a database that carries a schema the repository no longer builds - the replaced 0001..0016 chain,
+  or contract objects without a recorded baseline - is **not** adopted: the runner refuses with the
+  reset command (`ReplacedChain`), because the baseline creates the final schema directly and there
+  is nothing to upgrade from. No database held data worth migrating when the chain was squashed.
 
 Recovery (after inspecting the database, with the same DSN as the failed run):
 
@@ -89,6 +93,7 @@ __all__ = [
     "Migration",
     "MigrationDrift",
     "MigrationError",
+    "ReplacedChain",
     "UnfinishedMigration",
     "apply_contract_migrations",
     "apply_migrations",
@@ -107,6 +112,20 @@ class MigrationError(RuntimeError):
 
 class MigrationDrift(MigrationError):
     """A migration that was already applied has different bytes now."""
+
+
+class ReplacedChain(MigrationError):
+    """The database was built by the replaced migration chain; it is reset, never adopted."""
+
+    def __init__(self, found: str) -> None:
+        super().__init__(
+            "this database carries a schema this repository no longer builds ("
+            f"{found}). contracts/db/postgres has one migration, 0001_baseline.sql, which creates "
+            "the contract schema directly; a replaced chain is never adopted.\n"
+            "Drop the database and apply the baseline again. On the dev stack that is exactly:\n"
+            "  make dev-reset\n"
+            "(elsewhere: drop the database, then `python -m aegis.migrations` again)"
+        )
 
 
 class UnfinishedMigration(MigrationError):
@@ -137,7 +156,6 @@ class ContractPlan:
     requirements: tuple[str, ...]
     python_suites: tuple[str, ...]
     clean_chain: tuple[str, ...]
-    upgrade_chain: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,7 +194,7 @@ def contract_plan(root: Path | None = None) -> ContractPlan:
             "the contract gate plan in contracts/README.md is not readable: "
             + (" / ".join(detail[-3:]) if detail else f"reader exit {completed.returncode}")
         )
-    plan: dict[str, list[str]] = {"requirement": [], "python": [], "clean": [], "upgrade": []}
+    plan: dict[str, list[str]] = {"requirement": [], "python": [], "clean": []}
     for line in completed.stdout.splitlines():
         kind, _, value = line.partition(" ")
         if kind in plan and value:
@@ -188,7 +206,6 @@ def contract_plan(root: Path | None = None) -> ContractPlan:
         requirements=tuple(plan["requirement"]),
         python_suites=tuple(plan["python"]),
         clean_chain=tuple(plan["clean"]),
-        upgrade_chain=tuple(plan["upgrade"]),
     )
 
 
@@ -387,12 +404,46 @@ def apply_migrations(
         return ApplyReport(applied=tuple(applied), skipped=tuple(skipped))
 
 
+def replaced_chain_state(
+    connection: psycopg.Connection[tuple[object, ...]],
+    migrations: Sequence[Migration],
+) -> str | None:
+    """Describe the state that must be reset, or None when the database is fresh or current.
+
+    Two symptoms, one cause: the database was built by something other than this repository's chain.
+    `aegis_migrations.contract_migration` names the replaced files, and contract objects without a
+    recorded baseline are the same thing applied by hand (`psql -f`) or by the old chain.
+    """
+    has_bookkeeping = connection.execute(
+        "SELECT to_regclass(%s)",
+        (f"{BOOKKEEPING_SCHEMA}.{BOOKKEEPING_TABLE.split('.', 1)[1]}",),
+    ).fetchone()
+    recorded: list[str] = []
+    if has_bookkeeping is not None and has_bookkeeping[0] is not None:
+        recorded = [
+            str(row[0])
+            for row in connection.execute(f"SELECT version FROM {BOOKKEEPING_TABLE}").fetchall()
+        ]
+    known = {migration.version for migration in migrations}
+    stale = sorted(set(recorded) - known)
+    if stale:
+        return "recorded versions " + ", ".join(stale)
+    has_objects = connection.execute("SELECT to_regclass('aegis.scan_job')").fetchone()
+    if has_objects is not None and has_objects[0] is not None and not known & set(recorded):
+        return "contract objects without a recorded baseline"
+    return None
+
+
 def apply_contract_migrations(
     connection: psycopg.Connection[tuple[object, ...]],
     root: Path | None = None,
 ) -> ApplyReport:
     """Apply the README chain (the same chain the contract CI gate runs)."""
-    return apply_migrations(connection, contract_migrations(root))
+    migrations = contract_migrations(root)
+    found = replaced_chain_state(connection, migrations)
+    if found is not None:
+        raise ReplacedChain(found)
+    return apply_migrations(connection, migrations)
 
 
 def mark_applied(

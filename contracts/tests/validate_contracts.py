@@ -294,12 +294,28 @@ for mp in sorted((ROOT.parent / "adapters").glob("**/manifest.yaml")):
     for e in check_manifest(mp.relative_to(ROOT.parent), data):
         fail(e)
 
-ddl = (ROOT / "db/postgres/0001_init.sql").read_text(encoding="utf-8")
+ddl = (ROOT / "db/postgres/0001_baseline.sql").read_text(encoding="utf-8")
 
 
-def ddl_enum(column_regex: str) -> set[str]:
-    hit = re.search(column_regex + r".*?CHECK \(\w+ IN \(([^)]*)\)\)", ddl, re.S)
-    return set(re.findall(r"'([^']+)'", hit[1])) if hit else set()
+def ddl_enum(table: str, column: str) -> set[str]:
+    """The enum a column's CHECK publishes, in either DDL spelling.
+
+    The baseline is written from the catalog (`CONSTRAINT <table>_<column>_check CHECK ((<column> =
+    ANY (ARRAY['a'::text, ...])))`); an older file spelled the same constraint
+    `CHECK (col IN ('a', ...))`. Both are one constraint in the database, so the gate accepts both.
+    """
+    block = re.search(rf"CREATE TABLE (?:aegis\.)?{table} \((.*?)\n\);", ddl, re.S)
+    if block is None:
+        return set()
+    hit = re.search(
+        rf"{column} text[^\n]*CHECK \(\w+ IN \(([^)]*)\)\)", block.group(1), re.S
+    ) or re.search(
+        rf"CONSTRAINT {table}_{column}_check CHECK \(\((?:::text)?"
+        rf"(?:[a-z_]+\.)?{column} = ANY \(ARRAY\[(.*?)\]\)\)\)",
+        block.group(1),
+        re.S,
+    )
+    return set(re.findall(r"'([^']+)'", hit[1])) if hit is not None else set()
 
 
 event_types = set(schemas["events/event-envelope.v2.schema.json"]["properties"]["type"]["enum"])
@@ -308,12 +324,12 @@ if event_types != event_files:
     fail(f"Sự kiện: enum {sorted(event_types)} khác file {sorted(event_files)}")
 if len(event_types) != 9:
     fail(f"Sự kiện: đặc tả có 9 sự kiện v2, đang có {len(event_types)}")
-migration = (ROOT / "db/postgres/0002_tool_orchestration.sql").read_text()
+migration = ddl
 migration_event_types = set(re.findall(r"'([a-z.]+\.v2)'", migration))
 if migration_event_types != event_types:
     fail("outbox_event.type trong DDL lệch với danh mục sự kiện")
 statuses = set(schemas["finding/finding-status.v2.schema.json"]["enum"])
-if ddl_enum(r"CREATE TABLE finding \(.*?status\s+text") != statuses:
+if ddl_enum("finding", "status") != statuses:
     fail("finding.status trong DDL lệch với finding-status.v2")
 for t in load(ROOT / "finding/transitions.v2.yaml")["transitions"]:
     for s in ([t["from"]] if not isinstance(t["from"], list) else t["from"]) + [t["to"]]:
@@ -323,15 +339,15 @@ codes = schemas["common/error.v2.schema.json"]["$defs"]["ErrorCode"]["enum"]
 if len(codes) != 14:
     fail(f"Mã lỗi: schema hiện hành có 14 mã, đang có {len(codes)}")
 job_status = set(schemas["capability/job.v2.schema.json"]["$defs"]["JobStatus"]["enum"])
-if ddl_enum(r"CREATE TABLE scan_job.*?status\s+text\s+NOT NULL DEFAULT 'QUEUED'\s+") != job_status:
+if ddl_enum("scan_job", "status") != job_status:
     fail("scan_job.status trong DDL lệch với job.v2")
 
 severity_schema = schemas["finding/severity-assessment.v2.schema.json"]
-if ddl_enum(r"CREATE TABLE severity_assessment \(.*?severity\s+text") != set(severity_schema["$defs"]["Severity"]["enum"]):
+if ddl_enum("severity_assessment", "severity") != set(severity_schema["$defs"]["Severity"]["enum"]):
     fail("severity_assessment.severity trong DDL lệch với severity-assessment.v2")
-if ddl_enum(r"CREATE TABLE severity_assessment \(.*?kind\s+text") != set(severity_schema["properties"]["assessed_by"]["properties"]["kind"]["enum"]):
+if ddl_enum("severity_assessment", "kind") != set(severity_schema["properties"]["assessed_by"]["properties"]["kind"]["enum"]):
     fail("severity_assessment.kind trong DDL lệch với assessed_by.kind của severity-assessment.v2")
-if ddl_enum(r"CREATE TABLE severity_assessment \(.*?trigger\s+text") != set(severity_schema["$defs"]["Trigger"]["enum"]):
+if ddl_enum("severity_assessment", "trigger") != set(severity_schema["$defs"]["Trigger"]["enum"]):
     fail("severity_assessment.trigger trong DDL lệch với trigger của severity-assessment.v2")
 finish_reasons = set(schemas["agent/model-response.v2.schema.json"]["$defs"]["FinishReason"]["enum"])
 if finish_reasons != {"completed", "tool_calls", "truncated", "refused", "invalid_output", "provider_error"}:

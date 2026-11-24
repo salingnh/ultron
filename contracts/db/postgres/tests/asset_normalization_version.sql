@@ -17,7 +17,7 @@ BEGIN
   BEGIN
     INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen)
       VALUES (a_plain,'dns:normalization-untagged.example','domain',now(),now());
-  EXCEPTION WHEN check_violation THEN blocked := blocked + 1;
+  EXCEPTION WHEN not_null_violation THEN blocked := blocked + 1;
   END;
   -- 2. The version label is aegis-norm/<n>, never free text.
   BEGIN

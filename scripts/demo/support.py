@@ -280,7 +280,14 @@ def _parse_plain(output: str) -> list[dict[str, Any]]:
 
 
 def _neo4j_container() -> str:
-    """The Neo4j container of the dev compose project (names live in scripts/dev/lib.sh)."""
+    """The Neo4j container of the dev compose project (names live in scripts/dev/lib.sh).
+
+    `AEGIS_NEO4J_CONTAINER` names it explicitly, for a run against a stack of another compose
+    project (a task that must not touch the shared dev stack).
+    """
+    override = os.environ.get("AEGIS_NEO4J_CONTAINER", "").strip()
+    if override:
+        return override
     completed = subprocess.run(
         [
             "podman",

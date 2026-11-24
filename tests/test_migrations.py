@@ -129,6 +129,42 @@ def test_contract_chain_applies_once_and_is_rerunnable() -> None:
 
 
 @requires_postgres
+def test_replaced_chain_is_refused_with_the_reset_command() -> None:
+    # The old 0001..0016 chain (or the same objects applied by hand with psql) is never adopted:
+    # the baseline creates the final schema directly, so the only correct action is a reset.
+    with throwaway_database() as dsn, psycopg.connect(dsn, autocommit=True) as connection:
+        connection.execute("CREATE SCHEMA aegis")
+        connection.execute("CREATE TABLE aegis.scan_job (job_id uuid PRIMARY KEY)")
+        with pytest.raises(migrations_module.ReplacedChain) as refused:
+            apply_contract_migrations(connection)
+        message = str(refused.value)
+        assert "make dev-reset" in message
+        assert "0001_baseline.sql" in message
+        # It refused before touching anything: no bookkeeping was written.
+        assert connection.execute(
+            "SELECT to_regclass('aegis_migrations.contract_migration')"
+        ).fetchone() == (None,)
+
+
+@requires_postgres
+def test_a_recorded_old_version_is_refused() -> None:
+    with throwaway_database() as dsn, psycopg.connect(dsn, autocommit=True) as connection:
+        connection.execute("CREATE SCHEMA aegis_migrations")
+        connection.execute(
+            "CREATE TABLE aegis_migrations.contract_migration ("
+            " version text PRIMARY KEY, sha256 text NOT NULL,"
+            " applied_at timestamptz NOT NULL DEFAULT now())"
+        )
+        connection.execute(
+            "INSERT INTO aegis_migrations.contract_migration (version, sha256)"
+            " VALUES ('contracts/db/postgres/0016_manifest_registry_and_signed_task.sql', %s)",
+            ("0" * 64,),
+        )
+        with pytest.raises(migrations_module.ReplacedChain, match="0016_manifest_registry"):
+            apply_contract_migrations(connection)
+
+
+@requires_postgres
 def test_edited_migration_is_refused(tmp_path: Path) -> None:
     first = tmp_path / "0001_probe.sql"
     second = tmp_path / "0002_probe.sql"
@@ -378,7 +414,7 @@ def test_cli_refuses_mark_applied_with_a_wrong_sha(
         exit_code = migrations_module.main(
             [
                 "mark-applied",
-                "contracts/db/postgres/0001_init.sql",
+                "contracts/db/postgres/0001_baseline.sql",
                 "--sha256",
                 "0" * 64,
                 "--dsn",

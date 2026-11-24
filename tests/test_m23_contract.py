@@ -33,11 +33,14 @@ def _edge_table() -> set[str]:
 
 
 def _relationship_check() -> set[str]:
-    ddl = (repository_root() / "contracts/db/postgres/0001_init.sql").read_text(encoding="utf-8")
-    block = re.search(r"CREATE TABLE relationship \((.*?)\n\);", ddl, re.DOTALL)
-    assert block is not None, "0001_init.sql lost the relationship table"
+    path = repository_root() / "contracts/db/postgres/0001_baseline.sql"
+    ddl = path.read_text(encoding="utf-8")
+    block = re.search(r"CREATE TABLE aegis\.relationship \((.*?)\n\);", ddl, re.DOTALL)
+    assert block is not None, "0001_baseline.sql lost the relationship table"
     check = re.search(
-        r"type\s+text\s+NOT NULL CHECK \(type IN \((.*?)\)\)", block.group(1), re.DOTALL
+        r"relationship_type_check CHECK \(\(type = ANY \(ARRAY\[(.*?)\]\)\)\)",
+        block.group(1),
+        re.DOTALL,
     )
     assert check is not None, "the relationship.type CHECK moved; update this parser"
     return set(re.findall(r"'([A-Z_]+)'", check.group(1)))

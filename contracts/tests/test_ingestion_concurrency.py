@@ -26,15 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PG_DIR = ROOT / "db/postgres"
-MIGRATIONS = (
-    "0001_init.sql",
-    "0002_tool_orchestration.sql",
-    "0003_task_manifest_binding.sql",
-    "0004_usage_nonnegative.sql",
-    "0005_job_target_refs.sql",
-    "0006_ingestion_hash_receipt.sql",
-    "0010_job_actor_attribution.sql",
-)
+MIGRATIONS = ("0001_baseline.sql",)
 DSN = os.environ.get("AEGIS_TEST_PG_DSN", "").strip()
 CANON = runpy.run_path(str(ROOT / "tests/canonicalization.py"))
 payload_hash = CANON["payload_hash"]
@@ -100,7 +92,7 @@ def seed(conn) -> None:
         conn.execute(
             "INSERT INTO aegis.policy_snapshot (policy_version,campaign_id,policy,policy_hash,created_by)"
             " VALUES (%s,%s,%s,%s,%s) ON CONFLICT (policy_version) DO NOTHING",
-            (POLICY, CAMP, Jsonb({"max_parallel_jobs": 100, "max_duration_hours": 168}), "6" * 64,
+            (POLICY, CAMP, Jsonb({"max_parallel_jobs": 50, "max_duration_hours": 168}), "6" * 64,
              Jsonb({"kind": "operator", "id": "c03-fixture"})))
         conn.execute(
             "INSERT INTO aegis.scope_snapshot (scope_id,campaign_id,targets) VALUES (%s,%s,%s)"
@@ -125,20 +117,19 @@ def new_job(conn) -> str:
     with conn.transaction():
         conn.execute(
             "INSERT INTO aegis.policy_decision (decision_id,campaign_id,capability,provider,targets,input,"
-            "decision,rationale,requested_by,proposed_by,policy_version,scope_id,idempotency_key,trace_id)"
+            "decision,rationale,requested_by,target_refs,policy_version,scope_id,idempotency_key,trace_id)"
             " VALUES (%s,%s,'dns.enumerate_subdomains','subfinder',%s,%s,'approved','c03 fixture',%s,%s,%s,%s,%s,%s)",
-            (decision, CAMP, ["dns:c03.example"], Jsonb({"targets": ["c03.example"]}),
-             Jsonb({"kind": "operator", "id": "fixture-operator"}), Jsonb({"kind": "agent", "id": "fixture-session"}),
+            (decision, CAMP, [], Jsonb({"targets": ["c03.example"]}),
+             Jsonb({"kind": "operator", "id": "fixture-operator"}), Jsonb([{"seed_id": SEED}]),
              POLICY, SCOPE, f"c03:{run}", "6" * 32))
         conn.execute(
             "INSERT INTO aegis.scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,"
             "adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,"
-            "input,targets,target_refs,requested_by,proposed_by,rationale,trace_id)"
-            " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'c03 fixture',%s)",
+            "input,targets,target_refs,requested_by,rationale,trace_id)"
+            " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'c03 fixture',%s)",
             (job, CAMP, decision, "sha256:" + "5" * 64, "6" * 64, new_id(), (uuid.uuid4().hex * 2)[:64],
-             POLICY, SCOPE, Jsonb({"targets": ["c03.example"]}), ["dns:c03.example"],
-             Jsonb([{"seed_id": SEED}]), Jsonb({"kind": "operator", "id": "fixture-operator"}),
-             Jsonb({"kind": "agent", "id": "fixture-session"}), "6" * 32))
+             POLICY, SCOPE, Jsonb({"targets": ["c03.example"]}), [],
+             Jsonb([{"seed_id": SEED}]), Jsonb({"kind": "operator", "id": "fixture-operator"}), "6" * 32))
     return job
 
 
@@ -224,9 +215,7 @@ def submit(conn, env: dict, on_first_insert=None):
                 (env["event_id"], env["dedup_key"], inbox_event, content_hash, HASH_VERSION))
             return "duplicate", stored_receipt
 
-        if stored_version is None:
-            reason = "legacy_unversioned_hash"
-        elif stored_version != HASH_VERSION:
+        if stored_version != HASH_VERSION:
             reason = "hash_version_mismatch"
         else:
             reason = "hash_mismatch"

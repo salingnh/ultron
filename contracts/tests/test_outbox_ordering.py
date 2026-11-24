@@ -34,16 +34,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 PG_DIR = ROOT / "db/postgres"
-# 0008 is deliberately applied straight after 0004: it must stay independent of 0005..0007.
-# 0013 only needs 0008 (it checks that dependency itself) and stays independent of 0011/0012.
-MIGRATIONS = (
-    "0001_init.sql",
-    "0002_tool_orchestration.sql",
-    "0003_task_manifest_binding.sql",
-    "0004_usage_nonnegative.sql",
-    "0008_outbox_publication_order.sql",
-    "0013_outbox_watermark_blocking.sql",
-)
+MIGRATIONS = ("0001_baseline.sql",)
 HARNESS_SCHEMA = "s13_harness"
 CAMPAIGN = "01900000-0000-7000-8000-000000000882"
 
@@ -624,50 +615,6 @@ class C04(unittest.TestCase):
         self.assertGreater(min(rate for _, rate in rows), 0)
 
 
-class UpgradeC04(unittest.TestCase):
-    """0008 lands on a database that already has outbox/revision history (0001..0004 rows)."""
-
-    def test_upgrade_seeds_the_counter_above_historical_rows(self):
-        history = Harness(DSN, migrations=MIGRATIONS[:4])       # 0001..0004 only: bigserial seq
-        self.addCleanup(history.drop)
-        with history.connect() as conn:
-            old_events = [conn.execute(
-                "INSERT INTO aegis.outbox_event (event_id,type,producer,dedup_key,payload,trace)"
-                " VALUES (%s,'job.started.v1','M02',%s,'{}'::jsonb,'{}'::jsonb) RETURNING seq",
-                (uuid.uuid4(), f"history:{k}")).fetchone()[0] for k in range(2)]
-            old_revision = conn.execute(
-                "INSERT INTO aegis.graph_revision (campaign_id) VALUES (%s) RETURNING revision", (CAMPAIGN,)
-            ).fetchone()[0]
-            conn.commit()
-        history.apply("0008_outbox_publication_order.sql")
-        history.apply("0013_outbox_watermark_blocking.sql")
-        highest = max(old_events + [old_revision])
-        with history.connect() as conn:
-            source = conn.execute(
-                "SELECT pg_get_functiondef('aegis.outbox_watermark_refresh(text,bigint)'::regprocedure)"
-            ).fetchone()[0]
-            self.assertIn("pg_advisory_xact_lock", source, "0013 did not replace the try-lock")
-            self.assertNotIn("pg_try_advisory_xact_lock", source)
-        with history.connect() as conn:
-            counter, watermark = conn.execute(
-                "SELECT next_seq, published_upto FROM aegis.outbox_publication, aegis.outbox_watermark"
-            ).fetchone()
-            self.assertEqual(counter, highest + 1, "counter was not seeded above historical seq values")
-            self.assertEqual(watermark, highest, "historical rows were not treated as published")
-            new_seq = PRODUCT.insert_event(conn, "after-upgrade")[0]
-            conn.commit()
-        self.assertEqual(new_seq, highest + 1, "new allocation is not ordered after history")
-        disp = Dispatcher(history, PRODUCT, name="upgrade-dispatcher", holder="upgrade")
-        self.addCleanup(disp.close)
-        self.assertIsNotNone(disp.take_lease())
-        self.assertEqual(disp.refresh(), new_seq)
-        with history.connect() as conn:
-            delivered = [row[0] for row in PRODUCT.batch(conn, "m23-projector#upgrade", 100)]
-            self.assertEqual(delivered[:2], old_events, "historical events are no longer deliverable")
-            self.assertEqual(delivered[-1], new_seq)
-            self.assertEqual(PRODUCT.advance(conn, "m23-projector#upgrade", new_seq, disp.name, disp.fence), new_seq)
-
-
 def stream_event(conn, prefix, index, k):
     seq = conn.execute(
         "INSERT INTO aegis.outbox_event (event_id,type,producer,dedup_key,payload,trace)"
@@ -737,6 +684,10 @@ def measure(harness: Harness, stream, writers: int, events: int, prefix: str, la
     if errors:
         raise errors[0]
     return duration
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
 
 
 if __name__ == "__main__":
