@@ -6,19 +6,38 @@ runner calls the same script and parses the same `clean` plan lines, so a develo
 CI can never disagree about the chain (and a new migration that the README does not run fails the
 gate instead of silently being skipped here).
 
-Bookkeeping lives in its own schema (`aegis_migrations`, not the contract-owned `aegis` schema):
+Concurrency and crash safety:
 
-* an applied file is recorded with its sha256; re-running the runner skips it;
-* the files run like `psql -f` does in the CI gate: in autocommit, because migrations 0002+ open
-  and close their own transaction (`BEGIN; ... COMMIT;`). The runner does not wrap them a second
-  time - that would nest transactions and move the commit boundary. The bookkeeping row is written
-  immediately after each file commits; if the process dies in between, the next run fails loudly
-  on the unrecorded file instead of re-applying (or silently skipping) it;
+* one apply run holds a **session-level advisory lock** (`pg_advisory_lock`), key
+  `ADVISORY_LOCK_KEY` below, for as long as it is applying files. Two app/worker instances that
+  start together therefore serialise: the second one sees the first one's bookkeeping rows and
+  skips them instead of executing the same DDL twice. The lock is session-level, not
+  transaction-level, because a run spans the files' own transactions; PostgreSQL releases it if
+  the session dies. The key is a constant of the runner, not configuration, so every process of
+  the same runner meets on the same lock;
+* before a file runs, an attempt row is written to `aegis_migrations.pending_migration` and it is
+  removed only after the bookkeeping row exists. A run that dies between a file's `COMMIT` and its
+  bookkeeping row - or inside 0001, which has no `BEGIN/COMMIT` - leaves that marker behind. The
+  next run then refuses with `UnfinishedMigration`, naming the version and the two recovery
+  commands, instead of re-applying or silently adopting the file. Objects that appear without any
+  marker (applied by hand or by an older runner) are detected as duplicate-object errors from the
+  file itself and reported the same way;
 * an applied file whose bytes changed is a hard error (`MigrationDrift`), because the repository
   rule is "an applied migration is never edited - add a new one".
 
-The runner never writes to a database on its own: `python -m aegis.migrations --dsn ...` (or
-`AEGIS_PG_DSN`) is an explicit operator action, and the tests use throwaway databases only.
+Recovery (after inspecting the database, with the same DSN as the failed run):
+
+    python -m aegis.migrations mark-applied VERSION --sha256 EXPECTED
+        the file's effects are present and complete; record it without executing anything.
+        Refuses when EXPECTED is not the file's current sha256, when VERSION is already recorded
+        with another sha256, or when the interrupted attempt ran a different file (sha mismatch).
+
+    python -m aegis.migrations discard-attempt VERSION
+        the interrupted attempt had no effect; drop its marker so the next run applies the file.
+
+The runner never re-applies, deletes or repairs database objects on its own: it records what an
+operator verified, or it fails loudly. It also never writes to a database unless asked to:
+`python -m aegis.migrations` is an explicit operator action and the tests use throwaway databases.
 """
 
 from __future__ import annotations
@@ -29,7 +48,8 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,18 +62,41 @@ READER = Path("scripts/ci/read-contract-gate.py")
 MIGRATION_RE = re.compile(r"^contracts/db/postgres/0[0-9]+_[0-9a-z_]+\.sql$")
 BOOKKEEPING_SCHEMA = "aegis_migrations"
 BOOKKEEPING_TABLE = f"{BOOKKEEPING_SCHEMA}.contract_migration"
+PENDING_TABLE = f"{BOOKKEEPING_SCHEMA}.pending_migration"
+
+# Session-level advisory lock of one apply run. The key is int64(sha256(name)[:8], big-endian,
+# signed) = 7399474447980216404; it is fixed in code so two runner processes always meet on it.
+LOCK_NAME = "aegis.contract_migration"
+ADVISORY_LOCK_KEY = int.from_bytes(
+    hashlib.sha256(LOCK_NAME.encode()).digest()[:8], "big", signed=True
+)
+
+# A file that failed because its objects already exist was applied without a bookkeeping row
+# (by hand, or by a runner that died before writing one). These SQLSTATEs are the observable
+# signal; the pending marker is the precise one for attempts this runner started.
+ALREADY_APPLIED_ERRORS = (
+    psycopg.errors.DuplicateTable,
+    psycopg.errors.DuplicateObject,
+    psycopg.errors.DuplicateSchema,
+    psycopg.errors.DuplicateFunction,
+    psycopg.errors.DuplicateColumn,
+)
 
 __all__ = [
+    "ADVISORY_LOCK_KEY",
     "ApplyReport",
     "ContractPlan",
     "Migration",
     "MigrationDrift",
     "MigrationError",
+    "UnfinishedMigration",
     "apply_contract_migrations",
     "apply_migrations",
     "contract_migrations",
     "contract_plan",
+    "discard_attempt",
     "main",
+    "mark_applied",
     "read_migration",
 ]
 
@@ -64,6 +107,27 @@ class MigrationError(RuntimeError):
 
 class MigrationDrift(MigrationError):
     """A migration that was already applied has different bytes now."""
+
+
+class UnfinishedMigration(MigrationError):
+    """A file started but was never recorded; its effects may be complete or partial."""
+
+    def __init__(self, migration: Migration, attempted_sha256: str, reason: str) -> None:
+        self.version = migration.version
+        self.sha256 = migration.sha256
+        self.attempted_sha256 = attempted_sha256
+        self.reason = reason
+        super().__init__(
+            f"{migration.version}: {reason}. The version is not recorded in "
+            f"{BOOKKEEPING_TABLE} and its effects may be fully or partially in the database.\n"
+            "Inspect the database, then run exactly one of (same DSN as this run):\n"
+            f"  python -m aegis.migrations mark-applied {migration.version} "
+            f"--sha256 {migration.sha256}\n"
+            "      the file's effects are present and complete; record it\n"
+            "      (refuses on sha mismatch)\n"
+            f"  python -m aegis.migrations discard-attempt {migration.version}\n"
+            "      the attempt had no effect; drop the marker so the next run applies the file"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,13 +243,20 @@ def _ensure_bookkeeping(connection: psycopg.Connection[tuple[object, ...]]) -> N
             )
             """
         )
+        connection.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {PENDING_TABLE} (
+                version text PRIMARY KEY,
+                sha256 text NOT NULL,
+                started_at timestamptz NOT NULL DEFAULT now()
+            )
+            """
+        )
 
 
-def apply_migrations(
-    connection: psycopg.Connection[tuple[object, ...]],
-    migrations: Sequence[Migration],
-) -> ApplyReport:
-    """Apply each migration once, in the given order, recording its version and sha256."""
+@contextmanager
+def _session_lock(connection: psycopg.Connection[tuple[object, ...]]) -> Iterator[None]:
+    """Hold the runner's advisory lock for the whole run (session-level, released on exit)."""
     previous_autocommit = connection.autocommit
     if not previous_autocommit:
         if connection.info.transaction_status in {
@@ -195,45 +266,125 @@ def apply_migrations(
             raise MigrationError(
                 "the connection already has an open transaction; commit or roll it back first"
             )
-        # Migrations own their transaction, exactly as `psql -f` runs them in the CI gate.
+        # Migrations own their transactions (like `psql -f`), and a session-level advisory lock
+        # must survive their COMMITs, so the runner works in autocommit for the whole run.
         connection.autocommit = True
     try:
+        connection.execute("SELECT pg_advisory_lock(%s)", (ADVISORY_LOCK_KEY,))
+        try:
+            yield
+        finally:
+            connection.execute("SELECT pg_advisory_unlock(%s)", (ADVISORY_LOCK_KEY,))
+    finally:
+        connection.autocommit = previous_autocommit
+
+
+def _recorded_sha256(
+    connection: psycopg.Connection[tuple[object, ...]], version: str
+) -> str | None:
+    row = connection.execute(
+        f"SELECT sha256 FROM {BOOKKEEPING_TABLE} WHERE version = %s", (version,)
+    ).fetchone()
+    return None if row is None else str(row[0])
+
+
+def _pending_sha256(connection: psycopg.Connection[tuple[object, ...]], version: str) -> str | None:
+    row = connection.execute(
+        f"SELECT sha256 FROM {PENDING_TABLE} WHERE version = %s", (version,)
+    ).fetchone()
+    return None if row is None else str(row[0])
+
+
+def _record_committed(
+    connection: psycopg.Connection[tuple[object, ...]], migration: Migration
+) -> None:
+    connection.execute(
+        f"INSERT INTO {BOOKKEEPING_TABLE} (version, sha256) VALUES (%s, %s)",
+        (migration.version, migration.sha256),
+    )
+
+
+def _begin_attempt(
+    connection: psycopg.Connection[tuple[object, ...]], migration: Migration
+) -> None:
+    connection.execute(
+        f"INSERT INTO {PENDING_TABLE} (version, sha256) VALUES (%s, %s)",
+        (migration.version, migration.sha256),
+    )
+
+
+def _clear_pending(connection: psycopg.Connection[tuple[object, ...]], version: str) -> None:
+    connection.execute(f"DELETE FROM {PENDING_TABLE} WHERE version = %s", (version,))
+
+
+def _attempt_left_note(migration: Migration) -> str:
+    return (
+        f" (the attempt marker for {migration.version} was kept: inspect the database, then "
+        f"`python -m aegis.migrations mark-applied {migration.version} "
+        f"--sha256 {migration.sha256}` if the file's effects are complete, or "
+        f"`python -m aegis.migrations discard-attempt {migration.version}` if they are not)"
+    )
+
+
+def apply_migrations(
+    connection: psycopg.Connection[tuple[object, ...]],
+    migrations: Sequence[Migration],
+) -> ApplyReport:
+    """Apply each migration once, in the given order, recording its version and sha256."""
+    with _session_lock(connection):
         _ensure_bookkeeping(connection)
         applied: list[str] = []
         skipped: list[str] = []
         for migration in migrations:
-            row = connection.execute(
-                f"SELECT sha256 FROM {BOOKKEEPING_TABLE} WHERE version = %s",
-                (migration.version,),
-            ).fetchone()
-            if row is not None:
-                recorded = str(row[0])
+            recorded = _recorded_sha256(connection, migration.version)
+            if recorded is not None:
                 if recorded != migration.sha256:
                     raise MigrationDrift(
                         f"{migration.version} was applied with sha256 {recorded} but is now "
                         f"{migration.sha256}; applied migrations are never edited - add a new one"
                     )
+                if _pending_sha256(connection, migration.version) is not None:
+                    # Recorded, but the run died before removing its attempt marker: the database
+                    # state is exactly what the bookkeeping row says, so drop the stale marker.
+                    _clear_pending(connection, migration.version)
                 skipped.append(migration.version)
                 continue
+            pending = _pending_sha256(connection, migration.version)
+            if pending is not None:
+                raise UnfinishedMigration(
+                    migration,
+                    pending,
+                    "an earlier run started this file but never recorded completion",
+                )
             try:
                 sql = migration.path.read_text(encoding="utf-8")
             except OSError as error:
                 raise MigrationError(f"cannot read {migration.version}: {error}") from error
+            _begin_attempt(connection, migration)
             try:
                 connection.execute(sql)
-                connection.execute(
-                    f"INSERT INTO {BOOKKEEPING_TABLE} (version, sha256) VALUES (%s, %s)",
-                    (migration.version, migration.sha256),
-                )
             except psycopg.Error as error:
+                if isinstance(error, ALREADY_APPLIED_ERRORS):
+                    raise UnfinishedMigration(
+                        migration,
+                        migration.sha256,
+                        "the database already contains objects this file creates "
+                        f"({error.sqlstate}: {error.diag.message_primary or error})",
+                    ) from error
                 raise MigrationError(
-                    f"{migration.version} failed: {error} (the bookkeeping row is written only "
-                    "after the file commits; an unrecorded file fails loudly on the next run)"
+                    f"{migration.version} failed: {error}{_attempt_left_note(migration)}"
                 ) from error
+            try:
+                _record_committed(connection, migration)
+            except psycopg.Error as error:
+                raise UnfinishedMigration(
+                    migration,
+                    migration.sha256,
+                    "the file finished but its bookkeeping row could not be written",
+                ) from error
+            _clear_pending(connection, migration.version)
             applied.append(migration.version)
         return ApplyReport(applied=tuple(applied), skipped=tuple(skipped))
-    finally:
-        connection.autocommit = previous_autocommit
 
 
 def apply_contract_migrations(
@@ -244,9 +395,120 @@ def apply_contract_migrations(
     return apply_migrations(connection, contract_migrations(root))
 
 
+def mark_applied(
+    connection: psycopg.Connection[tuple[object, ...]],
+    migration: Migration,
+    expected_sha256: str,
+) -> str:
+    """Record a migration as applied without executing it (operator recovery, no repair).
+
+    Refuses on any sha mismatch: `expected_sha256` must be the file's current sha256, and an
+    interrupted attempt must have run that same file. A version already recorded with the same
+    sha256 is a no-op; recorded with another sha256 is `MigrationDrift`.
+    """
+    if expected_sha256 != migration.sha256:
+        raise MigrationError(
+            f"refusing mark-applied {migration.version}: --sha256 {expected_sha256} is not the "
+            f"file's sha256 {migration.sha256}; pass the sha256 of the file that was applied"
+        )
+    with _session_lock(connection):
+        _ensure_bookkeeping(connection)
+        recorded = _recorded_sha256(connection, migration.version)
+        if recorded is not None:
+            if recorded != migration.sha256:
+                raise MigrationDrift(
+                    f"{migration.version} was applied with sha256 {recorded} but is now "
+                    f"{migration.sha256}; applied migrations are never edited - add a new one"
+                )
+            _clear_pending(connection, migration.version)
+            return (
+                f"{migration.version} is already recorded with sha256 {recorded}; nothing changed"
+            )
+        pending = _pending_sha256(connection, migration.version)
+        if pending is not None and pending != migration.sha256:
+            raise MigrationError(
+                f"refusing mark-applied {migration.version}: the interrupted attempt ran sha256 "
+                f"{pending}, the file is now {migration.sha256}; restore the file that ran, or "
+                "rebuild the database"
+            )
+        _record_committed(connection, migration)
+        _clear_pending(connection, migration.version)
+        return (
+            f"recorded {migration.version} as applied with sha256 {migration.sha256}; "
+            "nothing was executed"
+        )
+
+
+def discard_attempt(connection: psycopg.Connection[tuple[object, ...]], version: str) -> str:
+    """Drop the pending marker of an attempt that had no effect, so the file can run again."""
+    with _session_lock(connection):
+        _ensure_bookkeeping(connection)
+        recorded = _recorded_sha256(connection, version)
+        if recorded is not None:
+            raise MigrationError(
+                f"{version} is already recorded as applied (sha256 {recorded}); "
+                "there is no attempt to discard"
+            )
+        pending = _pending_sha256(connection, version)
+        if pending is None:
+            raise MigrationError(
+                f"no interrupted attempt for {version} in {PENDING_TABLE}; nothing to discard"
+            )
+        _clear_pending(connection, version)
+        return (
+            f"discarded the interrupted attempt for {version} (sha256 {pending}); "
+            "the next run applies the file again"
+        )
+
+
+def _find_migration(version: str) -> Migration:
+    migrations = contract_migrations()
+    for migration in migrations:
+        if migration.version == version:
+            return migration
+    known = ", ".join(migration.version for migration in migrations)
+    raise MigrationError(f"unknown migration {version!r}; the README chain has: {known}")
+
+
+def _required(value: str | None, name: str) -> str:
+    """Narrow a validated CLI value; the parser already rejected a missing one."""
+    if value is None:
+        raise MigrationError(f"{name} is required")
+    return value
+
+
+def _apply(dsn: str) -> int:
+    migrations = contract_migrations()
+    with psycopg.connect(dsn) as connection:
+        report = apply_migrations(connection, migrations)
+    print(
+        f"migrations: {len(report.applied)} applied, {len(report.skipped)} already recorded "
+        f"({len(migrations)} in the README chain)"
+    )
+    for version in report.applied:
+        print(f"  applied {version}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Apply contracts/db/postgres in the order contracts/README.md publishes."
+        description=(
+            "Apply contracts/db/postgres in the order contracts/README.md publishes, or resolve "
+            "an interrupted attempt with `mark-applied` / `discard-attempt`."
+        )
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="apply",
+        choices=["apply", "mark-applied", "discard-attempt"],
+        help="apply (default), mark-applied or discard-attempt",
+    )
+    parser.add_argument("version", nargs="?", help="migration version (contracts/-relative path)")
+    parser.add_argument(
+        "--sha256",
+        dest="sha256",
+        help="expected sha256 of the migration file (mark-applied; refuses on mismatch)",
     )
     parser.add_argument(
         "--dsn",
@@ -256,20 +518,30 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     if not arguments.dsn:
         parser.error(f"no DSN: pass --dsn or set {DSN_ENV}")
+    if arguments.command == "apply":
+        if arguments.version is not None or arguments.sha256 is not None:
+            parser.error("apply takes neither VERSION nor --sha256")
+    else:
+        if arguments.version is None:
+            parser.error(f"{arguments.command} needs VERSION")
+        if arguments.command == "mark-applied" and arguments.sha256 is None:
+            parser.error("mark-applied needs --sha256 EXPECTED")
+        if arguments.command == "discard-attempt" and arguments.sha256 is not None:
+            parser.error("discard-attempt takes no --sha256 (nothing is recorded)")
+
     try:
-        migrations = contract_migrations()
+        if arguments.command == "apply":
+            return _apply(arguments.dsn)
+        migration = _find_migration(_required(arguments.version, "VERSION"))
         with psycopg.connect(arguments.dsn) as connection:
-            report = apply_migrations(connection, migrations)
+            if arguments.command == "mark-applied":
+                print(mark_applied(connection, migration, _required(arguments.sha256, "--sha256")))
+            else:
+                print(discard_attempt(connection, migration.version))
+        return 0
     except (MigrationError, psycopg.Error) as error:
         print(f"migrations: error: {error}", file=sys.stderr)
         return 1
-    print(
-        f"migrations: {len(report.applied)} applied, {len(report.skipped)} already recorded "
-        f"({len(migrations)} in the README chain)"
-    )
-    for version in report.applied:
-        print(f"  applied {version}")
-    return 0
 
 
 if __name__ == "__main__":
