@@ -45,6 +45,7 @@ from pydantic import RootModel
 from aegis import validation
 from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
 from aegis.contracts_gen.common.error_v2_schema import NextAction
+from aegis.m01_campaign.audit import record_audit
 from aegis.m05_registry.canonical import job_fingerprint, sha256_hex
 from aegis.m05_registry.caps import CampaignPolicy, check_campaign_caps, merge_input
 from aegis.m05_registry.dependency import check_dependencies
@@ -197,22 +198,33 @@ class PostgresJobService:
             raise M05Error.input_invalid("Idempotency-Key is required", field="/Idempotency-Key")
         body_hash = sha256_hex(request.model_dump(mode="json", exclude_none=True))
         trace = trace_id or new_trace_id()
-        result: SubmitOutcome | _Rejection | None = None
+        actor = dict(requested_by)
         with self._connect() as conn:
             with conn.transaction():
-                result = self._submit_in_transaction(
-                    conn,
-                    request=request,
-                    requested_by=dict(requested_by),
-                    idempotency_key=idempotency_key.strip(),
-                    body_hash=body_hash,
-                    trace_id=trace,
-                )
-        if isinstance(result, _Rejection):
-            raise result.error
-        if result is None:  # pragma: no cover - defensive: a transaction must return a result
-            raise RuntimeError("submission produced no outcome")
-        return result
+                try:
+                    outcome: SubmitOutcome | _Rejection = self._submit_in_transaction(
+                        conn,
+                        request=request,
+                        requested_by=actor,
+                        idempotency_key=idempotency_key.strip(),
+                        body_hash=body_hash,
+                        trace_id=trace,
+                    )
+                except M05Error as error:
+                    # A refusal is an event: it must leave a trace even when no policy decision can
+                    # exist (0012 needs resolved refs). The row commits with the refusal.
+                    outcome = _Rejection(error=error)
+                if isinstance(outcome, _Rejection):
+                    self._audit_refusal(
+                        conn,
+                        error=outcome.error,
+                        request=request,
+                        requested_by=actor,
+                        trace_id=trace,
+                    )
+        if isinstance(outcome, _Rejection):
+            raise outcome.error
+        return outcome
 
     def _submit_in_transaction(
         self,
@@ -503,6 +515,58 @@ class PostgresJobService:
             decision=str(row[2]),
             rule=None if row[3] is None else str(row[3]),
             error=row[4],
+        )
+
+    @staticmethod
+    def _raw_targets(request: JobSubmit) -> list[str]:
+        """The requested target values as text, before any resolution (audit evidence).
+
+        A malformed `targets` (a bare string, an object) is recorded exactly as sent - the audit row
+        is the only evidence of a refusal that cannot resolve a TargetRef, so it must not be empty
+        just because the request was wrong.
+        """
+        values = _plain(request.input).get("targets")
+        if isinstance(values, list):
+            return [str(value) for value in values if isinstance(value, (str, int, float))]
+        if isinstance(values, (str, int, float)):
+            return [str(values)]
+        return []
+
+    def _audit_refusal(
+        self,
+        conn: psycopg.Connection[Any],
+        *,
+        error: M05Error,
+        request: JobSubmit,
+        requested_by: Mapping[str, str],
+        trace_id: str,
+    ) -> None:
+        """One M25 row per refused submission (M05): actor, raw targets, code, rule, trace.
+
+        A policy refusal also has its `policy_decision` row and its event; this row is what a
+        refusal that cannot have a decision (400 INPUT_INVALID before any TargetRef exists) has
+        instead, so no refusal is invisible in the audit trail.
+        """
+        refusal = error.refusal
+        details: dict[str, Any] = {
+            "code": str(refusal.code),
+            "rule": refusal.rule,
+            "next_action": str(refusal.next_action),
+            "message": refusal.message[:2000],
+        }
+        if refusal.field is not None:
+            details["field"] = refusal.field
+        if refusal.retry_after_seconds is not None:
+            details["retry_after_seconds"] = refusal.retry_after_seconds
+        record_audit(
+            conn,
+            actor=requested_by,
+            action="job.refuse",
+            trace_id=trace_id,
+            campaign_id=str(_plain(request.campaign_id)),
+            capability_id=str(_plain(request.capability)),
+            targets=self._raw_targets(request),
+            details=details,
         )
 
     def _replay_stored(

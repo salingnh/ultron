@@ -38,8 +38,19 @@ def trace_id_of(header: str | None) -> str | None:
 
 
 def current_trace_id(request: Request) -> str:
-    """The request's trace id: the caller's valid one, otherwise a fresh one."""
-    return trace_id_of(request.headers.get(TRACEPARENT_HEADER)) or uuid.uuid4().hex
+    """The request's trace id: the caller's valid one, otherwise a fresh one, fixed per request.
+
+    It is cached on `request.state` because more than one thing can ask for it on the same
+    request: a route that writes an audit row and then raises `ApiError`, the error handler that
+    renders the body, and the `traceparent` header. Two different ids would make the audit trail
+    and the answer disagree about which request they describe.
+    """
+    cached = getattr(request.state, "trace_id", None)
+    if isinstance(cached, str):
+        return cached
+    trace = trace_id_of(request.headers.get(TRACEPARENT_HEADER)) or uuid.uuid4().hex
+    request.state.trace_id = trace
+    return trace
 
 
 def traceparent(trace_id: str) -> str:
