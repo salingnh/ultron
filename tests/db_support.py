@@ -8,9 +8,9 @@ asset the campaign already knows (P3a).
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
-import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -30,6 +30,10 @@ requires_postgres = pytest.mark.skipif(
     reason=f"set {DSN_ENV} to a PostgreSQL 16 server to run the database tests",
 )
 OPERATOR = {"kind": "operator", "id": "op-g11c"}
+# `policy_version` must match `^roe-[1-9][0-9]*$` and is unique per database. A random value in
+# 10..99 collided once a test seeded a second campaign (~1 % per pair, and one suite seeds ten);
+# a per-process counter keeps every seeded campaign in a fresh database distinct.
+_POLICY_VERSIONS = itertools.count(10)
 
 
 @contextmanager
@@ -91,7 +95,8 @@ def seed_campaign(
     policy: dict[str, Any] | None = None,
 ) -> SeededCampaign:
     """Insert a v2 campaign with one domain seed, one IP seed and one known asset (P3a)."""
-    campaign_id, scope_id, policy_version = _uuid7(), _uuid7(), f"roe-{uuid.uuid4().int % 90 + 10}"
+    campaign_id, scope_id = _uuid7(), _uuid7()
+    policy_version = f"roe-{next(_POLICY_VERSIONS)}"
     document = policy if policy is not None else policy_document()
     seed_domain, seed_ip = "internal.example", "10.114.53.53"
     known_asset = f"dns:www.{campaign_id[-12:]}.internal.example"
