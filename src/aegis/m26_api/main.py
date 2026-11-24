@@ -20,7 +20,7 @@ import os
 
 from fastapi import FastAPI
 
-from aegis.m26_api import capabilities, events, flow, jobs
+from aegis.m26_api import assets, capabilities, events, flow, jobs
 from aegis.m26_api.app import CORS_ORIGINS_ENV, cors_origins_from_env, create_app
 from aegis.m26_api.campaigns import register
 from aegis.m26_api.operator import (
@@ -44,6 +44,7 @@ def build_registry() -> RouterRegistry:
     flow.register(registry)
     events.register(registry)
     capabilities.register(registry)
+    assets.register(registry)
     return registry
 
 
