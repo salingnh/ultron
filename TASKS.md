@@ -1,6 +1,6 @@
 # TASKS
 
-G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trường dev + CI (#14) và lab mục tiêu (#NN). Cổng G0 đạt theo [PROGRESS](PROGRESS.md) mục Hồ sơ cổng G0: OD-2 chuyển sang G1 với fake model; Product Team ký cổng đã ghi nhận (leader ký dưới ủy quyền của chủ, 2026-11-24). Thứ tự và nghiệm thu theo [quyết định kiến trúc](docs/s1/00-thanh-phan-va-quyet-dinh.md). Đây là backlog duy nhất. Chỉ làm giai đoạn đang mở trừ phần chủ sản phẩm trực tiếp yêu cầu. Trạng thái kiểm chứng ở PROGRESS, cổng giao hàng ở kế hoạch triển khai.
+G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trường dev + CI (#14) và lab mục tiêu (#27). Cổng G0 đạt theo [PROGRESS](PROGRESS.md) mục Hồ sơ cổng G0: OD-2 chuyển sang G1 với fake model; Product Team ký cổng đã ghi nhận (leader ký dưới ủy quyền của chủ, 2026-11-24). Thứ tự và nghiệm thu theo [quyết định kiến trúc](docs/s1/00-thanh-phan-va-quyet-dinh.md). Đây là backlog duy nhất. Chỉ làm giai đoạn đang mở trừ phần chủ sản phẩm trực tiếp yêu cầu. Trạng thái kiểm chứng ở PROGRESS, cổng giao hàng ở kế hoạch triển khai.
 
 ## G0 — khóa contract và spike
 
@@ -19,7 +19,7 @@ G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trườ
 - [x] G0.3b Spike graph upsert đồng thời và replay/rebuild (kết luận ở #19, migration 0013 ở #22).
 - [x] G0.3c Khóa quy tắc chuẩn hóa/identity có golden fixtures (#18).
 - [x] G0.4a/b Dựng môi trường dev PostgreSQL/Neo4j/S3/Temporal/Podman trên máy đã có, bootstrap bằng một lệnh; nối schema/conformance vào CI (#14).
-- [x] G0.4c Lab mục tiêu được phép và fixture schema/parser/adapter trên lab: lab DNS nội bộ + passive stub, Subfinder/DNSx chạy tái lập được và so fixture (#NN, `deploy/lab/`).
+- [x] G0.4c Lab mục tiêu được phép và fixture schema/parser/adapter trên lab: lab DNS nội bộ + passive stub, Subfinder/DNSx chạy tái lập được và so fixture (#27, `deploy/lab/`).
 - [x] G0.4d Đo capacity/sizing theo mục tiêu NFR, ước lượng backlog từ workload đã khóa (#21).
 
 ## G1 — vòng nền tảng

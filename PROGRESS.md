@@ -4,8 +4,8 @@
 
 | Hạng mục | Trạng thái |
 | --- | --- |
-| Giai đoạn | G0 đạt: contract khóa ở mức schema/DDL/test (#26), kết luận spike (#13/#9/#7), môi trường dev + CI (#14), lab mục tiêu (#NN). OD-2 chuyển sang G1 với fake model; Product Team ký cổng đã ghi nhận (leader ký dưới ủy quyền của chủ, 2026-11-24). Chưa có dịch vụ sản phẩm chạy trọn vòng |
-| Git | `main` @ `9184d46`: đã gộp contract S1.1–S1.7 + follow-up (#26), kết luận spike G0.1/G0.2/G0.3a (#13/#9/#7), G0.3b (#19/#22), G0.3c (#18), G0.4d (#21), môi trường dev + CI (#14); lab G0.4c ở PR #NN (`deploy/lab/`). Mã spike nằm trên nhánh `spike/*` (chỉ để tham chiếu, không merge) |
+| Giai đoạn | G0 đạt: contract khóa ở mức schema/DDL/test (#26), kết luận spike (#13/#9/#7), môi trường dev + CI (#14), lab mục tiêu (#27). OD-2 chuyển sang G1 với fake model; Product Team ký cổng đã ghi nhận (leader ký dưới ủy quyền của chủ, 2026-11-24). Chưa có dịch vụ sản phẩm chạy trọn vòng |
+| Git | `main` @ `9184d46`: đã gộp contract S1.1–S1.7 + follow-up (#26), kết luận spike G0.1/G0.2/G0.3a (#13/#9/#7), G0.3b (#19/#22), G0.3c (#18), G0.4d (#21), môi trường dev + CI (#14); lab G0.4c ở PR #27 (`deploy/lab/`). Mã spike nằm trên nhánh `spike/*` (chỉ để tham chiếu, không merge) |
 | Kiến trúc | Theo D29: AI agent/MCP/sandbox/metadata/graph/S3/UI; model cấu hình trực tiếp, job dùng priority/dependency |
 | Tài liệu | Một bộ ở đường dẫn chính. Ngày 2026-11-17 hoàn tất ma trận 367 mục đối chiếu với nguồn trước hợp nhất; mỗi mục có đích hiện hành hoặc căn cứ thay thế, phần còn hiệu lực bị rơi đã được bổ sung |
 | Nội dung đã giữ | Use case, context/ledger/stop conditions, adapter/chain, ontology/identity/provenance, ingestion gates, correlation/finding và kiểm thử/vận hành |
@@ -14,7 +14,7 @@
 | F1–F3 | Đã sửa receipt dùng một schema, một đường gửi MCP và ghim manifest/adapter trong task/job; migration 0003 cho pin bất biến, 0006 sửa lại định nghĩa `job_fingerprint` (X-1) |
 | Rà contract | Review độc lập S1.5c PASS ở mức contract sau hai vòng; các blocker R-1, R-2a/b, R-3, R-4 đóng ở 0014. OI-4/OD-5 còn chờ chủ sản phẩm |
 | Bảo toàn nội dung | Đối chiếu 35 nguồn text tại HEAD trước viết lại và 26 tài liệu hiện hành; 28 quyết định D, 12 lựa chọn OSS, các bảng chốt 12/13-11, FR/NFR, SDK/ingestion, API/event/query và logic chi tiết. Sáu cặp Word/8 hình đã đối chiếu ở lượt trước. Không còn mục trong ma trận thiếu đích hoặc bị loại không có căn cứ |
-| Triển khai | Chưa có dịch vụ sản phẩm: không chạy scanner thật, LLM thật, E2E hay deploy. Môi trường dev + CI (#14) và lab G0.4c (#NN, `deploy/lab/`) đã có trên `main`; scanner chỉ chạy trong lab nội bộ đã được phép |
+| Triển khai | Chưa có dịch vụ sản phẩm: không chạy scanner thật, LLM thật, E2E hay deploy. Môi trường dev + CI (#14) và lab G0.4c (#27, `deploy/lab/`) đã có trên `main`; scanner chỉ chạy trong lab nội bộ đã được phép |
 
 ## Còn mở
 
@@ -45,7 +45,7 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 - **G0.3c** (#18 @ `6158696`): `aegis-norm/1` là trục version riêng; 54 vector chấp nhận/37 bị từ chối/7 nhóm thu gọn, 23 test; replay giữ nguyên canonical key.
 - **G0.4a/b** (#14 @ `9f25513`): `make dev-up` từ volume rỗng → 4 dịch vụ healthy, migration chạy một lần mỗi file và từ chối sửa migration đã áp; `make dev-down` xoá đúng project của mình. CI đọc danh sách cổng từ `contracts/README.md` nên không có bản sao thứ hai: chạy thử trên nhánh `integ` @ `8ea163d` đạt (13 bộ python, 16 file chuỗi sạch, 18 file chuỗi nâng cấp); CI của chính PR (dựa trên `main`, chưa có S1) chạy 3/7/8, run `45251769962` xanh 1m27s, run `45248059340` với fixture cố ý hỏng thì đỏ.
 - **G0.4d** (#21 @ `df9448e`): đơn giá đo được metadata 3.526 B/asset, graph 447 B/asset, WAL 1.030 B/event. Đỉnh NFR-03 833 event/s so với trần projector 168–175 event/s (thiếu 4,9 lần); backlog G1 ước 14 card ≈ 63 person-day, W1→W5.
-- **G0.4c** (PR #NN, `deploy/lab/`): CoreDNS 1.15.0 làm resolver có thẩm quyền cho `lab.aegis.test` và một passive-source stub nội bộ, trên mạng `aegis-lab-lab` internal, không publish cổng. `make lab-up` healthy: DNS trả `www.lab.aegis.test NOERROR A 203.0.113.10; AAAA 2001:db8::10`, stub healthy, `internal=true`, không port. `make lab-check` chạy hai lần liền PASS: inventory 10 record/6 probe/3 passive name/4 pin; Subfinder v2.17.0 trả 3 host qua stub; DNSx v1.2.2 trả 6 probe, gồm NXDOMAIN (`ghost`) và REFUSED (`example.com`). Container chạy uid 1000, `CapEff=CapBnd=0`, `NoNewPrivs=1`, chỉ route `10.114.53.0/24`; TCP tới `1.1.1.1:443`/`9.9.9.9:53` trả `ENETUNREACH`. `make lab-down` chỉ xoá project `aegis-lab`.
+- **G0.4c** (PR #27, `deploy/lab/`): CoreDNS 1.15.0 làm resolver có thẩm quyền cho `lab.aegis.test` và một passive-source stub nội bộ, trên mạng `aegis-lab-lab` internal, không publish cổng. `make lab-up` healthy: DNS trả `www.lab.aegis.test NOERROR A 203.0.113.10; AAAA 2001:db8::10`, stub healthy, `internal=true`, không port. `make lab-check` chạy hai lần liền PASS: inventory 10 record/6 probe/3 passive name/4 pin; Subfinder v2.17.0 trả 3 host qua stub; DNSx v1.2.2 trả 6 probe, gồm NXDOMAIN (`ghost`) và REFUSED (`example.com`). Container chạy uid 1000, `CapEff=CapBnd=0`, `NoNewPrivs=1`, chỉ route `10.114.53.0/24`; TCP tới `1.1.1.1:443`/`9.9.9.9:53` trả `ENETUNREACH`. `make lab-down` chỉ xoá project `aegis-lab`.
 
 ### Chưa kiểm runtime
 
@@ -54,7 +54,7 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 - Sandbox/egress mới đo trên container của spike với listener giả; chưa có M06/broker sản phẩm, chưa thử IPv6 egress thật, seccomp tùy chỉnh hay host hết cgroup delegation.
 - HMAC của ApprovedTask, restart-reconcile của M06: chưa có implementation để kiểm.
 - LLM thật (OD-2), soak 24–48 h và 7 ngày: chưa chạy. Lab G0.4c đã chạy Subfinder/DNSx thật trong container nhưng không phải runner sản phẩm (G1.3a).
-- CI chạy trên `main` qua #14 và trên PR G0.4c (#NN); lần chạy tay của cổng contract trước đó ghi ở mục trên.
+- CI chạy trên `main` qua #14 và trên PR G0.4c (#27); lần chạy tay của cổng contract trước đó ghi ở mục trên.
 
 ## Hồ sơ cổng G0
 
@@ -67,7 +67,7 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 | Bảng pin version/digest/license | đạt | #9 trên `main`: 4 tool + digest + SBOM SPDX; văn bản ở [04-module-ket-noi-oss.md §Chọn provider](docs/living/dac-ta-ky-thuat/04-module-ket-noi-oss.md#chọn-provider-và-quản-lý-phiên-bản) |
 | Registry (conformance Subfinder+DNSx) | đạt | S1.5b đã gộp: `contracts/tests/test_conformance.py` + fixture DNSx |
 | Môi trường dev + CI | đạt | #14 trên `main`: `make dev-up/down`, CI đọc cổng từ `contracts/README.md` |
-| Lab và fixture | đạt | `deploy/lab/` (#NN): lab DNS + passive stub, `make lab-up/down`, inventory + authorization item 51 2026-11-24; fixture schema/parser/conformance đã gộp ở S1.5b |
+| Lab và fixture | đạt | `deploy/lab/` (#27): lab DNS + passive stub, `make lab-up/down`, inventory + authorization item 51 2026-11-24; fixture schema/parser/conformance đã gộp ở S1.5b |
 | Backlog G1 + sizing lưu trữ lâu dài | đạt | TASKS §G1 (G1.1–G1.5 + 8 điều kiện review); [02-nen-tang.md §Định cỡ](docs/living/dac-ta-ky-thuat/02-nen-tang.md#định-cỡ-dung-lượng-và-tải-g04d) (G0.4d, #21 đã gộp) |
 | Contract được review | đạt ở mức contract | Review độc lập S1.5c (re-review 2 @ `15c02b9`): PASS mức contract; blocker R-1/R-2a/R-2b/R-3/R-4 đóng ở 0014. OI-4 chờ OD-5 |
 | Kiểm hạn chế sandbox | đạt | G0.2 (#9) 63 test — chưa phải runner sản phẩm (G1.3a) |
