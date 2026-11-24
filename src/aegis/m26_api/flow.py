@@ -34,7 +34,7 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from aegis import validation
 from aegis.m01_campaign.campaigns import timestamp
-from aegis.m26_api.db import connection as db_connection
+from aegis.m26_api.db import ConnectionDep
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
 from aegis.m26_api.operator import Principal, require_principal
 from aegis.m26_api.registry import RouterRegistry
@@ -331,7 +331,7 @@ def get_campaign_flow(
     response: Response,
     campaign_id: str,
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
 ) -> dict[str, Any]:
     """Nodes and edges of one campaign (campaign, session, decision, job) plus a change token."""
     _trace(request, response)

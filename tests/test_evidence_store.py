@@ -125,7 +125,10 @@ def test_put_is_content_addressed_and_idempotent(
     path = _output(tmp_path)
     first = store.put(CAMPAIGN, JOB, path, "application/x-ndjson", Classification.INTERNAL)
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
-    assert first.evidence_id == sha
+    # The object *key* is content addressed; the object *id* is scoped to its campaign and job, so
+    # two jobs with identical bytes are two objects (see the regression test below).
+    assert first.sha256 == sha
+    assert first.evidence_id != sha
     assert first.uri == f"s3://evidence/{CAMPAIGN}/{JOB}/{sha}"
     assert first.classification == Classification.INTERNAL
     assert f"/aegis/{CAMPAIGN}/{JOB}/{sha}" in fake_s3.objects
@@ -133,6 +136,31 @@ def test_put_is_content_addressed_and_idempotent(
     second = store.put(CAMPAIGN, JOB, path, "application/x-ndjson", Classification.INTERNAL)
     assert second == first
     assert [request["method"] for request in fake_s3.requests].count("PUT") == 1
+
+
+def test_two_jobs_with_identical_bytes_are_two_objects(
+    store: S3EvidenceStore, fake_s3: FakeS3, tmp_path: Path
+) -> None:
+    """Regression (G1.5c): keying the store by SHA-256 alone made the second job claim the first
+    job's object - no upload, no `evidence` row for the second job, and M27 quarantined every
+    observation it referenced (G3 `evidence_reference_not_stored`)."""
+    content = b'{"host":"www.lab.aegis.test"}\n'
+    first = store.put(
+        CAMPAIGN, JOB, _output(tmp_path, content=content), "text/plain", Classification.PUBLIC
+    )
+    second = store.put(
+        CAMPAIGN,
+        "01a20c00-0000-7000-8000-000000000002",
+        _output(tmp_path, content=content),
+        "text/plain",
+        Classification.PUBLIC,
+    )
+    assert first.sha256 == second.sha256
+    assert first.evidence_id != second.evidence_id
+    assert first.uri != second.uri
+    assert store.verify(first.evidence_id) is True
+    assert store.verify(second.evidence_id) is True
+    assert [request["method"] for request in fake_s3.requests].count("PUT") == 2
 
 
 def test_put_sends_the_media_type(store: S3EvidenceStore, fake_s3: FakeS3, tmp_path: Path) -> None:
@@ -154,7 +182,7 @@ def test_verify_detects_tampered_bytes(
     store: S3EvidenceStore, fake_s3: FakeS3, tmp_path: Path
 ) -> None:
     stored = store.put(CAMPAIGN, JOB, _output(tmp_path), "text/plain", Classification.PUBLIC)
-    key = f"/aegis/{CAMPAIGN}/{JOB}/{stored.evidence_id}"
+    key = f"/aegis/{CAMPAIGN}/{JOB}/{stored.sha256}"
     fake_s3.objects[key] = b"tampered"
     assert store.verify(stored.evidence_id) is False
 

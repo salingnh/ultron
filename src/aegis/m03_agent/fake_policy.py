@@ -67,6 +67,13 @@ RESOLVE_RATIONALE = (
     "Resolve the domain names the enumeration job discovered, so the campaign learns their "
     "addresses before the next step"
 )
+#: Provider parameters the pinned argv templates render (`-t`, `-rl`). The contract makes both
+#: optional ("absent = the provider's default"), but the template can only render a value, so the
+#: policy states them: a job whose input omits them is refused by M06 before a container exists
+#: (G1.5c demo evidence; see the report's out-of-scope proposals). 4 is inside Subfinder's and
+#: DNSx's pinned `budget.maxConcurrency` (4 and 8).
+LAB_CONCURRENCY = 4
+LAB_RATE_LIMIT = 5.0
 #: Characters per token approximation used for the fake usage numbers (no provider is called).
 CHARS_PER_TOKEN = 4
 OUTPUT_TOKENS = 96
@@ -78,6 +85,16 @@ class ContextObserver(Protocol):
     """A model stand-in that needs the session's bundle: the same data the prompt is built from."""
 
     def observe_context(self, bundle: ContextBundle) -> None: ...
+
+
+def _rate_limit(bundle: ContextBundle) -> float:
+    """The campaign's own request cap, so the proposed `-rl` can never exceed it (M05 checks)."""
+    summary = bundle.policy_summary or {}
+    limits = summary.get("rate_limits") or {}
+    value = limits.get("requests_per_second_per_host") if isinstance(limits, dict) else None
+    if value is None:
+        return LAB_RATE_LIMIT
+    return max(0.001, min(float(value), LAB_RATE_LIMIT))
 
 
 def job_lines(bundle: ContextBundle) -> list[tuple[str, str, str]]:
@@ -163,7 +180,11 @@ class ScriptedLabPolicy:
                 ENUMERATE,
                 ["subdomain-enum"],
                 {
-                    "input": {"targets": seeds[:100]},
+                    "input": {
+                        "targets": seeds[:100],
+                        "concurrency": LAB_CONCURRENCY,
+                        "rate_limit": _rate_limit(bundle),
+                    },
                     "rationale": ENUMERATE_RATIONALE,
                     "expected_signal": "new subdomains of the seed domains",
                     "priority": 80,
@@ -182,7 +203,7 @@ class ScriptedLabPolicy:
                 RESOLVE,
                 ["dns-resolve"],
                 {
-                    "input": {"targets": discovered[:100]},
+                    "input": {"targets": discovered[:100], "concurrency": LAB_CONCURRENCY},
                     "rationale": RESOLVE_RATIONALE,
                     "expected_signal": "A/AAAA/CNAME records for the enumerated names",
                     "depends_on": [enumerated[0][1]],

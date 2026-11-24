@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import http.client
 import os
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -219,6 +220,21 @@ class S3EvidenceStore(EvidenceStore):
     def from_env(cls, env: Mapping[str, str] | None = None) -> S3EvidenceStore:
         return cls(S3EvidenceClient(S3Config.from_env(env)))
 
+    @staticmethod
+    def object_id(campaign_id: str, job_id: str, sha256: str) -> str:
+        """The stable id of one *object* - content addressed, but scoped to its campaign and job.
+
+        Two jobs that produce byte-identical output (two lab runs of the same tool do) are two
+        objects with two keys and two rows in `evidence`; keying the store by the SHA-256 alone
+        made the second job adopt the first job's key, upload nothing, and hand M27 a reference
+        that resolves to neither job (G3 `evidence_reference_not_stored`). A UUIDv5 of the object
+        key is deterministic within a process and across restarts, and is never mistaken for the
+        content hash.
+        """
+        return str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"aegis.io/evidence/{campaign_id}/{job_id}/{sha256}")
+        )
+
     def put(
         self,
         campaign_id: str,
@@ -229,7 +245,8 @@ class S3EvidenceStore(EvidenceStore):
     ) -> EvidenceObject:
         content = path.read_bytes()
         sha256 = hashlib.sha256(content).hexdigest()
-        existing = self._objects.get(sha256)
+        evidence_id = self.object_id(campaign_id, job_id, sha256)
+        existing = self._objects.get(evidence_id)
         if existing is not None:
             return existing
         key = self.key(campaign_id, job_id, sha256)
@@ -241,7 +258,7 @@ class S3EvidenceStore(EvidenceStore):
                 f"upload of {path.name} ({sha256}) failed: {error}",
             ) from error
         evidence = EvidenceObject(
-            evidence_id=sha256,
+            evidence_id=evidence_id,
             campaign_id=campaign_id,
             job_id=job_id,
             sha256=sha256,
@@ -249,12 +266,12 @@ class S3EvidenceStore(EvidenceStore):
             media_type=media_type,
             classification=classification,  # type: ignore[arg-type]
         )
-        self._objects[sha256] = evidence
+        self._objects[evidence_id] = evidence
         return evidence
 
     def adopt(self, evidence: EvidenceObject) -> None:
         """Register an evidence row read from the database so `verify()` can check it again."""
-        self._objects[evidence.sha256] = evidence
+        self._objects[evidence.evidence_id] = evidence
 
     def verify(self, evidence_id: str) -> bool:
         """Read the object back and compare its SHA-256 with the id (content addressed)."""

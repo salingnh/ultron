@@ -117,6 +117,10 @@ class DispatchPlan:
     paused: bool = False
     #: Jobs moved QUEUED -> VALIDATING in this tick, in priority order.
     claimed: tuple[str, ...] = ()
+    #: Every non-terminal job of the campaign after this tick (QUEUED or in flight). The workflow
+    #: waits on these instead of remembering signals: a signal that arrives while the campaign is
+    #: between ticks would otherwise leave the loop waiting for an event that already happened.
+    pending: tuple[str, ...] = ()
     #: Jobs left QUEUED with a committed `wait_reason`.
     waiting: tuple[BlockedJob, ...] = ()
     queued: int = 0

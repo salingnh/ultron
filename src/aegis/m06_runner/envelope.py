@@ -166,6 +166,19 @@ def error_object(
     return payload
 
 
+def _stamped(item: Mapping[str, Any], finished_at: str) -> dict[str, Any]:
+    """One result record with `observed_at` filled in by the collector (parsers never read time).
+
+    `result-envelope.v2` requires `observed_at` on every observation and relationship, and a parser
+    is a pure function of its output directory: the adapters omit it on purpose and the collector
+    stamps the collection time (interfaces §1: "collector gán observed_at theo thời điểm thu"). A
+    value the parser did set is kept - a tool that reports its own observation time knows better.
+    """
+    record = dict(item)
+    record.setdefault("observed_at", finished_at)
+    return record
+
+
 def build_envelope(
     *,
     task: ApprovedTask,
@@ -180,10 +193,27 @@ def build_envelope(
     exit_code: int | None = None,
     errors: Sequence[Mapping[str, Any]] = (),
 ) -> ResultEnvelope:
-    """Assemble and validate the envelope of one finished job."""
-    coverage = results.get("coverage")
-    if not isinstance(coverage, Mapping):
-        raise EnvelopeError("OUTPUT_INVALID", "parser results have no coverage object")
+    """Assemble and validate the envelope of one finished job.
+
+    The parser's own result carries `coverage_subjects` - the asset keys this run actually checked,
+    the shape `contracts/tests/conformance/harness.py` hands a parser and the one every adapter
+    produces. The envelope's `coverage` is `{subjects, complete}`: `subjects` is that list, sorted
+    and de-duplicated, and `complete` is M06's verdict on the run (the caller passes it through
+    `results["coverage"]["complete"]` when a collection was partial).
+    """
+    subjects = results.get("coverage_subjects")
+    if subjects is None:
+        declared = results.get("coverage")
+        subjects = declared.get("subjects") if isinstance(declared, Mapping) else None
+    if not isinstance(subjects, Sequence) or isinstance(subjects, (str, bytes)):
+        raise EnvelopeError(
+            "OUTPUT_INVALID", "parser results have no coverage_subjects list (interfaces §1)"
+        )
+    declared_complete = results.get("coverage")
+    complete = True
+    if isinstance(declared_complete, Mapping):
+        complete = bool(declared_complete.get("complete", True))
+    coverage = {"subjects": sorted({str(subject) for subject in subjects}), "complete": complete}
     if manifest.spec.runtime.outputPath is None:  # pragma: no cover - schema default is "/out"
         raise EnvelopeError("DEPENDENCY_MISSING", "pinned manifest declares no outputPath")
     payload: dict[str, Any] = {
@@ -204,10 +234,14 @@ def build_envelope(
         "status": status,
         "coverage": dict(coverage),
         "results": {
-            "assets": list(results.get("assets", [])),
-            "observations": list(results.get("observations", [])),
-            "relationships": list(results.get("relationships", [])),
-            "findings": list(results.get("findings", [])),
+            "assets": [dict(item) for item in results.get("assets", [])],
+            "observations": [
+                _stamped(item, finished_at) for item in results.get("observations", [])
+            ],
+            "relationships": [
+                _stamped(item, finished_at) for item in results.get("relationships", [])
+            ],
+            "findings": [dict(item) for item in results.get("findings", [])],
         },
         "evidence": [
             {

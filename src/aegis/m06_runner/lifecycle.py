@@ -22,8 +22,10 @@ was already asked for, it terminalizes it as CANCELLED.
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
@@ -154,12 +156,76 @@ class JobLifecycle:
                     Jsonb([dict(reference) for reference in evidence_refs]),
                 ),
             ).fetchone()
-        if row is None:
-            raise LifecycleError("record_job_callback returned no verdict")
-        verdict = str(row[0])
-        if verdict not in CALLBACK_RESULTS:
-            raise LifecycleError(f"unexpected record_job_callback verdict {verdict!r}")
+            if row is None:
+                raise LifecycleError("record_job_callback returned no verdict")
+            verdict = str(row[0])
+            if verdict not in CALLBACK_RESULTS:
+                raise LifecycleError(f"unexpected record_job_callback verdict {verdict!r}")
+            if verdict == "terminalized":
+                self._publish_completed(
+                    conn,
+                    claim,
+                    status,
+                    envelope_event_id=envelope_event_id,
+                    error=error,
+                    evidence_refs=evidence_refs,
+                )
         return verdict
+
+    @staticmethod
+    def _publish_completed(
+        conn: psycopg.Connection[Any],
+        claim: JobClaim,
+        status: str,
+        *,
+        envelope_event_id: str | None,
+        error: Mapping[str, Any] | None,
+        evidence_refs: Iterable[Mapping[str, Any]],
+    ) -> None:
+        """Write `job.completed.v2` in the same transaction as the terminal row.
+
+        M02's dispatcher turns this event into the workflow's `job_completed` signal
+        (`m02_orchestrator/outbox.py`), and the contract names M06 the producer of the event
+        (`contracts/events/job.completed.v2.schema.json`). Nothing wrote it before the G1.5c demo
+        joined the modules, so the signal never arrived; the workflow now also re-reads the
+        committed rows every tick, but the event is what the contract and the graph history expect.
+        Only the accepted terminal result publishes: a `duplicate` or `quarantined` callback is not
+        a new completion, and `ON CONFLICT` keeps a replay idempotent.
+        """
+        row = conn.execute(
+            "SELECT campaign_id FROM scan_job WHERE job_id = %s", (claim.job_id,)
+        ).fetchone()
+        if row is None:  # pragma: no cover - the callback just updated this row
+            raise LifecycleError(f"job {claim.job_id} vanished after its terminal callback")
+        payload: dict[str, Any] = {
+            "job_id": claim.job_id,
+            "campaign_id": str(row[0]),
+            "status": status,
+            "attempt": claim.attempt,
+            "generation": claim.generation,
+            "evidence_refs": [
+                str(reference.get("evidence_id"))
+                for reference in evidence_refs
+                if reference.get("evidence_id") is not None
+            ],
+            "finished_at": _now(),
+        }
+        if envelope_event_id is not None:
+            payload["envelope_event_id"] = envelope_event_id
+        if error is not None and status == "FAILED":
+            payload["error"] = dict(error)
+        conn.execute(
+            "INSERT INTO outbox_event (event_id, type, producer, dedup_key, campaign_id, payload,"
+            " trace) VALUES (%s, 'job.completed.v2', 'M06', %s, %s, %s, %s)"
+            " ON CONFLICT (type, dedup_key) DO NOTHING",
+            (
+                new_id(),
+                f"{claim.job_id}:{claim.generation}:{claim.attempt}",
+                str(row[0]),
+                Jsonb(payload),
+                Jsonb({"job_id": claim.job_id, "attempt": claim.attempt}),
+            ),
+        )
 
     # -- reads ------------------------------------------------------------------------------
 
@@ -183,6 +249,21 @@ class JobLifecycle:
         if row is None:
             raise LifecycleError(f"job {job_id} does not exist")
         return str(row[0])
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def new_id() -> str:
+    """A UUIDv7: the contract's `Id` shape, minted here so M06 needs no other module for one."""
+    millis = int(time.time() * 1000) & ((1 << 48) - 1)
+    random_bits = int.from_bytes(os.urandom(10), "big")
+    rand_a = random_bits >> 68
+    rand_b = random_bits & ((1 << 62) - 1)
+    value = (millis << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
+    digits = f"{value:032x}"
+    return f"{digits[0:8]}-{digits[8:12]}-{digits[12:16]}-{digits[16:20]}-{digits[20:32]}"
 
 
 def _record_status(

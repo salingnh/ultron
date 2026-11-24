@@ -174,6 +174,22 @@ def _model_budget(budget: Mapping[str, Any], loaded: CampaignContext) -> Budget:
     )
 
 
+def _bundle_budget(budget: Mapping[str, Any]) -> dict[str, Any]:
+    """The bundle's budget view: a ceiling the campaign did not set is *absent*, never null.
+
+    `context-bundle.v2` has no null for these two fields, and a policy may set no token or cost
+    ceiling at all (`roe-policy.v2` has no required budget). Omission says "no ceiling" exactly,
+    while `null` would be a contract violation and `0` would claim an exhausted budget. The model
+    client still sees `None` as unbounded (`context.UNBOUNDED`), so nothing is lost on that side.
+    """
+    view: dict[str, Any] = {"max_steps": budget["max_steps"]}
+    if budget.get("tokens_remaining") is not None:
+        view["llm_tokens_remaining"] = int(budget["tokens_remaining"])
+    if budget.get("cost_remaining") is not None:
+        view["llm_cost_usd_remaining"] = float(budget["cost_remaining"])
+    return view
+
+
 def _seed_observations(targets: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """The campaign's seed targets as bundle observations (the contract's place for raw targets).
 
@@ -352,11 +368,7 @@ class SessionNodes:
                 "capabilities": [
                     _capability_summary(item).model_dump(mode="json") for item in capabilities
                 ],
-                "budget": {
-                    "max_steps": budget["max_steps"],
-                    "llm_tokens_remaining": budget["tokens_remaining"],
-                    "llm_cost_usd_remaining": budget["cost_remaining"],
-                },
+                "budget": _bundle_budget(budget),
             }
         )
         validation.validate_model(CONTEXT_SCHEMA, bundle)

@@ -346,9 +346,23 @@ def test_every_mounted_operation_requires_the_operator_token(
         # G1.4b: the two locked graph reads (asset graph and its history).
         "getAssetGraph",
         "getAssetHistory",
+        # G1.5c: M27's ingestion endpoint is mounted by the API (service token, not the operator's).
+        "ingestResult",
     }
     for operation in mounted:
         operation_id = operation["operationId"]
+        if operation_id == "ingestResult":
+            # The one mounted operation that is not the operator's: M27's ingestion endpoint takes
+            # the internal service token (contracts/api/openapi.v2.yaml, `serviceToken`), and both
+            # documents must say so. The contract does not publish a 401 for it yet (it lists
+            # 202/400/409), while the route fails closed with 401 - reported as a contract gap
+            # outside this card, so only the scheme is compared here; `test_ingestion_api` covers
+            # the 401 behaviour itself.
+            assert operation["security"] == [{"serviceToken": []}], operation_id
+            assert 401 in {int(code) for code in operation["responses"]}, operation_id
+            _, contract_operation = contract_operations[operation_id]
+            assert contract_operation.get("security") == [{"serviceToken": []}], operation_id
+            continue
         assert operation["security"] == [{"operatorToken": []}], operation_id
         assert 401 in {int(code) for code in operation["responses"]}, operation_id
         _, contract_operation = contract_operations[operation_id]

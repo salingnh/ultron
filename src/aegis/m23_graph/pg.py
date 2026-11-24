@@ -52,6 +52,7 @@ __all__ = [
     "prefetch_assets",
     "prefetch_evidence",
     "prefetch_findings",
+    "prefetch_incoming_relationships",
     "prefetch_observations",
     "prefetch_relationships",
     "read_batch",
@@ -233,6 +234,44 @@ def prefetch_relationships(
             campaign_id=str(row["campaign_id"]),
         )
         grouped.setdefault(snapshot.from_asset_id, []).append(snapshot)
+    return {key: tuple(value) for key, value in grouped.items()}
+
+
+def prefetch_incoming_relationships(
+    conn: psycopg.Connection[dict[str, Any]], to_asset_ids: Iterable[str]
+) -> dict[str, tuple[RelationshipSnapshot, ...]]:
+    """Every projectable edge whose *end* is one of `to_asset_ids`, grouped per end asset.
+
+    An asset's neighbourhood has to be complete whenever any of its ends is projected: M27 opens
+    `DISCOVERED_FROM` from the source to the discovered asset, and a batch that only names the
+    discovered asset would otherwise never plan that edge.
+    """
+    ids = _uuid_list(to_asset_ids)
+    if not ids:
+        return {}
+    rows = conn.execute(
+        "SELECT relationship_id, type, from_asset_id, to_asset_id, observed_at, valid_from,"
+        "       valid_to, source_job_id, confidence, campaign_id"
+        "  FROM relationship"
+        " WHERE to_asset_id = ANY(%s::uuid[]) AND type = ANY(%s::text[])"
+        " ORDER BY to_asset_id, valid_from, relationship_id",
+        (ids, list(RELATIONSHIP_TYPES)),
+    ).fetchall()
+    grouped: dict[str, list[RelationshipSnapshot]] = {}
+    for row in rows:
+        snapshot = RelationshipSnapshot(
+            relationship_id=str(row["relationship_id"]),
+            type=str(row["type"]),
+            from_asset_id=str(row["from_asset_id"]),
+            to_asset_id=str(row["to_asset_id"]),
+            observed_at=row["observed_at"],
+            valid_from=row["valid_from"],
+            valid_to=row["valid_to"],
+            source_job_id=str(row["source_job_id"]),
+            confidence=float(row["confidence"]),
+            campaign_id=str(row["campaign_id"]),
+        )
+        grouped.setdefault(snapshot.to_asset_id, []).append(snapshot)
     return {key: tuple(value) for key, value in grouped.items()}
 
 

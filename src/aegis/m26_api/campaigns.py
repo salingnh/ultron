@@ -45,7 +45,7 @@ from aegis.m01_campaign import (
     list_campaigns,
 )
 from aegis.m01_campaign.campaigns import timestamp
-from aegis.m26_api.db import connection as db_connection
+from aegis.m26_api.db import ConnectionDep
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
 from aegis.m26_api.idempotency import IdempotencyConflict, lock_key, replay, request_hash, store
 from aegis.m26_api.operator import Principal, require_principal
@@ -221,7 +221,7 @@ def create_campaign_route(
     body: Annotated[dict[str, Any], Body(...)],
     idempotency_key: Annotated[str, IDEMPOTENCY_HEADER],
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
 ) -> dict[str, Any]:
     trace_id = _trace(request, response)
     _contract_body(CAMPAIGN_CREATE, body)
@@ -259,7 +259,7 @@ def list_campaigns_route(
     request: Request,
     response: Response,
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
     status_filter: Annotated[
         campaign_v2_schema.CampaignStatus | None, Query(alias="status")
     ] = None,
@@ -291,7 +291,7 @@ def get_campaign_route(
     response: Response,
     campaign_id: str,
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
 ) -> dict[str, Any]:
     _trace(request, response)
     campaign = get_campaign(db, campaign_id) if _is_id(campaign_id) else None
@@ -313,7 +313,7 @@ def update_campaign_policy_route(
     body: Annotated[dict[str, Any], Body(...)],
     idempotency_key: Annotated[str, IDEMPOTENCY_HEADER],
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
 ) -> dict[str, Any]:
     trace_id = _trace(request, response)
     if not _is_id(campaign_id):
@@ -368,7 +368,7 @@ def pause_campaign_route(
     campaign_id: str,
     body: Annotated[dict[str, Any], Body(...)],
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
 ) -> dict[str, Any]:
     return _action("pause", request, response, campaign_id, body, principal, db)
 
@@ -385,7 +385,7 @@ def resume_campaign_route(
     campaign_id: str,
     body: Annotated[dict[str, Any], Body(...)],
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
 ) -> dict[str, Any]:
     return _action("resume", request, response, campaign_id, body, principal, db)
 
@@ -402,7 +402,7 @@ def cancel_campaign_route(
     campaign_id: str,
     body: Annotated[dict[str, Any], Body(...)],
     principal: Annotated[Principal, Depends(require_principal)],
-    db: Annotated[psycopg.Connection[Any], Depends(db_connection)],
+    db: ConnectionDep,
 ) -> dict[str, Any]:
     return _action("cancel", request, response, campaign_id, body, principal, db)
 

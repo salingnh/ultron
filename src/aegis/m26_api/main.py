@@ -29,6 +29,8 @@ from aegis.m26_api.operator import (
     TokenAuthenticator,
 )
 from aegis.m26_api.registry import RouterRegistry
+from aegis.m27_ingestion.router import register as register_ingestion
+from aegis.m27_ingestion.service import IngestionService
 
 __all__ = ["CORS_ORIGINS_ENV", "PG_DSN_ENV", "build_registry", "create_production_app"]
 
@@ -37,7 +39,7 @@ PG_DSN_ENV = "AEGIS_PG_DSN"
 
 def build_registry() -> RouterRegistry:
     """Every router this service mounts: campaigns (G1.1b), jobs (G1.1c), flow/events/capabilities
-    (G1.5a)."""
+    (G1.5a), assets (G1.4b) and the ingestion endpoint M27 owns (G1.4a/G1.5c)."""
     registry = RouterRegistry()
     register(registry)
     jobs.register(registry)
@@ -45,6 +47,7 @@ def build_registry() -> RouterRegistry:
     events.register(registry)
     capabilities.register(registry)
     assets.register(registry)
+    register_ingestion(registry)
     return registry
 
 
@@ -66,6 +69,10 @@ def create_production_app() -> FastAPI:
     # M05 needs its own configured objects (manifest registry, signing ring); a manifest or key
     # problem aborts start-up instead of surfacing as an "unknown capability" on the first job.
     jobs.install_job_service(app, jobs.build_job_service(dsn))
+    # M27's endpoint is served by this app (contracts/api/openapi.v2.yaml, tag `ingestion`): the
+    # service token is read from AEGIS_SERVICE_TOKEN by the route, and an unconfigured token fails
+    # closed with 401 rather than accepting anonymous submissions.
+    app.state.ingestion = IngestionService.from_dsn(dsn)
     return app
 
 
