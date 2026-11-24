@@ -18,7 +18,7 @@ import os
 
 from fastapi import FastAPI
 
-from aegis.m26_api import jobs
+from aegis.m26_api import events, flow, jobs
 from aegis.m26_api.app import create_app
 from aegis.m26_api.campaigns import register
 from aegis.m26_api.operator import (
@@ -34,10 +34,12 @@ PG_DSN_ENV = "AEGIS_PG_DSN"
 
 
 def build_registry() -> RouterRegistry:
-    """Every router this service mounts. G1.5a (events/flow) adds one line."""
+    """Every router this service mounts: campaigns (G1.1b), jobs (G1.1c), flow/events (G1.5a)."""
     registry = RouterRegistry()
     register(registry)
     jobs.register(registry)
+    flow.register(registry)
+    events.register(registry)
     return registry
 
 

@@ -37,6 +37,8 @@ __all__ = ["build_job_service", "install_job_service", "register", "router"]
 
 router = APIRouter(tags=["jobs"])
 
+ERROR_401 = {"description": "Lỗi chuẩn (error.v2): thiếu hoặc sai operator token"}
+
 IDEMPOTENCY_HEADER = Header(
     alias="Idempotency-Key",
     min_length=8,
@@ -152,7 +154,12 @@ def _trace(request: Request, response: Response) -> str:
     return trace
 
 
-@router.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/jobs",
+    status_code=status.HTTP_202_ACCEPTED,
+    operation_id="submitJob",
+    responses={401: ERROR_401},
+)
 def submit_job(
     request: Request,
     payload: dict[str, Any],
@@ -178,7 +185,7 @@ def submit_job(
     return outcome.job
 
 
-@router.get("/jobs")
+@router.get("/jobs", operation_id="listJobs", responses={401: ERROR_401})
 def list_jobs(
     request: Request,
     response: Response,
@@ -203,7 +210,7 @@ def list_jobs(
     return payload
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", operation_id="getJob", responses={401: ERROR_401})
 def get_job(
     request: Request,
     response: Response,
@@ -219,7 +226,7 @@ def get_job(
         raise _api_error(error) from error
 
 
-@router.post("/jobs/{job_id}/cancel")
+@router.post("/jobs/{job_id}/cancel", operation_id="cancelJob", responses={401: ERROR_401})
 def cancel_job(
     request: Request,
     response: Response,
