@@ -1,0 +1,55 @@
+# Contract checks (G0.4b) on the self-hosted runner of this repository.
+#
+# Jobs run on `ultron-local`: a developer machine with rootless podman, so every service a
+# check needs is started in a container by the script itself (no `services:` block, no
+# Docker socket) and the runner user is not a system account.
+#
+# Hardening - the runner is self-hosted, so untrusted code must never reach it:
+#   * the job only runs on push, workflow_dispatch or a pull request whose head is in this
+#     repository; fork pull requests are skipped at job level (see `if:` below);
+#   * the repository setting "require approval for all outside collaborators" is the outer
+#     gate for fork workflows (repository settings, not this file);
+#   * the runner is registered ephemeral: one job per registration, a fresh work folder per
+#     job, no persisted credentials in the checkout, read-only GITHUB_TOKEN;
+#   * no `pull_request_target`, no expression is interpolated into a `run:` shell line.
+name: contracts
+
+on:
+  push:
+    branches: [main, 'integ/**']
+  pull_request:
+    branches: [main, 'integ/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: contracts (schemas, postgres, neo4j)
+    # Fork pull requests never run here: their code is not trusted on a self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, ultron-local]
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Contract gate (validator, tests, PostgreSQL 16 chains)
+        run: scripts/ci/contracts-gate.sh
+
+      - name: Neo4j Cypher smoke
+        run: scripts/ci/neo4j-smoke.sh
+
+      - name: Remove CI containers
+        if: always()
+        run: scripts/ci/cleanup.sh

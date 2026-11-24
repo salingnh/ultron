@@ -1,0 +1,104 @@
+# Dev environment for AEGIS–Vanguard (G0.4a): PostgreSQL metadata, Neo4j projection,
+# SeaweedFS raw/evidence store, Temporal plus its persistence.
+#
+# Run it through `make dev-up` / `make dev-down` (scripts/dev/*.sh) so the image pins,
+# migrations, graph constraints and the S3 bucket are applied in order.
+# Direct podman-compose runs must export deploy/dev/images.env and root .env first.
+#
+# Project name is fixed by the caller (`podman-compose -p aegis-dev`): it is the only
+# stack this repo owns, and `make dev-down` removes nothing else.
+name: aegis-dev
+
+services:
+  pg:
+    image: ${AEGIS_PG_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
+    container_name: aegis-dev-pg
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${AEGIS_PG_USER:-aegis}
+      POSTGRES_PASSWORD: ${AEGIS_PG_PASSWORD:?set in .env - see .env.example}
+      POSTGRES_DB: ${AEGIS_PG_DB:-aegis}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    ports:
+      - "127.0.0.1:${AEGIS_PG_PORT:-15432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-aegis} -d $${POSTGRES_DB:-aegis}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  neo4j:
+    image: ${AEGIS_NEO4J_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
+    container_name: aegis-dev-neo4j
+    restart: "no"
+    environment:
+      NEO4J_AUTH: neo4j/${AEGIS_NEO4J_PASSWORD:?set in .env - see .env.example}
+      NEO4J_server_memory_heap_initial__size: ${AEGIS_NEO4J_HEAP:-512m}
+      NEO4J_server_memory_heap_max__size: ${AEGIS_NEO4J_HEAP:-512m}
+      NEO4J_server_memory_pagecache_size: ${AEGIS_NEO4J_PAGECACHE:-256m}
+    ports:
+      - "127.0.0.1:${AEGIS_NEO4J_HTTP_PORT:-17474}:7474"
+      - "127.0.0.1:${AEGIS_NEO4J_BOLT_PORT:-17687}:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "/var/lib/neo4j/bin/cypher-shell -u neo4j -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  seaweedfs:
+    image: ${AEGIS_SEAWEEDFS_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
+    container_name: aegis-dev-seaweedfs
+    restart: "no"
+    command: ["mini", "-dir=/data"]
+    environment:
+      # `weed mini` writes master/volume/filer metadata under /data; S3 listens on 8333.
+      WEED_MASTER_VOLUME_SIZE_LIMIT_MB: "512"
+    ports:
+      - "127.0.0.1:${AEGIS_S3_PORT:-18333}:8333"
+      - "127.0.0.1:${AEGIS_SEAWEEDFS_FILER_PORT:-18888}:8888"
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9333/cluster/healthz >/dev/null || curl -fsS http://127.0.0.1:8333/ >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  temporal:
+    image: ${AEGIS_TEMPORAL_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
+    container_name: aegis-dev-temporal
+    restart: "no"
+    depends_on:
+      pg:
+        condition: service_healthy
+    environment:
+      # auto-setup creates the `temporal` and `temporal_visibility` databases in the dev
+      # PostgreSQL instance and then runs the Temporal server with that persistence.
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: pg
+      POSTGRES_USER: ${AEGIS_PG_USER:-aegis}
+      POSTGRES_PWD: ${AEGIS_PG_PASSWORD:?set in .env - see .env.example}
+    ports:
+      - "127.0.0.1:${AEGIS_TEMPORAL_PORT:-17233}:7233"
+    healthcheck:
+      # The image's docker config binds the frontend to the container address, not loopback.
+      test: ["CMD-SHELL", "temporal operator cluster health --address $$(hostname):7233 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+volumes:
+  pg_data:
+  neo4j_data:
+  neo4j_logs:
+  seaweedfs_data:
