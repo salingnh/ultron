@@ -13,16 +13,10 @@ test.beforeAll(() => {
   fs.mkdirSync(LEADER_DIR_LEGACY, { recursive: true });
 });
 
-async function captureScreen(page: Page, filename: string, isRealMode: boolean) {
+async function captureScreen(page: Page, filename: string) {
   // Wait for loading states and animations to settle
   await page.waitForTimeout(700);
   const localPath = path.join(SCREENSHOT_DIR, filename);
-
-  // If in mock mode (e.g. CI runner), do NOT overwrite committed real screenshots
-  if (!isRealMode && fs.existsSync(localPath)) {
-    return;
-  }
-
   await page.screenshot({ path: localPath, fullPage: true });
 
   // Copy to reports directory for review artifacts
@@ -39,7 +33,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
 
   for (const theme of ['light', 'dark'] as const) {
     test(`Capture all screens in ${theme} theme`, async ({ page }) => {
-      const isRealMode = process.env.VITE_USE_MOCK === 'false' || (!process.env.CI && process.env.VITE_USE_MOCK !== 'true');
+      const isRealMode = process.env.VITE_USE_MOCK === 'false';
       const token = process.env.VITE_BEARER_TOKEN || 'token-of-soc-1-0123456789';
 
       // Set theme and token in localStorage before navigating
@@ -64,7 +58,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
         await expect(page.getByText('REAL API')).toBeVisible();
         await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
       }
-      await captureScreen(page, `01-campaign-list-${theme}.png`, isRealMode);
+      await captureScreen(page, `01-campaign-list-${theme}.png`);
 
       // Resolve campaign ID dynamically from UI or fallback to mock ID
       let campaignId = '01934f6a-0000-7000-8000-000000000001';
@@ -83,17 +77,17 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
       await page.goto(`/campaigns/${campaignId}`);
       await expect(page.getByText('Mục tiêu đầu vào (Target Seeds)')).toBeVisible();
       await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
-      await captureScreen(page, `02-campaign-detail-${theme}.png`, isRealMode);
+      await captureScreen(page, `02-campaign-detail-${theme}.png`);
 
       // 3. Job Table View Screen (showing status, priority, and wait/block reasons)
       await page.goto(`/jobs?campaign_id=${campaignId}`);
       await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
-      await captureScreen(page, `03-job-table-${theme}.png`, isRealMode);
+      await captureScreen(page, `03-job-table-${theme}.png`);
 
       // 4. Job React Flow View Screen
       await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
       await page.waitForTimeout(600);
-      await captureScreen(page, `04-job-flow-reactflow-${theme}.png`, isRealMode);
+      await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
 
       // 5. Asset Graph View Screen
       await page.goto('/assets');
@@ -104,7 +98,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
         await expect(page.getByText('Nguồn gốc & Bằng chứng', { exact: true })).toBeVisible();
         await expect(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)')).toBeVisible();
       }
-      await captureScreen(page, `05-asset-graph-provenance-${theme}.png`, isRealMode);
+      await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
 
       // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
       await page.goto('/tools');
@@ -114,14 +108,14 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
       if (isRealMode) {
         await expect(page.getByText('Khớp Manifest (Healthy)').first()).toBeVisible();
       }
-      await captureScreen(page, `06-tool-catalogue-${theme}.png`, isRealMode);
+      await captureScreen(page, `06-tool-catalogue-${theme}.png`);
     });
   }
 
   test('Live update: a status change made via API appears in the UI within 2 s without reload', async ({ page }) => {
-    const isRealMode = process.env.VITE_USE_MOCK === 'false' || (!process.env.CI && process.env.VITE_USE_MOCK !== 'true');
+    const isRealMode = process.env.VITE_USE_MOCK === 'false' && Boolean(process.env.AEGIS_PG_DSN);
     const token = process.env.VITE_BEARER_TOKEN || 'token-of-soc-1-0123456789';
-    const pgDsn = process.env.AEGIS_PG_DSN || 'postgresql://aegis:aegis@127.0.0.1:42443/aegis';
+    const pgDsn = process.env.AEGIS_PG_DSN || '';
 
     if (!isRealMode) {
       test.skip();
@@ -171,7 +165,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     await expect(targetJobRow.locator('.status-chip').filter({ hasText: 'Đang chạy (Running)' })).toBeVisible({ timeout: 5000 });
 
     // Capture before screenshot (showing RUNNING)
-    await captureScreen(page, '07-live-status-before.png', isRealMode);
+    await captureScreen(page, '07-live-status-before.png');
 
     // Trigger terminalise of target job via real M06 backend callback and outbox event
     execFileSync('../.venv/bin/python', ['e2e/terminalise.py', pgDsn, 'terminalise', targetJobId], { stdio: 'pipe' });
@@ -186,6 +180,6 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     expect(latencyMs).toBeLessThanOrEqual(2000);
 
     // Capture after screenshot showing updated state without reload
-    await captureScreen(page, '08-live-status-after.png', isRealMode);
+    await captureScreen(page, '08-live-status-after.png');
   });
 });

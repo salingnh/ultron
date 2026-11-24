@@ -22,13 +22,8 @@ describe('Ultron UI Reusable Components', () => {
     render(<StatusChip status="QUEUED" />);
     expect(screen.getByText('Đang chờ (Queued)')).toBeInTheDocument();
 
-    render(
-      <StatusChip
-        status="QUEUED"
-        waitReason={{ code: 'DEPENDENCY_PENDING', since: '2026-11-20T08:13:10Z' }}
-      />
-    );
-    expect(screen.getByText('Chờ phụ thuộc (DEPENDENCY_PENDING)')).toBeInTheDocument();
+    render(<StatusChip status="RUNNING" />);
+    expect(screen.getByText('Đang chạy (Running)')).toBeInTheDocument();
 
     render(<StatusChip status="FAILED" />);
     expect(screen.getByText('Thất bại (Failed)')).toBeInTheDocument();

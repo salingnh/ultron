@@ -30,10 +30,5 @@ export default defineConfig({
     url: 'http://localhost:3100',
     reuseExistingServer: false,
     timeout: 30000,
-    env: {
-      VITE_USE_MOCK: process.env.VITE_USE_MOCK !== undefined
-        ? process.env.VITE_USE_MOCK
-        : (process.env.CI ? 'true' : 'false'),
-    },
   },
 });

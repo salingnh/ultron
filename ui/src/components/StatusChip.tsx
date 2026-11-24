@@ -1,22 +1,11 @@
 import React from 'react';
-import type { JobStatus, CampaignStatus, ProviderHealth, WaitReason } from '../api/types';
+import type { JobStatus, CampaignStatus, ProviderHealth } from '../api/types';
 
 interface StatusChipProps {
   status: JobStatus | CampaignStatus | ProviderHealth | string;
-  waitReason?: WaitReason | { code: string; detail?: string } | null;
   kind?: 'job' | 'campaign' | 'health';
   size?: 'sm' | 'md';
 }
-
-const waitReasonLabels: Record<string, string> = {
-  DEPENDENCY_PENDING: 'Chờ phụ thuộc (DEPENDENCY_PENDING)',
-  DEPENDENCY_FAILED: 'Phụ thuộc thất bại (DEPENDENCY_FAILED)',
-  CAMPAIGN_PAUSED: 'Chiến dịch tạm dừng (CAMPAIGN_PAUSED)',
-  BUDGET_EXHAUSTED: 'Hết ngân sách (BUDGET_EXHAUSTED)',
-  WINDOW_CLOSED: 'Ngoài khung giờ (WINDOW_CLOSED)',
-  RATE_LIMITED: 'Giới hạn tốc độ (RATE_LIMITED)',
-  CONCURRENCY_LIMIT: 'Giới hạn đồng thời (CONCURRENCY_LIMIT)',
-};
 
 const statusConfig: Record<string, { label: string; variant: 'success' | 'warning' | 'accent' | 'danger' | 'neutral' }> = {
   // JobStatus (job.v2.schema.json: QUEUED, VALIDATING, DISPATCHED, RUNNING, COLLECTING, SUCCEEDED, FAILED, CANCELLED)
@@ -51,30 +40,7 @@ const healthTooltips: Record<string, string> = {
   unavailable: 'unavailable: không đọc lại được manifest hoặc không khớp pin',
 };
 
-export const StatusChip: React.FC<StatusChipProps> = ({ status, waitReason, kind, size = 'sm' }) => {
-  // If job is QUEUED and has a wait_reason, map from contract values without inventing status values
-  if (status === 'QUEUED' && waitReason) {
-    const label = waitReasonLabels[waitReason.code] || `Đang chờ: ${waitReason.code}`;
-    const style: React.CSSProperties = {
-      fontSize: size === 'sm' ? 'var(--text-xs)' : 'var(--text-sm)',
-      padding: size === 'sm' ? '2px 8px' : '4px 10px',
-    };
-    return (
-      <span className="status-chip warning" style={style} title={waitReason.detail || label}>
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            backgroundColor: 'currentColor',
-            display: 'inline-block',
-          }}
-        />
-        {label}
-      </span>
-    );
-  }
-
+export const StatusChip: React.FC<StatusChipProps> = ({ status, kind, size = 'sm' }) => {
   const config = statusConfig[status] || {
     label: status,
     variant: 'neutral' as const,
