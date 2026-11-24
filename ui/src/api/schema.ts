@@ -195,7 +195,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Danh sách job (màn hình job lỗi) */
+        /**
+         * Danh sách job (màn hình job lỗi)
+         * @description Danh sách job của một chiến dịch, khóa ở G1.1c cùng `/jobs`. Thứ tự keyset `(created_at, job_id)` tăng dần; `next_cursor` vắng = hết trang. `status` lọc theo JobStatus. Job trong danh sách mang cùng hình dạng job.v2 như `GET /jobs/{job_id}` (kể cả `wait_reason` và `dispatch_block_reasons`), nên màn hình job lỗi không cần một endpoint thứ hai.
+         */
         get: operations["listJobs"];
         put?: never;
         /** Gửi job (vẫn qua điểm kiểm M05) */

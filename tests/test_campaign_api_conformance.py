@@ -251,6 +251,8 @@ def test_production_entrypoint_builds_the_campaign_app(
     token_file = support.write_token_file(tmp_path / "operators.json")
     monkeypatch.setenv("AEGIS_PG_DSN", dsn)
     monkeypatch.setenv(OPERATOR_TOKENS_FILE, token_file)
+    # G1.1c: the entrypoint also builds M05, which refuses to sign without a configured key ring.
+    monkeypatch.setenv("AEGIS_ALLOW_DEV_SIGNING_KEY", "1")
     module = _import_main()
 
     client = TestClient(module.app)

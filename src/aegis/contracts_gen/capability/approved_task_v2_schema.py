@@ -3,11 +3,60 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, conint, constr
+from pydantic import BaseModel, ConfigDict, Field, RootModel, conint, constr
 
 from ..common import ids_v2_schema
+
+
+class Mode(StrEnum):
+    broker = "broker"
+    none = "none"
+
+
+class TargetBinding(StrEnum):
+    required = "required"
+    none = "none"
+
+
+class BindingEntry(
+    RootModel[
+        constr(
+            pattern=r"^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+        )
+    ]
+):
+    root: constr(
+        pattern=r"^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+    ) = Field(
+        ...,
+        description="Một đích được broker mở: host (tên DNS, IPv4 hoặc IPv6 trong ngoặc vuông) và cổng 1–65535. Tên luôn viết thường, không wildcard.",
+    )
+
+
+class EgressBinding(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    mode: Mode = Field(
+        ...,
+        description="`broker` khi manifest đã pin có networkAccess=egress; `none` khi không có mạng ra (khi đó mọi mảng rỗng).",
+    )
+    target_binding: TargetBinding = Field(
+        ..., description="Giá trị targetBinding của manifest đã pin."
+    )
+    entries: list[BindingEntry] = Field(
+        ...,
+        description="Tập đích được mở, dạng host:port, đã sắp xếp và không trùng. IPv6 viết trong ngoặc vuông.",
+        max_length=256,
+    )
+    target_addresses: list[ids_v2_schema.IPAddress] = Field(
+        ...,
+        description="Địa chỉ IP đã phân giải và ghim của mục tiêu task (targetBinding=required); rỗng khi targetBinding=none. Là bằng chứng M05 đã kiểm đích, không phải nguồn sự thật về tài sản.",
+        max_length=1000,
+    )
 
 
 class ApprovedTask(BaseModel):
@@ -50,6 +99,14 @@ class ApprovedTask(BaseModel):
     parent_job_id: ids_v2_schema.Id | None = None
     trace: ids_v2_schema.TraceContext
     signature: constr(pattern=r"^hmac-sha256:[0-9a-f]{64}$")
+    signature_key_id: constr(pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$") = Field(
+        ...,
+        description="Id của khóa đã ký (OI-7). Có trong nội dung được ký nên không thể thay bằng khóa khác; xoay khóa = thêm khóa mới với id mới, ký task mới bằng khóa đang hoạt động, vẫn verify được task cũ bằng khóa cũ. Không phải bí mật: bí mật khóa nằm ngoài contract và không bao giờ nằm trong task, log hay fixture.",
+    )
+    egress_binding: EgressBinding = Field(
+        ...,
+        description="E-1/OI-5: tập đích mạng broker được phép mở cho task này, do M05 tính và ghim, và thuộc nội dung được ký. M06 dùng đúng giá trị này, không tính lại. Binding hiệu lực = (địa chỉ mục tiêu đã phân giải ∪ egressSources của manifest đã pin) − tập luôn chặn của nền tảng; host thuộc tập luôn chặn không bao giờ vào binding. Broker vẫn phân giải lại tên ở thời điểm kết nối và từ chối địa chỉ nằm ngoài tập đã ghim.",
+    )
     priority: conint(ge=0, le=100) = Field(
         ...,
         description="Số lớn chạy trước trong tập job đã đủ dependency; không thay thế kiểm tra điều kiện thực thi.",
