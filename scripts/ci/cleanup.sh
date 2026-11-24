@@ -1,30 +1,40 @@
 #!/usr/bin/env bash
-# Removes what the contracts CI suite created on this runner: containers, volumes and
-# networks labelled aegis.ci.suite=contracts. Runs as an always() step so a failed or
-# cancelled job leaves nothing behind. The dev stack (compose project aegis-dev) and
-# anything else on the machine are not touched.
+# Removes what THIS CI job created on the runner: containers, volumes and networks carrying both
+# `aegis.ci.suite=<GITHUB_JOB>` and `aegis.ci.run=<GITHUB_RUN_ID>`.
+#
+# The runner is shared by every workflow of the repository, and several runs may be in flight at
+# once. A cleanup that filtered only by suite would delete another run's PostgreSQL container, venv
+# volume or Neo4j mid-check (observed on G1.4a: the contracts job lost its volume and database while
+# a python job finished). The run label is therefore part of the filter; suite keeps a python run
+# from touching contracts resources even if run ids ever collide (manual runs use `local-<pid>`).
+#
+# AEGIS_CI_SUITE overrides the suite outside a GitHub job (tests, manual cleanup). The dev stack
+# (compose project aegis-dev) and anything else on the machine are not touched.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 require_cmd podman
 
-removed=0
+log "cleanup: suite=$CI_SUITE run=$CI_RUN"
 
-mapfile -t containers < <(podman ps -aq --filter "label=$CI_SUITE_LABEL")
+removed=0
+filters=("--filter" "label=$CI_SUITE_LABEL" "--filter" "label=$CI_RUN_LABEL")
+
+mapfile -t containers < <(podman ps -aq "${filters[@]}")
 if ((${#containers[@]})); then
   podman rm -f "${containers[@]}" >/dev/null
   log "cleanup: removed ${#containers[@]} container(s)"
   removed=$((removed + ${#containers[@]}))
 fi
 
-mapfile -t volumes < <(podman volume ls -q --filter "label=$CI_SUITE_LABEL")
+mapfile -t volumes < <(podman volume ls -q "${filters[@]}")
 if ((${#volumes[@]})); then
   podman volume rm -f "${volumes[@]}" >/dev/null
   log "cleanup: removed ${#volumes[@]} volume(s)"
   removed=$((removed + ${#volumes[@]}))
 fi
 
-mapfile -t networks < <(podman network ls -q --filter "label=$CI_SUITE_LABEL")
+mapfile -t networks < <(podman network ls -q "${filters[@]}")
 if ((${#networks[@]})); then
   podman network rm -f "${networks[@]}" >/dev/null
   log "cleanup: removed ${#networks[@]} network(s)"
