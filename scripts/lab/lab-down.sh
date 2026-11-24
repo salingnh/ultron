@@ -9,14 +9,14 @@ require_cmd podman
 require_cmd podman-compose
 load_images
 
-log "compose project $LAB_PROJECT: stopping and removing its containers and network"
+log "compose project $LAB_PROJECT: removing its containers and network"
 compose_project_resources=$(
   podman ps -a --filter "label=io.podman.compose.project=$LAB_PROJECT" --format '{{.Names}}'
   podman volume ls --filter "label=io.podman.compose.project=$LAB_PROJECT" --format '{{.Name}}'
 )
 if [ -n "$compose_project_resources" ] || podman network inspect "$LAB_NETWORK" >/dev/null 2>&1; then
   compose down --remove-orphans --timeout 20
-esle
+else
   log "compose project $LAB_PROJECT: nothing to remove"
 fi
 
