@@ -61,6 +61,7 @@ def runner(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iterat
         yield instance
     finally:
         instance.reconcile([])
+        m06_support.remove_tree(instance.base_dir)
 
 
 def _run_to_end(
@@ -167,6 +168,57 @@ def test_wall_clock_timeout_stops_the_job(runner: PodmanRunner, probe_image: str
     assert runner.inspect(handle).status == "missing"
 
 
+def test_one_output_file_cannot_exceed_the_cap(runner: PodmanRunner, probe_image: str) -> None:
+    """`RLIMIT_FSIZE` is a kernel bound: a runaway write stops at the cap, not at the disk."""
+    cap = 1 * MIB
+    job_id = m06_support.unique("fsize")
+    handle = runner.run(
+        _spec(
+            probe_image,
+            job_id,
+            ["python3", "-m", "aegis_probe.tool", "--lines", "1", "--big-mb", "8"],
+            max_output_bytes=cap,
+        )
+    )
+    wait = runner.wait(handle, 60, max_output_bytes=cap)
+    logs = runner.logs(handle)
+    size = runner.output_bytes(job_id)
+    runner.remove(handle)
+    assert wait.state.status == "exited"
+    assert "BIG-CAP 27" in logs  # EFBIG from the kernel
+    big = runner.layout(job_id).output / "big.bin"
+    assert not big.exists() or big.stat().st_size <= cap
+    assert size <= cap + 64 * 1024  # the tool's own small metadata files
+
+
+def test_the_output_monitor_stops_many_small_files(runner: PodmanRunner, probe_image: str) -> None:
+    """The directory monitor stops a tool whose total passes the cap while it is still running."""
+    cap = 2 * MIB
+    job_id = m06_support.unique("monitor")
+    code = (
+        "import os, time\n"
+        "os.makedirs('/out/many', exist_ok=True)\n"
+        "end = time.time() + 60\n"
+        "index = 0\n"
+        "while time.time() < end:\n"
+        "    with open(f'/out/many/f{index}.bin', 'wb') as handle:\n"
+        "        handle.write(b'x' * (64 * 1024))\n"
+        "    index += 1\n"
+        "    time.sleep(0.002)\n"
+    )
+    handle = runner.run(_spec(probe_image, job_id, ["python3", "-c", code], max_output_bytes=cap))
+    started = time.monotonic()
+    wait = runner.wait(handle, 60, max_output_bytes=cap)
+    elapsed = time.monotonic() - started
+    size = runner.output_bytes(job_id)
+    runner.remove(handle)
+    assert wait.capped is True
+    assert elapsed < 30
+    # Bounded overshoot: a few size-poll intervals of writes, never an unbounded directory.
+    assert size <= cap + 8 * MIB
+    assert runner.layout(job_id).output.joinpath("many").is_dir()
+
+
 def test_read_only_rootfs_and_tmpfs_cap(runner: PodmanRunner, probe_image: str) -> None:
     code = (
         "try:\n"
@@ -183,7 +235,13 @@ def test_read_only_rootfs_and_tmpfs_cap(runner: PodmanRunner, probe_image: str) 
         "    print('TMPFS-CAP', error.errno)\n"
     )
     _wait, logs, _exit = _run_to_end(
-        runner, _spec(probe_image, m06_support.unique("rootfs"), ["python3", "-c", code])
+        runner,
+        _spec(
+            probe_image,
+            m06_support.unique("rootfs"),
+            ["python3", "-c", code],
+            max_output_bytes=512 * MIB,  # keep RLIMIT_FSIZE out of the way of the tmpfs cap
+        ),
     )
     assert "READONLY-OK" in logs
     assert "TMPFS-CAP 28" in logs  # ENOSPC from the /tmp tmpfs cap

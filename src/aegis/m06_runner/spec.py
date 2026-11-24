@@ -36,6 +36,7 @@ from aegis.common.ports import ContainerSpec
 from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
+from aegis.m05_registry.signing import KeyRing, SignatureError
 from aegis.m06_runner import denyset, netpolicy
 from aegis.m06_runner.values import text
 
@@ -56,6 +57,20 @@ class SpecError(RuntimeError):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
+
+
+def verify_task(task_body: Mapping[str, Any], key_ring: KeyRing) -> str:
+    """Verify the M05 HMAC of the exact task body; return the signing key id.
+
+    An `ApprovedTask` is only executable if M05 signed it (OI-7). Verification accepts every key in
+    the ring, so rotation keeps old tasks valid, and the key id is part of the signed content, so a
+    task cannot be relabelled with another key. Anything else is a `POLICY_DENIED` job: M06 never
+    builds a spec, let alone a container, from a task it cannot verify.
+    """
+    try:
+        return key_ring.verify(task_body)
+    except SignatureError as error:
+        raise SpecError("POLICY_DENIED", f"approved task signature rejected: {error}") from error
 
 
 # --- input schema ---------------------------------------------------------------------------
@@ -277,6 +292,46 @@ def recheck_targets(task: ApprovedTask, input_values: Mapping[str, Any]) -> None
 # --- egress binding (E-1) -------------------------------------------------------------------
 
 
+def _split_entry(entry: str) -> tuple[str, int]:
+    """`host:port` or `[v6]:port` from the signed binding into `(host, port)`."""
+    authority = entry.strip()
+    if authority.startswith("["):
+        host, _, rest = authority.partition("]")
+        host = host[1:]
+        port_text = rest[1:] if rest.startswith(":") else ""
+    else:
+        host, _, port_text = authority.rpartition(":")
+    if not host or not port_text.isdigit():
+        raise SpecError("POLICY_DENIED", f"signed egress binding entry {entry!r} is malformed")
+    port = int(port_text)
+    if not 1 <= port <= 65535:
+        raise SpecError("POLICY_DENIED", f"signed egress binding entry {entry!r} has a bad port")
+    return host, port
+
+
+def _canonical_key(reference: Any) -> str | None:
+    branch = reference.root
+    value = getattr(branch, "canonical_key", None)
+    return None if value is None else text(value)
+
+
+def _binding_entries(task: ApprovedTask) -> tuple[tuple[str, int], ...]:
+    return tuple(_split_entry(text(entry)) for entry in task.egress_binding.entries)
+
+
+def _binding_target_addresses(task: ApprovedTask) -> tuple[Any, ...]:
+    addresses: list[Any] = []
+    for value in task.egress_binding.target_addresses:
+        try:
+            address = ipaddress.ip_address(text(value))
+        except ValueError as error:
+            raise SpecError(
+                "POLICY_DENIED", f"signed target address {value!r} is not an address"
+            ) from error
+        addresses.append(address)
+    return tuple(addresses)
+
+
 def _target_addresses(
     task: ApprovedTask, resolver: netpolicy.Resolver
 ) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
@@ -375,30 +430,155 @@ def build_policy(
     input_values: Mapping[str, Any],
     *,
     job_id: str,
+    task_body: Mapping[str, Any],
+    key_ring: KeyRing,
     platform_cidrs: Sequence[str] = (),
     target_denylist: Sequence[str] = (),
     resolver: netpolicy.Resolver | None = None,
 ) -> netpolicy.JobEgressPolicy:
-    """The policy document of the job: recomputed binding minus the deny set (E-1)."""
+    """The policy document of the job, built from the **signed** binding (E-1).
+
+    `ApprovedTask.egress_binding` is signed by M05 and is the source of truth: it already covers
+    resolved seed targets and the manifest's declared sources, minus the platform deny set. M06
+    never widens it. It still checks the signed value against what it can see itself (the manifest's
+    sources, the pin, the task's `ip:` refs) and applies the deny set again as defence in depth; a
+    disagreement is a `POLICY_DENIED` job rather than a silent rebuild.
+    """
+    verify_task(task_body, key_ring)
     permissions = manifest.spec.permissions
-    if permissions.networkAccess != "egress":
+    binding = task.egress_binding
+    declared_egress = permissions.networkAccess == "egress"
+    if str(binding.mode) == "none":
+        if declared_egress:
+            raise SpecError(
+                "POLICY_DENIED",
+                "the signed binding has no egress but the pinned manifest declares "
+                "networkAccess=egress",
+            )
         return netpolicy.JobEgressPolicy(job_id=job_id, mode="none")
-    sources = _declared_sources(manifest)
-    if not sources and permissions.targetBinding != "required":
+    if not declared_egress:
         raise SpecError(
             "POLICY_DENIED",
-            "egress with no declared source and targetBinding=none has no reachable destination",
+            "the signed binding opens the broker but the pinned manifest declares "
+            "networkAccess=none",
         )
-    active_resolver = resolver or netpolicy.Resolver()
+    if permissions.targetBinding is None or str(binding.target_binding) != str(
+        permissions.targetBinding
+    ):
+        raise SpecError(
+            "POLICY_DENIED",
+            f"signed target_binding {binding.target_binding!r} does not match the pinned manifest "
+            f"({permissions.targetBinding!r})",
+        )
+    entries = _binding_entries(task)
+    if not entries:
+        raise SpecError(
+            "POLICY_DENIED", "a broker binding with no destination is not a valid policy"
+        )
+    entry_keys = {f"{denyset.host_key(host)}:{port}" for host, port in entries}
+    target_addresses = _binding_target_addresses(task)
+
+    # 1. Defence in depth: the platform deny set wins over the signed binding too.
+    for host, port in entries:
+        denied = denyset.denied_host(host)
+        if denied is not None:
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed binding entry {host}:{port} is in the always-deny set ({denied.value})",
+            )
+
+    # 2. Every destination the pinned manifest declares must be inside the signed set (a manifest
+    #    cannot widen it), and nothing else may be.
+    declared_sources: dict[str, str] = {}
+    for source in permissions.egressSources or []:
+        for source_host in source.hosts:
+            for source_port in source.ports:
+                key = f"{denyset.host_key(str(source_host))}:{int(text(source_port))}"
+                denied = denyset.denied_host(str(source_host))
+                if denied is not None:
+                    raise SpecError(
+                        "POLICY_DENIED",
+                        f"egress source {source.id!r} declares a denied destination "
+                        f"{source_host!r} ({denied.value})",
+                    )
+                if key not in entry_keys:
+                    raise SpecError(
+                        "POLICY_DENIED",
+                        f"the signed binding does not cover declared source {source.id!r} ({key})",
+                    )
+                declared_sources[key] = str(source.id)
+
+    # 3. The signed target addresses must agree with the target refs M06 can resolve itself. Exact
+    #    for `ip:` refs (no clock, no DNS); for `dns:` refs the signed set is used and only a
+    #    disjoint answer is refused (a TTL change between M05 and M06 is not a forgery).
+    target_ports = _target_ports(manifest, input_values)
+    recomputed = {
+        str(network.network_address)
+        for network in _target_addresses(task, resolver or netpolicy.Resolver())
+    }
+    signed_targets = {str(address) for address in target_addresses}
+    literal_refs = {key for key in (_canonical_key(reference) for reference in task.targets) if key}
+    literal_refs = {key for key in literal_refs if key.startswith("ip:")}
+    literal_addresses = {literal.split("ip:", 1)[1] for literal in literal_refs}
+    missing = literal_addresses - signed_targets
+    if missing:
+        raise SpecError(
+            "POLICY_DENIED",
+            "the signed binding omits task target address(es) " + ", ".join(sorted(missing)),
+        )
+    if recomputed and signed_targets and not (recomputed & signed_targets):
+        raise SpecError(
+            "POLICY_DENIED",
+            "the signed binding disagrees with the target refs: "
+            f"signed {sorted(signed_targets)} vs resolved {sorted(recomputed)}",
+        )
+    if recomputed and not signed_targets and str(binding.target_binding) == "required":
+        raise SpecError(
+            "POLICY_DENIED",
+            "targetBinding=required but the signed binding pins no target address",
+        )
+    if str(binding.target_binding) == "required":
+        target_ports = _target_ports(manifest, input_values)
+        if not target_ports:
+            raise SpecError("POLICY_DENIED", "targetBinding=required needs input.ports")
+        for address in target_addresses:
+            for port in target_ports:
+                key = f"{address}:{port}"
+                if key not in entry_keys:
+                    raise SpecError(
+                        "POLICY_DENIED",
+                        f"the signed binding does not cover target destination {key}",
+                    )
+
+    # 4. One source per signed entry: the broker matches exactly the signed set.
+    sources: list[netpolicy.SourceAllow] = []
+    target_keys = {str(address) for address in target_addresses}
+    for host, port in entries:
+        key = f"{denyset.host_key(host)}:{port}"
+        if key in declared_sources:
+            source_id = declared_sources[key]
+        elif host in target_keys:
+            source_id = "target"
+        else:
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed binding entry {key} is neither a declared source nor a target address",
+            )
+        sources.append(
+            netpolicy.SourceAllow(id=source_id, hosts=(denyset.host_key(host),), ports=(port,))
+        )
     return netpolicy.JobEgressPolicy(
         job_id=job_id,
         mode="egress",
-        target_ips=tuple(_target_addresses(task, active_resolver)),
-        target_ports=_target_ports(manifest, input_values),
-        sources=sources,
+        target_ips=tuple(
+            ipaddress.ip_network(f"{address}/{address.max_prefixlen}")
+            for address in target_addresses
+        ),
+        target_ports=target_ports,
+        sources=tuple(sources),
         platform_cidrs=tuple(ipaddress.ip_network(entry) for entry in platform_cidrs),
         deny_cidrs=_denylist_networks(target_denylist),
-        resolver=active_resolver,
+        resolver=resolver or netpolicy.Resolver(),
     )
 
 
@@ -436,6 +616,8 @@ def build_spec(
     input_values: Mapping[str, Any],
     *,
     job_id: str,
+    task_body: Mapping[str, Any],
+    key_ring: KeyRing,
     broker_proxy: str | None = None,
     platform_cidrs: Sequence[str] = (),
     target_denylist: Sequence[str] = (),
@@ -443,6 +625,7 @@ def build_spec(
     resolver: netpolicy.Resolver | None = None,
 ) -> ContainerSpec:
     """Assemble the sandbox spec of one job, or raise `SpecError` before anything runs."""
+    verify_task(task_body, key_ring)
     _check_pins(task, manifest, manifest_bytes)
     runtime = manifest.spec.runtime
     if runtime.imageDigest is None:
@@ -465,6 +648,8 @@ def build_spec(
         manifest,
         input_values,
         job_id=job_id,
+        task_body=task_body,
+        key_ring=key_ring,
         platform_cidrs=platform_cidrs,
         target_denylist=target_denylist,
         resolver=resolver,

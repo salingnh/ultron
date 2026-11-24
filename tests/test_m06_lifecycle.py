@@ -17,6 +17,7 @@ from psycopg.types.json import Jsonb
 from aegis.m05_registry.registry import PostgresManifestRegistry
 from aegis.m05_registry.service import PostgresJobService
 from aegis.m05_registry.signing import KeyRing
+from aegis.m05_registry.signing import KeyRing as SigningKeyRing
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner.job import JobPlan, JobRunner
 from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle, LifecycleError
@@ -222,6 +223,66 @@ def op_id() -> str:
     return f"op-{uuid.uuid4().hex[:8]}"
 
 
+def test_a_tampered_task_is_terminalized_failed_without_a_container() -> None:
+    if not m06_support.podman_available():
+        pytest.skip("rootless podman is not installed on this host")
+    image = m06_support.build_probe_image()
+    manifest, raw = m06_support.probe_manifest(image)
+    with migrated_database() as dsn:
+        import tempfile
+        from pathlib import Path as _Path
+
+        campaign = seed_campaign(dsn)
+        with _probe_service(dsn, raw) as jobs:
+            outcome = jobs.submit(
+                body(campaign, input={"targets": [campaign.seed_domain], "max_results": 1}),
+                requested_by=OPERATOR,
+                idempotency_key=f"m06-{uuid.uuid4()}",
+            )
+            job_id = str(outcome.job["job_id"])
+        with scheduler_for(dsn) as scheduler:
+            assert scheduler.dispatch(campaign.campaign_id).claimed == (job_id,)
+        with connect(dsn) as conn:
+            row = conn.execute(
+                "SELECT approved_task FROM scan_job WHERE job_id = %s", (job_id,)
+            ).fetchone()
+        assert row is not None
+        from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
+
+        task = ApprovedTask.model_validate(row[0])
+        tampered = dict(row[0])
+        tampered["priority"] = 99
+        runner = PodmanRunner(base_dir=_Path(tempfile.mkdtemp()), broker_image=image)
+        job_runner = JobRunner(
+            runner,
+            FakeEvidenceStore(),
+            key_ring=SigningKeyRing.dev(),
+            extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
+            lifecycle=JobLifecycle.from_dsn(dsn),
+        )
+        try:
+            result = job_runner.execute(
+                JobPlan(
+                    job_id=job_id,
+                    task=task,
+                    manifest=manifest,
+                    input=task.input,
+                    manifest_bytes=raw,
+                    task_body=tampered,
+                )
+            )
+        finally:
+            runner.reconcile([])
+            m06_support.remove_tree(runner.base_dir)
+        assert result.status == "failed"
+        assert "signature rejected" in (result.error or "")
+        assert runner.list_jobs() == ()
+        row = _job_row(dsn, job_id)
+        assert row["status"] == "FAILED"
+        assert row["error"]["code"] == "POLICY_DENIED"
+        assert _history(dsn, job_id)[-1] == ("DISPATCHED", "FAILED")
+
+
 # --- the whole seam on a real container ------------------------------------------------------
 
 
@@ -269,6 +330,7 @@ def test_job_runner_reports_the_whole_lifecycle(
         job_runner = JobRunner(
             runner,
             FakeEvidenceStore(),
+            key_ring=SigningKeyRing.dev(),
             ingestion=IngestionService.from_dsn(dsn),
             extra_parser_prefixes=("adapters.probe.",),
             extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
@@ -283,10 +345,12 @@ def test_job_runner_reports_the_whole_lifecycle(
                     manifest=manifest,
                     input=task.input,
                     manifest_bytes=raw,
+                    task_body=row[0],
                 )
             )
         finally:
             runner.reconcile([])
+            m06_support.remove_tree(runner.base_dir)
 
         assert result.status == "succeeded", result.error
         assert result.receipt is not None and result.receipt.accepted is True

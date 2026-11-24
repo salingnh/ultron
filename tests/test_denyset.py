@@ -20,7 +20,7 @@ from aegis.common.repo import repository_root
 from aegis.m06_runner.denyset import (
     DENY_HOSTS,
     DENY_NETWORKS,
-    METADATA_NETWORKS,
+    METADATA_ADDRESSES,
     DenyReason,
     denied_host,
     deny_reason,
@@ -125,12 +125,15 @@ def test_host_key_canonicalizes_literals_and_names() -> None:
     assert host_key("0x7f000001") == "127.0.0.1"
 
 
-def test_runtime_deny_set_covers_the_contract_constant() -> None:
+def test_runtime_deny_set_is_the_contract_constant() -> None:
+    """One source of truth: the runtime list must be exactly `contracts/validation.py`'s list."""
     contract = cast(Any, _contract_validation())
-    runtime = {str(net) for net, _ in DENY_NETWORKS} | {str(net) for net in METADATA_NETWORKS}
-    missing = {str(net) for net in contract.EGRESS_DENY_NETWORKS} - runtime
-    assert not missing, f"contract deny networks missing from the runtime set: {sorted(missing)}"
-    assert set(contract.EGRESS_DENY_HOSTS) <= set(DENY_HOSTS)
+    runtime = {str(net) for net, _ in DENY_NETWORKS}
+    assert runtime == {str(net) for net in contract.EGRESS_DENY_NETWORKS}
+    assert set(DENY_HOSTS) == set(contract.EGRESS_DENY_HOSTS)
+    assert METADATA_ADDRESSES <= {str(net.network_address) for net, _ in DENY_NETWORKS} | {
+        "169.254.169.254"
+    }
 
 
 def test_every_deny_network_contains_a_refused_address() -> None:
@@ -142,8 +145,8 @@ def test_every_deny_network_contains_a_refused_address() -> None:
         assert deny_reason(address) is not None, f"{net} is not refused"
         if reason is DenyReason.EMBEDDED_V4:
             assert deny_reason(address) is DenyReason.EMBEDDED_V4
-    for net in METADATA_NETWORKS:
-        assert deny_reason(net.network_address) is DenyReason.METADATA
+    for literal in METADATA_ADDRESSES:
+        assert deny_reason(ipaddress.ip_address(literal)) is DenyReason.METADATA
 
 
 def test_the_contract_file_is_the_one_in_the_checkout() -> None:

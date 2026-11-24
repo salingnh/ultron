@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sleep", type=float, default=0)
     parser.add_argument("--exit-code", type=int, default=0)
     parser.add_argument("--oom", action="store_true")
+    parser.add_argument("--big-mb", type=int, default=0, help="write one file of N MiB")
     parser.add_argument("--targets-file", default="/in/targets.txt")
     args = parser.parse_args(argv)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -49,6 +50,14 @@ def main(argv: list[str] | None = None) -> int:
     path = Path(args.targets_file)
     if path.exists():
         targets = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    if args.big_mb:
+        try:
+            with open(OUT / "big.bin", "wb") as handle:
+                for _ in range(int(args.big_mb)):
+                    handle.write(b"x" * (1024 * 1024))
+            print("BIG-OK", flush=True)
+        except OSError as error:
+            print("BIG-CAP", error.errno, flush=True)
     (OUT / "result.jsonl").write_text(
         "".join(
             json.dumps({"host": f"h{index}.{targets[0] if targets else 'probe'}"}) + "\n"

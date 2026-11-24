@@ -14,6 +14,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, cast
 
 import yaml
@@ -21,6 +22,8 @@ import yaml
 from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
+from aegis.m05_registry.signing import KeyRing
+from aegis.m06_runner.values import text
 
 REPO_ROOT = repository_root()
 CONTAINER_DIR = REPO_ROOT / "tests" / "container"
@@ -85,6 +88,35 @@ def image_present(image: str) -> bool:
 # --- contract fixtures ----------------------------------------------------------------------
 
 
+#: The published development signing key (OI-7); tests sign the tasks M06 must verify.
+DEV_RING = KeyRing.dev()
+
+
+def sign_task(
+    payload: dict[str, Any], *, key_ring: KeyRing = DEV_RING
+) -> tuple[ApprovedTask, dict[str, Any]]:
+    """Sign a task dict the way M05 does and return `(DTO, exact signed document)`."""
+    body = {
+        key: value for key, value in payload.items() if key not in {"signature", "signature_key_id"}
+    }
+    signature, key_id = key_ring.sign(body)
+    document = {**body, "signature": signature, "signature_key_id": key_id}
+    task = ApprovedTask.model_validate(document)
+    _BODIES[str(text(task.task_id))] = document
+    return task, document
+
+
+_BODIES: dict[str, dict[str, Any]] = {}
+
+
+def body_of(task: ApprovedTask) -> dict[str, Any]:
+    """The exact document that was signed for `task` (what M06 verifies)."""
+    document = _BODIES.get(str(text(task.task_id)))
+    if document is None:
+        raise KeyError(f"no signed body recorded for task {text(task.task_id)}")
+    return dict(document)
+
+
 def _fixture(name: str) -> dict[str, Any]:
     path = FIXTURES / name
     text = path.read_text(encoding="utf-8")
@@ -93,7 +125,7 @@ def _fixture(name: str) -> dict[str, Any]:
 
 
 def approved_task(**overrides: Any) -> ApprovedTask:
-    """`approved-task.subfinder.json` with input/pin overrides, still contract-valid."""
+    """`approved-task.subfinder.json` with input/pin overrides, signed with the development key."""
     payload = _fixture("approved-task.subfinder.json")
     payload.update(
         {
@@ -106,7 +138,8 @@ def approved_task(**overrides: Any) -> ApprovedTask:
     )
     for key, value in overrides.items():
         payload[key] = value
-    return ApprovedTask.model_validate(payload)
+    task, _document = sign_task(payload)
+    return task
 
 
 def manifest(name: str = "manifest.subfinder.yaml") -> tuple[ProviderManifest, bytes]:
@@ -128,17 +161,18 @@ def task_for_manifest(
     payload = _fixture("approved-task.subfinder.json")
     payload.update(
         {
-            "capability": manifest_value.spec.capability,
-            "provider": manifest_value.metadata.name,
-            "provider_version": manifest_value.spec.providerVersion,
-            "adapter_version": manifest_value.metadata.version,
-            "image_digest": manifest_value.spec.runtime.imageDigest,
+            "capability": text(manifest_value.spec.capability),
+            "provider": str(manifest_value.metadata.name),
+            "provider_version": str(manifest_value.spec.providerVersion),
+            "adapter_version": text(manifest_value.metadata.version),
+            "image_digest": text(manifest_value.spec.runtime.imageDigest),
             "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         }
     )
     for key, value in overrides.items():
         payload[key] = value
-    return ApprovedTask.model_validate(payload)
+    task, _document = sign_task(payload)
+    return task
 
 
 def probe_manifest(
@@ -264,6 +298,19 @@ class FakeIngestion:
         }
         self._receipts[key] = receipt
         return receipt
+
+
+def remove_tree(path: Path) -> None:
+    """Remove a job-tree even when the sandbox user (subuid 65534) created sub-directories.
+
+    Its files are readable by the runner but a directory it created is not writable by it, so a
+    plain `rmtree` leaves entries behind; `podman unshare` maps that uid back to the root of the
+    user namespace and can delete them.
+    """
+    if not path.exists():
+        return
+    podman("unshare", "rm", "-rf", str(path), check=False)
+    shutil.rmtree(path, ignore_errors=True)
 
 
 def free_port() -> int:

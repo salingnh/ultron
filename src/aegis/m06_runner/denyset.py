@@ -37,28 +37,26 @@ def _nets(*values: str) -> tuple[IPNetwork, ...]:
     return tuple(ipaddress.ip_network(value) for value in values)
 
 
-# Cloud instance metadata: reachable only with a job's own credentials, never by a scanner.
-METADATA_NETWORKS: tuple[IPNetwork, ...] = _nets(
-    "169.254.169.254/32",  # AWS/GCP/Azure/OpenStack IMDS
-    "100.100.100.200/32",  # Alibaba Cloud metadata (R-5)
-    "fd00:ec2::254/128",  # AWS IMDS over IPv6 (R-5)
-)
+# Cloud instance metadata: reachable only with a job's own credentials, never by a scanner. The
+# addresses are tagged for a specific reason code; they are already inside the networks below.
+METADATA_ADDRESSES = frozenset({"169.254.169.254", "100.100.100.200", "fd00:ec2::254"})
 
-# Ordered: the first match wins and decides the reason code.
+# Ordered: the first matching network decides the reason code. The set is exactly
+# `contracts/validation.py::EGRESS_DENY_NETWORKS` (the registry side of the same platform constant);
+# `tests/test_denyset.py` fails if the two ever differ (R-5).
 DENY_NETWORKS: tuple[tuple[IPNetwork, DenyReason], ...] = (
     *((net, DenyReason.UNSPECIFIED) for net in _nets("0.0.0.0/8", "::/128")),
     *((net, DenyReason.LOOPBACK) for net in _nets("127.0.0.0/8", "::1/128")),
     *((net, DenyReason.LINK_LOCAL) for net in _nets("169.254.0.0/16", "fe80::/10")),
     *((net, DenyReason.MULTICAST) for net in _nets("224.0.0.0/4", "ff00::/8")),
-    # Deprecated IPv6 site-local, documentation range and IPv4-compatible IPv6 (`::/96`): the last
-    # one is how `::7f00:1` or `::127.0.0.1` are written, and inet_aton-style IPv4 could be
-    # smuggled in that shape (R-5).
+    # Reserved, deprecated and IPv4-carrying IPv6 ranges: `::/96` is IPv4-compatible IPv6
+    # (`::7f00:1`), `fec0::/10` deprecated site-local, the rest transport forms of an IPv4 address.
     *(
         (net, DenyReason.RESERVED)
-        for net in _nets("240.0.0.0/4", "fec0::/10", "2001:db8::/32", "::/96")
+        for net in _nets(
+            "240.0.0.0/4", "100.100.100.200/32", "fec0::/10", "fd00:ec2::254/128", "::/96"
+        )
     ),
-    # IPv6 transport forms that embed an IPv4 destination. The whole range is denied (fail closed)
-    # rather than unwrapping the embedded address: the contract's list does the same.
     *(
         (net, DenyReason.EMBEDDED_V4)
         for net in _nets(
@@ -130,28 +128,18 @@ def host_key(host: str) -> str:
 
 def deny_reason(address: IPAddress) -> DenyReason | None:
     """Why this address must never be connected to, or None when it may be."""
-    if isinstance(address, ipaddress.IPv4Address):
-        for net in METADATA_NETWORKS:
-            if isinstance(net, ipaddress.IPv4Network) and address in net:
-                return DenyReason.METADATA
-        for net, reason in DENY_NETWORKS:
-            if isinstance(net, ipaddress.IPv4Network) and address in net:
-                return reason
-        return None
+    if str(address) in METADATA_ADDRESSES:
+        return DenyReason.METADATA
     if isinstance(address, ipaddress.IPv6Address):
-        for net in METADATA_NETWORKS:
-            if isinstance(net, ipaddress.IPv6Network) and address in net:
-                return DenyReason.METADATA
         mapped = address.ipv4_mapped
         if mapped is not None:
             # IPv4-mapped IPv6 is the same destination as its embedded address: deny exactly what
             # the IPv4 rules deny and let the rest be judged by the same binding.
             return deny_reason(mapped)
-        for net, reason in DENY_NETWORKS:
-            if isinstance(net, ipaddress.IPv6Network) and address in net:
-                return reason
-        return None
-    return DenyReason.RESERVED
+    for net, reason in DENY_NETWORKS:
+        if address.version == net.version and address in net:
+            return reason
+    return None
 
 
 def denied_host(host: str) -> DenyReason | None:

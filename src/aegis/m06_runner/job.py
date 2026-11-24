@@ -19,6 +19,7 @@ The order is the contract's (interfaces/README.md §3):
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -31,6 +32,7 @@ from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderM
 from aegis.contracts_gen.common.ids_v2_schema import Classification
 from aegis.contracts_gen.ingestion.ingest_receipt_v2_schema import IngestReceipt
 from aegis.contracts_gen.ingestion.result_envelope_v2_schema import ResultEnvelope
+from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import collector, parser_host
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner import spec as specs
@@ -49,6 +51,7 @@ DB_STATUS = {
     "cancelled": "CANCELLED",
 }
 TERMINAL_FAILURES = {"oom": "RESOURCE_LIMIT", "timeout": "EXECUTION_TIMEOUT"}
+logger = logging.getLogger("aegis.m06.job")
 
 
 class JobError(RuntimeError):
@@ -64,6 +67,7 @@ class JobPlan:
     manifest: ProviderManifest
     input: Mapping[str, Any]
     manifest_bytes: bytes | None = None
+    task_body: Mapping[str, Any] | None = None
     target_denylist: tuple[str, ...] = ()
     platform_cidrs: tuple[str, ...] = ()
     classification: Classification = Classification.INTERNAL
@@ -99,6 +103,7 @@ class JobRunner:
         runner: PodmanRunner,
         store: EvidenceStore,
         *,
+        key_ring: KeyRing,
         ingestion: envelopes.IngestionClient | None = None,
         parser_limits: parser_host.ParserLimits | None = None,
         extra_parser_prefixes: Sequence[str] = (),
@@ -110,6 +115,7 @@ class JobRunner:
     ) -> None:
         self.runner = runner
         self.store = store
+        self.key_ring = key_ring
         self.ingestion = ingestion
         self.parser_limits = parser_limits
         self.extra_parser_prefixes = tuple(extra_parser_prefixes)
@@ -123,6 +129,7 @@ class JobRunner:
 
     def prepare(self, plan: JobPlan) -> tuple[Any, Any]:
         """The spec and egress policy of the job, before any container exists."""
+        body = _task_body(plan)
         self.runner.ensure_network(plan.job_id)
         try:
             policy = specs.build_policy(
@@ -130,6 +137,8 @@ class JobRunner:
                 plan.manifest,
                 plan.input,
                 job_id=plan.job_id,
+                task_body=body,
+                key_ring=self.key_ring,
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
             )
@@ -139,6 +148,8 @@ class JobRunner:
                 plan.manifest,
                 plan.input,
                 job_id=plan.job_id,
+                task_body=body,
+                key_ring=self.key_ring,
                 broker_proxy=proxy,
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
@@ -150,6 +161,34 @@ class JobRunner:
         return spec, policy
 
     def execute(self, plan: JobPlan, *, cancel: Callable[[], bool] | None = None) -> JobOutcome:
+        body = _task_body(plan)
+        try:
+            specs.verify_task(body, self.key_ring)
+        except specs.SpecError as error:
+            # A task M06 cannot verify is never executed; the job is terminalized FAILED so the
+            # refusal is auditable on the row, and logged for the operator.
+            logger.warning(
+                "approved task refused before claim",
+                extra={"job_id": plan.job_id, "capability": text(plan.task.capability)},
+            )
+            job_outcome = JobOutcome(
+                job_id=plan.job_id,
+                status="failed",
+                errors=[
+                    envelopes.error_object(
+                        "POLICY_DENIED",
+                        "the approved task signature could not be verified",
+                        technical_cause=str(error)[:4000],
+                        next_action="ESCALATE",
+                    )
+                ],
+                error=str(error),
+            )
+            if self.lifecycle is not None:
+                refused = self.lifecycle.claim(plan.job_id)
+                if refused is not None:
+                    self._terminalize(refused, job_outcome)
+            return job_outcome
         claim: JobClaim | None = None
         if self.lifecycle is not None:
             claim = self.lifecycle.claim(plan.job_id)
@@ -211,7 +250,12 @@ class JobRunner:
                         outcome.status = "skipped"
                         outcome.error = "JOB_NOT_CLAIMABLE"
                         return outcome
-                wait = self.runner.wait(handle, spec.timeout_seconds, cancel=signal)
+                wait = self.runner.wait(
+                    handle,
+                    spec.timeout_seconds,
+                    cancel=signal,
+                    max_output_bytes=spec.max_output_bytes,
+                )
                 outcome.wait = wait
                 outcome.run = wait.state
                 if wait.cancelled:
@@ -226,6 +270,24 @@ class JobRunner:
                             next_action="NONE",
                         )
                     )
+                if wait.capped:
+                    # The runner stopped the tool because its output passed the manifest cap: the
+                    # job is rejected (no envelope from output we refuse to keep), the evidence of
+                    # what it wrote stays in the job directory for the record.
+                    outcome.status = "failed"
+                    outcome.error = "OUTPUT_BYTES_EXCEEDED: the sandbox stopped the tool at the cap"
+                    outcome.errors.append(
+                        envelopes.error_object(
+                            "OUTPUT_INVALID",
+                            "the job wrote more output than maxOutputMb allows",
+                            technical_cause=(
+                                f"max_output_bytes={spec.max_output_bytes}; the container was "
+                                "stopped by the runner"
+                            ),
+                            next_action="FIX_INPUT",
+                        )
+                    )
+                    return outcome
                 if claim is not None and self.lifecycle is not None:
                     self.lifecycle.collecting(claim)
                 self._collect(plan, spec, layout, outcome)
@@ -554,3 +616,8 @@ class _CancelSignal:
             self._checked_at = now
             self._requested = self._lifecycle.cancel_requested(self._job_id)
         return self._requested
+
+
+def _task_body(plan: JobPlan) -> Mapping[str, Any]:
+    """The exact dict M05 signed: the caller's copy when it has one, else the DTO's wire form."""
+    return plan.task_body if plan.task_body is not None else plan.task.model_dump(mode="json")

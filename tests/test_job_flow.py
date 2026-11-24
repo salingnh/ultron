@@ -12,10 +12,12 @@ import json
 import time
 import uuid
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
 from aegis.common.ports import ContainerSpec
+from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner.job import JobPlan, JobRunner
 from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle
@@ -45,6 +47,7 @@ def runner(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iterat
         yield instance
     finally:
         instance.reconcile([])
+        m06_support.remove_tree(instance.base_dir)
 
 
 @pytest.fixture()
@@ -64,7 +67,7 @@ def _plan(
     timeout_seconds: int | None = None,
     args_template: list[str] | None = None,
     egress: bool = False,
-    egress_sources: list[dict[str, object]] | None = None,
+    egress_sources: list[dict[str, Any]] | None = None,
     platform_cidrs: tuple[str, ...] = (),
 ) -> JobPlan:
     manifest, raw = m06_support.probe_manifest(
@@ -75,11 +78,28 @@ def _plan(
         egress_sources=egress_sources,
     )
     values = input_values or {"targets": ["internal.example"], "max_results": 2}
+    if egress:
+        binding = {
+            "mode": "broker",
+            "target_binding": "none",
+            "entries": [
+                f"{source['hosts'][0]}:{source['ports'][0]}" for source in egress_sources or []
+            ],
+            "target_addresses": [],
+        }
+    else:
+        binding = {
+            "mode": "none",
+            "target_binding": "none",
+            "entries": [],
+            "target_addresses": [],
+        }
     task = m06_support.task_for_manifest(
         manifest,
         raw,
         targets=[{"canonical_key": "dns:internal.example"}],
         input=values,
+        egress_binding=binding,
     )
     return JobPlan(
         job_id=job_id or envelopes.new_id(),
@@ -87,6 +107,7 @@ def _plan(
         manifest=manifest,
         input=values,
         manifest_bytes=raw,
+        task_body=m06_support.body_of(task),
         platform_cidrs=platform_cidrs,
     )
 
@@ -105,6 +126,7 @@ def _job_runner(
     return JobRunner(
         runner,
         store,
+        key_ring=KeyRing.dev(),
         ingestion=ingestion,
         extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
         lifecycle=lifecycle,
@@ -213,6 +235,29 @@ def test_the_lifecycle_seam_is_reported_in_order(
     assert lifecycle.calls[-1] == ("finish", ("SUCCEEDED", event_id))
 
 
+def test_a_task_that_fails_signature_verification_never_starts_a_container(
+    runner: PodmanRunner, probe_image: str
+) -> None:
+    plan = _plan(probe_image)
+    tampered = dict(plan.task_body or {})
+    tampered["priority"] = 99  # anything outside the signature makes the task inert
+    job_runner = _job_runner(runner, FakeEvidenceStore(), None)
+    outcome = job_runner.execute(
+        JobPlan(
+            job_id=plan.job_id,
+            task=plan.task,
+            manifest=plan.manifest,
+            input=plan.input,
+            manifest_bytes=plan.manifest_bytes,
+            task_body=tampered,
+        )
+    )
+    assert outcome.status == "failed"
+    assert outcome.error is not None and "signature rejected" in outcome.error
+    assert [error["code"] for error in outcome.errors] == ["POLICY_DENIED"]
+    assert runner.list_jobs() == ()
+
+
 def test_resubmit_sends_the_frozen_snapshot_again(
     runner: PodmanRunner, probe_image: str, ingestion: m06_support.FakeIngestion
 ) -> None:
@@ -260,6 +305,46 @@ def test_timeout_collects_output_then_removes_the_container(
     assert outcome.envelope.errors[0].code == "EXECUTION_TIMEOUT"
     assert runner.list_jobs() == ()
     assert (runner.layout(plan.job_id).output / "result.jsonl").exists()
+
+
+def test_a_job_over_its_output_cap_is_stopped_and_rejected(
+    runner: PodmanRunner, probe_image: str, ingestion: m06_support.FakeIngestion
+) -> None:
+    manifest, raw = m06_support.probe_manifest(
+        probe_image,
+        args_template=["python3", "-m", "aegis_probe.tool", "--lines", "1", "--big-mb", "8"],
+    )
+    manifest.spec.budget.maxOutputMb = 1  # 1 MiB of output for a tool that writes 8 MiB
+    task = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        targets=[{"canonical_key": "dns:internal.example"}],
+        input={"targets": ["internal.example"], "max_results": 1},
+        egress_binding={
+            "mode": "none",
+            "target_binding": "none",
+            "entries": [],
+            "target_addresses": [],
+        },
+    )
+    plan = JobPlan(
+        job_id=envelopes.new_id(),
+        task=task,
+        manifest=manifest,
+        input={"targets": ["internal.example"], "max_results": 1},
+        manifest_bytes=raw,
+        task_body=m06_support.body_of(task),
+    )
+    job_runner = _job_runner(
+        runner, FakeEvidenceStore(), ingestion.base_url, ingestion.service_token
+    )
+    outcome = job_runner.execute(plan)
+    assert outcome.status == "failed"
+    assert [error["code"] for error in outcome.errors] == ["OUTPUT_INVALID"]
+    assert outcome.envelope is None and outcome.receipt is None
+    assert ingestion.received == []
+    assert runner.list_jobs() == ()
+    assert runner.output_bytes(plan.job_id) <= 1 * MIB + 64 * 1024
 
 
 def test_cancel_stops_collects_and_removes_without_an_envelope(
@@ -402,6 +487,7 @@ def test_egress_job_reaches_only_its_broker(
     finally:
         m06_support.podman("rm", "-f", target_name, check=False)
         runner.reconcile([])
+        m06_support.remove_tree(runner.base_dir)
         m06_support.remove_network(uplink)
 
 

@@ -57,11 +57,12 @@ def _podman(*args: str, check: bool = True, timeout: int = 600) -> subprocess.Co
 
 @dataclass(frozen=True)
 class WaitResult:
-    """How one run ended; `wait()` is the only place that decides timeout/cancel."""
+    """How one run ended; `wait()` is the only place that decides timeout/cancel/output cap."""
 
     state: RunState
     timed_out: bool = False
     cancelled: bool = False
+    capped: bool = False
 
 
 @dataclass(frozen=True)
@@ -199,8 +200,18 @@ class PodmanRunner(ContainerRunner):
             return RunState(status="timeout", exit_code=exit_code)
         return RunState(status="exited", exit_code=exit_code)
 
-    def stop(self, handle: RunHandle, grace_seconds: int = 10) -> None:
+    def stop(self, handle: RunHandle, grace_seconds: int = 10, *, force: bool = False) -> None:
+        """Stop the container; `force` sends SIGKILL at once (the output cap has nothing to save).
+
+        A tool is PID 1 in its container, and the kernel ignores a signal PID 1 has no handler
+        for, so a tool that never installs one keeps running for the whole grace period. The cap
+        check therefore kills instead of waiting (waiting would mean more unbounded writing);
+        cancel and timeout keep a short grace so a tool that handles SIGTERM can still flush.
+        """
         name = self.container_name(handle.job_id)
+        if force:
+            _podman("kill", "--signal", "SIGKILL", name, check=False)
+            return
         stopped = _podman(
             "stop",
             "--time",
@@ -223,22 +234,44 @@ class PodmanRunner(ContainerRunner):
         timeout_seconds: int,
         *,
         cancel: Callable[[], bool] | None = None,
+        max_output_bytes: int | None = None,
     ) -> WaitResult:
-        """Poll until the container is terminal, the wall clock expires, or `cancel()` is true."""
+        """Poll until terminal, the wall clock expires, the user cancels or the output cap is hit.
+
+        The cap is a host-protection bound in addition to the container's `RLIMIT_FSIZE` (one file
+        cannot exceed it) and the collector's own cap (the job is rejected afterwards): a tool that
+        writes many small files is stopped as soon as the directory grows past the manifest's
+        `max_output_bytes`, so a runaway scan cannot fill the host disk while it runs.
+        """
         started = time.monotonic()
+        size_poll = min(self.poll_seconds, 0.05)
         while True:
             state = self.inspect(handle)
             if state.status in {"exited", "oom", "timeout", "missing"}:
                 return WaitResult(state=state)
             if cancel is not None and cancel():
                 self._write_markers(handle.job_id, {"cancel_requested_at": _now()}, merge=True)
-                self.stop(handle, grace_seconds=10)
+                self.stop(handle, grace_seconds=5)
                 return WaitResult(state=self.inspect(handle), cancelled=True)
+            # Between two (expensive) state polls, watch the output size closely: the bound is
+            # "one size-poll interval of writes" past the cap, not the disk.
+            horizon = time.monotonic() + self.poll_seconds
+            while time.monotonic() < horizon:
+                if max_output_bytes is not None:
+                    written = self.output_bytes(handle.job_id, limit=max_output_bytes)
+                    if written > max_output_bytes:
+                        self._write_markers(
+                            handle.job_id,
+                            {"output_cap_exceeded": written, "max_output_bytes": max_output_bytes},
+                            merge=True,
+                        )
+                        self.stop(handle, force=True)
+                        return WaitResult(state=self.inspect(handle), capped=True)
+                time.sleep(size_poll)
             if time.monotonic() - started > timeout_seconds:
                 self._write_markers(handle.job_id, {"timed_out": True}, merge=True)
-                self.stop(handle, grace_seconds=10)
+                self.stop(handle, grace_seconds=5)
                 return WaitResult(state=self.inspect(handle), timed_out=True)
-            time.sleep(self.poll_seconds)
 
     def ensure_network(self, job_id: str) -> str:
         """Create the job network if it is missing (idempotent, also used by `prepare`)."""
@@ -356,6 +389,30 @@ class PodmanRunner(ContainerRunner):
 
     # -- lifecycle --------------------------------------------------------------------------
 
+    def output_bytes(self, job_id: str, *, limit: int | None = None) -> int:
+        """Bytes of regular files under the job output directory, stopping early at `limit`."""
+        total = 0
+        root = self.layout(job_id).output
+        if not root.is_dir():
+            return 0
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_symlink():
+                            continue
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(Path(entry.path))
+                            continue
+                        total += entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+                    if limit is not None and total > limit:
+                        return total
+        return total
+
     def logs(self, handle: RunHandle) -> str:
         return self._logs(handle.container_id or self.container_name(handle.job_id))
 
@@ -429,6 +486,10 @@ class PodmanRunner(ContainerRunner):
             "SIGTERM",
             "--stop-timeout",
             "5",
+            # A single output file cannot exceed the manifest's byte cap (RLIMIT_FSIZE, EFBIG),
+            # on top of the directory monitor in `wait()` and the collector's own cap.
+            "--ulimit",
+            f"fsize={spec.max_output_bytes}:{spec.max_output_bytes}",
         ]
         if spec.read_only_rootfs:
             argv += ["--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777"]
