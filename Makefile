@@ -11,7 +11,7 @@ SHELL := /bin/bash
 .PHONY: help dev-up dev-down dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
 	deps lint test codegen codegen-check migrate ci-python \
-	temporal-live
+	temporal-live demo-g15a
 
 help:
 	@printf '%s\n' \
@@ -108,3 +108,7 @@ ci-python: deps lint test codegen-check
 
 temporal-live:
 	@scripts/temporal/run-live.sh
+
+# G1.5a acceptance evidence: the flow document and the event stream over HTTP (needs AEGIS_TEST_PG_DSN).
+demo-g15a:
+	@uv run --frozen pytest tests/test_g15a_http_demo.py -q -s
