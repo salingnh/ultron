@@ -1,0 +1,77 @@
+# Authorized lab for AEGIS–Vanguard (G0.4c): an authoritative DNS server for the lab zone
+# and a local passive-source stub, on an internal network with no route off this host.
+#
+# Run it through `make lab-up` / `make lab-down` (scripts/lab/*.sh): they generate the
+# throwaway lab CA, wait for readiness and verify the lab boundary. Direct podman-compose
+# runs must export deploy/lab/images.env first.
+#
+# Project name is fixed by the caller (`podman-compose -p aegis-lab`): it is the only stack
+# this file owns, and `make lab-down` removes nothing else. There is no published port: the
+# only clients are the scanner containers that join `aegis-lab-lab`.
+name: aegis-lab
+
+services:
+  dns:
+    image: ${AEGIS_LAB_DNS_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: aegis-lab-dns
+    restart: "no"
+    # The image entrypoint is just /coredns, so the config path must be explicit.
+    command: ["-conf", "/etc/coredns/Corefile"]
+    read_only: true
+    cap_drop: [ALL]
+    # Binding port 53 is the only capability the lab resolver needs.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=8m
+    volumes:
+      - ./dns:/etc/coredns:ro,Z
+    networks:
+      lab:
+        ipv4_address: 10.114.53.53
+    # No healthcheck: the image is a single static binary with no shell or HTTP client, so an
+    # in-container probe is impossible. `make lab-up` proves readiness from the lab network by
+    # resolving www.lab.aegis.test with the pinned DNSx image, which is the same path the
+    # acceptance run uses.
+
+  passive:
+    image: ${AEGIS_LAB_PASSIVE_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: aegis-lab-passive
+    restart: "no"
+    command: ["python3", "/srv/crtsh_stub.py"]
+    read_only: true
+    cap_drop: [ALL]
+    # Binding port 443 for the lab-only `crt.sh` endpoint.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=8m
+    # The healthcheck talks to the same hostname a scanner uses, resolved to loopback.
+    extra_hosts:
+      - "crt.sh:127.0.0.1"
+    healthcheck:
+      test: ["CMD", "python3", "/srv/healthcheck.py"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    volumes:
+      - ./passive:/srv:ro,Z
+      # Shared read-only lab inputs use `z` (one label for every container), not `Z`: a
+      # per-container MCS category would be replaced by whichever container mounted the
+      # directory last, locking the other one out with PermissionError.
+      - ./fixtures:/lab-fixtures:ro,z
+      - ./.run/tls:/lab-tls:ro,z
+    networks:
+      lab:
+        ipv4_address: 10.114.53.80
+
+networks:
+  lab:
+    name: aegis-lab-lab
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.114.53.0/24

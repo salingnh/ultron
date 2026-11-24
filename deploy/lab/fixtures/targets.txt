@@ -1,0 +1,6 @@
+www.lab.aegis.test
+api.lab.aegis.test
+mail.lab.aegis.test
+vpn.lab.aegis.test
+ghost.lab.aegis.test
+example.com

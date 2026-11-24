@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# One command for the authorized lab (G0.4c): the authoritative DNS for the lab zone and the
+# local passive-source stub, on an internal network with no route off this host.
+#
+# Idempotent: run it again on a running lab and it only waits for the existing services.
+# Readiness is not assumed from "container is up": the DNS answer is fetched with the pinned
+# DNSx image over the lab network, which is the same path the acceptance run uses.
+set -euo pipefail
+. "$(dirname "$0")/lib.sh"
+
+require_cmd podman "install rootless podman 5.x"
+require_cmd podman-compose "install with: python3 -m pip install --user podman-compose"
+require_cmd python3
+load_images
+
+if ! podman info --format '{{.Host.Security.Rootless}}' | grep -qx true; then
+  die "podman is not rootless; the lab must run as the current user"
+fi
+
+generate_lab_tls
+
+log "compose project $LAB_PROJECT: starting (network $LAB_NETWORK, internal only, no published ports)"
+compose up -d
+
+wait_passive_healthy 180
+wait_dns_ready 180 ||
+  die "lab DNS did not answer www.lab.aegis.test with A 203.0.113.10 within 180s"
+
+"$LAB_SCRIPTS/lab-status.sh"
+log "lab is healthy - next: make lab-check (Subfinder + DNSx against the lab)"

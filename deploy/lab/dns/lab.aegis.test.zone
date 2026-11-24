@@ -1,0 +1,27 @@
+; Authorized AEGIS lab zone (G0.4c). Every address is from a documentation range
+; (RFC 5737 203.0.113.0/24, RFC 3849 2001:db8::/32); nothing here points at a real host.
+;
+; This file is the zone CoreDNS serves. `deploy/lab/inventory.json` is the same record set in
+; machine-readable form, and `scripts/lab/check_inventory.py` fails when the two drift.
+; Keep one record per line: the checker parses this file with a deliberately small grammar.
+
+$ORIGIN lab.aegis.test.
+$TTL 3600
+
+@   IN SOA ns1.lab.aegis.test. hostmaster.lab.aegis.test. (
+        2026112401 ; serial
+        3600       ; refresh
+        600        ; retry
+        604800     ; expire
+        300 )      ; negative TTL
+    IN NS  ns1.lab.aegis.test.
+
+ns1  IN A    203.0.113.53
+www  IN A    203.0.113.10
+www  IN AAAA 2001:db8::10
+api  IN A    203.0.113.30
+mail IN A    203.0.113.20
+mail IN MX   10 mx1.lab.aegis.test.
+mx1  IN A    203.0.113.25
+vpn  IN CNAME www.lab.aegis.test.
+txt  IN TXT  "aegis lab zone; not a real domain"

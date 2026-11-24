@@ -1,0 +1,5 @@
+{
+  "zone": "lab.aegis.test",
+  "source": "crtsh",
+  "hosts": ["api.lab.aegis.test", "vpn.lab.aegis.test", "www.lab.aegis.test"]
+}
