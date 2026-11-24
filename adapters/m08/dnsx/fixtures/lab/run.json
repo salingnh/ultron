@@ -1,0 +1,38 @@
+{
+  "provider": "dnsx",
+  "capability": "dns.resolve",
+  "tool_version": "v1.2.2",
+  "adapter_version": "1.0.0",
+  "image_digest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec",
+  "lab_run": "make lab-dnsx (deploy/lab/.run/runs/dnsx-20261124T031112Z)",
+  "lab_run_at": "2026-11-24T03:11:12Z",
+  "lab_zone": "lab.aegis.test",
+  "command": "-silent -json -a -aaaa -cname -t 8 -r 10.114.53.53 -l /in/targets.txt -o /out/result.jsonl",
+  "input": {
+    "targets": [
+      "www.lab.aegis.test",
+      "api.lab.aegis.test",
+      "mail.lab.aegis.test",
+      "vpn.lab.aegis.test",
+      "ghost.lab.aegis.test",
+      "example.com"
+    ]
+  },
+  "raw": {
+    "file": "result.jsonl",
+    "sha256": "91177b3c36d9a3033757c3fa4b8d1348b3b1bd5219ba6cea0658d7ff353ba304",
+    "size_bytes": 8574
+  },
+  "expected": "expected.json",
+  "cross_check": {
+    "file": "deploy/lab/fixtures/dnsx.expected.json",
+    "kind": "resolutions"
+  },
+  "notes": [
+    "result.jsonl is the byte-for-byte output of the authorized lab run (G0.4c) against the lab zone's authoritative resolver on the internal lab network; no route off the host.",
+    "input.targets is the run's target file verbatim: the five lab names plus the inventory's negative control example.com (REFUSED) - all six were queried, so all six are coverage subjects.",
+    "The lab resolver (10.114.53.53) is not in the pinned manifest's egressSources (quad9/cloudflare); that is the documented G0.4c lab exception, so the fixture input names no `resolvers` field and the adapter does not inherit the exception.",
+    "The run asked for CNAMEs (-cname) as a lab inventory probe. The pinned manifest never renders `record_types` into argv, so a production run does not ask for CNAME and the parser does not map it (see the adapter README, 'Not emitted').",
+    "expected.json is the parser output for this raw file and is cross-checked against the independent lab fixture (probe answers, RESOLVES_TO edges, and that NXDOMAIN/REFUSED names claim nothing)."
+  ]
+}
