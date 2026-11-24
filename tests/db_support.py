@@ -135,8 +135,8 @@ def seed_campaign(
             )
         asset_id = _uuid7()
         conn.execute(
-            "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen) "
-            "VALUES (%s, %s, 'domain', now(), now())",
+            "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen,"
+            " normalization_version) VALUES (%s, %s, 'domain', now(), now(), 'aegis-norm/1')",
             (asset_id, known_asset),
         )
         conn.execute(
