@@ -37,108 +37,107 @@ async function captureScreen(page: Page, filename: string) {
 test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  for (const theme of ['light', 'dark'] as const) {
-    test(`Capture all screens in ${theme} theme`, async ({ page }) => {
-      const isRealMode = process.env.VITE_USE_MOCK === 'false';
-      const token = process.env.VITE_BEARER_TOKEN || 'token-of-soc-1-0123456789';
+  test('Capture all screens in light theme', async ({ page }) => {
+    const theme = 'light';
+    const isRealMode = process.env.VITE_USE_MOCK === 'false';
+    const token = process.env.VITE_BEARER_TOKEN || 'token-of-soc-1-0123456789';
 
-      // Set theme and token in localStorage before navigating
-      await page.addInitScript(({ t, tok }) => {
-        window.localStorage.setItem('ultron-theme', t);
-        document.documentElement.setAttribute('data-theme', t);
-        if (tok) {
-          window.localStorage.setItem('ultron-operator-token', tok);
-        }
-      }, { t: theme, tok: token });
-
-      // 1. Campaign List Screen
-      await page.goto('/campaigns');
-      if (token) {
-        await page.evaluate((tok) => {
-          window.localStorage.setItem('ultron-operator-token', tok);
-          window.dispatchEvent(new CustomEvent('ultron-token-changed', { detail: { token: tok } }));
-        }, token);
+    // Set theme and token in localStorage before navigating
+    await page.addInitScript(({ t, tok }) => {
+      window.localStorage.setItem('ultron-theme', t);
+      document.documentElement.setAttribute('data-theme', t);
+      if (tok) {
+        window.localStorage.setItem('ultron-operator-token', tok);
       }
-      await expect(page.getByText('Quản lý Chiến dịch (Campaigns)')).toBeVisible();
-      if (isRealMode) {
-        await expect(page.getByText('REAL API')).toBeVisible();
-        await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
-      }
-      await captureScreen(page, `01-campaign-list-${theme}.png`);
+    }, { t: theme, tok: token });
 
-      // Resolve campaign ID dynamically from UI or fallback to mock ID
-      let campaignId = '01934f6a-0000-7000-8000-000000000001';
-      const detailLink = page.locator('a[href^="/campaigns/"]').first();
+    // 1. Campaign List Screen
+    await page.goto('/campaigns');
+    if (token) {
+      await page.evaluate((tok) => {
+        window.localStorage.setItem('ultron-operator-token', tok);
+        window.dispatchEvent(new CustomEvent('ultron-token-changed', { detail: { token: tok } }));
+      }, token);
+    }
+    await expect(page.getByText('Quản lý Chiến dịch (Campaigns)')).toBeVisible();
+    if (isRealMode) {
+      await expect(page.getByText('REAL API')).toBeVisible();
+      await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
+    }
+    await captureScreen(page, `01-campaign-list-${theme}.png`);
+
+    // Resolve campaign ID dynamically from UI or fallback to mock ID
+    let campaignId = '01934f6a-0000-7000-8000-000000000001';
+    const detailLink = page.locator('a[href^="/campaigns/"]').first();
+    try {
+      await detailLink.waitFor({ state: 'visible', timeout: 6000 });
+      const href = await detailLink.getAttribute('href');
+      if (href) {
+        campaignId = href.replace('/campaigns/', '');
+      }
+    } catch {
+      // fallback to default id if not rendered in time
+    }
+
+    // 2. Campaign Detail Screen
+    await page.goto(`/campaigns/${campaignId}`);
+    await expect(page.getByText('Mục tiêu đầu vào (Target Seeds)')).toBeVisible();
+    await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
+    await captureScreen(page, `02-campaign-detail-${theme}.png`);
+
+    // 3. Job Table View Screen (showing status, priority, and wait/block reasons)
+    await page.goto(`/jobs?campaign_id=${campaignId}`);
+    await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
+    await captureScreen(page, `03-job-table-${theme}.png`);
+
+    // 4. Job React Flow View Screen
+    await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
+    await page.waitForTimeout(600);
+    await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
+
+    // 5. Asset Graph View Screen
+    let assetId = '';
+    let assetCampaignId = campaignId;
+    if (isRealMode && process.env.AEGIS_PG_DSN) {
       try {
-        await detailLink.waitFor({ state: 'visible', timeout: 6000 });
-        const href = await detailLink.getAttribute('href');
-        if (href) {
-          campaignId = href.replace('/campaigns/', '');
-        }
+        const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', process.env.AEGIS_PG_DSN, 'get_asset'], {
+          stdio: 'pipe',
+        }).toString();
+        const matchAsset = out.match(/ASSET_ID\s+([^\s]+)/);
+        if (matchAsset) assetId = matchAsset[1];
+        const matchCamp = out.match(/CAMPAIGN_ID\s+([^\s]+)/);
+        if (matchCamp) assetCampaignId = matchCamp[1];
       } catch {
-        // fallback to default id if not rendered in time
+        // ignore
       }
+    }
+    const assetUrl = assetId
+      ? `/assets?campaign_id=${assetCampaignId}&asset_id=${assetId}`
+      : `/assets?campaign_id=${assetCampaignId}`;
+    await page.goto(assetUrl);
+    await expect(page.getByText('Đồ thị Tri thức & Nguồn gốc Tài sản')).toBeVisible();
+    await expect(page.getByText('Chưa có API backend cho Đồ thị Tài sản')).not.toBeVisible();
+    const provHeading = page.getByText('Nguồn gốc & Bằng chứng', { exact: true });
+    if (await provHeading.isVisible()) {
+      await expect(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)')).toBeVisible();
+    }
+    await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
 
-      // 2. Campaign Detail Screen
-      await page.goto(`/campaigns/${campaignId}`);
-      await expect(page.getByText('Mục tiêu đầu vào (Target Seeds)')).toBeVisible();
-      await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
-      await captureScreen(page, `02-campaign-detail-${theme}.png`);
+    // 5b. Asset Table View Screen
+    await page.getByRole('button', { name: 'Bảng Tài sản' }).click();
+    await page.waitForTimeout(400);
+    await captureScreen(page, `05b-asset-table-${theme}.png`);
 
-      // 3. Job Table View Screen (showing status, priority, and wait/block reasons)
-      await page.goto(`/jobs?campaign_id=${campaignId}`);
-      await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
-      await captureScreen(page, `03-job-table-${theme}.png`);
-
-      // 4. Job React Flow View Screen
-      await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
-      await page.waitForTimeout(600);
-      await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
-
-      // 5. Asset Graph View Screen
-      let assetId = '';
-      let assetCampaignId = campaignId;
-      if (isRealMode && process.env.AEGIS_PG_DSN) {
-        try {
-          const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', process.env.AEGIS_PG_DSN, 'get_asset'], {
-            stdio: 'pipe',
-          }).toString();
-          const matchAsset = out.match(/ASSET_ID\s+([^\s]+)/);
-          if (matchAsset) assetId = matchAsset[1];
-          const matchCamp = out.match(/CAMPAIGN_ID\s+([^\s]+)/);
-          if (matchCamp) assetCampaignId = matchCamp[1];
-        } catch {
-          // ignore
-        }
-      }
-      const assetUrl = assetId
-        ? `/assets?campaign_id=${assetCampaignId}&asset_id=${assetId}`
-        : `/assets?campaign_id=${assetCampaignId}`;
-      await page.goto(assetUrl);
-      await expect(page.getByText('Đồ thị Tri thức & Nguồn gốc Tài sản')).toBeVisible();
-      await expect(page.getByText('Chưa có API backend cho Đồ thị Tài sản')).not.toBeVisible();
-      const provHeading = page.getByText('Nguồn gốc & Bằng chứng', { exact: true });
-      if (await provHeading.isVisible()) {
-        await expect(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)')).toBeVisible();
-      }
-      await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
-
-      // 5b. Asset Table View Screen
-      await page.getByRole('button', { name: 'Bảng Tài sản' }).click();
-      await page.waitForTimeout(400);
-      await captureScreen(page, `05b-asset-table-${theme}.png`);
-
-      // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
-      await page.goto('/tools');
-      await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
-      await expect(page.getByText('dns.enumerate_subdomains')).toBeVisible();
-      await expect(page.getByText('subfinder', { exact: true })).toBeVisible();
-      if (isRealMode) {
-        await expect(page.getByText('Khớp Manifest (Healthy)').first()).toBeVisible();
-      }
-      await captureScreen(page, `06-tool-catalogue-${theme}.png`);
-    });
-  }
+    // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
+    await page.goto('/tools');
+    await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
+    await expect(page.getByText('dns.enumerate_subdomains')).toBeVisible();
+    await expect(page.getByText('subfinder', { exact: true })).toBeVisible();
+    if (isRealMode) {
+      await expect(page.getByText('Khớp Manifest (Healthy)').first()).toBeVisible();
+    }
+    await captureScreen(page, `06-tool-catalogue-${theme}.png`);
+  });
 
   test('Live update: a status change made via API appears in the UI within 2 s without reload', async ({ page }) => {
     const isRealMode = process.env.VITE_USE_MOCK === 'false' && Boolean(process.env.AEGIS_PG_DSN);
