@@ -403,6 +403,10 @@ def revision_events(
 
     Only the payload fields the delta needs are projected out of `jsonb` (`payload->>'field'`),
     so the emitter does not decode every event payload into Python for a batch of thousands.
+
+    A campaign seed (`asset.discovered.v2` with `revision` 0, published by M01) is left out: it is
+    projected as a node, but it belongs to no knowledge revision - it exists before the first one -
+    so there is no delta to publish for it (`knowledge.delta.v2.revision` starts at 1).
     """
     rows = conn.execute(
         "SELECT seq, type, campaign_id, trace,"
@@ -413,7 +417,10 @@ def revision_events(
         "       payload->>'subject_key' AS subject_key,"
         "       payload->>'finding_id' AS finding_id,"
         "       payload->>'causal_job_id' AS causal_job_id"
-        "  FROM outbox_event WHERE seq > %s AND seq <= %s ORDER BY seq LIMIT %s",
+        "  FROM outbox_event WHERE seq > %s AND seq <= %s"
+        "   AND NOT (type = 'asset.discovered.v2'"
+        "            AND coalesce((payload->>'revision')::bigint, 0) = 0)"
+        " ORDER BY seq LIMIT %s",
         (after, upto, limit + 1),
     ).fetchall()
     truncated = len(rows) > limit

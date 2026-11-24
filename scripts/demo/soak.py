@@ -123,7 +123,9 @@ def main(argv: list[str] | None = None) -> int:
                         "soak: report "
                         + f"campaigns={row['campaigns']['total']} jobs={row['jobs']['total']} "
                         + f"failures={row['jobs']['by_status'].get('FAILED', 0)} "
-                        + f"duplicates={sum(len(v) for v in row['duplicates'].values())}"
+                        + f"duplicates={sum(len(v) for v in row['duplicates'].values())} "
+                        + f"graph_mismatch={row['graph']['asset_mismatch']}"
+                        + f"/{row['graph']['edge_mismatch']}"
                     )
                 except Exception as error:  # noqa: BLE001
                     errors.append(f"report: {type(error).__name__}: {error}")
@@ -230,6 +232,24 @@ def _collect(
         " (SELECT count(*) FROM graph_revision) AS revisions,"
         " (SELECT count(*) FROM outbox_event) AS outbox_events",
     )
+    # The graph must hold exactly the assets and open edges PostgreSQL has: the projection only
+    # learns about an asset from its outbox event, so a writer that forgets the event leaves the
+    # graph behind (that is how `dns:internal.example` was missing). Totals are comparable because
+    # this stack is the only writer of its database and graph.
+    pg_assets = support.count(connection, "SELECT count(*) AS n FROM asset")
+    pg_edges = support.count(
+        connection, "SELECT count(*) AS n FROM relationship WHERE valid_to IS NULL"
+    )
+    graph_assets = _graph_count("MATCH (a:Asset) RETURN count(a) AS n", "n")
+    graph_edges = _graph_count("MATCH ()-[r]->() RETURN count(r) AS n", "n")
+    graph_vs_pg = {
+        "postgres_assets": pg_assets,
+        "graph_assets": graph_assets,
+        "postgres_open_edges": pg_edges,
+        "graph_edges": graph_edges,
+        "asset_mismatch": pg_assets - graph_assets,
+        "edge_mismatch": pg_edges - graph_edges,
+    }
     lag = support.rows(
         connection,
         """
@@ -306,10 +326,22 @@ def _collect(
             key: int(value) for key, value in (knowledge[0] if knowledge else {}).items()
         },
         "lag": {key: int(value) for key, value in (lag[0] if lag else {}).items()},
+        "graph": graph_vs_pg,
         "duplicates": duplicates,
         "memory": {"processes": process_rows, "containers": containers},
         "errors": errors[-50:],
     }
+
+
+def _graph_count(cypher: str, column: str) -> int:
+    """One count from Neo4j; a graph that cannot be read is reported as -1, not hidden."""
+    try:
+        rows = support.neo4j_query(cypher)
+    except Exception:  # noqa: BLE001 - the soak reports the mismatch, it does not stop
+        return -1
+    if not rows:
+        return 0
+    return int(rows[0][column])
 
 
 def _sum(items: list[dict[str, Any]], key: str, value: str) -> int:
@@ -375,6 +407,15 @@ def _render(row: dict[str, Any]) -> str:
             f"  quarantined    {row['ingestion']['quarantined_records']} records",
             f"evidence         {row['evidence']['objects']} objects, {row['evidence']['bytes']} B",
             f"knowledge        {row['knowledge']}",
+            "graph vs PG      assets {}/{} (graph/PG), open edges {}/{}, "
+            "asset_mismatch={} edge_mismatch={}".format(
+                row["graph"]["graph_assets"],
+                row["graph"]["postgres_assets"],
+                row["graph"]["graph_edges"],
+                row["graph"]["postgres_open_edges"],
+                row["graph"]["asset_mismatch"],
+                row["graph"]["edge_mismatch"],
+            ),
             "projection lag   outbox_head={} projector_cursor={} revision_head={}".format(
                 row["lag"].get("outbox_head"),
                 row["lag"].get("projector_cursor"),

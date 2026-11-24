@@ -31,6 +31,7 @@ from tests.test_m05_service import service
 
 __all__ = [
     "accept_jobs",
+    "seed_events",
     "api_app",
     "emit_event",
     "job_started_payload",
@@ -67,6 +68,25 @@ def open_campaign(dsn: str, *, name: str = "G1.5a campaign") -> SeededCampaign:
         seed_ip="10.114.53.53",
         known_asset="",
     )
+
+
+def seed_events(dsn: str, campaign_id: str) -> list[int]:
+    """The publication sequence of the campaign's own seed events, in order.
+
+    M01 publishes one `asset.discovered.v2` per identity-bearing seed target in the campaign
+    transaction (`revision` 0), so a campaign's stream starts with those before any job event. A
+    test that begins its own stream reads them first (`tests/test_events_stream.py`) instead of
+    assuming an empty history.
+    """
+    with psycopg.connect(dsn, row_factory=dict_row) as conn:
+        rows = conn.execute(
+            "SELECT seq FROM aegis.outbox_event"
+            " WHERE campaign_id = %s AND type = 'asset.discovered.v2'"
+            "   AND coalesce((payload->>'revision')::bigint, 0) = 0"
+            " ORDER BY seq",
+            (campaign_id,),
+        ).fetchall()
+    return [int(row["seq"]) for row in rows]
 
 
 def accept_jobs(dsn: str, campaign: SeededCampaign, count: int = 1) -> list[dict[str, Any]]:

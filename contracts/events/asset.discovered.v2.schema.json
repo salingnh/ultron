@@ -2,14 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/asset.discovered.v2.schema.json",
   "title": "Payload asset.discovered.v2",
-  "description": "Bên phát: M27. Khóa khử trùng của consumer: asset_id+revision. Bên nhận: M23 (projector đồ thị), M26 (UI).",
+  "description": "Bên phát: M27 (tài sản job tìm thêm, có `causal_job_id`) và M01 (seed của campaign, `revision` 0 và không có `causal_job_id` vì seed do chính campaign phát hiện, không do job nào). Khóa khử trùng của consumer: asset_id + revision (seed thêm campaign_id). Bên nhận: M23 (projector đồ thị), M26 (UI).",
   "type": "object",
   "required": [
     "asset_id",
     "canonical_key",
     "kind",
     "revision",
-    "causal_job_id",
     "campaign_id",
     "discovered_from",
     "first_seen"
@@ -27,10 +26,12 @@
     },
     "revision": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 0,
+      "description": "Revision đồ thị mà event thuộc về (M27). 0 = seed của campaign, phát trước khi có revision nào; M23 ghi `pg_revision` 0 cho nút đó."
     },
     "causal_job_id": {
-      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id",
+      "description": "Job đã phát hiện tài sản. Vắng mặt khi tài sản là seed của campaign (M01)."
     },
     "campaign_id": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"

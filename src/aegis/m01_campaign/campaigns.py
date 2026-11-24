@@ -141,7 +141,7 @@ def create_campaign(
     # campaign row exists: `asset_campaign` has a non-deferrable foreign key to it. M27 can then
     # resolve a seed as a coverage subject and as a relationship parent, and the asset graph has
     # the campaign's seeds before the first job runs.
-    insert_seed_assets(connection, campaign_id=campaign_id, seeds=seeds)
+    insert_seed_assets(connection, campaign_id=campaign_id, seeds=seeds, trace_id=trace_id)
     connection.execute(
         """
         INSERT INTO aegis.campaign_status_change
