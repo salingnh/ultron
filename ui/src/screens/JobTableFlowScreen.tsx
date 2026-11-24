@@ -79,7 +79,7 @@ const CustomJobNode: React.FC<NodeProps<Node<JobNodeData>>> = ({ data }) => {
         <span style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--muted)' }}>
           {data.type}
         </span>
-        <StatusChip status={data.status} waitReason={data.wait_reason} size="sm" kind={isJob ? 'job' : 'campaign'} />
+        <StatusChip status={data.status} size="sm" kind={isJob ? 'job' : 'campaign'} />
       </div>
 
       <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--ink)', marginBottom: 4, wordBreak: 'break-word' }}>
@@ -633,7 +633,7 @@ export const JobTableFlowScreen: React.FC = () => {
                       </div>
                     </td>
                     <td>
-                      <StatusChip status={job.status} waitReason={job.wait_reason} kind="job" />
+                      <StatusChip status={job.status} kind="job" />
                       {job.error && (
                         <div style={{ marginTop: 4 }}>
                           <span className="brand-badge" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>

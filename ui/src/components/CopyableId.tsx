@@ -25,7 +25,7 @@ export const CopyableId: React.FC<CopyableIdProps> = ({ value, truncate = true, 
   return (
     <span className={`copyable-field ${className}`} title={value} style={{ maxWidth: '100%', boxSizing: 'border-box' }}>
       {prefix && <span style={{ color: 'var(--muted)', marginRight: 2, flexShrink: 0 }}>{prefix}:</span>}
-      <span className="mono" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere', minWidth: 0, flex: 1 }}>
+      <span className="mono" style={{ wordBreak: 'normal', overflowWrap: 'break-word', minWidth: 0, flex: 1 }}>
         {displayValue}
       </span>
       <button
