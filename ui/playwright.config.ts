@@ -19,7 +19,7 @@ if (!process.env.PLAYWRIGHT_PORT) {
   process.env.PLAYWRIGHT_PORT = String(await getFreePort());
 }
 const port = Number(process.env.PLAYWRIGHT_PORT);
-const baseURL = `http://localhost:${port}`;
+const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -47,7 +47,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run dev -- --port ${port}`,
+    command: `npm run build && npm run preview -- --port ${port} --strictPort --host 127.0.0.1`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 30000,
