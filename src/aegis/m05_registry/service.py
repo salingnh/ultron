@@ -945,6 +945,9 @@ class PostgresJobService:
             ).fetchone()
             if outcome is not None and str(outcome[0]) == "requested" and str(row[0]) == "QUEUED":
                 # A queued job has no runner to stop: record the intent and terminalise it now.
+                # The scheduler (M02/G1.1d) may have written a wait reason on this job; 0014 only
+                # allows one while the job is QUEUED, so it is cleared before the terminal CAS.
+                conn.execute("UPDATE scan_job SET wait_reason = NULL WHERE job_id = %s", (job_id,))
                 conn.execute(
                     "SELECT aegis.record_job_callback(%s, %s, %s, 'CANCELLED')",
                     (job_id, int(row[1]), int(row[2])),

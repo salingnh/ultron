@@ -23,6 +23,9 @@ dependencies = [
   # API router registry skeleton (G1.1b adds the routes).
   "fastapi>=0.120,<1",
   "uvicorn>=0.38,<1",
+  # M02 CampaignWorkflow, scheduler activities and the outbox dispatcher (G1.1d). Same pin as the
+  # G0.1 spike (deploy/pins.json on the spike branch), so replay tests and the dev stack agree.
+  "temporalio==1.36.1",
 ]
 
 [dependency-groups]
@@ -48,6 +51,7 @@ packages = ["src/aegis"]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 pythonpath = ["src", "."]
+markers = ["live: needs a running Temporal server (AEGIS_TEMPORAL_TARGET); not in the default gate"]
 
 [tool.ruff]
 line-length = 100
