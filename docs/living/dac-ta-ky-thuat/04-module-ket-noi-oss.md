@@ -42,6 +42,24 @@ Registry lọc theo capability, schema input/output tương thích, health, phi�
 
 Mỗi adapter có ma trận adapter version ↔ tool version ↔ schema, golden fixtures và thông tin giấy phép của bản pin. Task ghim manifest_sha256 theo [quy tắc runtime](../../../contracts/interfaces/README.md#manifest-bất-biến-và-cấu-hình-thực-thi); registry giữ nguyên bản đã pin cho job còn chờ/retry. Nâng tool phải chạy lại parser/conformance, canary trên lab đã được phép và có đường rollback manifest. Không mang các claim release/giấy phép hoặc benchmark trong tài liệu nghiên cứu thành dữ kiện của bản đang tích hợp.
 
+### Pin table đã kiểm (spike G0.2, 2026-11-24)
+
+Kiểm trên máy dev (Fedora 44, rootless Podman 5.8.9): digest lấy bằng `skopeo inspect` cho `linux/amd64`, ngày phát hành lấy từ GitHub release, giấy phép từ repo/label của image, SBOM SPDX 2.3 sinh bằng `trivy` từ `podman save` của đúng digest. Toàn bộ ở `spikes/g0.2-sandbox/pins/` và `spikes/g0.2-sandbox/sbom/`.
+
+| Tool | Bản pin | Ngày phát hành | Tuổi (ngày) | Digest | Giấy phép | SBOM (số package) |
+| --- | --- | --- | --- | --- | --- | --- |
+| subfinder | v2.17.0 | 2026-10-08 | 47 | `sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf` | MIT | SPDX (134) |
+| dnsx | v1.2.2 | 2025-02-01 | 661 | `sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec` | MIT | SPDX (138) |
+| bbot | v3.0.2 | 2026-08-24 | 92 | `sha256:40ed0733e0163feee844d49346eb15e40872fa7008f621358eed9b9a7807382e` | AGPL-3.0 | SPDX (277) |
+| naabu | v2.7.0 | 2026-10-28 | 27 | `sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa` | MIT | SPDX (146) |
+
+Ghi chú bắt buộc khi lập manifest:
+
+- **dnsx**: upstream đã có v1.3.0/v1.3.1 nhưng Docker Hub không có image tương ứng (tag mới nhất là v1.2.2), nên pin là v1.2.2. `provider_version`/`adapter_version` phải ghi đúng khoảng lệch; không mô tả hành vi v1.3 khi chưa có image.
+- **bbot**: AGPL-3.0, chỉ chạy như container riêng, không link vào mã lõi, giữ attribution. Bản 3.1.0 (2026-11-12) mới 12 ngày tuổi nên chưa được nhận theo luật 14 ngày (đủ điều kiện từ 2026-11-26), và các tag 3.1.x trên Docker Hub hiện là `rc`.
+- **naabu**: chỉ dùng cho kiểm raw socket. Trong rootless Podman, `-s syn` tự hạ xuống CONNECT dù `NET_RAW` hiệu lực (xem §Sandbox ở [Nền tảng](02-nen-tang.md)); `-proxy` nhận `host:port` không kèm scheme. Chưa đăng ký egress nếu chưa chứng minh được chế độ quét thực tế.
+- Mọi lần nâng pin phải chạy lại parser/conformance, ghi ngày phát hành và kiểm lại 14 ngày; SBOM phải sinh lại từ digest mới.
+
 Conformance giữ đủ: describe không side effect; validate từ chối input sai trước khi gọi OSS; start idempotent; status có retry_after; cancel/timeout dừng container và audit; collect có raw/hash/coverage; health nêu tool version/phụ thuộc. Parser tất định, không mạng/credential/biến môi trường kế thừa/DB; cùng fixture giữ canonical ID và predicate hợp lệ. Kiểm output giả chỉ dẫn, output lớn, upgrade và canary theo nền tảng.
 
 ## Chuỗi xử lý artifact và phản hồi tri thức
