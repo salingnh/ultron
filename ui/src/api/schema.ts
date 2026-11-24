@@ -180,7 +180,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Danh sách capability và provider (Registry M05) */
+        /**
+         * Danh sách capability và provider (Registry M05)
+         * @description Một mục cho mỗi capability; `providers` là manifest M05 đã nhận mà một job mới sẽ resolve (bản mới nhất cho mỗi provider). `health` = healthy khi registry đọc lại được manifest và pin khớp; probe container và trạng thái degraded/unavailable là M06/G2.
+         *     Có `campaign_id` thì lọc theo `capability_denylist` của RoE hiện tại của chiến dịch; campaign không tồn tại trả 404. Cần operator token như mọi thao tác M05.
+         */
         get: operations["listCapabilities"];
         put?: never;
         post?: never;
@@ -1820,7 +1824,9 @@ export interface operations {
     };
     listCapabilities: {
         parameters: {
-            query?: never;
+            query?: {
+                campaign_id?: components["schemas"]["Id"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1848,6 +1854,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     listJobs: {

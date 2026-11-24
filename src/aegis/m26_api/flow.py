@@ -27,17 +27,12 @@ read is not written anywhere; authentication only decides who may look.
 
 from __future__ import annotations
 
-from functools import cache
 from typing import Annotated, Any
 
 import psycopg
-import yaml
 from fastapi import APIRouter, Depends, Request, Response
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
 
 from aegis import validation
-from aegis.common.repo import repository_root
 from aegis.m01_campaign.campaigns import timestamp
 from aegis.m26_api.db import connection as db_connection
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
@@ -55,8 +50,6 @@ ERROR_401 = {"description": "Lỗi chuẩn (error.v2): thiếu hoặc sai operat
 API_PREFIX = "/api/v2"
 LABEL_MAX = 200
 MORE_TARGETS_MAX = 20
-CONTRACT_DOCUMENT = repository_root() / "contracts/api/openapi.v2.yaml"
-CONTRACTS_BASE_URI = "https://aegis.io/contracts/"
 
 router = APIRouter(tags=["campaigns"])
 
@@ -83,39 +76,10 @@ def _not_found(campaign_id: str) -> ApiError:
     )
 
 
-def _absolute_references(node: Any) -> Any:
-    """Rewrite the OpenAPI document's `../x.schema.json` refs to the contract `$id` URLs."""
-    if isinstance(node, dict):
-        rewritten = {key: _absolute_references(value) for key, value in node.items()}
-        reference = rewritten.get("$ref")
-        if isinstance(reference, str) and reference.startswith("../"):
-            rewritten["$ref"] = CONTRACTS_BASE_URI + reference.removeprefix("../")
-        return rewritten
-    if isinstance(node, list):
-        return [_absolute_references(item) for item in node]
-    return node
-
-
-@cache
-def _flow_validator() -> Draft202012Validator:
-    """The published `getCampaignFlow` response schema, resolved against the contract bundle."""
-    document = yaml.safe_load(CONTRACT_DOCUMENT.read_text(encoding="utf-8"))
-    schema = document["paths"]["/campaigns/{campaign_id}/flow"]["get"]["responses"]["200"][
-        "content"
-    ]["application/json"]["schema"]
-    registry: Registry = Registry()
-    for contract in validation.schemas().values():
-        registry = registry.with_resource(str(contract["$id"]), Resource.from_contents(contract))
-    return Draft202012Validator(
-        _absolute_references(schema),
-        registry=registry,
-        format_checker=validation.format_checker(),
-    )
-
-
 def _validated(flow: dict[str, Any]) -> dict[str, Any]:
     """A document that does not satisfy the locked response is a server/producer bug, not a 200."""
-    problems = sorted(_flow_validator().iter_errors(flow), key=str)
+    validator = validation.openapi_response_validator("/campaigns/{campaign_id}/flow")
+    problems = sorted(validator.iter_errors(flow), key=str)
     if problems:
         first = problems[0]
         pointer = "/" + "/".join(str(part) for part in first.absolute_path)

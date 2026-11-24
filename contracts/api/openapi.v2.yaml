@@ -454,6 +454,22 @@ paths:
       - jobs
       operationId: listCapabilities
       summary: Danh sách capability và provider (Registry M05)
+      description: 'Một mục cho mỗi capability; `providers` là manifest M05 đã nhận mà một job mới sẽ
+        resolve (bản mới nhất cho mỗi provider). `health` = healthy khi registry đọc lại được manifest
+        và pin khớp; probe container và trạng thái degraded/unavailable là M06/G2.
+
+        Có `campaign_id` thì lọc theo `capability_denylist` của RoE hiện tại của chiến dịch; campaign
+        không tồn tại trả 404. Cần operator token như mọi thao tác M05.
+
+        '
+      security:
+      - operatorToken: []
+      parameters:
+      - name: campaign_id
+        in: query
+        required: false
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
       responses:
         '200':
           description: OK
@@ -496,6 +512,10 @@ paths:
                                 - healthy
                                 - degraded
                                 - unavailable
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /jobs:
     post:
       tags:
