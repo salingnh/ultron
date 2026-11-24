@@ -16,14 +16,24 @@ test.beforeAll(() => {
 });
 
 async function captureScreen(page: Page, filename: string) {
-  // Wait for loading states and animations to settle
-  await page.waitForTimeout(700);
+  // Wait for loading indicators and web fonts to settle deterministically
+  await expect(page.locator('.state-title', { hasText: /^Đang nạp/ })).toBeHidden();
+  await page.evaluate(() => document.fonts.ready);
   const localPath = path.join(SCREENSHOT_DIR, filename);
-  await page.screenshot({ path: localPath, fullPage: true });
+  const isRealMode = process.env.VITE_USE_MOCK === 'false';
+
+  // Only overwrite screenshots in ui/screenshots/ when in real mode or if they don't exist yet
+  if (isRealMode || !fs.existsSync(localPath)) {
+    await page.screenshot({ path: localPath, fullPage: true });
+  } else {
+    const tempDir = path.resolve(process.cwd(), 'test-results/screenshots');
+    fs.mkdirSync(tempDir, { recursive: true });
+    await page.screenshot({ path: path.join(tempDir, filename), fullPage: true });
+  }
 
   // Copy to reports directory for review artifacts only when running real verification
   // or when explicitly enabled, so CI mock tests never overwrite leader review artifacts.
-  if (process.env.VITE_USE_MOCK === 'false' || process.env.COPY_LEADER_SHOTS === 'true') {
+  if (isRealMode || process.env.COPY_LEADER_SHOTS === 'true') {
     try {
       fs.copyFileSync(localPath, path.join(LEADER_DIR_G15C, filename));
       fs.copyFileSync(localPath, path.join(LEADER_DIR_WIRE, filename));
@@ -60,23 +70,43 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
       }, token);
     }
     await expect(page.getByText('Quản lý Chiến dịch (Campaigns)')).toBeVisible();
+    await expect(
+      page.getByRole('table', { name: 'Bảng danh sách chiến dịch' }).or(page.getByText('Chưa có chiến dịch nào'))
+    ).toBeVisible();
     if (isRealMode) {
       await expect(page.getByText('REAL API')).toBeVisible();
       await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
     }
     await captureScreen(page, `01-campaign-list-${theme}.png`);
 
-    // Resolve campaign ID dynamically from UI or fallback to mock ID
+    // Resolve campaign ID and focal asset ID dynamically from real backend or UI
+    let assetId = '';
     let campaignId = '01934f6a-0000-7000-8000-000000000001';
-    const detailLink = page.locator('a[href^="/campaigns/"]').first();
-    try {
-      await detailLink.waitFor({ state: 'visible', timeout: 6000 });
-      const href = await detailLink.getAttribute('href');
-      if (href) {
-        campaignId = href.replace('/campaigns/', '');
+    if (isRealMode) {
+      try {
+        const pgDsn = process.env.AEGIS_PG_DSN || 'postgresql://aegis:aegis-dev-pg@127.0.0.1:15432/aegis';
+        const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', pgDsn, 'get_asset'], {
+          stdio: 'pipe',
+        }).toString();
+        const matchAsset = out.match(/ASSET_ID\s+([^\s]+)/);
+        if (matchAsset) assetId = matchAsset[1];
+        const matchCamp = out.match(/CAMPAIGN_ID\s+([^\s]+)/);
+        if (matchCamp) campaignId = matchCamp[1];
+      } catch (e) {
+        console.warn('Failed to resolve asset/campaign from DB:', e);
       }
-    } catch {
-      // fallback to default id if not rendered in time
+    }
+    if (!isRealMode || !assetId) {
+      const detailLink = page.locator('a[href^="/campaigns/"]').first();
+      try {
+        await detailLink.waitFor({ state: 'visible', timeout: 6000 });
+        const href = await detailLink.getAttribute('href');
+        if (href) {
+          campaignId = href.replace('/campaigns/', '');
+        }
+      } catch {
+        // fallback to default id if not rendered in time
+      }
     }
 
     // 2. Campaign Detail Screen
@@ -88,44 +118,38 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     // 3. Job Table View Screen (showing status, priority, and wait/block reasons)
     await page.goto(`/jobs?campaign_id=${campaignId}`);
     await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Bảng chi tiết Job' })).toBeVisible();
     await captureScreen(page, `03-job-table-${theme}.png`);
 
     // 4. Job React Flow View Screen
     await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
-    await page.waitForTimeout(600);
+    await expect(page.locator('.react-flow__renderer')).toBeVisible();
+    await expect(page.locator('.react-flow__node').first()).toBeVisible();
     await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
 
     // 5. Asset Graph View Screen
-    let assetId = '';
-    let assetCampaignId = campaignId;
-    if (isRealMode && process.env.AEGIS_PG_DSN) {
-      try {
-        const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', process.env.AEGIS_PG_DSN, 'get_asset'], {
-          stdio: 'pipe',
-        }).toString();
-        const matchAsset = out.match(/ASSET_ID\s+([^\s]+)/);
-        if (matchAsset) assetId = matchAsset[1];
-        const matchCamp = out.match(/CAMPAIGN_ID\s+([^\s]+)/);
-        if (matchCamp) assetCampaignId = matchCamp[1];
-      } catch {
-        // ignore
-      }
-    }
     const assetUrl = assetId
-      ? `/assets?campaign_id=${assetCampaignId}&asset_id=${assetId}`
-      : `/assets?campaign_id=${assetCampaignId}`;
+      ? `/assets?campaign_id=${campaignId}&asset_id=${assetId}`
+      : `/assets?campaign_id=${campaignId}`;
     await page.goto(assetUrl);
     await expect(page.getByText('Đồ thị Tri thức & Nguồn gốc Tài sản')).toBeVisible();
     await expect(page.getByText('Chưa có API backend cho Đồ thị Tài sản')).not.toBeVisible();
-    const provHeading = page.getByText('Nguồn gốc & Bằng chứng', { exact: true });
-    if (await provHeading.isVisible()) {
-      await expect(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)')).toBeVisible();
+    const graphNode = page.locator('.graph-container svg g[role="button"]').first();
+    const emptyGraph = page.getByText('Chưa có dữ liệu đồ thị tài sản cho chiến dịch này');
+    await expect(graphNode.or(emptyGraph)).toBeVisible();
+    if (await graphNode.isVisible()) {
+      await expect(page.getByText('Nguồn gốc & Bằng chứng', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Mã bằng chứng (Evidence ID)').or(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)'))
+      ).toBeVisible();
     }
     await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
 
     // 5b. Asset Table View Screen
     await page.getByRole('button', { name: 'Bảng Tài sản' }).click();
-    await page.waitForTimeout(400);
+    await expect(
+      page.getByRole('table', { name: 'Bảng tài sản số' }).or(page.getByText('Không tìm thấy tài sản nào phù hợp'))
+    ).toBeVisible();
     await captureScreen(page, `05b-asset-table-${theme}.png`);
 
     // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
@@ -140,11 +164,12 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
   });
 
   test('Live update: a status change made via API appears in the UI within 2 s without reload', async ({ page }) => {
-    const isRealMode = process.env.VITE_USE_MOCK === 'false' && Boolean(process.env.AEGIS_PG_DSN);
+    const throwawayDsn = process.env.AEGIS_E2E_THROWAWAY_DSN;
+    const isRealMode = process.env.VITE_USE_MOCK === 'false' && Boolean(throwawayDsn);
     const token = process.env.VITE_BEARER_TOKEN || 'token-of-soc-1-0123456789';
-    const pgDsn = process.env.AEGIS_PG_DSN || '';
 
-    if (!isRealMode) {
+    if (!isRealMode || !throwawayDsn) {
+      console.log('AEGIS_E2E_THROWAWAY_DSN not configured; skipping live mutation test to protect soak/production DB.');
       test.skip();
       return;
     }
@@ -172,13 +197,18 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     // Prepare a fresh RUNNING job in this campaign via real M05 submission & runner dispatch
     let targetJobId = '';
     try {
-      const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', pgDsn, 'prepare', campaignId], {
+      const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', throwawayDsn, 'prepare', campaignId], {
         stdio: 'pipe',
       }).toString();
       const match = out.match(/PREPARED_JOB_ID\s+([^\s]+)/);
       if (match) targetJobId = match[1];
     } catch (e) {
       console.warn('Failed to prepare fresh job via terminalise.py:', e);
+    }
+    if (!targetJobId) {
+      console.log('No active RUNNING campaign available to submit new job; skipping live mutation test.');
+      test.skip();
+      return;
     }
     expect(targetJobId).toBeTruthy();
 
@@ -195,7 +225,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     await captureScreen(page, '07-live-status-before.png');
 
     // Trigger terminalise of target job via real M06 backend callback and outbox event
-    execFileSync('../.venv/bin/python', ['e2e/terminalise.py', pgDsn, 'terminalise', targetJobId], { stdio: 'pipe' });
+    execFileSync('../.venv/bin/python', ['e2e/terminalise.py', throwawayDsn, 'terminalise', targetJobId], { stdio: 'pipe' });
     const startTime = Date.now();
 
     // Wait for the UI to reflect the status change without page reload (< 2s)

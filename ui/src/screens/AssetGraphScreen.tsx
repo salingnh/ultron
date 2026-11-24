@@ -12,7 +12,7 @@ import {
   GitFork,
   RefreshCw,
 } from 'lucide-react';
-import { apiClient } from '../api/client';
+import { apiClient, ApiError } from '../api/client';
 import type {
   Campaign,
   Asset,
@@ -20,6 +20,7 @@ import type {
   AssetGraphNode,
   AssetGraphEdge,
   ProvenanceDetail,
+  AppError,
 } from '../api/types';
 import { TruncatedBanner } from '../components/TruncatedBanner';
 import { ProvenancePanel } from '../components/ProvenancePanel';
@@ -38,7 +39,7 @@ export const AssetGraphScreen: React.FC = () => {
   const [graphData, setGraphData] = useState<AssetGraphResponse | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | Error | string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [kindFilter, setKindFilter] = useState('ALL');
@@ -156,7 +157,19 @@ export const AssetGraphScreen: React.FC = () => {
 
       setAssets(loadedAssets);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Không thể tải đồ thị tài sản');
+      if (err instanceof ApiError && err.appError) {
+        setError(err.appError);
+      } else if (err instanceof ApiError) {
+        setError({
+          code: err.status === 404 ? 'INPUT_INVALID' : err.status === 401 ? 'POLICY_DENIED' : 'INTERNAL_ERROR',
+          message: err.message,
+          technical_cause: `HTTP ${err.status} from backend endpoint`,
+          next_action: 'CHECK_PROVIDER',
+          next_action_detail: 'Kiểm tra trạng thái graph driver hoặc cấu hình Neo4j của backend API.',
+        });
+      } else {
+        setError(err instanceof Error ? err : 'Không thể tải đồ thị tài sản');
+      }
     } finally {
       setLoading(false);
     }
@@ -238,7 +251,7 @@ export const AssetGraphScreen: React.FC = () => {
             Đồ thị Tri thức & Nguồn gốc Tài sản
           </h1>
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--muted)', marginTop: 2 }}>
-            Khảo sát quan hệ giữa các tài sản số. Nhấp vào bất kỳ Node hoặc Edge để mở bảng điều khiển nguồn gốc & bằng chứng SHA-256.
+            Khảo sát quan hệ giữa các tài sản số. Nhấp vào bất kỳ Node hoặc Edge để mở bảng điều khiển nguồn gốc & bằng chứng.
           </p>
         </div>
 
@@ -577,7 +590,7 @@ export const AssetGraphScreen: React.FC = () => {
                   }}
                 >
                   <Info size={14} style={{ color: 'var(--accent)' }} />
-                  <span>Nhấp vào node hoặc cạnh liên kết để kiểm tra Provenance & Bằng chứng SHA-256</span>
+                  <span>Nhấp vào node hoặc cạnh liên kết để kiểm tra Provenance & Bằng chứng</span>
                 </div>
               </div>
             ) : (

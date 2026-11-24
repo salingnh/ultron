@@ -44,6 +44,11 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v2';
 let mockOverride: boolean | null = null;
 
 export class ApiError extends Error {
+  public code?: string;
+  public next_action?: string;
+  public next_action_detail?: string;
+  public technical_cause?: string;
+
   constructor(
     public status: number,
     public appError?: AppError,
@@ -51,6 +56,12 @@ export class ApiError extends Error {
   ) {
     super(message || appError?.message || `API Error: ${status}`);
     this.name = 'ApiError';
+    if (appError) {
+      this.code = appError.code;
+      this.next_action = appError.next_action;
+      this.next_action_detail = appError.next_action_detail;
+      this.technical_cause = appError.technical_cause;
+    }
   }
 }
 
@@ -256,7 +267,6 @@ export const apiClient = {
             polarity: latestObs.polarity,
             evidenceIds: latestObs.evidence_ids,
             confidence: edge?.confidence,
-            sha256: latestObs.evidence_ids && latestObs.evidence_ids.length > 0 ? latestObs.evidence_ids[0] : undefined,
             sourceAsset: history.asset.discovered_from?.[0] || edge?.from,
             targetAsset: history.asset.canonical_key || edge?.to,
           };
