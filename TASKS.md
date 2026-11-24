@@ -46,6 +46,7 @@ G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trườ
 - [ ] G2.1 Khóa tool network/web/artifact và kiểm thử credential theo dependency dữ liệu; hoàn thiện manifest/input/parser/conformance, gồm tham số Nuclei chính thức/tùy chỉnh và xác minh credential. Chưa có schema thì chưa đăng ký tool.
 - [ ] G2.2 Finding/evidence, xác minh động bằng tool có đối chứng âm, correlation theo snapshot và severity do agent có lý do/nguồn; feed/asset thay đổi kích hoạt đánh giá lại và Telegram mà không cần chờ lần quét mới; JSON report.
 - [ ] G2.3 Pause/resume/cancel, recovery, budget/error, kiểm prompt injection và sandbox; kiểm backup/restore mức MVP.
+- [ ] RoE khung giờ cho phép (allowed time windows): hoãn khỏi G1 theo quyết định chủ 2026-11-24; làm lại cùng Clock port tiêm được + test đồng hồ cố định cả trong/ngoài cửa sổ.
 - [ ] G2.4 Đóng băng workload rồi soak 7 ngày/10.000 bước; chứng minh không trùng job/mất provenance, dependency đúng, UI báo lỗi/kết quả trung thực.
 
 ## G3 — thêm tool theo nhu cầu

@@ -42,6 +42,14 @@ PG_DIR = ROOT / "db/postgres"
 FIXTURE = PG_DIR / "tests/fixtures/v1-policy-jobs.sql"
 MIGRATION_NAME = "0009_legacy_policy_migration.sql"
 MIGRATION = (PG_DIR / MIGRATION_NAME).read_text()
+#: The migrations that follow 0009 and change the conversion of the *same* function; the harness
+#: applies them too, so the test exercises the mapping a database has today (0017 drops the RoE
+#: time windows, so the mapping version becomes aegis-roe/2 and they are recorded as dropped).
+AFTER_0009 = (
+    # Only the migration that changes this conversion; the row-rule migrations (0010-0014) would
+    # add their own dispatch-block reasons and blur what this harness is about.
+    "0017_drop_time_windows.sql",
+)
 BEFORE_0009 = (
     "0001_init.sql",
     "0002_tool_orchestration.sql",
@@ -52,11 +60,28 @@ BEFORE_0009 = (
     "0007_job_lifecycle.sql",
     "0008_outbox_publication_order.sql",
 )
+MAPPING = next(
+    path.read_text()
+    for path in sorted(PG_DIR.glob("[0-9][0-9][0-9][0-9]_*.sql"), key=lambda item: item.name)
+    if "FUNCTION aegis.convert_legacy_policy" in path.read_text()
+    and path.name != MIGRATION_NAME
+)
 DSN = os.environ.get("AEGIS_TEST_PG_DSN", "").strip()
 POLICY_SCHEMA = json.loads((ROOT / "campaign/roe-policy.v2.schema.json").read_text())
 LEGACY_POLICY = json.loads((ROOT / "fixtures/invalid/roe-policy.legacy-v1.json").read_text())
 MAPPED_POLICY = json.loads((ROOT / "fixtures/valid/roe-policy.from-v1.json").read_text())
-V1_ONLY = {"scan_profile", "max_impact_tier", "approval_required_tiers"}
+#: What the v1 -> v2 mapping drops today: the v1-only taxonomy/approval settings and (from 0017)
+#: the two RoE time-window keys the contract no longer has.
+V1_ONLY = {
+    "scan_profile",
+    "max_impact_tier",
+    "approval_required_tiers",
+    "allowed_windows",
+    "blackout_windows",
+}
+WINDOW_KEYS = {"allowed_windows", "blackout_windows"}
+#: What the 0009 mapping drops on its own (the windows joined the set in 0017).
+TAXONOMY_ONLY = {"scan_profile", "max_impact_tier", "approval_required_tiers"}
 
 CAMPAIGN = "01900000-0000-7000-8000-0000000d1601"
 CREATED_CAMPAIGN = "01900000-0000-7000-8000-0000000d1611"
@@ -89,9 +114,16 @@ class LegacyPolicySchema(unittest.TestCase):
             self.assertEqual(LEGACY_POLICY[key], value, key)
 
     def test_ddl_mirrors_the_schema_key_set_and_required_limits(self):
+        # The stored-shape predicate keeps the two window keys so a snapshot written before 0017 is
+        # still recognized as v2 (and not reclassified as v1 by legacy_dispatch_block); the
+        # current-shape predicate is the one the schema describes, and 0017 excludes exactly them.
         body = MIGRATION.split("CREATE FUNCTION aegis.is_roe_policy_v2", 1)[1]
         keys = re.findall(r"'([a-z_]+)'", body.split("k NOT IN (", 1)[1].split("))", 1)[0])
-        self.assertEqual(sorted(keys), sorted(POLICY_SCHEMA["properties"]))
+        self.assertEqual(sorted(keys), sorted(set(POLICY_SCHEMA["properties"]) | WINDOW_KEYS))
+        current = MAPPING.split("FUNCTION aegis.is_roe_policy_v2_current", 1)[1]
+        for key in WINDOW_KEYS:
+            self.assertIn(f"NOT (policy ? '{key}')", current)
+        self.assertNotIn("is_json_int(policy->'allowed_windows'", current)
         for name in POLICY_SCHEMA["required"]:
             self.assertIn(name, keys)
             self.assertIn(f"is_json_int(policy->'{name}', "
@@ -101,13 +133,16 @@ class LegacyPolicySchema(unittest.TestCase):
                          "the schema must stay closed for the shape discriminator to be total")
 
     def test_ddl_fixes_the_v1_only_keys_and_the_conversion_rule(self):
-        keys = MIGRATION.split("v1_only constant text[] := ARRAY[", 1)[1].split("]", 1)[0]
+        # The mapping a database has today: 0009 plus the later migrations that redefine it (0017
+        # adds the window keys to the dropped set).
+        keys = MAPPING.split("v1_only constant text[] := ARRAY[", 1)[1].split("]", 1)[0]
         self.assertEqual(set(re.findall(r"'([a-z_]+)'", keys)), V1_ONLY)
-        self.assertIn("converted := legacy - v1_only", MIGRATION)
-        self.assertIn("refusing to drop a setting silently", MIGRATION)
-        # The migration converts and holds; it never edits the source row or promotes a campaign.
-        self.assertNotIn("UPDATE policy_snapshot", MIGRATION)
-        self.assertNotRegex(MIGRATION, r"(?i)\bset\b[^;]*current_policy_version")
+        for document in (MIGRATION, MAPPING):
+            self.assertIn("converted := legacy - v1_only", document)
+            self.assertIn("refusing to drop a setting silently", document)
+            # The migration converts and holds; it never edits the source row or promotes a campaign.
+            self.assertNotIn("UPDATE policy_snapshot", document)
+            self.assertNotRegex(document, r"(?i)\bset\b[^;]*current_policy_version")
 
 
 class Harness:
@@ -132,6 +167,8 @@ class Harness:
     def apply_migration(self) -> None:
         with psycopg.connect(self.dsn, autocommit=True) as conn:
             conn.execute((PG_DIR / MIGRATION_NAME).read_text())
+            for migration in AFTER_0009:
+                conn.execute((PG_DIR / migration).read_text())
 
     def connect(self):
         conn = psycopg.connect(self.dsn, autocommit=True)
@@ -188,25 +225,30 @@ class LegacyPolicyMigration(unittest.TestCase):
         self.assertEqual(after["roe-102"][2], {"scan_profile": "passive", "max_parallel_jobs": 10,
                                                "max_duration_hours": 168})
 
-        # 2. Every new row is a different version, in the same campaign, validating as v2 config.
-        v = validator()
+        # 2. Every new row is a different version, in the same campaign, and is the 0009 mapping of
+        #    its source: the executable settings plus the two window keys 0017 later drops (history
+        #    is not rewritten; the windows of a stored snapshot are ignored by the code).
+        historical = {**MAPPED_POLICY, **{key: LEGACY_POLICY[key] for key in WINDOW_KEYS}}
         for source, new, campaign_id, mapping_version, _, _, actor in converted:
+            # 0009 converts the historical snapshots as part of the chain, so their candidate keeps
+            # the windows it had (mapping aegis-roe/1) and 0017 does not rewrite history. A
+            # conversion that happens *after* 0017 is aegis-roe/2 (see the test below).
             self.assertEqual(mapping_version, "aegis-roe/1")
             self.assertEqual(actor, MIGRATION_ACTOR)
             self.assertNotEqual(new, source)
             self.assertEqual(after[new][1], campaign_id)
-            self.assertEqual(after[new][2], MAPPED_POLICY if source == "roe-101"
+            self.assertEqual(after[new][2], historical if source == "roe-101"
                              else {"max_parallel_jobs": 10, "max_duration_hours": 168})
-            self.assertEqual(list(v.iter_errors(after[new][2])), [], new)
             self.assertEqual(self.conn.execute(
                 "SELECT 1 FROM aegis.policy_snapshot WHERE policy_version=%s AND policy_hash="
                 "aegis.policy_hash(policy)", (new,)).fetchall(), [(1,)])
 
-        # 3. The mapping kept every executable setting and recorded the taxonomy it removed.
+        # 3. The 0009 mapping kept every executable setting and recorded the taxonomy it removed;
+        #    only a conversion after 0017 also drops (and records) the window keys.
         full = {row[0]: row for row in converted}
         _, new, _, _, dropped_keys, dropped_values, _ = full["roe-101"]
-        self.assertEqual(sorted(dropped_keys), sorted(V1_ONLY))
-        self.assertEqual(dropped_values, {k: LEGACY_POLICY[k] for k in V1_ONLY})
+        self.assertEqual(sorted(dropped_keys), sorted(TAXONOMY_ONLY))
+        self.assertEqual(dropped_values, {k: LEGACY_POLICY[k] for k in TAXONOMY_ONLY})
         self.assertEqual(sorted(full["roe-102"][4]), ["scan_profile"])
 
         # 4. No promotion, a paused legacy campaign with history, an untouched pending campaign.

@@ -77,7 +77,7 @@ M05 resolve manifest, ghép inputDefaults rồi validate input, ghi pin cùng jo
 | raw_socket | GĐ1 cố định false: manifest schema chỉ nhận `rawSocket: false` vì chưa có egress L3 (G0.2) |
 | user/rootfs/PID/file/seccomp | Giới hạn cố định của ContainerSpec ở trên; runtime không đáp ứng thì không dispatch |
 
-policy_version trỏ snapshot cấu hình campaign bất biến để kiểm budget/rate/khung giờ; pin manifest không thay kiểm đó. Job mới lưu manifest_sha256 trong PostgreSQL. Job lịch sử chưa có pin trả null ở API và không được dispatch/replay trước khi được chuyển đổi riêng; không tạo hash giả cho dữ liệu cũ. Semantics idempotency lookup phải giữ lại quyết định/task đã chấp nhận, không resolve manifest mới cho retry.
+policy_version trỏ snapshot cấu hình campaign bất biến để kiểm budget/rate; pin manifest không thay kiểm đó. Job mới lưu manifest_sha256 trong PostgreSQL. Job lịch sử chưa có pin trả null ở API và không được dispatch/replay trước khi được chuyển đổi riêng; không tạo hash giả cho dữ liệu cũ. Semantics idempotency lookup phải giữ lại quyết định/task đã chấp nhận, không resolve manifest mới cho retry.
 
 Bản cài đặt GĐ1: `PodmanRunner` (rootless, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--read-only`, `--pids-limit`, seccomp, không mount socket, mỗi job một mạng riêng).
 

@@ -33,14 +33,6 @@ export const mockCampaigns: Campaign[] = [
         packets_per_second: 100,
         jobs_per_minute: 20,
       },
-      allowed_windows: [
-        {
-          days: ['mon', 'tue', 'wed', 'thu', 'fri'],
-          start: '01:00',
-          end: '07:00',
-          timezone: 'Asia/Ho_Chi_Minh',
-        },
-      ],
       target_denylist: ['production-vault.internal.example'],
     },
     budget_remaining: {
@@ -65,7 +57,7 @@ export const mockCampaigns: Campaign[] = [
     name: 'Rà soát cấu hình mạng & Dịch vụ DMZ',
     objective: 'Xác định cổng dịch vụ mở và các phiên bản phần mềm lỗi thời',
     status: 'PAUSED',
-    status_reason: 'Tạm dừng tự động ngoài khung giờ quét quy định (allowed_windows)',
+    status_reason: 'Tạm dừng theo yêu cầu vận hành',
     policy_version: 'roe-2',
     scope_id: '01934f6a-0000-7000-8000-0000000000a2',
     created_at: '2026-11-21T09:30:00Z',
@@ -233,8 +225,8 @@ export const mockJobs: ScanJob[] = [
     requested_by: { kind: 'operator', id: 'sec-admin-01' },
     created_at: '2026-11-20T08:15:00Z',
     wait_reason: {
-      code: 'WINDOW_CLOSED',
-      detail: 'Ngoài khung giờ cho phép quét cổng dịch vụ (chỉ quét từ 01:00 đến 07:00)',
+      code: 'RATE_LIMITED',
+      detail: 'Đã đạt trần 20 job/phút của chiến dịch',
       since: '2026-11-20T08:15:00Z',
     },
   },
@@ -410,8 +402,8 @@ export const mockCampaignFlow: CampaignFlow = {
       attempt: 1,
       generation: 1,
       wait_reason: {
-        code: 'WINDOW_CLOSED',
-        detail: 'Ngoài khung giờ cho phép (01:00-07:00)',
+        code: 'CONCURRENCY_LIMIT',
+        detail: 'Đạt trần 5 job đồng thời của chiến dịch',
         since: '2026-11-20T08:15:00Z',
       },
     },

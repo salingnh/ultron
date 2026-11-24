@@ -72,8 +72,10 @@ BEGIN
   -- 2. One conversion record per legacy snapshot, one new v2 row each, nothing promoted.
   SELECT count(*) INTO converted FROM policy_snapshot_migration;
   IF converted <> 3 THEN RAISE EXCEPTION '% conversion record(s), expected 3 (roe-1, roe-101, roe-102)', converted; END IF;
-  IF (SELECT count(*) FROM policy_snapshot) <> 8 THEN
-    RAISE EXCEPTION 'policy_snapshot row count % after 0009, expected 3 historical + 3 v2 candidates + the 2 v2 fixtures',
+  -- 3 historical + 3 v2 candidates + 2 v2 fixtures + the pre-0017 window snapshot of
+  -- fixtures/pre-0017-time-windows.sql (history: 0017 does not rewrite it).
+  IF (SELECT count(*) FROM policy_snapshot) <> 9 THEN
+    RAISE EXCEPTION 'policy_snapshot row count % after 0009 and 0017, expected 9',
       (SELECT count(*) FROM policy_snapshot);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM policy_snapshot_migration m
@@ -259,7 +261,7 @@ BEGIN
       'INSERT INTO policy_snapshot VALUES (''roe-902'',' || quote_literal(camp_l) || ',''{"max_parallel_jobs":10,"max_duration_hours":10,"log_retention_days":30}'',repeat(''a'',64),''{"kind":"operator","id":"s16-test"}'')',
       'SELECT aegis.convert_legacy_policy(''{"scan_profile":"passive","max_parallel_jobs":10,"max_duration_hours":10,"log_retention_days":30}'')',
       'SELECT aegis.convert_legacy_policy(''{"scan_profile":"passive","max_parallel_jobs":10}'')',
-      'SELECT aegis.convert_legacy_policy(''{"scan_profile":"passive","max_parallel_jobs":10,"max_duration_hours":10,"allowed_windows":[{"days":["mon"],"start":"08:00","end":"24:30","timezone":"Asia/Ho_Chi_Minh"}]}'')']) LOOP
+      'SELECT aegis.convert_legacy_policy(''{"scan_profile":"passive","max_parallel_jobs":10,"max_duration_hours":10,"log_retention_days":30,"allowed_windows":[]}'')']) LOOP
     BEGIN
       EXECUTE out;
       RAISE EXCEPTION 'not blocked: %', out;
@@ -278,5 +280,25 @@ BEGIN
   RAISE NOTICE 'S1.6 legacy config: v1 snapshots byte-identical, 3 v2 candidates valid, no promotion, legacy campaign paused with history';
   RAISE NOTICE 'S1.6 legacy config: 7/7 resume+dispatch attempts blocked, held jobs still finalize/cancel, adoption then 1 promotion re-blocked';
   RAISE NOTICE 'S1.6 legacy config: 6/6 legacy/snapshot shapes rejected, re-run no-op, no event emitted';
+
+  -- 11. 0017 (time-window cutover): the pre-0017 row (fixtures/pre-0017-time-windows.sql) is history
+  --     - not rewritten, still classified as v2 (so its job is not held as LEGACY_POLICY_V1) and its
+  --     stored WINDOW_CLOSED wait reason stays readable - while the predicates that guard new writes
+  --     refuse the window keys.
+  IF NOT aegis.is_roe_policy_v2((SELECT policy FROM policy_snapshot WHERE policy_version = 'roe-1301')) THEN
+    RAISE EXCEPTION '0017 reclassified the stored window policy as v1';
+  END IF;
+  IF aegis.is_roe_policy_v2_current((SELECT policy FROM policy_snapshot WHERE policy_version = 'roe-1301')) THEN
+    RAISE EXCEPTION '0017 still accepts a window policy for a new write';
+  END IF;
+  IF (SELECT wait_reason->>'code' FROM scan_job WHERE job_id = '01900000-0000-7000-8000-0000000d1905')
+       IS DISTINCT FROM 'WINDOW_CLOSED' THEN
+    RAISE EXCEPTION '0017 rewrote a stored WINDOW_CLOSED wait reason';
+  END IF;
+  IF aegis.legacy_dispatch_block((SELECT j FROM scan_job j WHERE j.job_id = '01900000-0000-7000-8000-0000000d1905'))
+       @> ARRAY['LEGACY_POLICY_V1']::text[] THEN
+    RAISE EXCEPTION '0017 made the stored window policy non-dispatchable as a v1 row';
+  END IF;
+  RAISE NOTICE '0017 drop_time_windows: stored window policy stays v2 history, its WINDOW_CLOSED reason kept, new writes refused';
 END $$;
 ROLLBACK;

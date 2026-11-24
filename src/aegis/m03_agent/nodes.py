@@ -351,8 +351,6 @@ class SessionNodes:
                     "budget": dict(loaded.policy.get("budget") or {}),
                     "max_parallel_jobs": loaded.policy.get("max_parallel_jobs"),
                     "rate_limits": dict(loaded.policy.get("rate_limits") or {}),
-                    "allowed_windows": len(loaded.policy.get("allowed_windows") or []),
-                    "blackout_windows": len(loaded.policy.get("blackout_windows") or []),
                     "spent_tokens": loaded.spent_tokens,
                     "spent_cost_usd": loaded.spent_cost_usd,
                 },

@@ -173,10 +173,15 @@ def test_create_campaign_rejects_contract_violations(dsn: str, client: TestClien
         support.create_campaign(client, key="reject-domain", body=bad_domain), 400, "INPUT_INVALID"
     )
 
-    bad_timezone = support.campaign_body()
-    bad_timezone["policy"]["blackout_windows"][0]["timezone"] = "Mars/Olympus"
-    response = support.create_campaign(client, key="reject-timezone", body=bad_timezone)
-    payload = _assert_error(response, 400, "INPUT_INVALID")
+    # The RoE time windows were dropped from the contract (owner decision 2026-11-24): a body that
+    # still carries them is an unknown property of the policy, not a silently ignored setting.
+    windows = support.campaign_body()
+    windows["policy"]["allowed_windows"] = [
+        {"days": ["mon"], "start": "08:00", "end": "18:00", "timezone": "Asia/Ho_Chi_Minh"}
+    ]
+    payload = _assert_error(
+        support.create_campaign(client, key="reject-windows", body=windows), 400, "INPUT_INVALID"
+    )
     assert payload["field"] is not None and payload["field"].startswith("/policy")
 
     malformed = client.post(

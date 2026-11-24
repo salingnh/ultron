@@ -26,7 +26,7 @@ class PolicyDenied(BaseModel):
     error: error_v2_schema.Error
     rule: str = Field(
         ...,
-        description="Luật policy đã từ chối, vd schema, rate_limit, blackout_window, dependency_invalid, capability_unknown.",
+        description="Luật policy đã từ chối, vd schema, rate_limit, dependency_invalid, capability_unknown.",
     )
     requested_by: ids_v2_schema.Actor
     denied_at: ids_v2_schema.Timestamp

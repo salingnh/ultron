@@ -458,22 +458,11 @@ export interface components {
         Id: string;
         /** @description Bản chụp RoE bất biến. Tăng toàn cục, không tái sử dụng. */
         PolicyVersion: string;
-        /** @description Khoảng nửa mở [start,end) theo giờ địa phương; days là ngày bắt đầu. End < start kéo sang ngày kế; start=end là khoảng rỗng. 24:00 chỉ hợp lệ ở end, chỉ cuối ngày bắt đầu. So thời gian thực sau khi đổi sang timezone; giờ DST lặp khớp cả hai lần, giờ bị bỏ không tạo thời điểm. */
-        TimeWindow: {
-            days: ("mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun")[];
-            start: string;
-            end: string;
-            /**
-             * Format: aegis-iana-timezone
-             * @description Tên IANA, vd Asia/Ho_Chi_Minh.
-             */
-            timezone: string;
-        };
         /** @description Capability cấp nghiệp vụ: <nhóm>.<động_từ_danh_từ>, vd dns.enumerate_subdomains. */
         CapabilityId: string;
         /**
          * Campaign execution settings v2
-         * @description Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency, thời gian và danh sách mục tiêu bị loại. Không dùng phân loại thao tác.
+         * @description Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency và danh sách mục tiêu bị loại. Không dùng phân loại thao tác. Khung giờ cho phép (allowed/blackout windows) đã bị bỏ khỏi contract theo quyết định chủ 2026-11-24 (G1 chỉ cần luồng chạy được); snapshot cũ còn khung giờ là lịch sử, không được chạy.
          */
         "roe-policy.v2.schema": {
             /** @description Danh sách mục tiêu bị loại bổ sung. Sandbox luôn cách ly hạ tầng điều khiển/dữ liệu; kiểm tra cấu hình này áp dụng cho mọi job. */
@@ -486,10 +475,6 @@ export interface components {
                 packets_per_second?: number;
                 jobs_per_minute?: number;
             };
-            /** @description Tùy chọn. Rỗng hoặc vắng = được quét mọi lúc. */
-            allowed_windows?: components["schemas"]["TimeWindow"][];
-            /** @description Nếu có thì mọi job bị chặn trong khung giờ này với WAIT_WINDOW; kiểm cùng allowed_windows trước dispatch. */
-            blackout_windows?: components["schemas"]["TimeWindow"][];
             budget?: {
                 max_llm_cost_usd?: number;
                 max_llm_tokens?: number;
@@ -503,19 +488,6 @@ export interface components {
             };
             /** @description Tùy chọn: capability không được dùng trong chiến dịch này. */
             capability_denylist?: components["schemas"]["CapabilityId"][];
-            $defs: {
-                /** @description Khoảng nửa mở [start,end) theo giờ địa phương; days là ngày bắt đầu. End < start kéo sang ngày kế; start=end là khoảng rỗng. 24:00 chỉ hợp lệ ở end, chỉ cuối ngày bắt đầu. So thời gian thực sau khi đổi sang timezone; giờ DST lặp khớp cả hai lần, giờ bị bỏ không tạo thời điểm. */
-                TimeWindow: {
-                    days: ("mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun")[];
-                    start: string;
-                    end: string;
-                    /**
-                     * Format: aegis-iana-timezone
-                     * @description Tên IANA, vd Asia/Ho_Chi_Minh.
-                     */
-                    timezone: string;
-                };
-            };
         };
         /**
          * Format: aegis-ip-or-cidr
@@ -714,7 +686,7 @@ export interface components {
             targets?: string[];
             policy_version: components["schemas"]["PolicyVersion"];
             error: components["schemas"]["error.v2.schema"];
-            /** @description Luật policy đã từ chối, vd schema, rate_limit, blackout_window, dependency_invalid, capability_unknown. */
+            /** @description Luật policy đã từ chối, vd schema, rate_limit, dependency_invalid, capability_unknown. */
             rule: string;
             requested_by: components["schemas"]["Actor"];
             denied_at: components["schemas"]["Timestamp"];
@@ -872,7 +844,7 @@ export interface components {
         /** @description Lý do job đang chờ (X-4). Chỉ có khi status=QUEUED; job QUEUED không có wait_reason là job sẵn sàng dispatch. Dependency thất bại/hủy làm job chờ, không tự bỏ dependency. */
         WaitReason: {
             /** @enum {string} */
-            code: "DEPENDENCY_PENDING" | "DEPENDENCY_FAILED" | "CAMPAIGN_PAUSED" | "BUDGET_EXHAUSTED" | "WINDOW_CLOSED" | "CONCURRENCY_LIMIT" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "MANUAL_HOLD";
+            code: "DEPENDENCY_PENDING" | "DEPENDENCY_FAILED" | "CAMPAIGN_PAUSED" | "BUDGET_EXHAUSTED" | "CONCURRENCY_LIMIT" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "MANUAL_HOLD";
             /** @description Giải thích cho người vận hành; dữ liệu không tin cậy khi lấy từ tool. */
             detail?: string;
             /** @description Job tiền nhiệm đang chặn (cùng campaign) khi code là DEPENDENCY_*. */
@@ -985,7 +957,7 @@ export interface components {
                 /** @description Lý do job đang chờ (X-4). Chỉ có khi status=QUEUED; job QUEUED không có wait_reason là job sẵn sàng dispatch. Dependency thất bại/hủy làm job chờ, không tự bỏ dependency. */
                 WaitReason: {
                     /** @enum {string} */
-                    code: "DEPENDENCY_PENDING" | "DEPENDENCY_FAILED" | "CAMPAIGN_PAUSED" | "BUDGET_EXHAUSTED" | "WINDOW_CLOSED" | "CONCURRENCY_LIMIT" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "MANUAL_HOLD";
+                    code: "DEPENDENCY_PENDING" | "DEPENDENCY_FAILED" | "CAMPAIGN_PAUSED" | "BUDGET_EXHAUSTED" | "CONCURRENCY_LIMIT" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE" | "MANUAL_HOLD";
                     /** @description Giải thích cho người vận hành; dữ liệu không tin cậy khi lấy từ tool. */
                     detail?: string;
                     /** @description Job tiền nhiệm đang chặn (cùng campaign) khi code là DEPENDENCY_*. */

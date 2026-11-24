@@ -6,7 +6,6 @@ import {
   XCircle,
   GitBranch,
   Network,
-  Clock,
   Shield,
   Target,
   BarChart3,
@@ -352,33 +351,6 @@ export const CampaignDetailScreen: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: 6 }}>
                   <span style={{ color: 'var(--muted)' }}>Giới hạn tốc độ:</span>
                   <span className="tabular">{campaign.policy.rate_limits.requests_per_second_per_host || 10} req/s/host</span>
-                </div>
-              )}
-              {campaign.policy.allowed_windows?.length ? (
-                <div>
-                  <span style={{ color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-                    Khung giờ cho phép (Allowed Windows):
-                  </span>
-                  {campaign.policy.allowed_windows.map((win, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        padding: '6px 8px',
-                        backgroundColor: 'var(--subtle)',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: 'var(--text-xs)',
-                      }}
-                    >
-                      <Clock size={12} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
-                      <span>
-                        {win.start} - {win.end} ({win.timezone}) [{win.days.join(', ')}]
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>
-                  Cho phép quét mọi khung giờ trong tuần
                 </div>
               )}
             </div>

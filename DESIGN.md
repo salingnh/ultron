@@ -2,7 +2,7 @@
 
 ## Màn hình
 
-- Campaign: mục tiêu, objective, ngân sách, concurrency, khung giờ, pause/resume/cancel.
+- Campaign: mục tiêu, objective, ngân sách, concurrency, pause/resume/cancel.
 - Kế hoạch/job: tool, input, priority, depends_on, trạng thái, lý do chờ, lỗi và kết quả. React Flow hiển thị dependency, không dùng các tầng quyền thao tác.
 - Graph: asset/quan hệ, provenance, observed_at, lọc theo campaign và truy nguyên job.
 - Findings/evidence: mức nghiêm trọng, lý do, trạng thái, nguồn, SHA-256, raw reference và đoạn trích. Finding severity không dùng để quyết định job được phép chạy.

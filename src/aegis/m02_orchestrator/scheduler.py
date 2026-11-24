@@ -22,9 +22,12 @@ then the slot limits applied in priority order):
 3. `BUDGET_EXHAUSTED`: the campaign wall-clock budget `max_duration_hours` is used up; the token
    and cost budget is M04's pre-check and the job-count budget is M05's acceptance check
    (G1.1c decision), so they are not repeated here
-4. `WINDOW_CLOSED`: outside every `allowed_windows` entry or inside a `blackout_windows` entry
-5. `CONCURRENCY_LIMIT`: `max_parallel_jobs` jobs are already VALIDATING..COLLECTING
-6. `RATE_LIMITED`: `rate_limits.jobs_per_minute` dispatches already happened in the last minute
+4. `CONCURRENCY_LIMIT`: `max_parallel_jobs` jobs are already VALIDATING..COLLECTING
+5. `RATE_LIMITED`: `rate_limits.jobs_per_minute` dispatches already happened in the last minute
+
+There is no time-window gate: the RoE allowed/blackout windows were dropped from the contract on
+2026-11-24 (owner decision, G1 is about the working flow), so dispatch no longer reads a clock for a
+window and `WINDOW_CLOSED` is gone from the wait reasons.
 
 The campaign row is locked for the duration of the tick, so the workflow and an operator action
 cannot interleave a pause with a dispatch; job claims are conditional on `status = ''QUEUED''`
@@ -46,7 +49,6 @@ from psycopg.types.json import Jsonb
 from aegis.m01_campaign import status as campaign_status
 
 from .types import BlockedJob, CampaignSnapshot, CancelOutcome, DispatchPlan
-from .windows import utcnow, windows_open
 
 __all__ = [
     "IN_FLIGHT_STATUSES",
@@ -136,6 +138,18 @@ def _row(
 ) -> dict[str, Any] | None:
     rows = _rows(conn, query, params)
     return rows[0] if rows else None
+
+
+def utcnow() -> datetime:
+    """The scheduler's default clock: the wall clock at the start of one dispatch tick.
+
+    Three gates read it - the campaign duration budget, the per-minute dispatch rate and the
+    `wait_reason.since` stamp - and none of them is a *policy* decision that must be reproducible
+    from a stored value; a caller (a test, a replay) injects its own clock through `now=`. The RoE
+    time windows that used to be judged here were dropped from the contract on 2026-11-24, so this
+    is the only remaining time read in the dispatch path.
+    """
+    return datetime.now(UTC)
 
 
 class PostgresScheduler:
@@ -251,23 +265,6 @@ class PostgresScheduler:
                     queued=len(queue),
                     in_flight=in_flight,
                     stop="duration_budget_exhausted",
-                )
-
-            if not windows_open(policy, moment):
-                blocked = self._block_all(
-                    conn,
-                    ready,
-                    "WINDOW_CLOSED",
-                    "outside the campaign allowed windows or inside a blackout window",
-                    moment,
-                )
-                return DispatchPlan(
-                    campaign_id=campaign_id,
-                    status=status,
-                    pending=pending,
-                    waiting=tuple(waiting + blocked),
-                    queued=len(queue),
-                    in_flight=in_flight,
                 )
 
             max_parallel = int(policy.get("max_parallel_jobs") or 1)

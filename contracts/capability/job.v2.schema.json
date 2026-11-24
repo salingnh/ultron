@@ -62,7 +62,10 @@
     },
     "dispatch_block_reasons": {
       "description": "Lý do job bị giữ nên không được dispatch (S1.6, mở rộng ở 0011). Vắng mặt/null = dispatch được; có giá trị = job được nhận trước luật hiện hành và chỉ còn ghi được kết quả terminal hoặc hủy. Danh sách đã sắp xếp, không trùng; DDL ghi một lần và giữ bất biến, `aegis.guard_dispatch_block` chặn khởi chạy job đang bị giữ. Mã do [DispatchBlockReason](#/$defs/DispatchBlockReason) công bố, khớp danh sách trong DDL (test contract so khớp).",
-      "type": ["array", "null"],
+      "type": [
+        "array",
+        "null"
+      ],
       "items": {
         "$ref": "#/$defs/DispatchBlockReason"
       },
@@ -237,7 +240,6 @@
             "DEPENDENCY_FAILED",
             "CAMPAIGN_PAUSED",
             "BUDGET_EXHAUSTED",
-            "WINDOW_CLOSED",
             "CONCURRENCY_LIMIT",
             "RATE_LIMITED",
             "PROVIDER_UNAVAILABLE",
