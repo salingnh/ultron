@@ -16,8 +16,9 @@ test.beforeAll(() => {
 });
 
 async function captureScreen(page: Page, filename: string) {
-  // Wait for loading states and animations to settle
-  await page.waitForTimeout(700);
+  // Wait for loading indicators and web fonts to settle deterministically
+  await expect(page.locator('.state-title', { hasText: /^Đang nạp/ })).toBeHidden();
+  await page.evaluate(() => document.fonts.ready);
   const localPath = path.join(SCREENSHOT_DIR, filename);
   const isRealMode = process.env.VITE_USE_MOCK === 'false';
 
@@ -69,6 +70,9 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
       }, token);
     }
     await expect(page.getByText('Quản lý Chiến dịch (Campaigns)')).toBeVisible();
+    await expect(
+      page.getByRole('table', { name: 'Bảng danh sách chiến dịch' }).or(page.getByText('Chưa có chiến dịch nào'))
+    ).toBeVisible();
     if (isRealMode) {
       await expect(page.getByText('REAL API')).toBeVisible();
       await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
@@ -114,11 +118,13 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     // 3. Job Table View Screen (showing status, priority, and wait/block reasons)
     await page.goto(`/jobs?campaign_id=${campaignId}`);
     await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Bảng chi tiết Job' })).toBeVisible();
     await captureScreen(page, `03-job-table-${theme}.png`);
 
     // 4. Job React Flow View Screen
     await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
-    await page.waitForTimeout(600);
+    await expect(page.locator('.react-flow__renderer')).toBeVisible();
+    await expect(page.locator('.react-flow__node').first()).toBeVisible();
     await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
 
     // 5. Asset Graph View Screen
@@ -128,17 +134,22 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     await page.goto(assetUrl);
     await expect(page.getByText('Đồ thị Tri thức & Nguồn gốc Tài sản')).toBeVisible();
     await expect(page.getByText('Chưa có API backend cho Đồ thị Tài sản')).not.toBeVisible();
-    const provHeading = page.getByText('Nguồn gốc & Bằng chứng', { exact: true });
-    if (await provHeading.isVisible()) {
-      const hasEvidenceId = await page.getByText('Mã bằng chứng (Evidence ID)').isVisible();
-      const hasSha256 = await page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)').isVisible();
-      expect(hasEvidenceId || hasSha256).toBe(true);
+    const graphNode = page.locator('.graph-container svg g[role="button"]').first();
+    const emptyGraph = page.getByText('Chưa có dữ liệu đồ thị tài sản cho chiến dịch này');
+    await expect(graphNode.or(emptyGraph)).toBeVisible();
+    if (await graphNode.isVisible()) {
+      await expect(page.getByText('Nguồn gốc & Bằng chứng', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Mã bằng chứng (Evidence ID)').or(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)'))
+      ).toBeVisible();
     }
     await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
 
     // 5b. Asset Table View Screen
     await page.getByRole('button', { name: 'Bảng Tài sản' }).click();
-    await page.waitForTimeout(400);
+    await expect(
+      page.getByRole('table', { name: 'Bảng tài sản số' }).or(page.getByText('Không tìm thấy tài sản nào phù hợp'))
+    ).toBeVisible();
     await captureScreen(page, `05b-asset-table-${theme}.png`);
 
     // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
