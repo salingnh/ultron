@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aegis"
+version = "0.1.0"
+description = "AEGIS–Vanguard control plane (G1 foundation skeleton)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+dependencies = [
+  # Contract validation stack: the same pinned versions as contracts/tests/requirements.txt,
+  # so the service and the contract gate never validate with two different validators.
+  "jsonschema[format-nongpl]==4.26.0",
+  "referencing==0.37.0",
+  "openapi-spec-validator==0.9.0",
+  "PyYAML==6.0.3",
+  "tzdata==2026.6",
+  "psycopg[binary]==3.3.9",
+  # Generated DTOs (src/aegis/contracts_gen) are Pydantic v2 models; EmailStr needs the extra.
+  "pydantic[email]>=2.12,<3",
+  # API router registry skeleton (G1.1b adds the routes).
+  "fastapi>=0.120,<1",
+  "uvicorn>=0.38,<1",
+]
+
+[dependency-groups]
+dev = [
+  "datamodel-code-generator==0.53.0",
+  "httpx>=0.28,<1",
+  "mypy>=1.19,<2",
+  "pytest>=8.4,<10",
+  "ruff>=0.15,<1",
+  "types-jsonschema>=4.26",
+  "types-PyYAML>=6.0.12",
+]
+
+[tool.uv]
+# The lockfile is committed; the gate runs `uv sync --frozen`. Older uv versions cannot read
+# this lock format and would silently regenerate it, so require a recent one.
+required-version = ">=0.11.2"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# The backend skeleton owns these paths. The pre-existing contract scripts and contracts/*.py are
+# not reformatted here: they are gated by the contract CI job, and a lint-only rewrite of them
+# would be an out-of-scope change.
+include = ["src/**/*.py", "tests/**/*.py", "adapters/**/*.py", "scripts/codegen.py"]
+# Generated contract DTOs are not hand-edited; their formatting and content are enforced by
+# `make codegen-check` (committed bytes == fresh codegen output), which is stricter than lint.
+extend-exclude = ["src/aegis/contracts_gen"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI's dependency injection is a call in a default argument by design.
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aegis"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests", "adapters", "scripts/codegen.py"]
+strict = true
+warn_unused_ignores = true
+exclude = ['^src/aegis/contracts_gen/']
+
+[[tool.mypy.overrides]]
+# Machine-generated Pydantic models: imports are typed, their internals are not hand-written and
+# are covered by the codegen drift check plus the fixture round-trip tests instead.
+module = ["aegis.contracts_gen", "aegis.contracts_gen.*"]
+ignore_errors = true

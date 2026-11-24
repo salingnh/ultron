@@ -8,3 +8,15 @@ deploy/lab/.run/
 # Python test/tooling caches
 __pycache__/
 *.pyc
+
+# uv environment and tool caches
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# codegen staging trees (removed on exit; here only if codegen crashed)
+.codegen-stage-*/
+
+# python build output
+/dist/
