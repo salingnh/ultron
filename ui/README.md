@@ -17,7 +17,7 @@ Operations console for Ultron security orchestration, implementing Item #51 (Car
 3. **Asset Graph & Provenance Panel (`/assets`)**
    - SVG topology graph displaying assets (domains, IPs, services) and relationships.
    - Truncated banner notification when query limits cap result sets (`truncated: true`).
-   - Slide-over Provenance Panel displaying tool name, tool version, job ID, observation timestamps, confidence bar, and unmasked evidence IDs (UUIDv7) as returned by `/assets/{id}/history`.
+   - Slide-over Provenance Panel displaying tool name, tool version, job ID, observation timestamps, confidence bar, and full unmasked 64-character SHA-256 evidence digests.
 
 4. **Tool Catalogue (`/capabilities`)**
    - Operations catalogue listing all registered execution tools and adapters.
@@ -37,7 +37,7 @@ Configuration is managed via environment variables (create `.env` in `ui/` if ov
 
 | Variable | Description | Default |
 |---|---|---|
-| `VITE_API_BASE` | Base URL of Ultron backend API | `/api/v2` (or `http://127.0.0.1:8000/api/v2`) |
+| `VITE_API_BASE` | Base URL of Ultron backend API | `http://localhost:8000` |
 | `VITE_USE_MOCK` | Enable contract fixture mock handlers (`true`/`false`) | `true` |
 | `VITE_BEARER_TOKEN` | Bearer token for authenticated requests | (empty) |
 
@@ -52,20 +52,19 @@ Dành cho người vận hành khảo sát toàn diện giao diện Ultron Opera
 #### 1. Khởi động Backend API & Ngăn xếp dịch vụ phụ trợ
 
 ```bash
-# Khởi động toàn bộ hệ G1 (PostgreSQL 16, Neo4j, SeaweedFS, Temporal, lab DNS và uvicorn M26 API)
+# Khởi động PostgreSQL 16, Neo4j 5.26, SeaweedFS, Temporal và uvicorn M26 API
 make run-local
 
-# Chạy demo G1 để sinh dữ liệu thật (campaigns, jobs, assets, graph, provenance)
-make demo-g1
+# (Tùy chọn) Khởi tạo chiến dịch mẫu và dữ liệu ban đầu
+make seed-demo
 ```
 
 #### 2. Cấu hình Operator Token (Xác thực Người vận hành)
 
-1. Khi `make run-local` hoàn tất, token người vận hành (Bearer token) sẽ được in ra terminal (và lưu trong `.local/operator-token`).
-2. Mở giao diện Ultron tại `http://localhost:3100`.
+1. Khi `make run-local` hoàn tất, token người vận hành (Bearer token) sẽ được in ra terminal.
+2. Mở giao diện Ultron tại `http://localhost:5173`.
 3. Nhấp vào nút **Token: Chưa cấu hình** (hoặc **Cấu hình Token**) ở góc trên bên phải thanh tiêu đề.
 4. Dán mã Bearer token và nhấn **Lưu Token**. Trạng thái sẽ chuyển sang **Token: Đã cấu hình** (lưu an toàn trong `localStorage`).
-*(Hoặc có thể truyền trực tiếp qua biến môi trường `VITE_BEARER_TOKEN` khi khởi chạy lệnh `npm run dev`)*.
 
 #### 3. Khởi chạy Giao diện Frontend
 
@@ -73,9 +72,8 @@ make demo-g1
 cd ui
 npm install
 
-# Chế độ Real API (kết nối trực tiếp backend http://127.0.0.1:8000/api/v2)
-VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
-  VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
+# Chế độ Real API (kết nối trực tiếp backend http://127.0.0.1:8000)
+VITE_USE_MOCK=false npm run dev
 
 # Hoặc chế độ Mock Mode (dữ liệu mẫu hợp đồng OpenAPI v2)
 VITE_USE_MOCK=true npm run dev
@@ -87,7 +85,7 @@ VITE_USE_MOCK=true npm run dev
 - **Kế hoạch & Luồng Job (`/jobs`)**: Chuyển đổi giữa bảng Job chi tiết và Đồ thị Luồng tương tác (React Flow).
 - **Đồ thị Tri thức & Nguồn gốc Tài sản (`/assets`)**:
   - Khảo sát các đỉnh (Node: tên miền, IP) và cạnh quan hệ (Edge: SUBDOMAIN_OF, RESOLVES_TO).
-  - Nhấp vào bất kỳ Node hoặc Edge để mở **Bảng điều khiển Nguồn gốc (Provenance Panel)** ở cạnh phải, hiển thị đầy đủ công cụ trinh sát, phiên bản, Job ID, thời điểm quan sát, độ tin cậy và mã bằng chứng (Evidence ID) không bị che giấu.
+  - Nhấp vào bất kỳ Node hoặc Edge để mở **Bảng điều khiển Nguồn gốc (Provenance Panel)** ở cạnh phải, hiển thị đầy đủ công cụ trinh sát, phiên bản, Job ID, thời điểm quan sát, độ tin cậy và mã băm bằng chứng SHA-256 không bị che giấu.
   - Chuyển sang **Bảng Tài sản** để xem dưới dạng bảng mật độ cao kèm bộ lọc theo loại tài sản (`domain`, `ip`) và tìm kiếm canonical key.
 - **Danh mục Công cụ (`/tools`)**: Xem trạng thái đăng ký M05, phiên bản OCI container sandbox và sức khỏe các công cụ trinh sát.
 
@@ -145,9 +143,3 @@ npm run build
   ```bash
   npm run test:e2e
   ```
-
-### Isolated E2E Mutation Testing Guard
-The live SSE mutation test (`Test 3` in `ui/e2e/screens.spec.ts` using `ui/e2e/terminalise.py`) creates and transitions a job to verify real-time status updates without reload:
-- To protect soak environments and shared databases, mutating operations (`prepare`, `terminalise`) **strictly require** `AEGIS_E2E_THROWAWAY_DSN`.
-- `terminalise.py` explicitly refuses execution if `AEGIS_E2E_THROWAWAY_DSN` matches `AEGIS_PG_DSN` or if the target database contains any non-test campaigns (e.g. soak campaigns).
-- When `AEGIS_E2E_THROWAWAY_DSN` is unset (such as in CI or local developer runs against the soak stack), the mutation test is safely skipped.
