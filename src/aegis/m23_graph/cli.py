@@ -106,7 +106,7 @@ def rebuild(args: argparse.Namespace) -> int:
         if args.keep_graph:
             print("keeping the existing graph (only new events are replayed into it)")
         else:
-            removed = graph.wipe(driver)
+            removed = graph.wipe(driver, context=graph.RebuildContext(consumer))
             print(f"graph wiped ({removed} nodes removed)")
         target = pg.read_watermark(connection)
         instance = Projector(dsn, driver, config)

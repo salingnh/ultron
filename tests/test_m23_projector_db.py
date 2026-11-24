@@ -44,6 +44,7 @@ from tests.m23_support import (
     projector,
     requires_pipeline,
     two_campaign_subdomains,
+    wipe_graph,
 )
 
 pytestmark = requires_pipeline
@@ -210,7 +211,7 @@ def test_batched_statements_are_equivalent_to_the_committed_statements(
             analytic_assets(driver)
         )
 
-        graph.wipe(driver)
+        wipe_graph(driver)
         instance = projector(dsn, driver, consumer="single#g1", partitions=4)
         instance.config = ProjectorConfig(
             consumer="single#g1", batch=500, partitions=4, batched_statements=False
@@ -456,7 +457,7 @@ def test_rebuild_under_a_new_generation_reproduces_the_original(
         original_cursor = cursor(dsn, "m23-projector#gtest1")
         assert first.events_applied > 0
 
-        graph.wipe(driver)
+        wipe_graph(driver)
         rebuilt = project_all(dsn, driver, consumer="m23-projector#gtest2", partitions=4)
         assert graph.snapshot(driver) == original
         # Rebuild output (the second generation re-reads every event) still satisfies the
@@ -521,7 +522,7 @@ def test_a_wipe_without_a_new_generation_replays_nothing(
         ingest(dsn, jobs[2], assets=[domain("dns:wipe.test")])
         project_all(dsn, driver, consumer="wipe#g1")
         assert analytic_assets(driver)
-        graph.wipe(driver)
+        wipe_graph(driver)
         stats = project_all(dsn, driver, consumer="wipe#g1")
         assert stats.events_applied == 0
         assert analytic_assets(driver) == {}

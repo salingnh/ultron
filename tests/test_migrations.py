@@ -36,6 +36,7 @@ from aegis.migrations import (
     mark_applied,
     read_migration,
 )
+from tests.pg import drop_throwaway_database
 
 DSN_ENV = "AEGIS_TEST_PG_DSN"
 requires_postgres = pytest.mark.skipif(
@@ -96,7 +97,7 @@ def throwaway_database() -> Iterator[str]:
         with psycopg.connect(
             make_conninfo("", **{**parameters, "dbname": "postgres"}), autocommit=True
         ) as admin:
-            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+            drop_throwaway_database(admin, name)
 
 
 def bookkeeping(dsn: str, table: str) -> list[tuple[str, str]]:

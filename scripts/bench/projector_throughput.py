@@ -199,9 +199,10 @@ def run_backlog(args: argparse.Namespace) -> None:
             f"published {events} events in {envelopes} envelopes in {published:.2f}s "
             f"({events / published:.1f} events/s through M27)"
         )
-        graph.wipe(driver)
+        bench_consumer = f"m23-projector#bench-{uuid.uuid4().hex[:6]}"
+        graph.wipe(driver, context=graph.RebuildContext(bench_consumer))
         config = ProjectorConfig(
-            consumer=f"m23-projector#bench-{uuid.uuid4().hex[:6]}",
+            consumer=bench_consumer,
             batch=args.batch,
             partitions=args.partitions,
             poll_seconds=0.005,
@@ -242,9 +243,10 @@ def run_live(args: argparse.Namespace) -> None:
                 raise SystemExit("the throwaway database already has events")
             seed_campaign(connection)
             jobs = seed_jobs(connection, args.jobs)
-        graph.wipe(driver)
+        bench_consumer = f"m23-projector#bench-{uuid.uuid4().hex[:6]}"
+        graph.wipe(driver, context=graph.RebuildContext(bench_consumer))
         config = ProjectorConfig(
-            consumer=f"m23-projector#bench-{uuid.uuid4().hex[:6]}",
+            consumer=bench_consumer,
             batch=args.batch,
             partitions=args.partitions,
             poll_seconds=0.005,
