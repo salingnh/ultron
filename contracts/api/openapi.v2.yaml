@@ -28,7 +28,8 @@ info:
     - Danh sách dùng cursor (`cursor`, `limit` ≤ 200), không dùng offset. `next_cursor`
     vắng = hết.
 
-    - MVP chưa đăng nhập; truy cập qua private ingress/VPN. Giữa dịch vụ dùng service
+    - Người vận hành xác thực bằng bearer token riêng của mình (OD-5); server kiểm token
+    và chỉ làm việc với principal mờ, không nhận actor từ body. Giữa dịch vụ dùng service
     token (header `X-Aegis-Service-Token`).
 
     - Header `traceparent` (W3C) được nhận và trả lại; thiếu thì server sinh.
@@ -56,6 +57,8 @@ paths:
       - campaigns
       operationId: createCampaign
       summary: Tạo chiến dịch kèm ảnh chụp RoE
+      security:
+      - operatorToken: []
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -67,6 +70,12 @@ paths:
       responses:
         '202':
           description: Đã nhận; workflow khởi động bất đồng bộ.
+          headers:
+            Idempotent-Replayed:
+              description: '`true` khi cùng Idempotency-Key + cùng body trả lại kết quả đã commit.'
+              schema:
+                type: string
+                const: 'true'
           content:
             application/json:
               schema:
@@ -87,16 +96,17 @@ paths:
                     $ref: ../common/ids.v2.schema.json#/$defs/Id
         '400':
           $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
     get:
       tags:
       - campaigns
       operationId: listCampaigns
-      x-aegis-status: deferred
-      x-aegis-reason: 'Hình dạng danh sách (bộ lọc, phân trang, trường hiển thị) chưa khóa; chỉ cần create/get của campaign cho G1.1a.'
-      x-aegis-owner: G1.1b
       summary: Danh sách chiến dịch (cho màn hình quản lý chiến dịch)
+      security:
+      - operatorToken: []
       parameters:
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'
@@ -111,6 +121,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CampaignPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
   /campaigns/{campaign_id}:
     parameters:
     - $ref: '#/components/parameters/CampaignId'
@@ -119,6 +133,8 @@ paths:
       - campaigns
       operationId: getCampaign
       summary: Trạng thái, ngân sách, bộ đếm
+      security:
+      - operatorToken: []
       responses:
         '200':
           description: OK
@@ -126,6 +142,8 @@ paths:
             application/json:
               schema:
                 $ref: ../campaign/campaign.v2.schema.json
+        '401':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
   /campaigns/{campaign_id}/policy:
@@ -135,10 +153,12 @@ paths:
       tags:
       - campaigns
       operationId: updateCampaignPolicy
-      x-aegis-status: deferred
-      x-aegis-reason: 'Body adopt policy_snapshot của S1.6 (policy + lý do) chưa khóa cùng luật adopt; M01 đổi current_policy_version là thao tác tường minh.'
-      x-aegis-owner: G1.1b
       summary: Đổi RoE, sinh policy_version mới (bản cũ không bị sửa)
+      description: 'Append một policy_snapshot mới (policy_version mới do DB cấp) rồi adopt
+        làm current_policy_version; dòng cũ không bị sửa. Lý do ghi vào audit row cùng giao dịch.
+        Campaign đã terminal (COMPLETED/FAILED/CANCELLED) trả 409.'
+      security:
+      - operatorToken: []
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -168,6 +188,12 @@ paths:
                 properties:
                   policy_version:
                     $ref: ../common/ids.v2.schema.json#/$defs/PolicyVersion
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
   /campaigns/{campaign_id}/pause:
@@ -177,12 +203,23 @@ paths:
       tags:
       - campaigns
       operationId: pauseCampaign
-      summary: Tạm dừng (signal Temporal)
+      summary: Tạm dừng
+      description: 'Ghi campaign.status=PAUSED kèm một dòng campaign_status_change và audit
+        actor trong cùng giao dịch. Tín hiệu pause tới workflow Temporal do M02 phát (G1.1d);
+        gọi lại khi đã PAUSED trả 200 với trạng thái hiện tại và không ghi thêm lịch sử.'
+      security:
+      - operatorToken: []
       requestBody:
         $ref: '#/components/requestBodies/ReasonRequest'
       responses:
         '200':
           $ref: '#/components/responses/CampaignState'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
   /campaigns/{campaign_id}/resume:
@@ -193,11 +230,21 @@ paths:
       - campaigns
       operationId: resumeCampaign
       summary: Tiếp tục
+      description: 'Ghi campaign.status=RUNNING (đặt started_at lần đầu) kèm lịch sử và audit;
+        tín hiệu resume tới workflow do M02 phát (G1.1d). Gọi lại khi đã chạy trả 200.'
+      security:
+      - operatorToken: []
       requestBody:
         $ref: '#/components/requestBodies/ReasonRequest'
       responses:
         '200':
           $ref: '#/components/responses/CampaignState'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
   /campaigns/{campaign_id}/cancel:
@@ -207,12 +254,25 @@ paths:
       tags:
       - campaigns
       operationId: cancelCampaign
-      summary: Hủy và phát lệnh hủy tới job
+      summary: Hủy chiến dịch
+      description: 'Ghi campaign.status=CANCELLED (đặt ended_at) kèm lịch sử và audit; lệnh hủy
+        tới job đang chạy do M02 phát (G1.1d). Gọi lại khi đã CANCELLED trả 200 với trạng thái
+        hiện tại; campaign đã COMPLETED/FAILED trả 409.'
+      security:
+      - operatorToken: []
       requestBody:
         $ref: '#/components/requestBodies/ReasonRequest'
       responses:
         '200':
           $ref: '#/components/responses/CampaignState'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
   /campaigns/{campaign_id}/events:
     parameters:
     - $ref: '#/components/parameters/CampaignId'
@@ -979,6 +1039,12 @@ paths:
                       $ref: ../finding/finding.v2.schema.json
 components:
   securitySchemes:
+    operatorToken:
+      type: http
+      scheme: bearer
+      description: 'Token riêng của người vận hành. Server băm token, so với store cấu hình
+        và trả principal mờ (opaque); token không xuất hiện trong log, DB hay body. Actor
+        của mọi dòng lịch sử/audit lấy từ principal này (OD-5, C05).'
     serviceToken:
       type: apiKey
       in: header
