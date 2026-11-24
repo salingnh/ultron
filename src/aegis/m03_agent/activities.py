@@ -47,16 +47,14 @@ def _deps_or_fail() -> session_module.SessionDeps:
     return _deps
 
 
-def build_model(config: config_module.SessionConfig, *, connect: Callable[[], Any]) -> ModelClient:
+def build_model(config: config_module.SessionConfig) -> ModelClient:
     """The scripted G1 policy by default; the live M04 client only when the deployment says so."""
-    from aegis.m03_agent.fake_policy import PostgresLabCatalog, ScriptedLabPolicy
+    from aegis.m03_agent.fake_policy import ScriptedLabPolicy
 
     if not config.live_model:
-        return ScriptedLabPolicy(
-            catalog=PostgresLabCatalog(connect),
-            provider=config.provider,
-            model=config.model,
-        )
+        # No database, no provider: the policy decides from the ContextBundle the session hands it
+        # (`observe_context`), so the demo proves the M27 -> context -> decision path.
+        return ScriptedLabPolicy(provider=config.provider, model=config.model)
     # The live branch needs OD-2 (provider, endpoint, key, price table) and must never run by
     # accident in the gate, so it refuses loudly instead of guessing a configuration.
     raise config_module.SessionConfigError(
@@ -82,12 +80,7 @@ def configure(
     resolved_dsn = dsn or config_module.dsn_from_env()
     config = session_config or config_module.SessionConfig.from_env()
 
-    def connect() -> Any:
-        from aegis.m03_agent.ledger import connect as ledger_connect
-
-        return ledger_connect(resolved_dsn)
-
-    resolved_model = model or build_model(config, connect=connect)
+    resolved_model = model or build_model(config)
     if tool_client is None:
         url = mcp_url or config_module.mcp_url_from_env()
 

@@ -52,7 +52,12 @@ from aegis.contracts_gen.agent.model_response_v2_schema import FinishReason
 from aegis.m02_orchestrator.types import SessionRequest
 from aegis.m03_agent import prompt
 from aegis.m03_agent.config import MAX_STEPS, SessionConfig
-from aegis.m03_agent.context import UNBOUNDED, CampaignContext, ContextSource
+from aegis.m03_agent.context import (
+    MAX_OBSERVATIONS,
+    UNBOUNDED,
+    CampaignContext,
+    ContextSource,
+)
 from aegis.m03_agent.ledger import CampaignLedger
 from aegis.m03_agent.mcp import GRAPH_PREFIX, CallMeta, ToolClient, ToolOutcome
 from aegis.m03_agent.state import SessionState, add_usage
@@ -169,6 +174,31 @@ def _model_budget(budget: Mapping[str, Any], loaded: CampaignContext) -> Budget:
     )
 
 
+def _seed_observations(targets: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The campaign's seed targets as bundle observations (the contract's place for raw targets).
+
+    `context-bundle.v2` has no target list; its `Observation` is where a raw target string belongs
+    (`untrusted`: "chuỗi lấy nguyên từ mục tiêu") and its `ref` may be a canonical key. So a session
+    learns its seeds from the bundle, exactly like a real model does from its prompt, and nothing
+    reads `campaign_target` behind the model's back.
+    """
+    items: list[dict[str, Any]] = []
+    for target in targets:
+        kind = str(target["kind"])
+        raw = str(target["raw_value"])
+        ref = target.get("canonical_key") or str(target["target_id"])
+        items.append(
+            _observation(
+                ref=str(ref),
+                summary=f"{prompt.SEED_SUMMARY_PREFIX} {kind}",
+                untrusted=raw,
+                confidence=1.0,
+                evidence_uri=None,
+            )
+        )
+    return items
+
+
 def _observation(
     *,
     ref: str,
@@ -282,11 +312,16 @@ class SessionNodes:
         ]
         observations, graph_revision, graph_detail = await self._observations(loaded, meta)
         budget = initial_budget(self.config, loaded)
-        pending = [
-            str(job["job_id"])
+        terminal = {"SUCCEEDED", "FAILED", "CANCELLED"}
+        pending = [str(job["job_id"]) for job in loaded.jobs if str(job["status"]) not in terminal]
+        # The campaign's history as the model may use it: one code-generated line per finished job,
+        # so a session knows what was already proposed without reading a table itself.
+        completed = [
+            f"{job['capability']} {job['job_id']} {job['status']}"
             for job in loaded.jobs
-            if str(job["status"]) not in {"SUCCEEDED", "FAILED", "CANCELLED"}
+            if str(job["status"]) in terminal
         ]
+        observations = (_seed_observations(loaded.targets) + observations)[:MAX_OBSERVATIONS]
         bundle = ContextBundle.model_validate(
             {
                 "campaign_id": self.request.campaign_id,
@@ -309,6 +344,7 @@ class SessionNodes:
                 "previous_revision": int(state.get("cursor") or 0),
                 "observations": observations,
                 "ledger": {
+                    "completed_objectives": completed[:200],
                     "blockers": [] if graph_detail is None else [graph_detail],
                     "pending_job_ids": pending[:200],
                     "idle_cycles": loaded.idle_cycles,
@@ -331,12 +367,17 @@ class SessionNodes:
                 cycle=self.request.cycle,
                 budget=budget,
                 capabilities=capabilities,
-                targets=loaded.targets,
                 observations=[dict(item) for item in observations],
                 pending_job_ids=pending,
+                completed_objectives=completed,
                 idle_cycles=loaded.idle_cycles,
             ),
         ]
+        # A model stand-in that has no prompt (the scripted G1 policy) is given the same bundle the
+        # prompt was built from; a real client ignores this hook and reads the prompt.
+        observe = getattr(self.model, "observe_context", None)
+        if callable(observe):
+            observe(bundle)
         self.ledger.append(
             self.request.campaign_id,
             "cursor",
@@ -377,7 +418,7 @@ class SessionNodes:
             return (
                 [
                     _observation(
-                        ref=str(row["observation_id"]),
+                        ref=str(row["subject"]),
                         # typed fields only: a value is untrusted text, so it stays in `untrusted`
                         summary=f"{row.get('predicate')} on {row.get('subject')}",
                         untrusted=row.get("value_summary"),
@@ -410,8 +451,8 @@ class SessionNodes:
         return (
             [
                 _observation(
-                    ref=str(row["observation_id"]),
-                    summary=f"{row['predicate']} {row['subject']}",
+                    ref=str(row["subject"]),
+                    summary=f"{row['predicate']} on {row['subject']}",
                     untrusted=(
                         None
                         if row.get("value") is None

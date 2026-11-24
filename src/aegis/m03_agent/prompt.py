@@ -30,6 +30,7 @@ from aegis.m03_agent.mcp import ToolOutcome
 
 __all__ = [
     "PLAN_DECISION_SCHEMA",
+    "SEED_SUMMARY_PREFIX",
     "TRUSTED_LABEL_CLOSE",
     "assistant_message",
     "context_message",
@@ -42,6 +43,9 @@ __all__ = [
     "trim_messages",
 ]
 
+#: Summary prefix `build_context` gives a seed-target observation (code-generated, not prose). It is
+#: the bundle's way of saying "this observation is a campaign target, not discovered evidence".
+SEED_SUMMARY_PREFIX = "campaign seed target"
 TRUSTED_LABEL = "UNTRUSTED_TOOL_OUTPUT"
 TRUSTED_LABEL_CLOSE = f"</{TRUSTED_LABEL}>"
 #: Untrusted text kept per item; the contract caps `Observation.untrusted` at 2000 chars.
@@ -128,9 +132,9 @@ def context_message(
     cycle: int,
     budget: Mapping[str, Any],
     capabilities: Sequence[Mapping[str, Any]],
-    targets: Sequence[Mapping[str, Any]],
     observations: Sequence[Mapping[str, Any]],
     pending_job_ids: Sequence[str],
+    completed_objectives: Sequence[str],
     idle_cycles: int,
 ) -> dict[str, Any]:
     """The first user turn: the objective and a bounded, wrapped slice of the campaign's context."""
@@ -147,15 +151,6 @@ def context_message(
             idle=idle_cycles,
         )
     )
-    if targets:
-        rendered = [
-            format_untrusted(
-                f"{target['kind']} {target['raw_value']}",
-                source=f"campaign_target/{target['target_id']}",
-            )
-            for target in targets[:30]
-        ]
-        parts.append("Campaign seed targets (raw values):\n" + "\n".join(rendered))
     if observations:
         rendered = []
         for observation in observations[:30]:
@@ -168,6 +163,11 @@ def context_message(
                 else f"- {summary}"
             )
         parts.append("Recent observations:\n" + "\n".join(rendered))
+    if completed_objectives:
+        parts.append(
+            "Finished job steps (capability job_id status):\n"
+            + "\n".join(f"- {line[:300]}" for line in completed_objectives[:50])
+        )
     if pending_job_ids:
         parts.append("Jobs already in flight: " + ", ".join(pending_job_ids[:50]))
     if capabilities:
