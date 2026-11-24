@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Pause,
@@ -11,6 +11,7 @@ import {
   Target,
   BarChart3,
   ChevronLeft,
+  Radio,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import type { Campaign } from '../api/types';
@@ -26,35 +27,81 @@ export const CampaignDetailScreen: React.FC = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [modalAction, setModalAction] = useState<'pause' | 'resume' | 'cancel' | null>(null);
   const [actionReason, setActionReason] = useState('');
+  const [sseConnected, setSseConnected] = useState(false);
+  const [lastLiveEvent, setLastLiveEvent] = useState<{ type: string; time: string } | null>(null);
 
-  useEffect(() => {
-    if (id) loadCampaign(id);
-  }, [id]);
-
-  const loadCampaign = async (campaignId: string) => {
+  const loadCampaign = useCallback(async (campaignId: string, showLoading: boolean = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
       const data = await apiClient.getCampaign(campaignId);
       setCampaign(data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Không thể tải thông tin chiến dịch');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (id) loadCampaign(id, true);
+  }, [id, loadCampaign]);
+
+  // Subscribe to SSE events for real-time live updates (<2s)
+  useEffect(() => {
+    if (!id) return;
+
+    const sub = apiClient.subscribeCampaignEvents({
+      campaignId: id,
+      onEvent: (event) => {
+        setLastLiveEvent({
+          type: event.type,
+          time: new Date().toLocaleTimeString('vi-VN'),
+        });
+
+        const payload = (event.data as { payload?: Record<string, unknown> })?.payload;
+        if (payload && typeof payload === 'object') {
+          const newStatus = payload.status as Campaign['status'] | undefined;
+          const statusReason = payload.status_reason as string | undefined;
+
+          if (newStatus) {
+            setCampaign((prev) =>
+              prev ? { ...prev, status: newStatus, status_reason: statusReason ?? prev.status_reason } : null
+            );
+          }
+        }
+
+        // Silent background authoritative sync
+        loadCampaign(id, false);
+      },
+      onStatusChange: (status) => {
+        setSseConnected(status === 'connected');
+      },
+    });
+
+    return () => {
+      sub.close();
+    };
+  }, [id, loadCampaign]);
 
   const handleExecuteAction = async () => {
     if (!campaign || !modalAction) return;
     try {
       setActionLoading(true);
       let updated: Campaign;
+      const reason = actionReason || (
+        modalAction === 'pause'
+          ? 'Tạm dừng tác chiến theo yêu cầu điều độ'
+          : modalAction === 'resume'
+          ? 'Tiếp tục chiến dịch'
+          : 'Hủy toàn bộ job và dừng chiến dịch'
+      );
       if (modalAction === 'pause') {
-        updated = await apiClient.pauseCampaign(campaign.campaign_id, actionReason);
+        updated = await apiClient.pauseCampaign(campaign.campaign_id, reason);
       } else if (modalAction === 'resume') {
-        updated = await apiClient.resumeCampaign(campaign.campaign_id, actionReason);
+        updated = await apiClient.resumeCampaign(campaign.campaign_id, reason);
       } else {
-        updated = await apiClient.cancelCampaign(campaign.campaign_id, actionReason);
+        updated = await apiClient.cancelCampaign(campaign.campaign_id, reason);
       }
       setCampaign(updated);
       setModalAction(null);
@@ -107,6 +154,27 @@ export const CampaignDetailScreen: React.FC = () => {
               </h1>
               <StatusChip status={campaign.status} size="md" />
               <span className="brand-badge">RoE: {campaign.policy_version}</span>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: sseConnected ? 'var(--success-bg)' : 'var(--subtle)',
+                  color: sseConnected ? 'var(--success)' : 'var(--muted)',
+                  border: `1px solid ${sseConnected ? 'var(--success)' : 'var(--line)'}`,
+                  fontSize: '11px',
+                }}
+              >
+                <Radio size={11} className={sseConnected ? 'pulse-icon' : ''} />
+                <span>{sseConnected ? 'SSE Live' : 'SSE Đang kết nối'}</span>
+                {lastLiveEvent && (
+                  <span style={{ fontSize: '10.5px', color: 'var(--ink)' }}>
+                    ({lastLiveEvent.type} @ {lastLiveEvent.time})
+                  </span>
+                )}
+              </div>
             </div>
             <p style={{ color: 'var(--muted)', marginTop: 4, fontSize: 'var(--text-sm)' }}>
               {campaign.objective || 'Chưa thiết lập mục tiêu'}
@@ -209,15 +277,17 @@ export const CampaignDetailScreen: React.FC = () => {
                       borderRadius: 'var(--radius-md)',
                       border: '1px solid var(--line)',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      flexDirection: 'column',
+                      gap: 6,
                     }}
                   >
-                    <div>
-                      <span className="brand-badge" style={{ marginRight: 6 }}>domain</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="brand-badge">domain</span>
                       <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{dom}</strong>
                     </div>
-                    <CopyableId value={`dns:${dom}`} prefix="Target" />
+                    <div style={{ width: '100%' }}>
+                      <CopyableId value={`dns:${dom}`} prefix="Target" truncate={false} className="full-width" />
+                    </div>
                   </div>
                 ))}
               {hasIps &&
@@ -230,15 +300,17 @@ export const CampaignDetailScreen: React.FC = () => {
                       borderRadius: 'var(--radius-md)',
                       border: '1px solid var(--line)',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      flexDirection: 'column',
+                      gap: 6,
                     }}
                   >
-                    <div>
-                      <span className="brand-badge" style={{ marginRight: 6 }}>ip/cidr</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="brand-badge">ip/cidr</span>
                       <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{ip}</strong>
                     </div>
-                    <CopyableId value={`ip:${ip}`} prefix="Target" />
+                    <div style={{ width: '100%' }}>
+                      <CopyableId value={`ip:${ip}`} prefix="Target" truncate={false} className="full-width" />
+                    </div>
                   </div>
                 ))}
             </div>

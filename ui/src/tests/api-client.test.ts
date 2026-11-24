@@ -1,10 +1,46 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { apiClient } from '../api/client';
+import { apiClient, getOperatorToken, setOperatorToken, STORAGE_KEY_TOKEN } from '../api/client';
 import { resetMockData } from '../mock/handlers';
+import { parseSSEBlock } from '../api/sse';
 
 describe('ApiClient (Mock & Contract Operations)', () => {
   beforeEach(() => {
     resetMockData();
+    localStorage.removeItem(STORAGE_KEY_TOKEN);
+  });
+
+  it('manages operator token in localStorage without committing to repo', () => {
+    expect(getOperatorToken()).toBe('');
+
+    setOperatorToken('test-token-operator-123');
+    expect(getOperatorToken()).toBe('test-token-operator-123');
+    expect(localStorage.getItem(STORAGE_KEY_TOKEN)).toBe('test-token-operator-123');
+
+    setOperatorToken('');
+    expect(getOperatorToken()).toBe('');
+    expect(localStorage.getItem(STORAGE_KEY_TOKEN)).toBeNull();
+  });
+
+  it('parses SSE frames correctly including comments, event types and IDs', () => {
+    // 1. Comments only (ready message or heartbeat comments)
+    const commentBlock = ': m26-sse#g1 ready\n';
+    expect(parseSSEBlock(commentBlock)).toBeNull();
+
+    // 2. Standard job event frame
+    const frame = 'id: 42\nevent: job.completed.v2\ndata: {"job_id":"01934f6a","status":"SUCCEEDED"}\n';
+    const parsed = parseSSEBlock(frame);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.id).toBe('42');
+    expect(parsed?.type).toBe('job.completed.v2');
+    expect((parsed?.data as Record<string, unknown>).job_id).toBe('01934f6a');
+    expect((parsed?.data as Record<string, unknown>).status).toBe('SUCCEEDED');
+
+    // 3. Multiline data
+    const multilineFrame = 'id: 43\nevent: custom.event\ndata: line 1\ndata: line 2\n';
+    const parsedMulti = parseSSEBlock(multilineFrame);
+    expect(parsedMulti?.id).toBe('43');
+    expect(parsedMulti?.type).toBe('custom.event');
+    expect(parsedMulti?.raw).toBe('line 1\nline 2');
   });
 
   it('lists campaigns with status filtering', async () => {

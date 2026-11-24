@@ -59,6 +59,10 @@ export const AssetGraphScreen: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async () => {
+    if (!apiClient.isMock) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -89,6 +93,39 @@ export const AssetGraphScreen: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  if (!apiClient.isMock) {
+    return (
+      <div>
+        <div className="filter-bar">
+          <div>
+            <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--ink)' }}>
+              Đồ thị Tri thức & Nguồn gốc Tài sản
+            </h1>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--muted)', marginTop: 2 }}>
+              Khảo sát quan hệ giữa các tài sản số. Nhấp vào bất kỳ Node hoặc Edge để mở bảng điều khiển nguồn gốc & bằng chứng SHA-256.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="status-chip warning" style={{ fontSize: '11px', padding: '2px 8px' }}>
+              Chưa có API (Đang chờ G1.4b)
+            </span>
+          </div>
+        </div>
+
+        <div className="state-box" style={{ marginTop: 32, padding: '48px 24px' }}>
+          <Network size={44} style={{ color: 'var(--muted)', marginBottom: 14 }} />
+          <div className="state-title" style={{ fontSize: 'var(--text-lg)', marginBottom: 6 }}>
+            Chưa có API backend cho Đồ thị Tài sản
+          </div>
+          <div className="state-desc" style={{ maxWidth: 540, margin: '0 auto', lineHeight: 1.6 }}>
+            Endpoint <code>/assets</code> và đồ thị tri thức quan hệ tài sản đang thuộc kế hoạch phát triển của thẻ G1.4b.
+            Trong chế độ Real API, giao diện tuân thủ nguyên tắc trung thực dữ liệu (Data Honesty), không hiển thị dữ liệu giả lập (mock).
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
