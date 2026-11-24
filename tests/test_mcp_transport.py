@@ -23,6 +23,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS, RequestParamsMeta
 
 from tests.mcp_support import (
+    CAMPAIGN_ID,
     ENUMERATE,
     ENVELOPE_META,
     GRAPH_TOOLS,
@@ -140,6 +141,40 @@ async def test_wire_a_foreign_session_on_a_bound_connection_is_refused() -> None
     assert body["error"]["code"] == -32602
     assert body["error"]["data"]["field"] == "/_meta/aegis.io~1session_id"
     assert service.jobs.submissions == []  # type: ignore[attr-defined]
+
+
+async def test_wire_tools_list_follows_the_transport_binding_without_aegis_meta() -> None:
+    """The SDK sends only the envelope keys when it probes `tools/list`; the binding still filters.
+
+    Before the transport is bound the catalogue is the admitted one (the probe arm). After a
+    `tools/call` binds the transport, a `_meta`-less list is the campaign's list - omitting the
+    `aegis.io/*` keys cannot widen it.
+    """
+    service = make_service(denylists={CAMPAIGN_ID: frozenset({RESOLVE})})
+    async with serve(service) as url, httpx.AsyncClient(timeout=30.0) as http:
+        async with wire_session(url, client=http) as session:
+            unbound = await wire_request(
+                http, session, "tools/list", {"_meta": dict(ENVELOPE_META)}
+            )
+            assert RESOLVE in [tool["name"] for tool in unbound["result"]["tools"]]
+
+            await wire_request(
+                http,
+                session,
+                "tools/call",
+                {
+                    "name": ENUMERATE,
+                    "arguments": arguments(),
+                    "_meta": {**ENVELOPE_META, **meta()},
+                },
+            )
+            bound = await wire_request(
+                http, session, "tools/list", {"_meta": dict(ENVELOPE_META)}, request_id=4
+            )
+    names = [tool["name"] for tool in bound["result"]["tools"]]
+    assert RESOLVE not in names
+    assert ENUMERATE in names
+    assert len(service.jobs.submissions) == 1  # type: ignore[attr-defined]
 
 
 async def test_the_sdk_client_drives_the_same_flow() -> None:

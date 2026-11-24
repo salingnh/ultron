@@ -32,7 +32,8 @@ OpenAPI only publishes `policy.denied.v2` for a policy refusal (403/429).
 Two caller-shaped facts are parameters, never request fields (C05):
 
 * `requested_by` is the server-verified initiator (`operator|module`); the REST route passes the
-  operator principal, the MCP server passes its module identity;
+  authenticated operator principal, and the MCP path (which has no operator credential) omits it so
+  M05 derives the run's operator - the latest RUNNING transition actor, else the campaign creator;
 * `proposed_by` is the proposing agent session (`{kind: agent, id}`) and is only set on the MCP
   path, where a bound `agent_session` exists. It is written to the decision (with `session_id`, as
   0012 requires) and to the job, and it binds the `Idempotency-Key` to that session (E-4): a replay
@@ -138,7 +139,7 @@ class JobService(Protocol):
         self,
         request: JobSubmit,
         *,
-        requested_by: Mapping[str, str],
+        requested_by: Mapping[str, str] | None,
         idempotency_key: str,
         proposed_by: Mapping[str, str] | None = None,
         trace_id: str | None = None,
@@ -181,6 +182,25 @@ def _isoformat(value: Any) -> str:
     return str(value)
 
 
+INITIATOR_KINDS = frozenset({"operator", "module"})
+
+
+def _as_initiator(actor: Any) -> dict[str, str] | None:
+    """The actor as an initiator (`{kind: operator|module, id}`), or None when it is not one.
+
+    The same shape 0010's `aegis.is_initiator` enforces: exactly the two keys, a non-empty opaque
+    id. An agent, a label or a self-declared string is not an initiator (C05).
+    """
+    if not isinstance(actor, Mapping) or set(actor) != {"kind", "id"}:
+        return None
+    kind, identifier = actor.get("kind"), actor.get("id")
+    if kind not in INITIATOR_KINDS or not isinstance(identifier, str):
+        return None
+    if not 1 <= len(identifier.strip()) <= 200:
+        return None
+    return {"kind": str(kind), "id": identifier}
+
+
 class PostgresJobService:
     """M05 policy checkpoint + decision log + job rows, on PostgreSQL 16."""
 
@@ -202,7 +222,7 @@ class PostgresJobService:
         self,
         request: JobSubmit,
         *,
-        requested_by: Mapping[str, str],
+        requested_by: Mapping[str, str] | None,
         idempotency_key: str,
         proposed_by: Mapping[str, str] | None = None,
         trace_id: str | None = None,
@@ -211,7 +231,7 @@ class PostgresJobService:
             raise M05Error.input_invalid("Idempotency-Key is required", field="/Idempotency-Key")
         body_hash = sha256_hex(request.model_dump(mode="json", exclude_none=True))
         trace = trace_id or new_trace_id()
-        actor = dict(requested_by)
+        actor = self._initiator(request, requested_by)
         with self._connect() as conn:
             with conn.transaction():
                 try:
@@ -239,6 +259,48 @@ class PostgresJobService:
         if isinstance(outcome, _Rejection):
             raise outcome.error
         return outcome
+
+    def _initiator(
+        self, request: JobSubmit, requested_by: Mapping[str, str] | None
+    ) -> dict[str, str]:
+        """Who started the work: the caller's verified principal, or the current campaign run's.
+
+        The REST route passes the authenticated operator principal. The MCP path has no operator
+        credential - only an agent session - so M05 derives the initiator from the campaign the
+        request names: the actor of the latest RUNNING transition (who started or resumed this run),
+        else the campaign creator (C05/OI-4). The agent stays the *proposer* (`proposed_by`); a
+        module id is reserved for module-initiated jobs, which neither path is. Deriving it here
+        keeps the human chain readable from the job row alone.
+        """
+        if requested_by is not None:
+            return dict(requested_by)
+        campaign_id = str(_plain(request.campaign_id))
+        with self._connect() as conn:
+            observed = conn.execute(
+                "SELECT actor FROM campaign_status_change WHERE campaign_id = %s "
+                "AND to_status = 'RUNNING' ORDER BY seq DESC LIMIT 1",
+                (campaign_id,),
+            ).fetchone()
+            creator = conn.execute(
+                "SELECT created_by FROM campaign WHERE campaign_id = %s", (campaign_id,)
+            ).fetchone()
+        if creator is None:
+            raise M05Error.not_found(f"campaign {campaign_id} does not exist")
+        if observed is not None:
+            actor = _as_initiator(observed[0])
+            if actor is None:  # pragma: no cover - M01 writes operator|module actors
+                raise M05Error.dependency_missing(
+                    f"campaign {campaign_id}: the latest RUNNING transition actor is not an "
+                    "initiator (operator|module); refusing to attribute a job to it"
+                )
+            return actor
+        creator_actor = _as_initiator(creator[0])
+        if creator_actor is None:  # pragma: no cover - M01 writes the verified principal
+            raise M05Error.dependency_missing(
+                f"campaign {campaign_id} has no server-verified initiator (operator|module); "
+                "refusing to record a job that cannot be attributed"
+            )
+        return creator_actor
 
     def _submit_in_transaction(
         self,

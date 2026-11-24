@@ -14,7 +14,8 @@ Contract points implemented here (contracts/mcp/README.md):
 * `_meta` is checked against the server-bound session (G0.3a): a wrong, missing or foreign value is
   `-32602` carrying `error.v2`, never a job;
 * identity never comes from the request: the proposing session is the bound one, the initiator is
-  this module (C05), and the `Idempotency-Key` is bound to that session by M05 (E-4);
+  the operator who started the campaign run (derived by M05, C05/OI-4), and the `Idempotency-Key`
+  is bound to that session by M05 (E-4);
 * a policy refusal is `isError=true` with a full `capability-response.v2` (`decision=denied`) and a
   contract `error.v2`; `field` appears only on `INPUT_INVALID` (mcp/README.md).
 """
@@ -47,15 +48,11 @@ from .session import SessionContext, SessionDirectory
 __all__ = [
     "DEFAULT_PRIORITY",
     "GRAPH_PREFIX",
-    "REQUESTED_BY",
     "McpToolService",
     "ToolSpec",
     "invalid_params",
 ]
 
-# C05: an agent session cannot be the initiator of a job, only its proposer. The MCP server is the
-# module that turns an agent request into an M05 submission (requested_by stays server-derived).
-REQUESTED_BY: Mapping[str, str] = {"kind": "module", "id": "M05"}
 DEFAULT_PRIORITY = 50
 GRAPH_PREFIX = "graph."
 OBJECTIVE_POINTER = "/arguments/objective_id"
@@ -187,15 +184,19 @@ class McpToolService:
     def list_tools(
         self, *, request_meta: Mapping[str, Any] | None, mcp_session_id: str | None
     ) -> types.ListToolsResult:
-        """The catalogue: campaign-filtered when a session `_meta` is sent, admitted otherwise.
+        """The catalogue: filtered by the bound session, or admitted when nothing is bound.
 
-        A client that sends no `aegis.io/*` key has not identified a campaign, so there is no
-        policy to apply and no session to bind: it gets the registry's admitted capabilities. This
-        arm exists for the protocol itself - an SDK client probes `tools/list` without `_meta` to
-        validate a tool's `outputSchema` before it returns a result - and such a client still
-        cannot call a tool it was not granted. A `_meta` that names the namespace but is
-        incomplete or wrong is refused, not tolerated.
+        The transport binding is the authority: when this `Mcp-Session-Id` is already bound to a
+        campaign/session the list is filtered by that campaign, whether or not `_meta` is sent. Only
+        an unbound transport with no `aegis.io/*` key gets the registry's admitted capabilities -
+        the arm an SDK client needs, because it probes `tools/list` without `_meta` to validate a
+        tool's `outputSchema` before it returns a result. Such a client still cannot call a tool the
+        binding does not grant, and a `_meta` that names the namespace but is incomplete or wrong is
+        refused, not tolerated.
         """
+        bound = self.sessions.bound(mcp_session_id)
+        if bound is not None:
+            return self._list(self.policies.capability_denylist(bound.campaign_id))
         meta_keys = () if request_meta is None else tuple(str(key) for key in request_meta)
         if not any(key.startswith(meta_contract.NAMESPACE) for key in meta_keys):
             return self._list(frozenset())
@@ -331,7 +332,10 @@ class McpToolService:
         try:
             outcome = self.jobs.submit(
                 request,
-                requested_by=REQUESTED_BY,
+                # No operator credential on the MCP path: M05 derives the initiator from the
+                # campaign run (latest RUNNING transition actor, else creator); the agent session
+                # is only ever the proposer (C05/OI-4).
+                requested_by=None,
                 proposed_by={"kind": "agent", "id": context.session_id},
                 idempotency_key=meta.idempotency_key,
                 trace_id=meta.trace_id,

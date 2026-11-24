@@ -121,6 +121,33 @@ def test_graph_tools_publish_the_contract_input_and_output() -> None:
         assert "aegis.io/contracts" not in raw
 
 
+def test_the_bound_transport_filters_the_list_even_without_meta() -> None:
+    """Refinement: the transport binding is the authority, `_meta` or not.
+
+    An unbound transport gets the admitted catalogue (the SDK probes `tools/list` before it
+    returns any call result). Once the same transport is bound to a campaign/session, a `_meta`-less
+    list is that campaign's list - a client cannot drop the filter by omitting `_meta`.
+    """
+    service = make_service(denylists={CAMPAIGN_ID: frozenset({RESOLVE})})
+    unbound = {
+        tool.name for tool in service.list_tools(request_meta=None, mcp_session_id="t-1").tools
+    }
+    assert RESOLVE in unbound
+
+    service.list_tools(request_meta=meta(), mcp_session_id="t-1")  # binds
+    bound = {
+        tool.name for tool in service.list_tools(request_meta=None, mcp_session_id="t-1").tools
+    }
+    assert RESOLVE not in bound
+    assert ENUMERATE in bound
+
+
+def test_a_stateless_transport_without_meta_stays_unfiltered() -> None:
+    service = make_service(denylists={CAMPAIGN_ID: frozenset({RESOLVE})})
+    tools = {tool.name for tool in service.list_tools(request_meta=None, mcp_session_id=None).tools}
+    assert RESOLVE in tools
+
+
 def test_a_capability_with_no_admitted_manifest_is_not_published() -> None:
     tools = _tools(make_service(manifest_registry=InMemoryManifestRegistry()))
 

@@ -40,6 +40,8 @@ OBJECTIVE_ID = "01934f6a-0000-7000-8000-000000000005"
 FOREIGN_SESSION_ID = "01934f6a-0000-7000-8000-000000000006"
 OTHER_OBJECTIVE_ID = "01934f6a-0000-7000-8000-000000000007"
 TRACE_ID = "0123456789abcdef0123456789abcdef"
+# The campaign run's operator (what M05 derives as `requested_by` for an agent-proposed job).
+RUN_OPERATOR: dict[str, str] = {"kind": "operator", "id": "op-g12b"}
 
 # The SDK's own reserved `_meta` keys: the 2.3.0 server refuses a request `_meta` without them, so
 # a hand-rolled wire request must send them next to the `aegis.io/*` keys.
@@ -111,6 +113,7 @@ class FakeJobService:
     """The `JobService` seam with M05's idempotence and E-4 rules, without a database."""
 
     refusals: dict[str, M05Error] = field(default_factory=dict)
+    run_initiator: Mapping[str, str] = field(default_factory=lambda: dict(RUN_OPERATOR))
     jobs: dict[str, dict[str, Any]] = field(default_factory=dict)
     submissions: list[dict[str, Any]] = field(default_factory=list)
     _by_key: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
@@ -119,7 +122,7 @@ class FakeJobService:
         self,
         request: JobSubmit,
         *,
-        requested_by: Mapping[str, str],
+        requested_by: Mapping[str, str] | None,
         idempotency_key: str,
         proposed_by: Mapping[str, str] | None = None,
         trace_id: str | None = None,
@@ -128,6 +131,7 @@ class FakeJobService:
 
         capability = str(plain(request.capability))
         campaign = str(plain(request.campaign_id))
+        actor = dict(self.run_initiator) if requested_by is None else dict(requested_by)
         body_hash = hashlib.sha256(
             json.dumps(
                 plain(request.model_dump(mode="json", exclude_none=True)), sort_keys=True
@@ -156,7 +160,7 @@ class FakeJobService:
             "provider": PROVIDERS[capability],
             "status": "QUEUED",
             "policy_version": "roe-1",
-            "requested_by": dict(requested_by),
+            "requested_by": actor,
             "proposed_by": None if proposed_by is None else dict(proposed_by),
             "priority": 50,
             "depends_on": [],
@@ -173,7 +177,7 @@ class FakeJobService:
                 "campaign_id": campaign,
                 "capability": capability,
                 "idempotency_key": idempotency_key,
-                "requested_by": dict(requested_by),
+                "requested_by": actor,
                 "proposed_by": None if proposed_by is None else dict(proposed_by),
                 "trace_id": trace_id,
             }

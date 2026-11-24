@@ -50,6 +50,10 @@ class SessionDirectory(Protocol):
         """Return the bound context, or `(None, reason)`; the reason is safe to show the caller."""
         ...
 
+    def bound(self, transport_session_id: str | None) -> SessionContext | None:
+        """The context this transport session is already bound to, without verifying again."""
+        ...
+
 
 # More transport sessions than this in one process are forgotten oldest-first. Forgetting a binding
 # never grants anything: the next call is verified against the source again and re-bound.
@@ -63,6 +67,12 @@ class _Bindings:
         self._lock = threading.Lock()
         self._limit = limit
         self._bound: OrderedDict[str, SessionContext] = OrderedDict()
+
+    def get(self, transport_session_id: str | None) -> SessionContext | None:
+        if transport_session_id is None:
+            return None
+        with self._lock:
+            return self._bound.get(transport_session_id)
 
     def resolve(
         self,
@@ -115,6 +125,9 @@ class InMemorySessionDirectory:
             transport_session_id, context, campaign_id=campaign_id, session_id=session_id
         )
 
+    def bound(self, transport_session_id: str | None) -> SessionContext | None:
+        return self._bindings.get(transport_session_id)
+
 
 class PostgresSessionDirectory:
     """`agent_session` rows are the authority; the scan cycle is the session in G1.2b.
@@ -129,6 +142,9 @@ class PostgresSessionDirectory:
     def __init__(self, connect: Callable[[], psycopg.Connection[Any]]) -> None:
         self._connect = connect
         self._bindings = _Bindings()
+
+    def bound(self, transport_session_id: str | None) -> SessionContext | None:
+        return self._bindings.get(transport_session_id)
 
     def resolve(
         self, transport_session_id: str | None, *, campaign_id: str, session_id: str

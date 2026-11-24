@@ -55,10 +55,12 @@ Còn mở:
 `streamable_http_app`, JSON response mặc định). Entry point: `uvicorn aegis.m05_registry.mcp.main:app`.
 Service tách khỏi transport (`service.py`) để test chạy đúng đường thật của handler.
 
-- **`tools/list`**: có `_meta` thì lọc theo `capability_denylist` của campaign và kiểm session như
-  `tools/call`; không có khóa `aegis.io/*` nào thì trả danh mục capability đã đăng ký (không lọc) vì
-  không có campaign để lọc — nhánh này cho chính SDK: client gọi `tools/list` không `_meta` để đối
-  chiếu `outputSchema` trước khi trả kết quả. `_meta` có namespace `aegis.io/` nhưng thiếu/sai thì
+- **`tools/list`**: nguồn lọc là **binding của transport**, không phải `_meta`: khi `Mcp-Session-Id`
+  đã bind vào một cặp campaign/agent session thì danh sách lọc theo `capability_denylist` của campaign
+  đó, kể cả khi lời gọi không gửi `_meta`. Chỉ transport chưa bind và không có khóa `aegis.io/*` nào
+  mới nhận danh mục capability đã đăng ký (không lọc) — nhánh này cho chính SDK: client gọi
+  `tools/list` chỉ với envelope `_meta` để đối chiếu `outputSchema` trước khi trả kết quả; nó không
+  mở rộng quyền gọi. Transport chưa bind mà gửi `_meta` có namespace `aegis.io/` nhưng thiếu/sai thì
   vẫn `-32602`, không lặng lẽ bỏ lọc.
 - **Session**: `Mcp-Session-Id` bind đúng một cặp `(campaign, agent_session)`; nguồn quyền là hàng
   `agent_session` (0001) và session phải `RUNNING` (đọc lại mỗi lần bind, không cache trong process
@@ -68,9 +70,11 @@ Service tách khỏi transport (`service.py`) để test chạy đúng đường
   session là một lần quét, retry trong session trùng đúng job cũ, restart của cùng session resume
   được; lần quét mới = session mới cho tới khi contract mở khóa riêng. (Đóng mục còn mở của spike
   cho G1; nếu G1.2c cần nhiều cycle trong một session thì phải sửa contract trước.)
-- **Actor**: `requested_by = {kind: module, id: "M05"}` (agent không thể là initiator, C05) và
-  `proposed_by = {kind: agent, id: <session>}` do M05 gán từ session đã bind; cả hai nằm trong
-  ApprovedTask đã ký.
+- **Actor**: `requested_by` là operator đã khởi động run hiện tại của campaign (actor của lần chuyển
+  `RUNNING` gần nhất, không có thì `campaign.created_by`), `proposed_by = {kind: agent, id: <session>}`
+  do M05 gán từ session đã bind; cả hai nằm trong ApprovedTask đã ký. Đường MCP không có credential
+  operator nên M05 tự suy `requested_by` từ dữ liệu campaign (OI-4/C05); id `module` chỉ dành cho job
+  do module khởi động, agent chỉ là người đề xuất.
 - **E-4 khoá idempotency theo session**: `policy_decision` ghi `session_id` của người đề xuất; một
   caller khác (session khác, hoặc REST không có session) dùng lại cùng key nhận
   `IDEMPOTENCY_CONFLICT` (`isError=true`, không có `field`) và không nhận job đó. Trùng fingerprint

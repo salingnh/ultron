@@ -21,12 +21,13 @@ from mcp.types import INVALID_PARAMS
 
 from aegis.m05_registry.errors import M05Error
 from aegis.m05_registry.mcp.schemas import capability_response_schema, error_schema
-from aegis.m05_registry.mcp.service import REQUESTED_BY, McpToolService
+from aegis.m05_registry.mcp.service import McpToolService
 from tests.mcp_support import (
     CAMPAIGN_ID,
     ENUMERATE,
     OTHER_OBJECTIVE_ID,
     OTHER_SESSION_ID,
+    RUN_OPERATOR,
     FakeJobService,
     arguments,
     make_service,
@@ -76,7 +77,8 @@ def test_an_approved_call_returns_the_job_identity_and_records_the_session() -> 
     assert value["policy_version"] == "roe-1"
 
     submitted = service.jobs.submissions[0]  # type: ignore[attr-defined]
-    assert submitted["requested_by"] == REQUESTED_BY
+    # OI-4: the run's operator is the initiator; the agent session is only the proposer.
+    assert submitted["requested_by"] == RUN_OPERATOR
     assert submitted["proposed_by"] == {"kind": "agent", "id": meta()["aegis.io/session_id"]}
     assert submitted["idempotency_key"] == meta()["aegis.io/idempotency_key"]
     assert submitted["trace_id"] == meta()["aegis.io/trace_id"]

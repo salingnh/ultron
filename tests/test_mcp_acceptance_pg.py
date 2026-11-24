@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from mcp.shared.exceptions import MCPError
+from psycopg.types.json import Jsonb
 
 from aegis.m05_registry.mcp.campaign import PostgresCampaignPolicies
 from aegis.m05_registry.mcp.graph import UnavailableGraphQueries
@@ -23,6 +24,7 @@ from aegis.m05_registry.registry import PostgresManifestRegistry
 from aegis.m05_registry.service import PostgresJobService
 from aegis.m05_registry.signing import KeyRing
 from tests.db_support import (
+    OPERATOR,
     SeededCampaign,
     connect,
     migrated_database,
@@ -133,7 +135,8 @@ def test_a_tool_call_is_one_m05_decision_one_signed_task_one_job(
     proposed_by, session_id, requested_by, key, trace = role
     assert proposed_by == {"kind": "agent", "id": SESSION_ID}
     assert str(session_id) == SESSION_ID
-    assert requested_by == {"kind": "module", "id": "M05"}
+    # OI-4: the initiator is the operator who started the campaign run, not M05.
+    assert requested_by == OPERATOR
     assert key == meta()["aegis.io/idempotency_key"]
     assert trace == TRACE_ID
 
@@ -144,6 +147,25 @@ def test_a_tool_call_is_one_m05_decision_one_signed_task_one_job(
     ring.verify(dict(task))  # the job the agent caused is the task M06 will run
     assert scalar(dsn, "SELECT status FROM scan_job") == "QUEUED"
     assert str(scalar(dsn, "SELECT scan_cycle FROM scan_job")) == SESSION_ID
+
+
+def test_the_latest_running_transition_actor_is_the_initiator(
+    campaign: tuple[str, SeededCampaign],
+) -> None:
+    dsn, seeded = campaign
+    resumed = {"kind": "operator", "id": "op-resume"}
+    with connect(dsn) as conn, conn.transaction():
+        conn.execute(
+            "INSERT INTO campaign_status_change (campaign_id, seq, from_status, to_status, "
+            "actor, trace_id) VALUES (%s, 2, 'PAUSED', 'RUNNING', %s, %s)",
+            (seeded.campaign_id, Jsonb(resumed), TRACE_ID),
+        )
+    with service(dsn) as (mcp, _):
+        response = call(mcp, request_meta=meta(**{"aegis.io/campaign_id": seeded.campaign_id}))
+
+    assert response["decision"] == "approved"
+    assert scalar(dsn, "SELECT requested_by FROM scan_job") == resumed
+    assert scalar(dsn, "SELECT requested_by FROM policy_decision") == resumed
 
 
 def test_a_retry_with_the_same_key_replays_the_same_job(

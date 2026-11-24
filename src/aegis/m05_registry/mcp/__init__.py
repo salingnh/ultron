@@ -22,7 +22,7 @@ from aegis.m05_registry.mcp.graph import (
     UnavailableGraphQueries,
 )
 from aegis.m05_registry.mcp.server import build_app, build_server
-from aegis.m05_registry.mcp.service import REQUESTED_BY, McpToolService, ToolSpec
+from aegis.m05_registry.mcp.service import McpToolService, ToolSpec
 from aegis.m05_registry.mcp.session import (
     InMemorySessionDirectory,
     PostgresSessionDirectory,
@@ -31,7 +31,6 @@ from aegis.m05_registry.mcp.session import (
 )
 
 __all__ = [
-    "REQUESTED_BY",
     "GraphLimits",
     "GraphQueryResult",
     "GraphQueryService",
