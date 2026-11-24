@@ -18,9 +18,10 @@ export const CopyableId: React.FC<CopyableIdProps> = ({ value, truncate = true, 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const displayValue = truncate && value.length > 20
-    ? `${value.substring(0, 10)}...${value.substring(value.length - 8)}`
-    : value;
+  const val = value ?? '';
+  const displayValue = truncate && val.length > 20
+    ? `${val.substring(0, 10)}...${val.substring(val.length - 8)}`
+    : val;
 
   return (
     <span className={`copyable-field ${className}`} title={value} style={{ maxWidth: '100%', boxSizing: 'border-box' }}>

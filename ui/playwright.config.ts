@@ -1,4 +1,25 @@
 import { defineConfig, devices } from '@playwright/test';
+import net from 'node:net';
+
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const address = srv.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      srv.close((err) => {
+        if (err) reject(err);
+        else resolve(port);
+      });
+    });
+  });
+}
+
+if (!process.env.PLAYWRIGHT_PORT) {
+  process.env.PLAYWRIGHT_PORT = String(await getFreePort());
+}
+const port = Number(process.env.PLAYWRIGHT_PORT);
+const baseURL = `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -8,7 +29,7 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:3100',
+    baseURL,
     viewport: { width: 1440, height: 900 },
     trace: 'on-first-retry',
   },
@@ -26,8 +47,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev -- --port 3100',
-    url: 'http://localhost:3100',
+    command: `npm run dev -- --port ${port}`,
+    url: baseURL,
     reuseExistingServer: false,
     timeout: 30000,
   },
