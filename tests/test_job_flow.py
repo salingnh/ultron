@@ -249,6 +249,28 @@ def test_reconcile_adopts_live_jobs_and_never_duplicates_a_container(
     assert runner.layout(job_id).output.is_dir()
 
 
+def test_a_second_runner_on_the_same_host_never_touches_this_runners_jobs(
+    runner: PodmanRunner, probe_image: str
+) -> None:
+    """Two CI jobs (or a blue/green restart) share a host; reconcile() is owner-scoped.
+
+    This is the regression test for a real failure: a concurrent suite's teardown called
+    reconcile([]) and removed the containers of the other process.
+    """
+    job_id = m06_support.unique("owner")
+    handle = runner.run(_spec(probe_image, job_id))
+    try:
+        other = PodmanRunner(base_dir=runner.base_dir / "other-runner", broker_image=probe_image)
+        report = other.reconcile([])
+        assert report.removed == ()
+        assert report.adopted == ()
+        assert runner.inspect(handle).status in {"running", "created"}
+    finally:
+        runner.stop(handle)
+        runner.reconcile([])
+    assert runner.inspect(handle).status == "missing"
+
+
 def test_egress_job_reaches_only_its_broker(
     tmp_path_factory: pytest.TempPathFactory,
     probe_image: str,

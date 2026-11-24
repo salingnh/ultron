@@ -14,6 +14,7 @@ the collector uploads it as evidence first (contract §2).
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import os
@@ -33,6 +34,7 @@ from aegis.m06_runner import netpolicy
 
 PODMAN = os.environ.get("AEGIS_PODMAN") or shutil.which("podman") or "podman"
 ROLE_LABEL = "aegis.role"
+RUNNER_LABEL = "aegis.runner"
 JOB_ROLE = "job"
 BROKER_ROLE = "egress-broker"
 JOB_ID_LABEL = "aegis.job_id"
@@ -135,6 +137,17 @@ class PodmanRunner(ContainerRunner):
         if not JOB_ID_PATTERN.fullmatch(job_id):
             raise RunnerError(f"job id is not a usable container name: {job_id!r}")
         return JobLayout(self.base_dir / "jobs" / job_id)
+
+    @property
+    def owner(self) -> str:
+        """Stable id of this runner (its base directory), the scope of `reconcile()`.
+
+        Two runners can share a host - two CI jobs, or a blue/green restart - and only the one that
+        owns a container may adopt or remove it. A restarted process reusing the same base directory
+        keeps the same owner, so it still reconciles its own jobs.
+        """
+        digest = hashlib.sha256(str(self.base_dir.resolve()).encode("utf-8")).hexdigest()
+        return digest[:12]
 
     def container_name(self, job_id: str) -> str:
         return f"aegis-job-{job_id}"
@@ -268,6 +281,8 @@ class PodmanRunner(ContainerRunner):
             f"{JOB_ID_LABEL}={job_id}",
             "--label",
             f"{ROLE_LABEL}={BROKER_ROLE}",
+            "--label",
+            f"{RUNNER_LABEL}={self.owner}",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--pids-limit",
@@ -352,7 +367,11 @@ class PodmanRunner(ContainerRunner):
         return tuple(sorted({job_id for _name, job_id in self._containers(JOB_ROLE)}))
 
     def reconcile(self, live_job_ids: Iterable[str]) -> ReconcileReport:
-        """Adopt the containers of live jobs, remove everything belonging to a gone job."""
+        """Adopt this runner's live jobs, remove everything of a job that is gone.
+
+        Only objects carrying this runner's owner label are touched, so a second runner process on
+        the same host (another CI job, a blue/green restart) never adopts or removes them.
+        """
         live = set(live_job_ids)
         adopted: list[str] = []
         removed: list[str] = []
@@ -390,6 +409,8 @@ class PodmanRunner(ContainerRunner):
             f"{JOB_ID_LABEL}={spec.job_id}",
             "--label",
             f"{ROLE_LABEL}={JOB_ROLE}",
+            "--label",
+            f"{RUNNER_LABEL}={self.owner}",
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--pids-limit",
@@ -461,6 +482,8 @@ class PodmanRunner(ContainerRunner):
             f"{JOB_ID_LABEL}={job_id}",
             "--label",
             f"{ROLE_LABEL}=network",
+            "--label",
+            f"{RUNNER_LABEL}={self.owner}",
             name,
         )
         self._subnets[job_id] = subnet
@@ -519,6 +542,8 @@ class PodmanRunner(ContainerRunner):
             if inspect.returncode != 0:
                 continue
             labels = json.loads(inspect.stdout)[0].get("labels") or {}
+            if labels.get(RUNNER_LABEL) != self.owner:
+                continue
             job_id = str(labels.get(JOB_ID_LABEL, name.removeprefix("aegis-net-")))
             found.append((name, job_id))
         return found
@@ -529,6 +554,8 @@ class PodmanRunner(ContainerRunner):
             "-a",
             "--filter",
             f"label={ROLE_LABEL}={role}",
+            "--filter",
+            f"label={RUNNER_LABEL}={self.owner}",
             "--format",
             '{{.Names}}\t{{.Label "aegis.job_id"}}',
             check=False,
