@@ -20,6 +20,7 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from neo4j import Driver, GraphDatabase
@@ -30,6 +31,7 @@ from aegis.m23_graph.models import CypherOp
 
 __all__ = [
     "GRAPH_NODE_KEYS",
+    "RebuildContext",
     "apply_ops",
     "connect",
     "install_constraints",
@@ -182,13 +184,37 @@ def snapshot(driver: Driver) -> dict[str, dict[str, Any]]:
     return {"nodes": nodes, "edges": edges}
 
 
-def wipe(driver: Driver, *, batch: int = 10_000) -> int:
+@dataclass(frozen=True, slots=True)
+class RebuildContext:
+    """The explicit rebuild the wipe belongs to: the consumer generation it is being built into.
+
+    A wipe is not an operation of the running projector - it deletes every node and edge and is only
+    correct as the first step of rebuilding under a **new** consumer generation (`model.md` "Dựng
+    lại toàn bộ": xóa database Neo4j rồi chạy projector). Requiring this value is what keeps a plain
+    run (`python -m aegis.m23_graph run`, `Projector`) from ever reaching the wipe: neither has a
+    generation to rebuild into, so neither can call `wipe()`. Only the rebuild command
+    (`cli.rebuild`) and the throughput bench construct it.
+    """
+
+    generation: str
+
+    def __post_init__(self) -> None:
+        if not self.generation.strip():
+            raise ValueError("a rebuild context needs the consumer generation it rebuilds into")
+
+
+def wipe(driver: Driver, *, context: RebuildContext, batch: int = 10_000) -> int:
     """Delete every node and edge of the graph in batches; returns how many nodes were removed.
 
-    Only the projector (and this rebuild command) writes the graph, and a rebuild always targets
-    the throwaway/dev database, so a full wipe is the documented precondition of a new generation
-    (`model.md` "Dựng lại toàn bộ": xóa database Neo4j rồi chạy projector).
+    `context` is mandatory on purpose: this is the destructive step of a rebuild, never something a
+    normal projector run does (`RebuildContext`). The type is checked at runtime too, so a string
+    passed by mistake is refused instead of wiping the graph.
     """
+    if not isinstance(context, RebuildContext):
+        raise TypeError(
+            "graph.wipe needs an explicit graph.RebuildContext (the rebuild it belongs to); a "
+            f"plain value {type(context).__name__!r} must not delete the graph"
+        )
     removed = 0
     with driver.session() as session:
         while True:

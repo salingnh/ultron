@@ -66,7 +66,11 @@ PG_PORT=$(podman port "$PG" 5432/tcp | head -1 | sed 's/.*://')
 log "postgres $(podman exec "$PG" psql -tAc 'SHOW server_version' -U aegis -d postgres) on 127.0.0.1:$PG_PORT"
 
 log "throwaway Neo4j 5.26 as $NEO4J (loopback bolt port, random password)"
+# The `aegis.test.graph=1` label marks this Neo4j as disposable: the M23 tests wipe the graph they
+# run against, so they accept only a container carrying it (tests/graph_support.py). A dev-stack or
+# hand-started Neo4j never has it, which is what stops a gate run from wiping a shared graph.
 start_container "$NEO4J" "$AEGIS_NEO4J_IMAGE" \
+  --label aegis.test.graph=1 \
   -e NEO4J_AUTH="neo4j/$NEO4J_PASSWORD" \
   -e NEO4J_server_memory_heap_initial__size=512m \
   -e NEO4J_server_memory_heap_max__size=1g \

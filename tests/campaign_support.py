@@ -31,6 +31,7 @@ from aegis.m26_api.app import create_app
 from aegis.m26_api.campaigns import register
 from aegis.m26_api.operator import OperatorTokens, TokenAuthenticator, token_digest
 from aegis.m26_api.registry import RouterRegistry
+from tests.pg import drop_throwaway_database
 
 DSN_ENV = "AEGIS_TEST_PG_DSN"
 API = "/api/v2"
@@ -162,7 +163,7 @@ def database() -> Iterator[str]:
         with psycopg.connect(
             make_conninfo("", **{**parameters, "dbname": "postgres"}), autocommit=True
         ) as admin:
-            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+            drop_throwaway_database(admin, name)
 
 
 def requires_postgres() -> pytest.MarkDecorator:

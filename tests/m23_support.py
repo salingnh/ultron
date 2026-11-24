@@ -2,18 +2,20 @@
 
 Two external services are needed, and both are **throwaway**: a PostgreSQL 16 the test may
 create and drop databases on (`AEGIS_TEST_PG_DSN`, the same variable the other DB tests use) and
-a Neo4j 5.26 that the test may wipe (`AEGIS_TEST_NEO4J_URI`/`AEGIS_TEST_NEO4J_PASSWORD`, which
-`scripts/ci/python-gate.sh` starts on a random loopback port for exactly this job).
+a Neo4j 5.26 that the test may wipe. The graph is not taken from whatever `AEGIS_TEST_NEO4J_URI`
+happens to point at: `tests/graph_support.ensure_test_graph` accepts only a container carrying the
+`aegis.test.graph=1` label and otherwise starts its own, so a run can never wipe a shared graph
+(the incident that produced that guard is described there).
 
-Wiping the graph is safe by construction here: Neo4j is a projection of PostgreSQL
-(`contracts/graph/model.md`), so even an accidental run against a dev stack loses nothing that the
-rebuild command cannot restore.
+A wipe is `graph.wipe(driver, context=graph.RebuildContext(<generation>))`: the destructive step
+belongs to a rebuild, and nothing here reaches it by accident.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any, cast
@@ -28,6 +30,7 @@ from aegis.m23_graph import graph
 from aegis.m23_graph.projector import Projector, ProjectorConfig
 from aegis.m27_ingestion.service import IngestionService
 from aegis.migrations import apply_contract_migrations
+from tests import graph_support
 from tests.pg import throwaway_database
 from tests.support_ingestion import (
     CAMPAIGN_ID,
@@ -42,21 +45,21 @@ from tests.support_ingestion import (
     seed_jobs,
 )
 
-NEO4J_URI_ENV = "AEGIS_TEST_NEO4J_URI"
-NEO4J_PASSWORD_ENV = "AEGIS_TEST_NEO4J_PASSWORD"
+NEO4J_URI_ENV = graph_support.NEO4J_URI_ENV
+NEO4J_PASSWORD_ENV = graph_support.NEO4J_PASSWORD_ENV
 PG_DSN_ENV = "AEGIS_TEST_PG_DSN"
+#: The generation a test wipe pretends to rebuild into; it never reaches production data.
+TEST_GENERATION = "m23-projector#g-test"
 
 requires_neo4j = pytest.mark.skipif(
-    not (os.environ.get(NEO4J_URI_ENV) and os.environ.get(NEO4J_PASSWORD_ENV)),
-    reason=f"set {NEO4J_URI_ENV} and {NEO4J_PASSWORD_ENV} to a throwaway Neo4j 5.26",
+    not os.environ.get(NEO4J_URI_ENV) and shutil.which("podman") is None,
+    reason=f"set {NEO4J_URI_ENV} (+ {NEO4J_PASSWORD_ENV}) or install podman so the harness can "
+    "start a throwaway Neo4j 5.26",
 )
 requires_pipeline = pytest.mark.skipif(
-    not (
-        os.environ.get(PG_DSN_ENV)
-        and os.environ.get(NEO4J_URI_ENV)
-        and os.environ.get(NEO4J_PASSWORD_ENV)
-    ),
-    reason=f"set {PG_DSN_ENV}, {NEO4J_URI_ENV} and {NEO4J_PASSWORD_ENV} to run the projector",
+    not os.environ.get(PG_DSN_ENV)
+    or (not os.environ.get(NEO4J_URI_ENV) and shutil.which("podman") is None),
+    reason=f"set {PG_DSN_ENV} and either {NEO4J_URI_ENV} (+ {NEO4J_PASSWORD_ENV}) or podman",
 )
 
 RAW_EVIDENCE = b'{"A": "192.0.2.10"}\n'
@@ -77,14 +80,24 @@ def evidence_entry(job_id: str) -> dict[str, Any]:
 
 @contextmanager
 def graph_driver() -> Iterator[Driver]:
-    """A driver on the throwaway Neo4j, wiped before and after the test."""
-    driver = graph.connect(os.environ[NEO4J_URI_ENV], "neo4j", os.environ[NEO4J_PASSWORD_ENV])
-    graph.wipe(driver)
+    """A driver on the harness-owned Neo4j, wiped before and after the test.
+
+    `ensure_test_graph` runs first and raises `SharedGraphRefused` when the configured Neo4j is not
+    a test resource, so the wipe below can never reach a shared graph.
+    """
+    uri, password = graph_support.ensure_test_graph()
+    driver = graph.connect(uri, "neo4j", password)
+    wipe_graph(driver)
     try:
         yield driver
     finally:
-        graph.wipe(driver)
+        wipe_graph(driver)
         driver.close()
+
+
+def wipe_graph(driver: Driver) -> int:
+    """The test-side wipe: explicit rebuild context, never a bare destruct call."""
+    return graph.wipe(driver, context=graph.RebuildContext(TEST_GENERATION))
 
 
 @contextmanager
