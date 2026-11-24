@@ -1,0 +1,313 @@
+{
+  "assets": [
+    {
+      "kind": "ip",
+      "canonical_key": "ip:203.0.113.30",
+      "discovered_from": [
+        "dns:api.lab.aegis.test"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "ip",
+      "canonical_key": "ip:203.0.113.20",
+      "discovered_from": [
+        "dns:mail.lab.aegis.test"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "ip",
+      "canonical_key": "ip:203.0.113.10",
+      "discovered_from": [
+        "dns:vpn.lab.aegis.test"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "ip",
+      "canonical_key": "ip:2001:db8::10",
+      "discovered_from": [
+        "dns:vpn.lab.aegis.test"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "subject": "dns:api.lab.aegis.test",
+      "predicate": "dns.record",
+      "value": {
+        "type": "A",
+        "value": "203.0.113.30",
+        "ttl": 3600
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:mail.lab.aegis.test",
+      "predicate": "dns.record",
+      "value": {
+        "type": "A",
+        "value": "203.0.113.20",
+        "ttl": 3600
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:vpn.lab.aegis.test",
+      "predicate": "dns.record",
+      "value": {
+        "type": "A",
+        "value": "203.0.113.10",
+        "ttl": 3600
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:vpn.lab.aegis.test",
+      "predicate": "dns.record",
+      "value": {
+        "type": "AAAA",
+        "value": "2001:db8::10",
+        "ttl": 3600
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:www.lab.aegis.test",
+      "predicate": "dns.record",
+      "value": {
+        "type": "A",
+        "value": "203.0.113.10",
+        "ttl": 3600
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:www.lab.aegis.test",
+      "predicate": "dns.record",
+      "value": {
+        "type": "AAAA",
+        "value": "2001:db8::10",
+        "ttl": 3600
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:api.lab.aegis.test",
+      "predicate": "dns.resolves",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:mail.lab.aegis.test",
+      "predicate": "dns.resolves",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:vpn.lab.aegis.test",
+      "predicate": "dns.resolves",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:www.lab.aegis.test",
+      "predicate": "dns.resolves",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "ip:203.0.113.30",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "ip:203.0.113.20",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "ip:203.0.113.10",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "ip:2001:db8::10",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "type": "RESOLVES_TO",
+      "from": "dns:api.lab.aegis.test",
+      "to": "ip:203.0.113.30",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "RESOLVES_TO",
+      "from": "dns:mail.lab.aegis.test",
+      "to": "ip:203.0.113.20",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "RESOLVES_TO",
+      "from": "dns:vpn.lab.aegis.test",
+      "to": "ip:203.0.113.10",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "RESOLVES_TO",
+      "from": "dns:vpn.lab.aegis.test",
+      "to": "ip:2001:db8::10",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "RESOLVES_TO",
+      "from": "dns:www.lab.aegis.test",
+      "to": "ip:203.0.113.10",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "RESOLVES_TO",
+      "from": "dns:www.lab.aegis.test",
+      "to": "ip:2001:db8::10",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "coverage_subjects": [
+    "dns:api.lab.aegis.test",
+    "dns:example.com",
+    "dns:ghost.lab.aegis.test",
+    "dns:mail.lab.aegis.test",
+    "dns:vpn.lab.aegis.test",
+    "dns:www.lab.aegis.test"
+  ]
+}
