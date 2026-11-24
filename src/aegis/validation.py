@@ -38,10 +38,12 @@ CONTRACTS_BASE_URI = "https://aegis.io/contracts/"
 __all__ = [
     "ContractUnavailable",
     "ContractViolation",
+    "denied_egress_host",
     "document",
     "errors",
     "format_checker",
     "openapi_errors",
+    "problems",
     "schemas",
     "validate",
     "validate_model",
@@ -69,6 +71,8 @@ class _ContractChecks(Protocol):
 
     def openapi_errors(self, document: dict[str, Any], source: Path) -> list[str]: ...
 
+    def denied_egress_host(self, host: str) -> bool: ...
+
 
 @cache
 def _checks() -> _ContractChecks:
@@ -83,7 +87,7 @@ def _checks() -> _ContractChecks:
     except Exception as error:  # noqa: BLE001 - surfaced as one loud, typed failure
         sys.modules.pop(spec.name, None)
         raise ContractUnavailable(f"cannot import {path}: {error}") from error
-    for attribute in ("format_checker", "openapi_errors"):
+    for attribute in ("format_checker", "openapi_errors", "denied_egress_host"):
         if not hasattr(module, attribute):
             raise ContractUnavailable(f"{path} has no {attribute}()")
     return cast(_ContractChecks, module)
@@ -92,6 +96,15 @@ def _checks() -> _ContractChecks:
 def format_checker() -> FormatChecker:
     """The semantic `aegis-*` format checker declared by contracts/validation.py."""
     return _checks().format_checker()
+
+
+def denied_egress_host(host: str) -> bool:
+    """True when `host` is in the platform egress deny set (C05/OI-5, contracts/validation.py).
+
+    The deny set is a platform constant, so every consumer (M05 registry admission, the M06 broker)
+    reads it from the contract bundle instead of keeping a second copy that can drift.
+    """
+    return _checks().denied_egress_host(host)
 
 
 def openapi_errors(document_: dict[str, Any], source: Path) -> list[str]:
@@ -170,14 +183,19 @@ def _validator(reference: str) -> Draft202012Validator:
     return Draft202012Validator(schema, registry=_registry(), format_checker=format_checker())
 
 
-def errors(reference: str, instance: Any) -> list[str]:
-    """Every contract violation of `instance`, ordered by document path."""
+def problems(reference: str, instance: Any) -> list[tuple[str, str]]:
+    """Every contract violation of `instance` as `(JSON Pointer, message)`, by document path."""
     validator = _validator(reference)
     found = sorted(validator.iter_errors(instance), key=lambda error: list(error.absolute_path))
     return [
-        f"/{'/'.join(str(part) for part in error.absolute_path)}: {error.message}"
+        (f"/{'/'.join(str(part) for part in error.absolute_path)}", error.message)
         for error in found
     ]
+
+
+def errors(reference: str, instance: Any) -> list[str]:
+    """Every contract violation of `instance`, ordered by document path."""
+    return [f"{pointer}: {message}" for pointer, message in problems(reference, instance)]
 
 
 def validate(reference: str, instance: Any) -> None:
