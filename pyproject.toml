@@ -28,6 +28,11 @@ dependencies = [
   "temporalio==1.36.1",
   # MCP boundary (G1.2b): the SDK line spike G0.3a verified on the wire (2.3.0, protocol 2025-11-25).
   "mcp==2.3.0",
+  # M03 agent session (G1.2c): the graph loop and the PostgreSQL checkpointer, same pins as the
+  # G0.1 spike (spikes/g0.1-temporal-langgraph/requirements.txt), which proved the resume/cancel
+  # behaviour this card implements.
+  "langgraph==1.2.24",
+  "langgraph-checkpoint-postgres==3.2.1",
 ]
 
 [dependency-groups]
