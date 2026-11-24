@@ -36,6 +36,7 @@ from tests.g15a_support import (
     job_completed_payload,
     job_started_payload,
     open_campaign,
+    seed_events,
 )
 
 pytestmark = requires_postgres
@@ -106,7 +107,9 @@ def test_the_json_page_returns_published_events_of_one_campaign_in_order(dsn: st
     assert page.status_code == 200, page.text
     body = page.json()
     assert "next_cursor" not in body
+    seeds = seed_events(dsn, campaign.campaign_id)
     assert [item["type"] for item in body["items"]] == [
+        *["asset.discovered.v2"] * len(seeds),
         "job.started.v2",
         "job.completed.v2",
         "job.started.v2",
@@ -116,8 +119,10 @@ def test_the_json_page_returns_published_events_of_one_campaign_in_order(dsn: st
         validation.validate("events/event-envelope.v2.schema.json", item)
     assert min(mine) < min(others), "sequence numbers are shared by the whole outbox"
 
-    # The page never exposes the other campaign's rows, whatever their sequence.
-    published = [item["payload"]["job_id"] for item in body["items"]]
+    # The page never exposes the other campaign's rows, whatever their sequence: the seed events
+    # are this campaign's own, then exactly its four job events.
+    job_items = [item for item in body["items"] if item["type"] != "asset.discovered.v2"]
+    published = [item["payload"]["job_id"] for item in job_items]
     assert published == [jobs[0]["job_id"], jobs[0]["job_id"], jobs[1]["job_id"], jobs[1]["job_id"]]
 
 
@@ -126,6 +131,7 @@ def test_paging_by_cursor_loses_nothing_and_repeats_nothing(dsn: str) -> None:
     campaign = open_campaign(dsn, name="events cursor")
     _publish(dsn, campaign.campaign_id, accept_jobs(dsn, campaign, 3))
 
+    expected = len(seed_events(dsn, campaign.campaign_id)) + 6  # seeds + 3 jobs × 2 events
     seen: list[str] = []
     cursor: str | None = None
     while True:
@@ -137,8 +143,8 @@ def test_paging_by_cursor_loses_nothing_and_repeats_nothing(dsn: str) -> None:
         cursor = page.get("next_cursor")
         if cursor is None:
             break
-    assert len(seen) == 6
-    assert len(set(seen)) == 6
+    assert len(seen) == expected
+    assert len(set(seen)) == expected
 
 
 def test_a_resume_point_beyond_the_published_head_is_refused(dsn: str) -> None:
@@ -195,8 +201,13 @@ def test_an_unknown_campaign_is_404_and_an_uncommitted_event_is_not_served(dsn: 
             payload=payload,
             connection=producer,
         )
-        assert _events(client, campaign.campaign_id).json()["items"] == []
-    served = _events(client, campaign.campaign_id).json()["items"]
+        assert [
+            item["type"]
+            for item in _events(client, campaign.campaign_id, types="job.started.v2").json()[
+                "items"
+            ]
+        ] == []
+    served = _events(client, campaign.campaign_id, types="job.started.v2").json()["items"]
     assert [item["type"] for item in served] == ["job.started.v2"]
 
 

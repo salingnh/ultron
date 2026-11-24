@@ -23,13 +23,16 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import cache
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import Any, cast
 
 import psycopg
 import yaml
+from psycopg.types.json import Jsonb
 
+from aegis import validation
 from aegis.common.repo import contract_path
 
 from .ids import new_id
@@ -376,6 +379,7 @@ def insert_seed_assets(
     *,
     campaign_id: str,
     seeds: Sequence[SeedTarget],
+    trace_id: str,
 ) -> list[str]:
     """Make the campaign's seed targets assets from the start; returns the asset ids touched.
 
@@ -385,6 +389,13 @@ def insert_seed_assets(
     both (G5 `unknown_subject_asset` / `unknown_relationship_endpoint`) - which is exactly what the
     G1.5c demo found. A seed whose `aegis-norm/1` rules give it no identity (keyword, cidr, ...) has
     no canonical key and no asset; nothing is invented here.
+
+    Each new (asset, campaign) link also publishes `asset.discovered.v2` in this same transaction
+    (`revision` 0, no `causal_job_id`: the campaign discovered its own seed, no job did). Without
+    that event the projector has no reason to look at the asset, and a seed whose only appearance is
+    the campaign row - `dns:internal.example` in the seeded demo campaign - never reached Neo4j
+    while PostgreSQL had it (the G1 final walkthrough's 7-vs-6 assets). The event is the only
+    source of graph nodes: M23 does not read `asset`/`campaign_target` behind the outbox.
     """
     touched: list[str] = []
     for row in seeds:
@@ -411,16 +422,63 @@ def insert_seed_assets(
                 """,
                 (asset_id, row.canonical_key, row.kind, NORM_VERSION),
             )
-        connection.execute(
+        linked = connection.execute(
             """
             INSERT INTO aegis.asset_campaign (asset_id, campaign_id, first_seen, first_job_id)
             VALUES (%s, %s, now(), NULL)
             ON CONFLICT (asset_id, campaign_id) DO NOTHING
+            RETURNING asset_id
             """,
             (asset_id, campaign_id),
-        )
+        ).fetchone()
+        if linked is not None:
+            _emit_seed_discovered(
+                connection,
+                asset_id=asset_id,
+                campaign_id=campaign_id,
+                canonical_key=str(row.canonical_key),
+                kind=row.kind,
+                trace_id=trace_id,
+            )
         touched.append(asset_id)
     return touched
+
+
+def _emit_seed_discovered(
+    connection: psycopg.Connection[Any],
+    *,
+    asset_id: str,
+    campaign_id: str,
+    canonical_key: str,
+    kind: str,
+    trace_id: str,
+) -> None:
+    """`asset.discovered.v2` for a campaign seed, through the C04 outbox (allocator trigger)."""
+    payload: dict[str, Any] = {
+        "asset_id": asset_id,
+        "canonical_key": canonical_key,
+        "kind": kind,
+        "revision": 0,
+        "campaign_id": campaign_id,
+        "discovered_from": [],
+        "first_seen": datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+    }
+    validation.validate("events/asset.discovered.v2.schema.json", payload)
+    connection.execute(
+        """
+        INSERT INTO aegis.outbox_event
+          (event_id, type, producer, dedup_key, campaign_id, payload, trace)
+        VALUES (%s, 'asset.discovered.v2', 'M01', %s, %s, %s, %s)
+        ON CONFLICT (type, dedup_key) DO NOTHING
+        """,
+        (
+            new_id(),
+            f"{asset_id}:0:{campaign_id}",
+            campaign_id,
+            Jsonb(payload),
+            Jsonb({"trace_id": trace_id, "campaign_id": campaign_id}),
+        ),
+    )
 
 
 def insert_seeds(

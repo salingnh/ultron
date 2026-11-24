@@ -269,14 +269,26 @@ def _inline(cypher: str, parameters: Mapping[str, Any]) -> str:
 
 
 def _parse_plain(output: str) -> list[dict[str, Any]]:
+    """Rows of `cypher-shell --format plain`; a quoted cell is a string, as cypher prints it."""
     lines = [line for line in output.splitlines() if line.strip()]
     if not lines:
         return []
     header = [cell.strip() for cell in lines[0].split("|")]
     return [
-        dict(zip(header, (cell.strip() for cell in line.split("|")), strict=False))
+        dict(zip(header, (_cell(cell) for cell in line.split("|")), strict=False))
         for line in lines[1:]
     ]
+
+
+def _cell(raw: str) -> Any:
+    """One plain-format cell: JSON-unquote strings, keep numbers and booleans as written."""
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:  # pragma: no cover - cypher always emits valid JSON strings
+            return value[1:-1]
+    return value
 
 
 def _neo4j_container() -> str:

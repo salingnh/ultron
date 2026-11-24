@@ -29,6 +29,7 @@ from tests.g15a_support import (
     job_completed_payload,
     job_started_payload,
     open_campaign,
+    seed_events,
 )
 from tests.http_support import SseStream, open_sse, serve
 from tests.m02_support import run_job
@@ -57,6 +58,19 @@ def _stream_url(api: str, campaign_id: str) -> str:
 
 def _open(url: str, **kwargs: Any) -> SseStream:
     return open_sse(url, extra_headers=AUTH, **kwargs)
+
+
+def _consume_seed_events(stream: SseStream, seeds: list[int]) -> None:
+    """Read the campaign's seed events, which every stream replays before the test's own events.
+
+    M01 publishes one `asset.discovered.v2` per identity-bearing seed in the campaign transaction;
+    a stream starts from the campaign's first event, so those frames arrive first and a test that
+    begins its own stream must account for them (and can prove they are the seeds).
+    """
+    for sequence in seeds:
+        message = stream.next()
+        assert message.id == str(sequence), message.id
+        assert message.event == "asset.discovered.v2", message.event
 
 
 def _publish(dsn: str, campaign_id: str, jobs: list[dict[str, Any]]) -> list[int]:
@@ -108,6 +122,7 @@ def test_a_committed_job_status_change_reaches_a_connected_client_within_two_sec
     run_job(dsn, job["job_id"])
 
     with _open(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
+        _consume_seed_events(stream, seed_events(dsn, campaign.campaign_id))
         started_at = time.monotonic()
         sequence = _complete_with_event(dsn, job)
         message = stream.next()
@@ -129,6 +144,7 @@ def test_reconnect_with_last_event_id_loses_nothing_and_duplicates_nothing(
     first = _publish(dsn, campaign.campaign_id, jobs[:1])
 
     with _open(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
+        _consume_seed_events(stream, seed_events(dsn, campaign.campaign_id))
         checkpoint_message = stream.next()
     assert checkpoint_message.id == str(first[0])
 
@@ -165,6 +181,7 @@ def test_heartbeats_keep_an_idle_stream_alive(dsn: str, api: str, monkeypatch: A
     monkeypatch.setattr(events, "HEARTBEAT_SECONDS", 0.3)
     campaign = open_campaign(dsn, name="sse heartbeat")
     with _open(_stream_url(api, campaign.campaign_id), read_timeout=3.0) as stream:
+        _consume_seed_events(stream, seed_events(dsn, campaign.campaign_id))
         started_at = time.monotonic()
         heartbeat = stream.next()
         elapsed = time.monotonic() - started_at
@@ -179,6 +196,7 @@ def test_a_stream_only_sees_its_own_campaign(dsn: str, api: str) -> None:
     theirs = open_campaign(dsn, name="sse theirs")
     _publish(dsn, theirs.campaign_id, accept_jobs(dsn, theirs, 1))
     with _open(_stream_url(api, mine.campaign_id), read_timeout=0.8) as stream:
+        _consume_seed_events(stream, seed_events(dsn, mine.campaign_id))
         with pytest.raises(httpx.ReadTimeout):
             stream.next()
 

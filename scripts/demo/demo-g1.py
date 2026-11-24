@@ -300,11 +300,46 @@ def _collect(connection: Any, campaign_id: str) -> dict[str, Any]:
     support.require(counts["relationships"] >= 3, "too few relationships: the graph lost the edges")
     support.require(counts["neo4j_assets"] >= 4, "the M23 projection did not reach Neo4j")
     support.require(counts["neo4j_relationships"] >= 3, "the projection lost the relationships")
+    # Counts are not enough: the sets must be equal. A seed that only exists as a campaign row (no
+    # job observed it) used to be in PostgreSQL and missing from the graph, and a count of "lab
+    # assets" hid it (the G1 final walkthrough's 7-vs-6).
+    sets = _graph_sets(connection, campaign_id)
+    document["graph_sets"] = sets
+    support.line(
+        "assets only in PostgreSQL",
+        sets["assets_only_in_postgres"] or "none",
+    )
+    support.line(
+        "assets only in the graph",
+        sets["assets_only_in_graph"] or "none",
+    )
+    support.line(
+        "edges only in PostgreSQL",
+        sets["edges_only_in_postgres"] or "none",
+    )
+    support.line(
+        "edges only in the graph",
+        sets["edges_only_in_graph"] or "none",
+    )
     support.require(
-        counts["neo4j_relationships"] == counts["projectable_relationships"],
-        "the live projection does not match PostgreSQL: "
-        f"{counts['neo4j_relationships']} of {counts['projectable_relationships']} edges "
-        "(a rebuild would produce the same number, so this is the incremental path)",
+        not sets["assets_only_in_postgres"],
+        "the graph is missing assets PostgreSQL has: "
+        f"{sets['assets_only_in_postgres']} (every asset needs its event; a seed is published by "
+        "M01 in the campaign transaction)",
+    )
+    support.require(
+        not sets["assets_only_in_graph"],
+        f"the graph has assets this campaign does not: {sets['assets_only_in_graph']}",
+    )
+    support.require(
+        not sets["edges_only_in_postgres"],
+        "the graph is missing relationships PostgreSQL has: "
+        f"{sets['edges_only_in_postgres']} (a rebuild would produce them, so this is the "
+        "incremental projection)",
+    )
+    support.require(
+        not sets["edges_only_in_graph"],
+        f"the graph has relationships PostgreSQL does not: {sets['edges_only_in_graph']}",
     )
     support.require(counts["outbox_events"] > 0, "no outbox events were published")
 
@@ -407,6 +442,49 @@ def _collect(connection: Any, campaign_id: str) -> dict[str, Any]:
         "no job.completed.v2 event was published",
     )
     return document
+
+
+def _graph_sets(connection: Any, campaign_id: str) -> dict[str, list[str]]:
+    """The campaign's assets and edges, in PostgreSQL and in Neo4j, as comparable sets."""
+    pg_assets = {
+        str(row["canonical_key"])
+        for row in support.rows(
+            connection,
+            "SELECT a.canonical_key FROM asset a"
+            " JOIN asset_campaign ac ON ac.asset_id = a.asset_id WHERE ac.campaign_id = %s",
+            (campaign_id,),
+        )
+    }
+    graph_nodes = support.neo4j_query(
+        "MATCH (a:Asset) WHERE $campaign IN coalesce(a.campaign_ids, [])"
+        " RETURN a.canonical_key AS key",
+        campaign=campaign_id,
+    )
+    graph_assets = {str(node["key"]) for node in graph_nodes}
+    pg_edges = {
+        str(row["relationship_id"])
+        for row in support.rows(
+            connection,
+            "SELECT r.relationship_id FROM relationship r"
+            " JOIN asset_campaign fc ON fc.asset_id = r.from_asset_id AND fc.campaign_id = %s"
+            " JOIN asset_campaign tc ON tc.asset_id = r.to_asset_id AND tc.campaign_id = %s",
+            (campaign_id, campaign_id),
+        )
+    }
+    graph_edge_rows = support.neo4j_query(
+        "MATCH (a:Asset)-[r]->(b:Asset)"
+        " WHERE $campaign IN coalesce(a.campaign_ids, [])"
+        "   AND $campaign IN coalesce(b.campaign_ids, [])"
+        " RETURN r.relationship_id AS id",
+        campaign=campaign_id,
+    )
+    graph_edges = {str(edge["id"]) for edge in graph_edge_rows}
+    return {
+        "assets_only_in_postgres": sorted(pg_assets - graph_assets),
+        "assets_only_in_graph": sorted(graph_assets - pg_assets),
+        "edges_only_in_postgres": sorted(pg_edges - graph_edges),
+        "edges_only_in_graph": sorted(graph_edges - pg_edges),
+    }
 
 
 def _isolation_probe() -> dict[str, Any]:
@@ -551,8 +629,10 @@ def _check(document: dict[str, Any]) -> None:
             receipt["status"] == "accepted" for receipt in document["receipts"]
         ),
         "graph_projected": document["counts"]["neo4j_assets"] >= 4,
-        "graph_edges_match": document["counts"]["neo4j_relationships"]
-        == document["counts"]["projectable_relationships"],
+        "graph_asset_sets_match": not document["graph_sets"]["assets_only_in_postgres"]
+        and not document["graph_sets"]["assets_only_in_graph"],
+        "graph_edge_sets_match": not document["graph_sets"]["edges_only_in_postgres"]
+        and not document["graph_sets"]["edges_only_in_graph"],
         "no_duplicates": not any(document["duplicates"].values()),
         "network_isolated": document["isolation"]["internet_reachable"] is False,
     }

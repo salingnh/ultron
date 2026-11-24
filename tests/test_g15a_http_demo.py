@@ -30,7 +30,7 @@ import yaml
 from aegis.common.repo import repository_root
 from tests import campaign_support as support
 from tests.db_support import SeededCampaign, migrated_database, requires_postgres
-from tests.g15a_support import api_app, emit_event, job_completed_payload
+from tests.g15a_support import api_app, emit_event, job_completed_payload, seed_events
 from tests.http_support import open_sse, serve
 from tests.m02_support import accept_job, run_job
 from tests.test_m05_service import service
@@ -133,6 +133,11 @@ def test_the_flow_and_the_event_stream_over_http(dsn: str) -> None:
         stream_url = f"{base}{API}/campaigns/{campaign.campaign_id}/events"
         started_at = time.monotonic()
         with open_sse(stream_url, read_timeout=5.0, extra_headers=AUTH) as stream:
+            # A campaign's stream replays its own seed events first (M01 publishes one
+            # `asset.discovered.v2` per identity-bearing seed in the campaign transaction).
+            for _ in range(len(seed_events(dsn, campaign.campaign_id))):
+                seed_frame = stream.next()
+                assert seed_frame.event == "asset.discovered.v2", seed_frame.event
             sequence = _terminalise(dsn, first)
             message = stream.next()
             latency = time.monotonic() - started_at
