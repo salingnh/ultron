@@ -5,12 +5,11 @@ DTO validators. These functions validate values; M07 still owns normalization.
 """
 from __future__ import annotations
 
+import socket
 from ipaddress import ip_address, ip_network
-from importlib.resources import files
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jsonschema import FormatChecker
 from openapi_spec_validator import OpenAPIV31SpecValidator
@@ -20,7 +19,6 @@ DOMAIN = re.compile(
     r"(?=.{1,253}\Z)(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9])?\.)*"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z"
 )
-TIMEZONES = frozenset(files("tzdata").joinpath("zones").read_text().splitlines())
 
 
 def domain_name(value: str) -> bool:
@@ -100,16 +98,6 @@ def canonical_key(value: str) -> bool:
     return True
 
 
-def iana_timezone(value: str) -> bool:
-    if value not in TIMEZONES:
-        return False
-    try:
-        ZoneInfo(value)
-        return True
-    except (ZoneInfoNotFoundError, ValueError):
-        return False
-
-
 # Platform egress deny set (C05/S1.5a, OI-5). This is a constant of the platform, never provider data:
 # no manifest field can declare or widen it, the registry refuses an `egressSources` host that hits it,
 # and the broker must apply the same list. IPv4 addresses embedded in IPv6 (mapped, NAT64, 6to4,
@@ -122,11 +110,16 @@ EGRESS_DENY_NETWORKS = tuple(ip_network(n) for n in (
     "169.254.0.0/16",  # IPv4 link-local / cloud metadata
     "224.0.0.0/4",     # IPv4 multicast
     "240.0.0.0/4",     # IPv4 reserved
+    "100.100.100.200/32",  # Alibaba Cloud metadata (R-5)
     "::/128",          # IPv6 unspecified
     "::1/128",         # IPv6 loopback
+    "::/96",           # IPv4-compatible IPv6 (::7f00:1, ::127.0.0.1) - R-5
     "fe80::/10",       # IPv6 link-local (fe80:: - febf::), named explicitly since S1 follow-up
+    "fec0::/10",       # deprecated IPv6 site-local - R-5
+    "fd00:ec2::254/128",   # AWS instance metadata over IPv6 - R-5
     "ff00::/8",        # IPv6 multicast
     "64:ff9b::/96",    # NAT64 well-known prefix
+    "64:ff9b:1::/48",  # NAT64 local-use prefix
     "2002::/16",       # 6to4
     "2001::/32",       # Teredo
 ))
@@ -136,6 +129,26 @@ EGRESS_DENY_HOSTS = frozenset({
 })
 
 
+def _host_literal(value: str) -> object | None:
+    """The address a host names literally, with `inet_aton(3)` semantics for IPv4 (R-5).
+
+    `getaddrinfo` reads `127.1`, `2130706433`, `0x7f000001` and `017700000001` as loopback, so a
+    declared `egressSources` host must be judged the same way; a plain `ip_address()` call would
+    treat them as DNS names and let them through registry admission.
+    """
+    text = value.strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    try:
+        return ip_address(text)
+    except ValueError:
+        pass
+    try:
+        return ip_address(socket.inet_aton(text))
+    except OSError:
+        return None
+
+
 def denied_egress_host(host: str) -> bool:
     """True when an `egressSources` host is in the platform deny set and must never be connectable."""
     value = (host or "").strip().lower().rstrip(".")
@@ -143,13 +156,13 @@ def denied_egress_host(host: str) -> bool:
         return True
     if value in EGRESS_DENY_HOSTS or value.endswith(".localhost"):
         return True
-    try:
-        address = ip_address(value)
-    except ValueError:
+    address = _host_literal(value)
+    if address is None:
         return False  # a DNS name: only the exact-name rules above apply; the broker pins its answers
     candidates = [address]
-    if address.version == 6 and address.ipv4_mapped is not None:
-        candidates.append(address.ipv4_mapped)
+    mapped = getattr(address, "ipv4_mapped", None)
+    if mapped is not None:
+        candidates.append(mapped)
     return any(candidate in network for candidate in candidates for network in EGRESS_DENY_NETWORKS)
 
 
@@ -161,7 +174,6 @@ def format_checker() -> FormatChecker:
         "aegis-domain-seed": domain_seed,
         "aegis-ip-address": ip_literal,
         "aegis-ip-or-cidr": ip_or_cidr,
-        "aegis-iana-timezone": iana_timezone,
     }
     for name, check in checks.items():
         def validate(value, check=check):

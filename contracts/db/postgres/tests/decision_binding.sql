@@ -64,6 +64,7 @@ BEGIN
   END IF;
 
   -- 2. OI-8: a proposer is a session of the same campaign, never a label or another campaign's session.
+  --    A decision without target_refs is refused by the column's NOT NULL, the rest by their triggers.
   FOR out IN SELECT unnest(ARRAY[
       format('INSERT INTO policy_decision (decision_id,campaign_id,capability,provider,targets,input,decision,rationale,requested_by,proposed_by,target_refs,policy_version,scope_id,idempotency_key,trace_id) VALUES (%L,%L,%L,%L,%L,%L,%L,%L,%L,%L,%L,%L,%L,%L,%L)',
         '01900000-0000-7000-8000-000000007042', camp_a, 'dns.resolve','dnsx','{dns:bind-a.example}','{}','approved','label proposer','{"kind":"operator","id":"soc-1"}','{"kind":"agent","id":"planner"}',
@@ -83,7 +84,8 @@ BEGIN
     BEGIN
       EXECUTE out;
       RAISE EXCEPTION 'not blocked: %', out;
-    EXCEPTION WHEN check_violation OR foreign_key_violation THEN blocked := blocked + 1;
+    EXCEPTION
+      WHEN check_violation OR foreign_key_violation OR not_null_violation THEN blocked := blocked + 1;
     END;
   END LOOP;
 

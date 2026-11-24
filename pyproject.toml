@@ -1,0 +1,110 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aegis"
+version = "0.1.0"
+description = "AEGIS–Vanguard control plane (G1 foundation skeleton)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+dependencies = [
+  # Contract validation stack: the same pinned versions as contracts/tests/requirements.txt,
+  # so the service and the contract gate never validate with two different validators.
+  "jsonschema[format-nongpl]==4.26.0",
+  "referencing==0.37.0",
+  "openapi-spec-validator==0.9.0",
+  "PyYAML==6.0.3",
+  "tzdata==2026.6",
+  "psycopg[binary]==3.3.9",
+  # Generated DTOs (src/aegis/contracts_gen) are Pydantic v2 models; EmailStr needs the extra.
+  "pydantic[email]>=2.12,<3",
+  # API router registry skeleton (G1.1b adds the routes).
+  "fastapi>=0.120,<1",
+  "uvicorn>=0.38,<1",
+  # M02 CampaignWorkflow, scheduler activities and the outbox dispatcher (G1.1d). Same pin as the
+  # G0.1 spike (deploy/pins.json on the spike branch), so replay tests and the dev stack agree.
+  "temporalio==1.36.1",
+  # MCP boundary (G1.2b): the SDK line spike G0.3a verified on the wire (2.3.0, protocol 2025-11-25).
+  "mcp==2.3.0",
+  # M03 agent session (G1.2c): the graph loop and the PostgreSQL checkpointer, same pins as the
+  # G0.1 spike (spikes/g0.1-temporal-langgraph/requirements.txt), which proved the resume/cancel
+  # behaviour this card implements.
+  "langgraph==1.2.24",
+  "langgraph-checkpoint-postgres==3.2.1",
+  # M23 projector and graph.* queries (G1.4b): the driver G0.3b measured Neo4j 5.26 through.
+  "neo4j==5.28.4",
+]
+
+[dependency-groups]
+dev = [
+  "datamodel-code-generator==0.53.0",
+  "httpx>=0.28,<1",
+  "mypy>=1.19,<2",
+  "pytest>=8.4,<10",
+  "ruff>=0.15,<1",
+  "types-jsonschema>=4.26",
+  "types-PyYAML>=6.0.12",
+]
+
+[tool.uv]
+# The lockfile is committed; the gate runs `uv sync --frozen`. Older uv versions cannot read
+# this lock format and would silently regenerate it, so require a recent one.
+required-version = ">=0.11.2"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+# `podman` tests need rootless Podman and cgroup v2 delegation; they skip only where podman is
+# absent, and `AEGIS_NO_SKIPS=1` (CI) turns that skip into a failure, so the sandbox suite really
+# runs in CI (G1.3a acceptance).
+markers = [
+  "podman: needs rootless Podman to start real job containers",
+  "live: needs a running Temporal server (AEGIS_TEMPORAL_TARGET); not in the default gate",
+]
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# The backend skeleton owns these paths. The pre-existing contract scripts and contracts/*.py are
+# not reformatted here: they are gated by the contract CI job, and a lint-only rewrite of them
+# would be an out-of-scope change.
+include = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  "adapters/**/*.py",
+  "scripts/codegen.py",
+  "scripts/bench/*.py",
+  "scripts/demo/*.py",
+]
+# Generated contract DTOs are not hand-edited; their formatting and content are enforced by
+# `make codegen-check` (committed bytes == fresh codegen output), which is stricter than lint.
+extend-exclude = ["src/aegis/contracts_gen"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI's dependency injection is a call in a default argument by design.
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aegis"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests", "adapters", "scripts/codegen.py", "scripts/bench", "scripts/demo"]
+# `scripts/demo/*.py` are entry points that import their sibling `support` module by name.
+mypy_path = "scripts/demo"
+strict = true
+warn_unused_ignores = true
+exclude = ['^src/aegis/contracts_gen/']
+
+[[tool.mypy.overrides]]
+# Machine-generated Pydantic models: imports are typed, their internals are not hand-written and
+# are covered by the codegen drift check plus the fixture round-trip tests instead.
+module = ["aegis.contracts_gen", "aegis.contracts_gen.*"]
+ignore_errors = true

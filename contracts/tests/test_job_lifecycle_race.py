@@ -2,7 +2,7 @@
 """C06 with live connections: exactly one terminal result under contention, late results quarantined.
 
 The reference calls are the executable form of docs/living/dac-ta-ky-thuat/05 §C06 and of
-contracts/db/postgres/0007_job_lifecycle.sql (`aegis.record_job_callback`, `aegis.request_job_cancel`).
+contracts/db/postgres/0001_baseline.sql (`aegis.record_job_callback`, `aegis.request_job_cancel`).
 
     export AEGIS_TEST_PG_DSN=postgresql://postgres:<pw>@127.0.0.1:<port>/<db>
     python3 -I contracts/tests/test_job_lifecycle_race.py
@@ -22,16 +22,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 PG_DIR = ROOT / "db/postgres"
-MIGRATIONS = (
-    "0001_init.sql",
-    "0002_tool_orchestration.sql",
-    "0003_task_manifest_binding.sql",
-    "0004_usage_nonnegative.sql",
-    "0005_job_target_refs.sql",
-    "0006_ingestion_hash_receipt.sql",
-    "0007_job_lifecycle.sql",
-    "0010_job_actor_attribution.sql",
-)
+MIGRATIONS = ("0001_baseline.sql",)
 DSN = os.environ.get("AEGIS_TEST_PG_DSN", "").strip()
 
 try:  # psycopg is only needed for DB tests; schema tests must keep working without it.
@@ -116,7 +107,7 @@ class JobLifecycleRace(unittest.TestCase):
             conn.execute(
                 "INSERT INTO aegis.policy_snapshot (policy_version,campaign_id,policy,policy_hash,created_by)"
                 " VALUES (%s,%s,%s,%s,%s) ON CONFLICT (policy_version) DO NOTHING",
-                (POLICY, CAMP, Jsonb({"max_parallel_jobs": 100, "max_duration_hours": 168}), "7" * 64, Jsonb(ACTOR)))
+                (POLICY, CAMP, Jsonb({"max_parallel_jobs": 50, "max_duration_hours": 168}), "7" * 64, Jsonb(ACTOR)))
             conn.execute(
                 "INSERT INTO aegis.scope_snapshot (scope_id,campaign_id,targets) VALUES (%s,%s,%s)"
                 " ON CONFLICT (scope_id) DO NOTHING",
@@ -137,21 +128,21 @@ class JobLifecycleRace(unittest.TestCase):
         with conn.transaction():
             conn.execute(
                 "INSERT INTO aegis.policy_decision (decision_id,campaign_id,capability,provider,targets,input,"
-                "decision,rationale,requested_by,proposed_by,policy_version,scope_id,idempotency_key,trace_id)"
+                "decision,rationale,requested_by,target_refs,policy_version,scope_id,idempotency_key,trace_id)"
                 " VALUES (%s,%s,'dns.enumerate_subdomains','subfinder',%s,%s,'approved','c06 fixture',%s,%s,%s,%s,%s,%s)",
-                (decision, CAMP, ["dns:c06.example"], Jsonb({"targets": ["c06.example"]}),
-                 Jsonb({"kind": "operator", "id": "fixture-operator"}), Jsonb({"kind": "agent", "id": "fixture-session"}),
+                (decision, CAMP, [], Jsonb({"targets": ["c06.example"]}),
+                 Jsonb({"kind": "operator", "id": "fixture-operator"}), Jsonb([{"seed_id": SEED}]),
                  POLICY, SCOPE, f"c06:{extra}", "7" * 32))
             conn.execute(
                 "INSERT INTO aegis.scan_job (job_id,campaign_id,decision_id,capability,provider,provider_version,"
                 "adapter_version,image_digest,manifest_sha256,scan_cycle,job_fingerprint,policy_version,scope_id,"
-                "input,targets,target_refs,requested_by,proposed_by,rationale,trace_id,status,attempt,started_at)"
-                " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "input,targets,target_refs,requested_by,rationale,trace_id,status,attempt,started_at)"
+                " VALUES (%s,%s,%s,'dns.enumerate_subdomains','subfinder','v2.6.6','1.0.0',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
                 "'c06 fixture',%s,%s,1,now())",
                 (job, CAMP, decision, "sha256:" + "5" * 64, "6" * 64, new_id(), (uuid.uuid4().hex * 2)[:64],
-                 POLICY, SCOPE, Jsonb({"targets": ["c06.example"]}), ["dns:c06.example"],
+                 POLICY, SCOPE, Jsonb({"targets": ["c06.example"]}), [],
                  Jsonb([{"seed_id": SEED}]), Jsonb({"kind": "operator", "id": "fixture-operator"}),
-                 Jsonb({"kind": "agent", "id": "fixture-session"}), "7" * 32, status))
+                 "7" * 32, status))
         return job
 
     # --- reference calls -------------------------------------------------------------------

@@ -1,0 +1,53 @@
+# Python backend gate (G1.1a) on the self-hosted runner of this repository.
+#
+# This is the sibling of `contracts.yml`: the contract job owns contracts/ (schemas, PostgreSQL
+# chains, Neo4j), this job owns the Python service skeleton in src/, tests/ and adapters/. Both run
+# on the same `ultron-local` runner, so both apply the same hardening:
+#   * the job only runs on push, workflow_dispatch or a pull request whose head is in this
+#     repository; fork pull requests are skipped at job level (see `if:` below);
+#   * the repository setting "require approval for all outside collaborators" is the outer gate
+#     for fork workflows (repository settings, not this file);
+#   * the runner is registered ephemeral: one job per registration, a fresh work folder per job,
+#     no persisted credentials in the checkout, read-only GITHUB_TOKEN;
+#   * no `pull_request_target`, no expression is interpolated into a `run:` shell line.
+#
+# The job runs `scripts/ci/python-gate.sh`, which is `make lint test codegen-check` plus a
+# throwaway PostgreSQL 16 (the migration-runner tests must run, not skip).
+name: python
+
+on:
+  push:
+    branches: [main, 'integ/**']
+  pull_request:
+    branches: [main, 'integ/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python (ruff, mypy, pytest, codegen drift)
+    # Fork pull requests never run here: their code is not trusted on a self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, ultron-local]
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Python gate (make lint test codegen-check)
+        run: scripts/ci/python-gate.sh
+
+      - name: Remove CI containers
+        if: always()
+        run: scripts/ci/cleanup.sh

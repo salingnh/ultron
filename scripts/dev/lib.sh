@@ -28,6 +28,10 @@ SEAWEEDFS_CONTAINER="$DEV_PROJECT-seaweedfs"
 # shellcheck disable=SC2034 # used by sourcing scripts
 TEMPORAL_CONTAINER="$DEV_PROJECT-temporal"
 
+# The lab is its own compose project (scripts/lab, which owns these names); scripts/dev only needs
+# the project name to tell whether run-local started it.
+LAB_PROJECT=aegis-lab
+
 log() { printf '[dev] %s\n' "$*"; }
 die() { printf '[dev] error: %s\n' "$*" >&2; exit 1; }
 
@@ -120,4 +124,69 @@ cypher_file() {
     /var/lib/neo4j/bin/cypher-shell \
     -a bolt://127.0.0.1:7687 -u neo4j -p "$AEGIS_NEO4J_PASSWORD" \
     --fail-fast -f "$remote"
+}
+
+# --- background processes of `make run-local` ------------------------------------------------
+# Everything run-local starts is a process this repository owns, recorded by name in .local/:
+# `<name>.pid` (the pid), `<name>.log` (its output). `stop_bg` only kills a pid that is still the
+# command it started, so a recycled pid can never take down something else.
+
+# start_bg <name> <command...>; the caller has already exported the environment it needs.
+start_bg() {
+  local name=$1
+  shift
+  local dir="$STATE_DIR"
+  mkdir -p "$dir"
+  nohup "$@" >"$dir/$name.log" 2>&1 &
+  echo $! >"$dir/$name.pid"
+}
+
+# wait_bg_alive <name> <seconds>: the process must still be running after this long.
+wait_bg_alive() {
+  local name=$1 seconds=${2:-3} pid
+  pid=$(cat "$STATE_DIR/$name.pid")
+  sleep "$seconds"
+  if ! kill -0 "$pid" 2>/dev/null; then
+    tail -20 "$STATE_DIR/$name.log" >&2 || true
+    rm -f "$STATE_DIR/$name.pid"
+    die "$name exited during start-up (log above, full log: .local/$name.log)"
+  fi
+}
+
+# stop_bg <name> <cmdline-needle>: stop the recorded process if it is still that process.
+stop_bg() {
+  local name=$1 needle=${2:-} pid cmdline
+  local file="$STATE_DIR/$name.pid"
+  [ -f "$file" ] || {
+    log "$name: no pid file - nothing to stop"
+    return 0
+  }
+  pid=$(cat "$file")
+  case $pid in
+  '' | *[!0-9]*)
+    rm -f "$file"
+    die "$name: .local/$name.pid does not hold a pid ($pid)"
+    ;;
+  esac
+  if ! kill -0 "$pid" 2>/dev/null; then
+    log "$name: pid $pid is not running (stale pid file)"
+    rm -f "$file"
+    return 0
+  fi
+  cmdline=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)
+  if [ -n "$needle" ] && [[ $cmdline != *"$needle"* ]]; then
+    rm -f "$file"
+    die "$name: pid $pid is not $needle ($cmdline); refusing to kill it"
+  fi
+  log "$name: stopping pid $pid"
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 100); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    log "$name: pid $pid ignored SIGTERM, sending SIGKILL"
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$file"
 }

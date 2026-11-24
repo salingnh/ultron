@@ -17,7 +17,7 @@ DECLARE
   asset_ip uuid := '01900000-0000-7000-8000-000000000171';
   scan uuid := '01900000-0000-7000-8000-000000000191';
   blocked int := 0; shape_blocked int := 0; provenance_blocked int := 0;
-  seed_list text; queued_legacy int;
+  seed_list text;
 BEGIN
   INSERT INTO policy_snapshot VALUES
     ('roe-4',camp_a,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('4',64),'{"kind":"operator","id":"fixture"}'),
@@ -120,8 +120,8 @@ BEGIN
   END IF;
 
   -- 8. CIDR -> IP: the ip asset keeps the CIDR seed as its origin in the provenance row.
-  INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen,first_job_id)
-    VALUES (asset_ip,'ip:10.20.0.5','ip',now(),now(),job_main);
+  INSERT INTO asset (asset_id,canonical_key,kind,first_seen,last_seen,first_job_id,normalization_version)
+    VALUES (asset_ip,'ip:10.20.0.5','ip',now(),now(),job_main,'aegis-norm/1');
   INSERT INTO asset_provenance (provenance_id,asset_id,campaign_id,from_target_id,source_job_id,provider,observed_at)
     VALUES ('01900000-0000-7000-8000-000000000181',asset_ip,camp_a,seed_cidr,job_main,'subfinder',now());
   IF NOT EXISTS (SELECT 1 FROM asset_provenance WHERE asset_id = asset_ip AND from_target_id = seed_cidr AND campaign_id = camp_a) THEN
@@ -132,15 +132,6 @@ BEGIN
       VALUES ('01900000-0000-7000-8000-000000000182',asset_ip,camp_a,seed_other,job_main,'subfinder',now());
   EXCEPTION WHEN foreign_key_violation THEN provenance_blocked := provenance_blocked + 1;
   END;
-
-  -- 9. A job row without target_refs (history predating 0005) is never eligible for dispatch.
-  SELECT count(*) INTO queued_legacy FROM scan_job j
-   WHERE j.status = 'QUEUED' AND j.manifest_sha256 IS NOT NULL AND j.target_refs IS NULL
-     AND NOT EXISTS (SELECT 1 FROM job_dependency d JOIN scan_job p ON p.job_id = d.depends_on_job_id
-                      WHERE d.job_id = j.job_id AND p.status <> 'SUCCEEDED');
-  IF queued_legacy <> 0 THEN
-    RAISE EXCEPTION '% job(s) without target_refs would be dispatched', queued_legacy;
-  END IF;
 
   IF blocked <> 4 THEN RAISE EXCEPTION 'only % / 4 missing-refs/cross-campaign/immutability/replay guards blocked', blocked; END IF;
   IF shape_blocked <> 5 THEN RAISE EXCEPTION 'only % / 5 malformed TargetRef lists rejected', shape_blocked; END IF;

@@ -32,7 +32,7 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 
 - 15 bộ Python/134 test, 0 skip. Validator: 37 schema, 26 fixture hợp lệ, 30 fixture bị từ chối đúng, 23 operation. Conformance Subfinder+DNSx, identity golden 23 test, lifecycle 9 + race 4, hash/receipt 9 + concurrency 4, outbox 15, legacy policy 6, egress/actor 11, migration hygiene 7 (gồm DocLinks và luật ghim `search_path`).
 - Chuỗi sạch `0001→0014` (14 migration) + 11 test SQL: rc=0; 56/56 hàm schema `aegis` ghim `search_path`; smoke 10/10, lifecycle 8/8, decision binding 16/16 + cancel 4/4, outbox 8/8 + 4/4 + 4/4, actor 6/6, seed guard và dispatch hold đều bị chặn đúng.
-- Chuỗi nâng cấp 30 file (14 migration + 5 fixture + `upgrade_assertions` + 10 test SQL): rc=0; 2 job lịch sử giữ `LEGACY_ACTOR`, 2 hàng giữ `LEGACY_PROPOSER_LABEL`/`LEGACY_TARGET_PROJECTION`, hủy và kết quả terminal vẫn ghi được, không job cũ nào tự chạy lại.
+- 2026-11-24: chuỗi migration 0001–0017 gộp thành `0001_baseline.sql` và bỏ cơ chế dữ liệu cũ theo quyết định chủ sản phẩm (PR #56). Leader tự kiểm: so catalog chuỗi cũ với baseline, 143/143 object của outbox C04/graph giống hệt; không còn chuỗi nâng cấp.
 - Kết quả khớp review độc lập S1.5c (re-review 2 @ `15c02b9`), nên không phải lần chạy duy nhất của chuỗi này.
 - Lượt bảo toàn 2026-11-17 (giữ làm mốc, không phải nghiệm thu runtime): Cypher smoke Neo4j 5.26.28 đạt 4/4 (constraints chạy hai lần, upsert giữ 2 asset/1 finding/1 evidence/3 cạnh, ID trùng bị chặn); 26 Markdown/HTML và 98 link/anchor/ảnh tương đối hợp lệ; rà 367 mục giữ 23/23 method/path API và 33 schema có đích thay thế, 72/76 file contracts giữ hash của lần kiểm trước. Cypher smoke chạy ở lượt đó và trong CI PR #14, nhưng **không** nằm trong §Kiểm tra nên không tính vào lần chạy trên.
 
@@ -63,7 +63,7 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 | Điều kiện G0 | Trạng thái | Căn cứ |
 | --- | --- | --- |
 | Kết luận spike đã gộp: G0.1, G0.2, G0.3a, graph (G0.3b), identity (G0.3c) | đạt | #13/#9/#7/#19/#18 trên `main`; văn bản kết luận trong PR tương ứng |
-| Schema + DB sạch/nâng cấp | đạt | Migration 0005–0014; hai chuỗi psql ở mục trên (15 bộ/134 test, 56/56 hàm ghim, chuỗi nâng cấp 30 file) |
+| Schema + DB sạch | đạt | Một migration `0001_baseline.sql` (thay chuỗi 0001–0017, PR #56); gate ở contracts/README "Kiểm tra" |
 | Bảng pin version/digest/license | đạt | #9 trên `main`: 4 tool + digest + SBOM SPDX; văn bản ở [04-module-ket-noi-oss.md §Chọn provider](docs/living/dac-ta-ky-thuat/04-module-ket-noi-oss.md#chọn-provider-và-quản-lý-phiên-bản) |
 | Registry (conformance Subfinder+DNSx) | đạt | S1.5b đã gộp: `contracts/tests/test_conformance.py` + fixture DNSx |
 | Môi trường dev + CI | đạt | #14 trên `main`: `make dev-up/down`, CI đọc cổng từ `contracts/README.md` |

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/capability/approved-task.v2.schema.json",
   "title": "ApprovedTask v2",
-  "description": "Đầu ra M05, đầu vào M06; chữ ký HMAC bảo vệ toàn bộ nội dung task trừ trường signature. Task bắt buộc ghim manifest_sha256 và adapter_version; M06 đối chiếu manifest bất biến và policy snapshot trước thực thi. C05: requested_by (initiator) và proposed_by (phiên agent đề xuất) do server gán và thuộc nội dung được ký; danh tính do LLM tự khai không tạo quyền thực thi. Quy tắc runtime ở contracts/interfaces/README.md.",
+  "description": "Đầu ra M05, đầu vào M06; chữ ký HMAC bảo vệ toàn bộ nội dung task trừ trường signature. Nội dung được ký (OI-7) = aegis-c14n/1 của {purpose: 'aegis.io/approved-task/v2', signature_key_id, task bỏ hai trường signature và signature_key_id}; signature = 'hmac-sha256:' + hex(HMAC-SHA256(key[signature_key_id], utf8(noi dung do))). Khóa theo key id để xoay khóa: task cũ vẫn verify bằng khóa cũ, task mới ký bằng khóa đang hoạt động; key id thuộc nội dung được ký nên không thể đổi khóa của một task đã ký. Task bắt buộc ghim manifest_sha256, adapter_version và egress_binding (E-1: M06 không tính lại binding); M06 đối chiếu manifest bất biến và policy snapshot trước thực thi. C05: requested_by (initiator) và proposed_by (phiên agent đề xuất) do server gán và thuộc nội dung được ký; danh tính do LLM tự khai không tạo quyền thực thi. Quy tắc runtime ở contracts/interfaces/README.md.",
   "type": "object",
   "required": [
     "task_id",
@@ -22,6 +22,8 @@
     "rationale",
     "trace",
     "signature",
+    "signature_key_id",
+    "egress_binding",
     "priority",
     "depends_on",
     "adapter_version",
@@ -100,6 +102,66 @@
       "type": "string",
       "pattern": "^hmac-sha256:[0-9a-f]{64}$"
     },
+    "signature_key_id": {
+      "description": "Id của khóa đã ký (OI-7). Có trong nội dung được ký nên không thể thay bằng khóa khác; xoay khóa = thêm khóa mới với id mới, ký task mới bằng khóa đang hoạt động, vẫn verify được task cũ bằng khóa cũ. Không phải bí mật: bí mật khóa nằm ngoài contract và không bao giờ nằm trong task, log hay fixture.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "egress_binding": {
+      "description": "E-1/OI-5: tập đích mạng broker được phép mở cho task này, do M05 tính và ghim, và thuộc nội dung được ký. M06 dùng đúng giá trị này, không tính lại. Binding hiệu lực = (địa chỉ mục tiêu đã phân giải ∪ egressSources của manifest đã pin) − tập luôn chặn của nền tảng; host thuộc tập luôn chặn không bao giờ vào binding. Broker vẫn phân giải lại tên ở thời điểm kết nối và từ chối địa chỉ nằm ngoài tập đã ghim.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "target_binding", "entries", "target_addresses"],
+      "properties": {
+        "mode": {
+          "description": "`broker` khi manifest đã pin có networkAccess=egress; `none` khi không có mạng ra (khi đó mọi mảng rỗng).",
+          "type": "string",
+          "enum": ["broker", "none"]
+        },
+        "target_binding": {
+          "description": "Giá trị targetBinding của manifest đã pin.",
+          "type": "string",
+          "enum": ["required", "none"]
+        },
+        "entries": {
+          "description": "Tập đích được mở, dạng host:port, đã sắp xếp và không trùng. IPv6 viết trong ngoặc vuông.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/BindingEntry"},
+          "uniqueItems": true,
+          "maxItems": 256
+        },
+        "target_addresses": {
+          "description": "Địa chỉ IP đã phân giải và ghim của mục tiêu task (targetBinding=required); rỗng khi targetBinding=none. Là bằng chứng M05 đã kiểm đích, không phải nguồn sự thật về tài sản.",
+          "type": "array",
+          "items": {"$ref": "../common/ids.v2.schema.json#/$defs/IPAddress"},
+          "uniqueItems": true,
+          "maxItems": 1000
+        }
+      },
+      "allOf": [
+        {
+          "description": "Không có mạng ra thì không có đích nào được mở.",
+          "if": {"properties": {"mode": {"const": "none"}}, "required": ["mode"]},
+          "then": {
+            "properties": {
+              "target_binding": {"const": "none"},
+              "entries": {"maxItems": 0},
+              "target_addresses": {"maxItems": 0}
+            }
+          }
+        },
+        {
+          "description": "Không nối tới mục tiêu thì không ghim địa chỉ mục tiêu.",
+          "if": {"properties": {"target_binding": {"const": "none"}}, "required": ["target_binding"]},
+          "then": {"properties": {"target_addresses": {"maxItems": 0}}}
+        },
+        {
+          "description": "Broker chỉ mở khi có ít nhất một đích; danh sách rỗng là lỗi cấu hình, không phải 'không giới hạn'.",
+          "if": {"properties": {"mode": {"const": "broker"}}, "required": ["mode"]},
+          "then": {"properties": {"entries": {"minItems": 1}}}
+        }
+      ]
+    },
     "priority": {
       "type": "integer",
       "minimum": 0,
@@ -120,6 +182,13 @@
     "manifest_sha256": {
       "description": "SHA-256 của nguyên byte manifest đã lưu bất biến trong registry. M06 lấy đúng bản theo hash, kiểm lại hash và các định danh trước khi tạo ContainerSpec; không resolve latest. Toàn bộ trường task, gồm pin này, thuộc nội dung được ký.",
       "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+    }
+  },
+  "$defs": {
+    "BindingEntry": {
+      "description": "Một đích được broker mở: host (tên DNS, IPv4 hoặc IPv6 trong ngoặc vuông) và cổng 1–65535. Tên luôn viết thường, không wildcard.",
+      "type": "string",
+      "pattern": "^(\\[[0-9a-f:.]+\\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
     }
   }
 }

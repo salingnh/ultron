@@ -1,0 +1,15 @@
+{
+  "id": "msg_fake_0001",
+  "model": "configured-model-2026-01-01",
+  "stop_reason": "tool_use",
+  "content": [
+    { "type": "text", "text": "Gọi capability dns/resolve." },
+    {
+      "type": "tool_use",
+      "id": "toolu_01934f6a0000700080000000a0000002",
+      "name": "dns/resolve",
+      "input": { "targets": ["example.test"] }
+    }
+  ],
+  "usage": { "input_tokens": 210, "output_tokens": 42 }
+}

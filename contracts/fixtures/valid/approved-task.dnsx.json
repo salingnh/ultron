@@ -35,6 +35,16 @@
     "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
   "signature": "hmac-sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "none",
+    "entries": [
+      "1.1.1.1:53",
+      "9.9.9.9:53"
+    ],
+    "target_addresses": []
+  },
   "priority": 50,
   "depends_on": []
 }

@@ -117,14 +117,14 @@ class SeedReference(unittest.TestCase):
         self.assertTrue(v.is_valid(job))
         self.assertTrue(v.is_valid(dict(job, targets=[{"seed_id": OTHER}, {"canonical_key": "dns:seed.example"}])))
         self.assertFalse(v.is_valid(dict(job, targets=["dns:seed.example"])))
-        migration = (ROOT / "db/postgres/0005_job_target_refs.sql").read_text()
-        for fragment in ["target_refs jsonb", "aegis.is_target_refs(target_refs)",
-                         "CREATE TRIGGER target_refs_required BEFORE INSERT ON scan_job",
-                         "campaign_target ct", "DROP CONSTRAINT scan_job_targets_check"]:
+        migration = (ROOT / "db/postgres/0001_baseline.sql").read_text()
+        for fragment in ["target_refs jsonb NOT NULL", "aegis.is_target_refs(target_refs)",
+                         "CREATE TRIGGER target_refs_required BEFORE INSERT ON aegis.scan_job",
+                         "campaign_target ct"]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, migration)
         chain = (ROOT / "README.md").read_text()
-        for name in ["0005_job_target_refs.sql", "tests/job_target_refs.sql"]:
+        for name in ["0001_baseline.sql", "tests/job_target_refs.sql"]:
             with self.subTest(migration_list=name):
                 self.assertIn(name, chain)
 

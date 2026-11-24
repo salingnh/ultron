@@ -33,7 +33,7 @@ BEGIN
   --    never be compared with a versioned one.
   BEGIN
     INSERT INTO ingestion_inbox (event_id,dedup_key,job_id,payload_hash,status) VALUES (ev1,key,job,hash,'received');
-  EXCEPTION WHEN check_violation THEN blocked := blocked + 1;
+  EXCEPTION WHEN not_null_violation THEN blocked := blocked + 1;
   END;
   -- 2. A version label outside aegis-c14n/<n> is rejected, so the column cannot hold free text.
   BEGIN
