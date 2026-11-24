@@ -277,15 +277,17 @@ export const CampaignDetailScreen: React.FC = () => {
                       borderRadius: 'var(--radius-md)',
                       border: '1px solid var(--line)',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      flexDirection: 'column',
+                      gap: 6,
                     }}
                   >
-                    <div>
-                      <span className="brand-badge" style={{ marginRight: 6 }}>domain</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="brand-badge">domain</span>
                       <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{dom}</strong>
                     </div>
-                    <CopyableId value={`dns:${dom}`} prefix="Target" />
+                    <div style={{ width: '100%' }}>
+                      <CopyableId value={`dns:${dom}`} prefix="Target" truncate={false} className="full-width" />
+                    </div>
                   </div>
                 ))}
               {hasIps &&
@@ -298,15 +300,17 @@ export const CampaignDetailScreen: React.FC = () => {
                       borderRadius: 'var(--radius-md)',
                       border: '1px solid var(--line)',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      flexDirection: 'column',
+                      gap: 6,
                     }}
                   >
-                    <div>
-                      <span className="brand-badge" style={{ marginRight: 6 }}>ip/cidr</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="brand-badge">ip/cidr</span>
                       <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>{ip}</strong>
                     </div>
-                    <CopyableId value={`ip:${ip}`} prefix="Target" />
+                    <div style={{ width: '100%' }}>
+                      <CopyableId value={`ip:${ip}`} prefix="Target" truncate={false} className="full-width" />
+                    </div>
                   </div>
                 ))}
             </div>

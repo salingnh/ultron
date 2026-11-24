@@ -204,6 +204,9 @@ export const apiClient = {
   },
 
   subscribeCampaignEvents(options: SSEOptions): SSEConnection {
+    if (this.isMock) {
+      return { close: () => {}, getLastEventId: () => null };
+    }
     return subscribeToCampaignEvents(options);
   },
 };

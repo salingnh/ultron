@@ -476,6 +476,17 @@ table.data-table tr:hover td {
   overflow-wrap: anywhere;
 }
 
+.copyable-field.full-width {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.copyable-field.full-width .mono {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
 .copyable-field .mono {
   word-break: break-all;
   overflow-wrap: anywhere;

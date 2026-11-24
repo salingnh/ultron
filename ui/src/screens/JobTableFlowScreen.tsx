@@ -663,62 +663,63 @@ export const JobTableFlowScreen: React.FC = () => {
                       </div>
                     </td>
                     <td>
-                      {/* Wait Reason rendering */}
-                      {job.wait_reason ? (
-                        <div
-                          style={{
-                            padding: '6px 8px',
-                            backgroundColor: 'var(--warning-bg)',
-                            border: '1px solid var(--warning)',
-                            borderRadius: 'var(--radius-sm)',
-                            fontSize: 'var(--text-xs)',
-                            maxWidth: 280,
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Clock size={12} />
-                            <span>{waitReasonLabels[job.wait_reason.code] || job.wait_reason.code}</span>
-                          </div>
-                          {job.wait_reason.detail && (
-                            <div style={{ fontSize: '11px', color: 'var(--ink)', marginTop: 2 }}>
-                              {job.wait_reason.detail}
+                      {/* Reason text only for QUEUED with wait_reason or dispatch_block_reasons; show '—' for terminal and other jobs */}
+                      {job.status === 'QUEUED' && (job.wait_reason || job.dispatch_block_reasons?.length) ? (
+                        <div>
+                          {job.wait_reason ? (
+                            <div
+                              style={{
+                                padding: '6px 8px',
+                                backgroundColor: 'var(--warning-bg)',
+                                border: '1px solid var(--warning)',
+                                borderRadius: 'var(--radius-sm)',
+                                fontSize: 'var(--text-xs)',
+                                maxWidth: 280,
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Clock size={12} />
+                                <span>{waitReasonLabels[job.wait_reason.code] || job.wait_reason.code}</span>
+                              </div>
+                              {job.wait_reason.detail && (
+                                <div style={{ fontSize: '11px', color: 'var(--ink)', marginTop: 2 }}>
+                                  {job.wait_reason.detail}
+                                </div>
+                              )}
+                              {job.wait_reason.blocking_job_ids?.length ? (
+                                <div style={{ marginTop: 4, fontSize: '10.5px', color: 'var(--muted)' }}>
+                                  Chặn bởi: {job.wait_reason.blocking_job_ids.join(', ')}
+                                </div>
+                              ) : null}
                             </div>
-                          )}
-                          {job.wait_reason.blocking_job_ids?.length ? (
-                            <div style={{ marginTop: 4, fontSize: '10.5px', color: 'var(--muted)' }}>
-                              Chặn bởi: {job.wait_reason.blocking_job_ids.join(', ')}
+                          ) : null}
+
+                          {job.dispatch_block_reasons?.length ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: job.wait_reason ? 4 : 0 }}>
+                              {job.dispatch_block_reasons.map((reason, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    padding: '4px 6px',
+                                    backgroundColor: 'var(--danger-bg)',
+                                    border: '1px solid var(--danger)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    fontSize: '11px',
+                                    color: 'var(--danger)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                  }}
+                                >
+                                  <ShieldAlert size={12} />
+                                  <strong>{reason}</strong>
+                                </div>
+                              ))}
                             </div>
                           ) : null}
                         </div>
-                      ) : null}
-
-                      {/* Dispatch Block Reasons rendering */}
-                      {job.dispatch_block_reasons?.length ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: job.wait_reason ? 4 : 0 }}>
-                          {job.dispatch_block_reasons.map((reason, idx) => (
-                            <div
-                              key={idx}
-                              style={{
-                                padding: '4px 6px',
-                                backgroundColor: 'var(--danger-bg)',
-                                border: '1px solid var(--danger)',
-                                borderRadius: 'var(--radius-sm)',
-                                fontSize: '11px',
-                                color: 'var(--danger)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 4,
-                              }}
-                            >
-                              <ShieldAlert size={12} />
-                              <strong>{reason}</strong>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {!job.wait_reason && !job.dispatch_block_reasons?.length && (
-                        <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Sẵn sàng / Đang tiến hành</span>
+                      ) : (
+                        <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>—</span>
                       )}
                     </td>
                     <td>
@@ -787,7 +788,7 @@ export const JobTableFlowScreen: React.FC = () => {
               <div>
                 <span style={{ color: 'var(--muted)' }}>Fencing token:</span> Lần thử #{selectedJob.attempt}, Thế hệ G{selectedJob.generation}
               </div>
-              {selectedJob.wait_reason && (
+              {selectedJob.status === 'QUEUED' && selectedJob.wait_reason && (
                 <div style={{ padding: 10, backgroundColor: 'var(--warning-bg)', borderRadius: 'var(--radius-sm)' }}>
                   <div style={{ fontWeight: 600, color: 'var(--warning)' }}>
                     Lý do chờ: {waitReasonLabels[selectedJob.wait_reason.code] || selectedJob.wait_reason.code}
