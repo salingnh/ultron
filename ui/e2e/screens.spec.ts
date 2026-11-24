@@ -25,7 +25,7 @@ async function captureScreen(page: Page, filename: string) {
   if (isRealMode || !fs.existsSync(localPath)) {
     await page.screenshot({ path: localPath, fullPage: true });
   } else {
-    const tempDir = path.resolve(__dirname, '../test-results/screenshots');
+    const tempDir = path.resolve(process.cwd(), 'test-results/screenshots');
     fs.mkdirSync(tempDir, { recursive: true });
     await page.screenshot({ path: path.join(tempDir, filename), fullPage: true });
   }
