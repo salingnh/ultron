@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {
+      "asset_id": "01934f6a-0000-7000-8000-0000000000f1",
+      "canonical_key": "dns:internal.example",
+      "kind": "domain"
+    }
+  ],
+  "edges": [],
+  "truncated": true
+}

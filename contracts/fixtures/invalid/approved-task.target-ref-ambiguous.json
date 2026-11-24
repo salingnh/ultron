@@ -1,0 +1,37 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-000000000001",
+  "decision_id": "01934f6a-0000-7000-8000-000000000001",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "capability": "dns.enumerate_subdomains",
+  "provider": "subfinder",
+  "provider_version": "v2.6.6",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "4c6b8fc3a5d4d7616bf52af29173f7c5e69ecc40f249f2b73737de913e9a1448",
+  "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000002",
+  "input": {
+    "targets": [
+      "seed.example"
+    ]
+  },
+  "targets": [
+    {
+      "seed_id": "01934f6a-0000-7000-8000-0000000000b1",
+      "canonical_key": "dns:seed.example"
+    }
+  ],
+  "idempotency_key": "fixture:target-ref-ambiguous",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Invalid fixture: a TargetRef carries both seed_id and canonical_key; the seed/asset choice must be unambiguous",
+  "trace": {
+    "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "signature": "hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "priority": 50,
+  "depends_on": []
+}

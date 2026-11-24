@@ -1,0 +1,130 @@
+{
+  "version": "aegis-c14n/1",
+  "description": "Golden vectors for contracts/ingestion/canonicalization.v2.yaml. Canonical text and sha256 are fixed expectations, not computed output.",
+  "vectors": [
+    {
+      "name": "key_order",
+      "input": {
+        "b": 1,
+        "a": 2,
+        "Z": 4,
+        "é": 3
+      },
+      "canonical": "{\"Z\":4,\"a\":2,\"b\":1,\"é\":3}",
+      "sha256": "f42490331d281d5684ce3ead1597c84179d3c711e721b413c9fef552265d56a0"
+    },
+    {
+      "name": "nested_object_and_array_order",
+      "input": {
+        "z": [
+          3,
+          1,
+          {
+            "b": true,
+            "a": null
+          }
+        ],
+        "a": {}
+      },
+      "canonical": "{\"a\":{},\"z\":[3,1,{\"a\":null,\"b\":true}]}",
+      "sha256": "374cd64bf2bcf3d2a08e9101aab25927f5f3d1393e0681afa65f8e86a10aa323"
+    },
+    {
+      "name": "unicode_nfc_value",
+      "input": {
+        "café": "naïve"
+      },
+      "canonical": "{\"café\":\"naïve\"}",
+      "sha256": "8d9bcca95360c226e5d7f0039e45a492b075f4180982edfef731a03e92e4c626"
+    },
+    {
+      "name": "rfc8785_numbers_and_literals",
+      "input": {
+        "numbers": [
+          333333333.3333333,
+          1e+30,
+          4.5,
+          0.002,
+          1e-27
+        ],
+        "string": "€$\u000f\nA'B\"\\/",
+        "literals": [
+          null,
+          true,
+          false
+        ]
+      },
+      "canonical": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"€$\\u000f\\nA'B\\\"\\\\/\"}",
+      "sha256": "19cf79240fe1616da04afeb351fd8bf33fc39d7604794ca2150c864862db5e50"
+    },
+    {
+      "name": "utf16_key_order",
+      "input": {
+        "�": 2,
+        "𐀀": 1
+      },
+      "canonical": "{\"𐀀\":1,\"�\":2}",
+      "sha256": "c019b9b579e404c830d166ef913d0edcefac0dad0d25ebf5a705c5caf7f9bd55"
+    },
+    {
+      "name": "escapes",
+      "input": {
+        "s": "quote:\" back:\\ tab:\t ctrl:\u0001 unicode:€ slash:/"
+      },
+      "canonical": "{\"s\":\"quote:\\\" back:\\\\ tab:\\t ctrl:\\u0001 unicode:€ slash:/\"}",
+      "sha256": "26ddace336d05668d09c9cfe25e4d23ef4ad9067ccd6db45ad0bc05be8cfd57b"
+    },
+    {
+      "name": "numbers",
+      "input": [
+        0.0,
+        -0.0,
+        1e-07,
+        1e-06,
+        1e+21,
+        1.5,
+        56,
+        100000000000000000000
+      ],
+      "canonical": "[0,0,1e-7,0.000001,1e+21,1.5,56,100000000000000000000]",
+      "sha256": "c20592f7ecd0c0952568f7a6c15c6f4383fb8f8f1994023f56436c1eadddc9ba"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "duplicate_object_key",
+      "raw": "{\"a\":1,\"a\":2}",
+      "reason": "duplicate key"
+    },
+    {
+      "name": "nfc_key_collision",
+      "raw": "{\"caf\\u00e9\":1,\"cafe\\u0301\":2}",
+      "reason": "keys collide after NFC"
+    },
+    {
+      "name": "non_finite",
+      "raw": "{\"n\":NaN}",
+      "reason": "NaN is not JSON content"
+    },
+    {
+      "name": "double_overflow",
+      "raw": "{\"n\":1e400}",
+      "reason": "no finite double"
+    },
+    {
+      "name": "precision_loss",
+      "raw": "{\"n\":9007199254740993}",
+      "reason": "integer outside double precision"
+    },
+    {
+      "name": "lone_surrogate",
+      "raw": "{\"s\":\"\\ud800\"}",
+      "reason": "not a Unicode scalar value"
+    }
+  ],
+  "envelope_payload_hash": {
+    "valid/result-envelope.subfinder.json": "4aee38c946c7896b8e57ba57b67a3168558e4bd87d0be54a763ca8c61a5fc7c6",
+    "valid/result-envelope.seed-provenance.json": "60b1a24e6ccbd68ac94556f24c1e51966cd539d30248b5d214ac2bba90529e5b"
+  },
+  "notes": "Canonicalization is pinned by the RFC 8785 §3.2.3 vector above; the envelope_payload_hash values lock the *projection* (which envelope fields are content) so an accidental exclusion or inclusion changes a test, not production hashes."
+}

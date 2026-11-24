@@ -1,0 +1,38 @@
+{
+  "nodes": [
+    {
+      "asset_id": "01934f6a-0000-7000-8000-0000000000f1",
+      "canonical_key": "dns:internal.example",
+      "kind": "domain",
+      "first_seen": "2026-11-15T02:59:10Z",
+      "last_seen": "2026-11-15T03:00:00Z",
+      "stale": false
+    },
+    {
+      "asset_id": "01934f6a-0000-7000-8000-0000000000f2",
+      "canonical_key": "ip:203.0.113.10",
+      "kind": "ip",
+      "first_seen": "2026-11-15T03:59:20Z",
+      "last_seen": "2026-11-15T04:00:00Z",
+      "stale": false
+    }
+  ],
+  "edges": [
+    {
+      "type": "RESOLVES_TO",
+      "from": "dns:internal.example",
+      "to": "ip:203.0.113.10",
+      "observed_at": "2026-11-15T04:00:00Z",
+      "valid_from": "2026-11-15T04:00:00Z",
+      "valid_to": null,
+      "source_job_id": "01934f6a-0000-7000-8000-00000000d002",
+      "confidence": 1.0
+    }
+  ],
+  "truncated": false,
+  "limits_applied": {
+    "max_hops": 1,
+    "limit": 50,
+    "timeout_ms": 2000
+  }
+}

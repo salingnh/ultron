@@ -1,0 +1,767 @@
+{
+  "version": "aegis-norm/1",
+  "description": "Golden identity vectors for contracts/ingestion/normalization.v2.yaml. Every canonical_key and detail below is a fixed expectation written from the rules, not output copied from the reference implementation; the suite also proves each expected key validates as a v2 CanonicalKey and normalizes back to itself.",
+  "vectors": [
+    {
+      "name": "domain_lowercase_and_trailing_dot",
+      "kind": "domain",
+      "raw": "VPN.Internal.Example.",
+      "canonical_key": "dns:vpn.internal.example"
+    },
+    {
+      "name": "domain_idna_nameprep",
+      "kind": "domain",
+      "raw": "Bücher.Example",
+      "canonical_key": "dns:xn--bcher-kva.example"
+    },
+    {
+      "name": "domain_existing_alabel_is_lowercased",
+      "kind": "domain",
+      "raw": "XN--BCHER-KVA.Example",
+      "canonical_key": "dns:xn--bcher-kva.example"
+    },
+    {
+      "name": "domain_underscore_service_label",
+      "kind": "domain",
+      "raw": "_dmarc.Example.com",
+      "canonical_key": "dns:_dmarc.example.com"
+    },
+    {
+      "name": "domain_idn_cyrillic",
+      "kind": "domain",
+      "raw": "пример.рф",
+      "canonical_key": "dns:xn--e1afmkfd.xn--p1ai"
+    },
+    {
+      "name": "domain_idna2003_sharp_s",
+      "kind": "domain",
+      "raw": "faß.de",
+      "canonical_key": "dns:fass.de"
+    },
+    {
+      "name": "ip_uppercase_ipv6",
+      "kind": "ip",
+      "raw": "2001:DB8:0:0:0:0:0:1",
+      "canonical_key": "ip:2001:db8::1"
+    },
+    {
+      "name": "ip_compresses_the_longest_zero_run",
+      "kind": "ip",
+      "raw": "1:0:0:2:0:0:0:3",
+      "canonical_key": "ip:1:0:0:2::3"
+    },
+    {
+      "name": "ip_zero_run_tie_uses_the_leftmost",
+      "kind": "ip",
+      "raw": "2001:DB8:0:0:1:0:0:1",
+      "canonical_key": "ip:2001:db8::1:0:0:1"
+    },
+    {
+      "name": "ip_ipv4_mapped_collapses_to_ipv4",
+      "kind": "ip",
+      "raw": "::FFFF:192.0.2.1",
+      "canonical_key": "ip:192.0.2.1"
+    },
+    {
+      "name": "ip_embedded_ipv4_uses_hex_groups",
+      "kind": "ip",
+      "raw": "64:ff9b::192.0.2.1",
+      "canonical_key": "ip:64:ff9b::c000:201"
+    },
+    {
+      "name": "ip_ipv4_literal",
+      "kind": "ip",
+      "raw": "198.51.100.7",
+      "canonical_key": "ip:198.51.100.7"
+    },
+    {
+      "name": "service_scheme_form",
+      "kind": "service",
+      "raw": "tcp://1.2.3.4:443",
+      "canonical_key": "service:1.2.3.4:443/tcp",
+      "detail": {
+        "ip": "1.2.3.4",
+        "port": 443,
+        "transport": "tcp"
+      }
+    },
+    {
+      "name": "service_bracketed_ipv6",
+      "kind": "service",
+      "raw": "[2001:DB8::1]:53/udp",
+      "canonical_key": "service:[2001:db8::1]:53/udp",
+      "detail": {
+        "ip": "2001:db8::1",
+        "port": 53,
+        "transport": "udp"
+      }
+    },
+    {
+      "name": "service_uppercase_transport",
+      "kind": "service",
+      "raw": "10.0.0.9:8443/UDP",
+      "canonical_key": "service:10.0.0.9:8443/udp",
+      "detail": {
+        "ip": "10.0.0.9",
+        "port": 8443,
+        "transport": "udp"
+      }
+    },
+    {
+      "name": "application_materializes_the_default_port",
+      "kind": "application",
+      "raw": "HTTPS://Example.COM",
+      "canonical_key": "app:https://example.com:443"
+    },
+    {
+      "name": "application_ipv6_with_port",
+      "kind": "application",
+      "raw": "http://[2001:DB8::1]:8080/",
+      "canonical_key": "app:http://[2001:db8::1]:8080"
+    },
+    {
+      "name": "url_path_case_and_sorted_query",
+      "kind": "url",
+      "raw": "HTTPS://Example.COM/Path/?b=2&a=1#frag",
+      "canonical_key": "url:https://example.com:443/Path/?a=1&b=2",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/Path/",
+        "query": "a=1&b=2"
+      }
+    },
+    {
+      "name": "url_explicit_default_port_is_kept",
+      "kind": "url",
+      "raw": "https://example.com:443/",
+      "canonical_key": "url:https://example.com:443/",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/",
+        "query": ""
+      }
+    },
+    {
+      "name": "url_decodes_unreserved_and_removes_dot_segments",
+      "kind": "url",
+      "raw": "http://example.com/%7euser/%2e%2e/%41",
+      "canonical_key": "url:http://example.com:80/A",
+      "detail": {
+        "scheme": "http",
+        "host": "example.com",
+        "port": 80,
+        "path": "/A",
+        "query": ""
+      }
+    },
+    {
+      "name": "url_drops_token_but_keeps_other_parameters",
+      "kind": "url",
+      "raw": "https://portal.example.com/app?token=abc123&id=42",
+      "canonical_key": "url:https://portal.example.com:443/app?id=42",
+      "detail": {
+        "scheme": "https",
+        "host": "portal.example.com",
+        "port": 443,
+        "path": "/app",
+        "query": "id=42"
+      }
+    },
+    {
+      "name": "url_drops_presigned_aws_parameters_by_prefix",
+      "kind": "url",
+      "raw": "https://bucket.s3.example.com/o?X-Amz-Signature=deadbeef&X-Amz-Credential=AKIA%2F20260101&x=1",
+      "canonical_key": "url:https://bucket.s3.example.com:443/o?x=1",
+      "detail": {
+        "scheme": "https",
+        "host": "bucket.s3.example.com",
+        "port": 443,
+        "path": "/o",
+        "query": "x=1"
+      }
+    },
+    {
+      "name": "url_drops_sensitive_suffix_and_keeps_similar_benign_names",
+      "kind": "url",
+      "raw": "https://portal.example.com/app?refresh_token=xyz&monkey=1&order=desc",
+      "canonical_key": "url:https://portal.example.com:443/app?monkey=1&order=desc",
+      "detail": {
+        "scheme": "https",
+        "host": "portal.example.com",
+        "port": 443,
+        "path": "/app",
+        "query": "monkey=1&order=desc"
+      }
+    },
+    {
+      "name": "url_only_sensitive_parameters_leave_no_query",
+      "kind": "url",
+      "raw": "https://portal.example.com/a?session_id=2&state=abc",
+      "canonical_key": "url:https://portal.example.com:443/a",
+      "detail": {
+        "scheme": "https",
+        "host": "portal.example.com",
+        "port": 443,
+        "path": "/a",
+        "query": ""
+      }
+    },
+    {
+      "name": "url_encoded_slash_stays_content",
+      "kind": "url",
+      "raw": "https://example.com/a%2Fb",
+      "canonical_key": "url:https://example.com:443/a%2Fb",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/a%2Fb",
+        "query": ""
+      }
+    },
+    {
+      "name": "url_empty_path_becomes_root",
+      "kind": "url",
+      "raw": "https://example.com?x=1",
+      "canonical_key": "url:https://example.com:443/?x=1",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/",
+        "query": "x=1"
+      }
+    },
+    {
+      "name": "url_non_ascii_path_is_percent_encoded_utf8",
+      "kind": "url",
+      "raw": "https://example.com/café",
+      "canonical_key": "url:https://example.com:443/caf%C3%A9",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/caf%C3%A9",
+        "query": ""
+      }
+    },
+    {
+      "name": "url_idna_host",
+      "kind": "url",
+      "raw": "https://Bücher.Example/x",
+      "canonical_key": "url:https://xn--bcher-kva.example:443/x",
+      "detail": {
+        "scheme": "https",
+        "host": "xn--bcher-kva.example",
+        "port": 443,
+        "path": "/x",
+        "query": ""
+      }
+    },
+    {
+      "name": "url_ipv6_default_port",
+      "kind": "url",
+      "raw": "https://[2001:DB8::1]/x",
+      "canonical_key": "url:https://[2001:db8::1]:443/x",
+      "detail": {
+        "scheme": "https",
+        "host": "2001:db8::1",
+        "port": 443,
+        "path": "/x",
+        "query": ""
+      }
+    },
+    {
+      "name": "url_plus_is_a_literal_plus",
+      "kind": "url",
+      "raw": "https://example.com/q?a=1+2",
+      "canonical_key": "url:https://example.com:443/q?a=1%2B2",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/q",
+        "query": "a=1%2B2"
+      }
+    },
+    {
+      "name": "url_duplicate_names_keep_every_value",
+      "kind": "url",
+      "raw": "https://example.com/q?a=2&a=1",
+      "canonical_key": "url:https://example.com:443/q?a=1&a=2",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/q",
+        "query": "a=1&a=2"
+      }
+    },
+    {
+      "name": "url_trailing_slash_is_preserved",
+      "kind": "url",
+      "raw": "https://example.com/q/",
+      "canonical_key": "url:https://example.com:443/q/",
+      "detail": {
+        "scheme": "https",
+        "host": "example.com",
+        "port": 443,
+        "path": "/q/",
+        "query": ""
+      }
+    },
+    {
+      "name": "email_local_part_keeps_its_case",
+      "kind": "email",
+      "raw": "Alice@Example.COM",
+      "canonical_key": "email:Alice@example.com"
+    },
+    {
+      "name": "email_idna_domain",
+      "kind": "email",
+      "raw": "user@Bücher.de",
+      "canonical_key": "email:user@xn--bcher-kva.de"
+    },
+    {
+      "name": "package_npm_type_and_name_are_lowercased",
+      "kind": "package",
+      "raw": "pkg:NPM/Lodash@4.17.20",
+      "canonical_key": "purl:pkg:npm/lodash@4.17.20",
+      "detail": {
+        "purl": "pkg:npm/lodash@4.17.20",
+        "ecosystem": "npm",
+        "name": "lodash",
+        "version": "4.17.20"
+      }
+    },
+    {
+      "name": "package_npm_scope_is_percent_encoded",
+      "kind": "package",
+      "raw": "pkg:npm/%40angular/core@12.3.1",
+      "canonical_key": "purl:pkg:npm/%40angular/core@12.3.1",
+      "detail": {
+        "purl": "pkg:npm/%40angular/core@12.3.1",
+        "ecosystem": "npm",
+        "name": "core",
+        "version": "12.3.1"
+      }
+    },
+    {
+      "name": "package_pypi_uses_pep503_normalization",
+      "kind": "package",
+      "raw": "pkg:pypi/Django_Rest.Framework@3.14.0",
+      "canonical_key": "purl:pkg:pypi/django-rest-framework@3.14.0",
+      "detail": {
+        "purl": "pkg:pypi/django-rest-framework@3.14.0",
+        "ecosystem": "pypi",
+        "name": "django-rest-framework",
+        "version": "3.14.0"
+      }
+    },
+    {
+      "name": "package_golang_keeps_module_path_case",
+      "kind": "package",
+      "raw": "pkg:golang/github.com/Azure/azure-sdk-for-go@v68.0.0",
+      "canonical_key": "purl:pkg:golang/github.com/Azure/azure-sdk-for-go@v68.0.0",
+      "detail": {
+        "purl": "pkg:golang/github.com/Azure/azure-sdk-for-go@v68.0.0",
+        "ecosystem": "golang",
+        "name": "azure-sdk-for-go",
+        "version": "v68.0.0"
+      }
+    },
+    {
+      "name": "package_qualifiers_are_sorted",
+      "kind": "package",
+      "raw": "pkg:maven/org.apache.commons/commons-lang3@3.14.0?type=jar&repository=central",
+      "canonical_key": "purl:pkg:maven/org.apache.commons/commons-lang3@3.14.0?repository=central&type=jar",
+      "detail": {
+        "purl": "pkg:maven/org.apache.commons/commons-lang3@3.14.0?repository=central&type=jar",
+        "ecosystem": "maven",
+        "name": "commons-lang3",
+        "version": "3.14.0"
+      }
+    },
+    {
+      "name": "package_subpath_and_encoded_qualifier_value",
+      "kind": "package",
+      "raw": "pkg:generic/openssl@3.0.0?checksum=sha256%3Aabc#src/lib",
+      "canonical_key": "purl:pkg:generic/openssl@3.0.0?checksum=sha256%3Aabc#src/lib",
+      "detail": {
+        "purl": "pkg:generic/openssl@3.0.0?checksum=sha256%3Aabc#src/lib",
+        "ecosystem": "generic",
+        "name": "openssl",
+        "version": "3.0.0"
+      }
+    },
+    {
+      "name": "package_keeps_publisher_case_for_other_types",
+      "kind": "package",
+      "raw": "pkg:maven/Org.Example/Lib@1.0.0",
+      "canonical_key": "purl:pkg:maven/Org.Example/Lib@1.0.0",
+      "detail": {
+        "purl": "pkg:maven/Org.Example/Lib@1.0.0",
+        "ecosystem": "maven",
+        "name": "Lib",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "name": "oci_image_digest_drops_the_registry",
+      "kind": "oci_image",
+      "raw": "registry.example.com/team/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "canonical_key": "oci:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "oci_image_bare_digest",
+      "kind": "oci_image",
+      "raw": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "canonical_key": "oci:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "name": "repo_https_and_git_suffix",
+      "kind": "repo",
+      "raw": "https://github.com/SalingNH/Ultron.git",
+      "canonical_key": "repo:github.com/salingnh/ultron"
+    },
+    {
+      "name": "repo_scp_form",
+      "kind": "repo",
+      "raw": "git@GitHub.com:Owner/Repo.git",
+      "canonical_key": "repo:github.com/owner/repo"
+    },
+    {
+      "name": "repo_self_hosted_keeps_path_case",
+      "kind": "repo",
+      "raw": "ssh://git@gitlab.example.com/Group/Sub/Repo",
+      "canonical_key": "repo:gitlab.example.com/Group/Sub/Repo"
+    },
+    {
+      "name": "repo_gitlab_subgroups_are_lowercased",
+      "kind": "repo",
+      "raw": "https://gitlab.com/Group/Sub/Repo",
+      "canonical_key": "repo:gitlab.com/group/sub/repo"
+    },
+    {
+      "name": "repo_strips_www",
+      "kind": "repo",
+      "raw": "https://www.github.com/Owner/Repo",
+      "canonical_key": "repo:github.com/owner/repo"
+    },
+    {
+      "name": "repo_explicit_default_https_port_is_dropped",
+      "kind": "repo",
+      "raw": "https://gitlab.example.com:443/Group/Repo",
+      "canonical_key": "repo:gitlab.example.com/Group/Repo"
+    },
+    {
+      "name": "repo_ssh_port_is_kept",
+      "kind": "repo",
+      "raw": "ssh://git@gitlab.example.com:2222/Group/Repo",
+      "canonical_key": "repo:gitlab.example.com:2222/Group/Repo"
+    },
+    {
+      "name": "repo_bare_host_port_has_no_scheme_default",
+      "kind": "repo",
+      "raw": "gitlab.example.com:8443/Group/Repo",
+      "canonical_key": "repo:gitlab.example.com:8443/Group/Repo"
+    },
+    {
+      "name": "repo_snapshot_commit_from_at",
+      "kind": "repo_snapshot",
+      "raw": "https://github.com/Owner/Repo@AABBCCDDEEFF0011223344556677889900AABBCC",
+      "canonical_key": "git:github.com/owner/repo@aabbccddeeff0011223344556677889900aabbcc"
+    },
+    {
+      "name": "repo_snapshot_commit_from_fragment",
+      "kind": "repo_snapshot",
+      "raw": "github.com/owner/repo#cccccccccccccccccccccccccccccccccccccccc",
+      "canonical_key": "git:github.com/owner/repo@cccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "name": "artifact_digest_from_uri_fragment",
+      "kind": "artifact",
+      "raw": "https://raw.example.com/out.bin#sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "canonical_key": "artifact:sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "domain_leading_hyphen",
+      "kind": "domain",
+      "raw": "-bad.example",
+      "reason": "invalid_domain"
+    },
+    {
+      "name": "domain_empty_label",
+      "kind": "domain",
+      "raw": "foo..bar",
+      "reason": "invalid_domain"
+    },
+    {
+      "name": "domain_carries_an_ip",
+      "kind": "domain",
+      "raw": "1.2.3.4",
+      "reason": "ip_as_domain"
+    },
+    {
+      "name": "domain_all_numeric_is_a_bad_ip",
+      "kind": "domain",
+      "raw": "999.1.1.1",
+      "reason": "invalid_domain"
+    },
+    {
+      "name": "domain_with_port",
+      "kind": "domain",
+      "raw": "example.com:443",
+      "reason": "invalid_domain"
+    },
+    {
+      "name": "domain_empty",
+      "kind": "domain",
+      "raw": "",
+      "reason": "empty_input"
+    },
+    {
+      "name": "ip_with_leading_zero",
+      "kind": "ip",
+      "raw": "192.168.001.1",
+      "reason": "invalid_ip"
+    },
+    {
+      "name": "ip_is_a_network",
+      "kind": "ip",
+      "raw": "10.0.0.0/8",
+      "reason": "cidr_not_identity"
+    },
+    {
+      "name": "ip_with_zone_id",
+      "kind": "ip",
+      "raw": "fe80::1%eth0",
+      "reason": "zone_id_not_identity"
+    },
+    {
+      "name": "service_domain_host",
+      "kind": "service",
+      "raw": "example.com:443/tcp",
+      "reason": "invalid_ip"
+    },
+    {
+      "name": "service_missing_port",
+      "kind": "service",
+      "raw": "1.2.3.4/tcp",
+      "reason": "invalid_service"
+    },
+    {
+      "name": "service_missing_transport",
+      "kind": "service",
+      "raw": "1.2.3.4:443",
+      "reason": "invalid_transport"
+    },
+    {
+      "name": "service_conflicting_transport",
+      "kind": "service",
+      "raw": "tcp://1.2.3.4:443/udp",
+      "reason": "invalid_transport"
+    },
+    {
+      "name": "service_port_with_leading_zero",
+      "kind": "service",
+      "raw": "1.2.3.4:0443/tcp",
+      "reason": "invalid_port"
+    },
+    {
+      "name": "service_port_out_of_range",
+      "kind": "service",
+      "raw": "1.2.3.4:70000/tcp",
+      "reason": "invalid_port"
+    },
+    {
+      "name": "application_with_a_path",
+      "kind": "application",
+      "raw": "https://example.com/login",
+      "reason": "invalid_application"
+    },
+    {
+      "name": "url_with_userinfo",
+      "kind": "url",
+      "raw": "http://user:pass@example.com/",
+      "reason": "url_has_userinfo"
+    },
+    {
+      "name": "url_with_other_scheme",
+      "kind": "url",
+      "raw": "ftp://example.com/",
+      "reason": "invalid_url_scheme"
+    },
+    {
+      "name": "url_with_unencoded_space",
+      "kind": "url",
+      "raw": "https://example.com/a b",
+      "reason": "invalid_url_char"
+    },
+    {
+      "name": "url_with_backslash",
+      "kind": "url",
+      "raw": "https://example.com/a\\b",
+      "reason": "invalid_url_char"
+    },
+    {
+      "name": "url_with_bad_percent_escape",
+      "kind": "url",
+      "raw": "https://example.com/a%zz",
+      "reason": "invalid_url_percent"
+    },
+    {
+      "name": "url_with_unbracketed_ipv6",
+      "kind": "url",
+      "raw": "https://2001:db8::1/x",
+      "reason": "invalid_url"
+    },
+    {
+      "name": "url_with_empty_host",
+      "kind": "url",
+      "raw": "https:///x",
+      "reason": "invalid_url"
+    },
+    {
+      "name": "email_with_space",
+      "kind": "email",
+      "raw": "a b@example.com",
+      "reason": "invalid_email"
+    },
+    {
+      "name": "email_without_at",
+      "kind": "email",
+      "raw": "userexample.com",
+      "reason": "invalid_email"
+    },
+    {
+      "name": "package_without_version",
+      "kind": "package",
+      "raw": "pkg:npm/lodash",
+      "reason": "package_version_required"
+    },
+    {
+      "name": "package_duplicate_qualifier_key",
+      "kind": "package",
+      "raw": "pkg:npm/lodash@4.17.20?a=1&A=2",
+      "reason": "purl_duplicate_qualifier"
+    },
+    {
+      "name": "package_without_type",
+      "kind": "package",
+      "raw": "lodash",
+      "reason": "invalid_purl"
+    },
+    {
+      "name": "oci_image_tag_only",
+      "kind": "oci_image",
+      "raw": "nginx:1.27",
+      "reason": "image_tag_not_identity"
+    },
+    {
+      "name": "oci_image_other_digest_algorithm",
+      "kind": "oci_image",
+      "raw": "registry.example.com/app@sha512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "reason": "invalid_digest"
+    },
+    {
+      "name": "repo_with_a_branch",
+      "kind": "repo",
+      "raw": "github.com/owner/repo#main",
+      "reason": "mutable_ref_not_identity"
+    },
+    {
+      "name": "repo_scp_without_a_user",
+      "kind": "repo",
+      "raw": "gitlab.example.com:group/repo",
+      "reason": "invalid_repo"
+    },
+    {
+      "name": "repo_with_only_a_owner",
+      "kind": "repo",
+      "raw": "https://github.com/owner",
+      "reason": "invalid_repo"
+    },
+    {
+      "name": "repo_snapshot_short_commit",
+      "kind": "repo_snapshot",
+      "raw": "github.com/owner/repo@abc1234",
+      "reason": "mutable_ref_not_identity"
+    },
+    {
+      "name": "repo_snapshot_branch",
+      "kind": "repo_snapshot",
+      "raw": "github.com/owner/repo#main",
+      "reason": "mutable_ref_not_identity"
+    },
+    {
+      "name": "artifact_with_a_bad_digest",
+      "kind": "artifact",
+      "raw": "artifact@sha256:xyz",
+      "reason": "invalid_digest"
+    },
+    {
+      "name": "kind_without_a_rule_at_this_version",
+      "kind": "cloud_resource",
+      "raw": "arn:aws:s3:::bucket",
+      "reason": "kind_not_supported"
+    }
+  ],
+  "collapses": [
+    {
+      "name": "domain_spellings_of_one_host",
+      "kind": "domain",
+      "raws": ["VPN.Internal.Example.", "VPN.Internal.Example", "vpn.internal.example"],
+      "canonical_key": "dns:vpn.internal.example"
+    },
+    {
+      "name": "ipv4_and_its_mapped_ipv6_form",
+      "kind": "ip",
+      "raws": ["192.0.2.1", "::ffff:192.0.2.1", "::FFFF:C000:0201"],
+      "canonical_key": "ip:192.0.2.1"
+    },
+    {
+      "name": "service_scheme_and_suffix_forms",
+      "kind": "service",
+      "raws": ["tcp://1.2.3.4:443", "1.2.3.4:443/tcp", "1.2.3.4:443/TCP"],
+      "canonical_key": "service:1.2.3.4:443/tcp"
+    },
+    {
+      "name": "url_with_and_without_the_default_port",
+      "kind": "url",
+      "raws": ["https://example.com", "HTTPS://EXAMPLE.COM:443/", "https://example.com/"],
+      "canonical_key": "url:https://example.com:443/"
+    },
+    {
+      "name": "url_that_differs_only_by_a_session_token",
+      "kind": "url",
+      "raws": [
+        "https://portal.example.com/app?session_id=1&id=7",
+        "https://portal.example.com/app?id=7&session_id=2"
+      ],
+      "canonical_key": "url:https://portal.example.com:443/app?id=7"
+    },
+    {
+      "name": "purl_with_and_without_the_pkg_scheme",
+      "kind": "package",
+      "raws": ["pkg:npm/lodash@4.17.20", "npm/lodash@4.17.20"],
+      "canonical_key": "purl:pkg:npm/lodash@4.17.20"
+    },
+    {
+      "name": "repo_with_and_without_url_noise",
+      "kind": "repo",
+      "raws": [
+        "https://github.com/Owner/Repo.git",
+        "git@github.com:Owner/Repo",
+        "github.com/owner/repo"
+      ],
+      "canonical_key": "repo:github.com/owner/repo"
+    }
+  ]
+}

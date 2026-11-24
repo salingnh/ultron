@@ -1,0 +1,35 @@
+{
+  "provider": "openai",
+  "model": "configured-model",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_call",
+        "call": {
+          "id": "call_01934f6a0000700080000000a0000001",
+          "name": "dns/enumerate-subdomains",
+          "arguments": {
+            "targets": [
+              "example.test"
+            ]
+          },
+          "arguments_raw": "{\"targets\":[\"example.test\"]}"
+        }
+      }
+    ]
+  },
+  "finish_reason": "tool_calls",
+  "provider_meta": {
+    "provider": "openai",
+    "response_id": "chatcmpl-fake-0001",
+    "model_version": "configured-model-2026-01-01",
+    "raw_finish_reason": "tool_calls"
+  },
+  "usage": {
+    "input_tokens": 120,
+    "output_tokens": 18,
+    "cost_usd": 0.00042,
+    "latency_ms": 850
+  }
+}

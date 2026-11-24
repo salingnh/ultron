@@ -1,0 +1,19 @@
+{
+  "case": "input.sources names a passive source the pinned manifest never declared in egressSources",
+  "base_task": "fixtures/valid/approved-task.subfinder.json",
+  "patch": {
+    "input": {
+      "targets": [
+        "internal.example"
+      ],
+      "recursive": false,
+      "sources": [
+        "shodan"
+      ]
+    }
+  },
+  "expect": {
+    "code": "POLICY_DENIED",
+    "next_action": "FIX_INPUT"
+  }
+}

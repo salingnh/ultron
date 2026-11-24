@@ -1,0 +1,20 @@
+{
+  "provider": "dnsx",
+  "manifest": "fixtures/valid/manifest.dnsx.yaml",
+  "task": "fixtures/valid/approved-task.dnsx.json",
+  "envelope": "fixtures/valid/result-envelope.dnsx.json",
+  "raw": "tests/conformance/fixtures/dnsx/raw",
+  "raw_file": "result.jsonl",
+  "job_id": "01934f6a-0000-7000-8000-00000000d002",
+  "event_id": "01934f6a-0000-7000-8000-00000000e002",
+  "started_at": "2026-11-15T03:59:20Z",
+  "finished_at": "2026-11-15T04:00:00Z",
+  "retry_after_seconds": 5,
+  "coverage_subjects": [
+    "dns:internal.example"
+  ],
+  "dependencies": [
+    "dns-resolver",
+    "egress-broker"
+  ]
+}

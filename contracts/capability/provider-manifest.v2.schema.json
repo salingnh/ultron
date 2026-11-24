@@ -106,7 +106,7 @@
               "$ref": "../common/ids.v2.schema.json#/$defs/ImageDigest"
             },
             "argsTemplate": {
-              "description": "Mảng tham số cố định; chỉ được chèn trường đã khai báo trong input schema bằng ${input.<field>}. Không có shell.",
+              "description": "Mảng argv cố định; một phần tử hoặc là literal, hoặc là đúng một placeholder ${input.<field>} chiếm trọn phần tử (không nối chuỗi, không hai placeholder, không shell). Trường được chèn phải là số nguyên/số/boolean, chuỗi enum cố định, hoặc mảng các kiểu đó: mảng render thành một phần tử argv cho mỗi item theo thứ tự input, không join. Chuỗi tự do, object và mảng chuỗi tự do bị từ chối vì giá trị bắt đầu bằng - sẽ thành cờ lạ; registry kiểm luật này (contracts/tests/validate_contracts.py).",
               "type": "array",
               "items": {
                 "type": "string"
@@ -158,6 +158,7 @@
             "networkAccess"
           ],
           "additionalProperties": false,
+          "description": "Quyền thực thi của provider. Egress chỉ đi qua broker L7 của nền tảng (kết quả G0.2): provider khai đích nó cần, nền tảng giữ tập luôn chặn. Tập luôn chặn (loopback, link-local/metadata, multicast, unspecified, mạng control/data, target_denylist của campaign) là hằng của nền tảng, không phải dữ liệu provider: permissions không có trường nào để khai báo hay nới nó, và additionalProperties=false khiến trường như vậy bị từ chối.",
           "properties": {
             "scopeRequired": {
               "const": false
@@ -169,9 +170,41 @@
                 "egress"
               ]
             },
+            "egressMode": {
+              "description": "Chế độ egress: GĐ1 chỉ có `broker` — container chỉ tới được broker của job; broker phân giải ở control plane, kiểm toàn bộ địa chỉ A/AAAA, pin đích đã kiểm và từ chối với mã lý do ổn định. Chế độ khác (vd L3 router cho raw socket) phải có nghiệm thu cưỡng chế trước khi thêm vào enum.",
+              "type": "string",
+              "enum": [
+                "broker"
+              ],
+              "default": "broker"
+            },
+            "proxyAware": {
+              "description": "Bắt buộc true khi egress: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng. Broker là đường ra duy nhất nên công cụ không tôn trọng proxy sẽ không kết nối được gì; M05 từ chối đăng ký provider như vậy.",
+              "const": true
+            },
+            "egressSources": {
+              "description": "Đích ngoài mục tiêu mà provider cần (nguồn dữ liệu thụ động, resolver, API). Bắt buộc khai báo khi egress, kể cả rỗng; rỗng chỉ hợp lệ khi targetBinding=required. Host là tên chính xác, không wildcard/khớp hậu tố. Binding của một job là hợp của tập này với mục tiêu đã phân giải.",
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/EgressSource"
+              }
+            },
+            "targetBinding": {
+              "description": "required: M05 phân giải mục tiêu của job thành tập IP/port đã kiểm và broker chỉ mở tới tập đó. none: provider không kết nối tới mục tiêu của job (chỉ tới egressSources), nên binding của job rỗng.",
+              "type": "string",
+              "enum": [
+                "required",
+                "none"
+              ]
+            },
+            "targetPorts": {
+              "description": "from_input: port hợp lệ của mục tiêu lấy từ input schema đã pin, không lấy từ output tool hay danh sách port của provider. Chỉ có khi targetBinding=required; cấm khi none vì không có kết nối tới mục tiêu.",
+              "const": "from_input"
+            },
             "rawSocket": {
-              "description": "Chỉ Naabu/Nmap nếu spike 2 yêu cầu.",
-              "type": "boolean",
+              "description": "GĐ1 không có chế độ egress L3 nên raw socket không dùng được: ghim false. G0.2 đo được Naabu tự hạ SYN xuống CONNECT trong rootless Podman dù có NET_RAW, nên rawSocket=true phải kèm kiểm chế độ quét thực tế và chế độ egress L3 — đó là version sau, không phải cờ bật ở đây.",
+              "const": false,
               "default": false
             },
             "credentials": {
@@ -181,7 +214,115 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "allOf": [
+            {
+              "description": "Không mạng thì không có cấu hình egress.",
+              "if": {
+                "required": [
+                  "networkAccess"
+                ],
+                "properties": {
+                  "networkAccess": {
+                    "const": "none"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "egressMode": false,
+                  "proxyAware": false,
+                  "egressSources": false,
+                  "targetBinding": false,
+                  "targetPorts": false
+                }
+              }
+            },
+            {
+              "description": "Egress phải khai đủ chế độ, proxy, nguồn và binding.",
+              "if": {
+                "required": [
+                  "networkAccess"
+                ],
+                "properties": {
+                  "networkAccess": {
+                    "const": "egress"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "egressMode",
+                  "proxyAware",
+                  "egressSources",
+                  "targetBinding"
+                ]
+              }
+            },
+            {
+              "description": "Egress không có đích nào bị từ chối: không nối tới mục tiêu thì phải khai ít nhất một nguồn.",
+              "if": {
+                "required": [
+                  "networkAccess",
+                  "targetBinding"
+                ],
+                "properties": {
+                  "networkAccess": {
+                    "const": "egress"
+                  },
+                  "targetBinding": {
+                    "const": "none"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "egressSources"
+                ],
+                "properties": {
+                  "egressSources": {
+                    "minItems": 1
+                  }
+                }
+              }
+            },
+            {
+              "description": "Binding mục tiêu bắt buộc đi kèm khai báo port lấy từ input.",
+              "if": {
+                "required": [
+                  "targetBinding"
+                ],
+                "properties": {
+                  "targetBinding": {
+                    "const": "required"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "targetPorts"
+                ]
+              }
+            },
+            {
+              "description": "Không nối tới mục tiêu thì không khai port mục tiêu.",
+              "if": {
+                "required": [
+                  "targetBinding"
+                ],
+                "properties": {
+                  "targetBinding": {
+                    "const": "none"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "targetPorts": false
+                }
+              }
+            }
+          ]
         },
         "budget": {
           "type": "object",
@@ -316,6 +457,70 @@
         "inputDefaults": {
           "type": "object",
           "description": "Giá trị mặc định cho input. Sau khi ghép phải kiểm bằng inputSchemaRef; không nhận tham số ngoài schema."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "EgressSource": {
+      "description": "Một đích egress ngoài mục tiêu. Chỉ khai được cái nền tảng cưỡng chế được: host tĩnh, port tĩnh, giao thức broker L7 hiểu. UDP/ICMP và wildcard không biểu diễn được vì GĐ1 không có egress L3.",
+      "type": "object",
+      "required": [
+        "id",
+        "hosts",
+        "ports",
+        "protocol"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Mã ổn định cho audit và quyết định policy; không phải tên miền.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "hosts": {
+          "description": "Host chính xác: tên DNS đã chuẩn hóa hoặc IP literal. Không wildcard, không khớp hậu tố; broker từ chối cả tên nếu một đáp án phân giải nằm ngoài binding.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "../common/ids.v2.schema.json#/$defs/DomainTarget",
+                "pattern": "^(?!dns:)"
+              },
+              {
+                "$ref": "../common/ids.v2.schema.json#/$defs/IPAddress"
+              }
+            ]
+          }
+        },
+        "ports": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "protocol": {
+          "description": "https/http: L7 HTTP (absolute-URI/CONNECT). tls/tcp: tunnel TCP thô trên port khai báo. dns: DNS over TCP qua broker. Broker GĐ1 không relay UDP.",
+          "type": "string",
+          "enum": [
+            "https",
+            "http",
+            "tls",
+            "tcp",
+            "dns"
+          ]
         }
       }
     }

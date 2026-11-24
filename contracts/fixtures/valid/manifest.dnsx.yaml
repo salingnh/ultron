@@ -1,0 +1,88 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: dnsx
+  version: 1.0.0
+  module: M08
+  license: MIT
+  upstream: https://github.com/projectdiscovery/dnsx
+  licenseNotes: Image pin v1.2.2 is the newest published image; upstream v1.3.1 has no image, so this
+    adapter must not claim v1.3 behaviour.
+spec:
+  capability: dns.resolve
+  providerVersion: v1.2.2
+  runtime:
+    type: container
+    image: registry.internal/aegis/dnsx
+    imageDigest: sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec
+    argsTemplate:
+    - -silent
+    - -json
+    - -l
+    - /in/targets.txt
+    - -o
+    - /out/result.jsonl
+    - -t
+    - ${input.concurrency}
+    outputPath: /out
+  inputSchemaRef: schema://dns/resolve/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - domain
+  permissions:
+    scopeRequired: false
+    networkAccess: egress
+    egressMode: broker
+    proxyAware: true
+    egressSources:
+    - id: quad9
+      hosts:
+      - 9.9.9.9
+      ports:
+      - 53
+      protocol: dns
+      purpose: resolve-target-names
+    - id: cloudflare
+      hosts:
+      - 1.1.1.1
+      ports:
+      - 53
+      protocol: dns
+      purpose: resolve-target-names
+    targetBinding: none
+    rawSocket: false
+  budget:
+    timeoutSeconds: 300
+    maxConcurrency: 8
+    cpu: 0.5
+    memoryMb: 256
+    maxOutputMb: 32
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m08.dnsx.parser:parse
+    outputFormat: jsonl
+  emits:
+    assetKinds:
+    - domain
+    - ip
+    predicates:
+    - asset.seen
+    - dns.record
+    - dns.resolves
+    relationships:
+    - RESOLVES_TO
+    findings: false
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation

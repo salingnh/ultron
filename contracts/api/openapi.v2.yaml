@@ -5,10 +5,13 @@ info:
   description: 'REST API v2 (bản nháp S1). M26 phục vụ mọi endpoint, trừ `/ingestion/results`
     do M27 phục vụ.
 
-    Nguồn: docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md. Endpoint đánh
-    dấu `x-aegis-status: proposed`
+    Nguồn: docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md.
 
-    cần khóa hình dạng trước khi triển khai S1.
+    Trạng thái hình dạng: endpoint không có `x-aegis-status` là `locked` — hình
+    dạng đã khóa và là căn cứ để viết code. `x-aegis-status: locked` ghi rõ điều đó
+    khi cần; `deferred` là endpoint chưa làm trong GĐ1, luôn kèm `x-aegis-reason`
+    (và `x-aegis-owner` khi đã có card) và **không** được viết code dựa vào;
+    `proposed` bị cấm sau S1 follow-up — không còn endpoint nào ở trạng thái này.
 
 
     Quy ước:
@@ -90,7 +93,9 @@ paths:
       tags:
       - campaigns
       operationId: listCampaigns
-      x-aegis-status: proposed
+      x-aegis-status: deferred
+      x-aegis-reason: 'Hình dạng danh sách (bộ lọc, phân trang, trường hiển thị) chưa khóa; chỉ cần create/get của campaign cho G1.1a.'
+      x-aegis-owner: G1.1b
       summary: Danh sách chiến dịch (cho màn hình quản lý chiến dịch)
       parameters:
       - $ref: '#/components/parameters/Cursor'
@@ -130,7 +135,9 @@ paths:
       tags:
       - campaigns
       operationId: updateCampaignPolicy
-      x-aegis-status: proposed
+      x-aegis-status: deferred
+      x-aegis-reason: 'Body adopt policy_snapshot của S1.6 (policy + lý do) chưa khóa cùng luật adopt; M01 đổi current_policy_version là thao tác tường minh.'
+      x-aegis-owner: G1.1b
       summary: Đổi RoE, sinh policy_version mới (bản cũ không bị sửa)
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -142,13 +149,10 @@ paths:
               type: object
               required:
               - policy
-              - actor
               - reason
               properties:
                 policy:
                   $ref: ../campaign/roe-policy.v2.schema.json
-                actor:
-                  $ref: ../common/ids.v2.schema.json#/$defs/Actor
                 reason:
                   type: string
                   minLength: 3
@@ -175,7 +179,7 @@ paths:
       operationId: pauseCampaign
       summary: Tạm dừng (signal Temporal)
       requestBody:
-        $ref: '#/components/requestBodies/ActorReason'
+        $ref: '#/components/requestBodies/ReasonRequest'
       responses:
         '200':
           $ref: '#/components/responses/CampaignState'
@@ -190,7 +194,7 @@ paths:
       operationId: resumeCampaign
       summary: Tiếp tục
       requestBody:
-        $ref: '#/components/requestBodies/ActorReason'
+        $ref: '#/components/requestBodies/ReasonRequest'
       responses:
         '200':
           $ref: '#/components/responses/CampaignState'
@@ -205,7 +209,7 @@ paths:
       operationId: cancelCampaign
       summary: Hủy và phát lệnh hủy tới job
       requestBody:
-        $ref: '#/components/requestBodies/ActorReason'
+        $ref: '#/components/requestBodies/ReasonRequest'
       responses:
         '200':
           $ref: '#/components/responses/CampaignState'
@@ -265,7 +269,8 @@ paths:
       tags:
       - campaigns
       operationId: getCampaignFlow
-      x-aegis-status: proposed
+      x-aegis-status: locked
+      x-aegis-locked-by: G1.5a
       summary: Dữ liệu màn hình luồng quét (React Flow) - phiên agent, quyết định
         policy, job và quan hệ cha con
       responses:
@@ -302,17 +307,61 @@ paths:
                           - job
                           - finding_batch
                         status:
+                          description: Trạng thái của node. Node `job` mang đúng JobStatus của
+                            job.v2 (cùng nguồn với scan_job.status); loại node khác mang trạng thái
+                            của module tương ứng, không tái dùng JobStatus.
                           type: string
+                          minLength: 1
                         label:
                           type: string
                         error:
                           $ref: ../common/error.v2.schema.json
+                        attempt:
+                          type: integer
+                          minimum: 1
+                          description: Fencing token của lần dispatch (0007), bắt buộc với node
+                            `job` và vắng mặt với node khác — một job luôn ≥ 1, không có 0.
+                        generation:
+                          type: integer
+                          minimum: 1
+                          description: Generation tái thực thi (0007), bắt buộc với node `job` và
+                            vắng mặt với node khác.
+                        cancel:
+                          $ref: ../capability/job.v2.schema.json#/$defs/CancelIntent
+                        wait_reason:
+                          $ref: ../capability/job.v2.schema.json#/$defs/WaitReason
                         started_at:
                           type: string
                           format: date-time
                         finished_at:
                           type: string
                           format: date-time
+                      allOf:
+                      - if:
+                          properties:
+                            type:
+                              const: job
+                          required:
+                          - type
+                        then:
+                          properties:
+                            status:
+                              $ref: ../capability/job.v2.schema.json#/$defs/JobStatus
+                          required:
+                          - attempt
+                          - generation
+                      - if:
+                          properties:
+                            type:
+                              not:
+                                const: job
+                          required:
+                          - type
+                        then:
+                          not:
+                            required:
+                            - attempt
+                            - generation
                   edges:
                     type: array
                     items:
@@ -414,7 +463,9 @@ paths:
       tags:
       - jobs
       operationId: listJobs
-      x-aegis-status: proposed
+      x-aegis-status: deferred
+      x-aegis-reason: 'Read model danh sách job chưa khóa; GET /jobs/{job_id} đã khóa và mang dispatch_block_reasons.'
+      x-aegis-owner: G1.1c
       summary: Danh sách job (màn hình job lỗi)
       parameters:
       - name: campaign_id
@@ -469,8 +520,13 @@ paths:
       - jobs
       operationId: cancelJob
       summary: Hủy job (best effort, báo kết quả trung thực)
+      description: 'Ghi cancel intent (cancel.requested_at/requested_by) rồi để M06 dừng container và
+        terminal hóa. Intent KHÔNG tự đổi trạng thái và không ghi đè kết quả terminal đã nhận trước
+        đó; job còn chờ (QUEUED) có thể terminal CANCELLED ngay sau intent. Gửi lại khi job chưa
+        terminal trả 200 với intent đã có (không ghi trùng); job đã terminal trả 200 với trạng thái
+        hiện tại và giữ nguyên lý do hủy trong lịch sử.'
       requestBody:
-        $ref: '#/components/requestBodies/ActorReason'
+        $ref: '#/components/requestBodies/ReasonRequest'
       responses:
         '200':
           description: OK
@@ -484,8 +540,11 @@ paths:
       - ingestion
       operationId: ingestResult
       summary: Nhận ResultEnvelope (chỉ dịch vụ nội bộ, service token)
-      description: Idempotent theo dedup_key và content hash của kết quả logic; event_id định danh lần nộp. Không cần Idempotency-Key. Hash/receipt phải khóa theo C03 trước S1.
-        Bản ghi không qua cổng G1-G7 bị cách ly, envelope vẫn được nhận.
+      description: 'Idempotent theo dedup_key và payload_hash (aegis-c14n/1) của kết quả logic;
+        event_id chỉ định danh lần nộp. Không cần Idempotency-Key. Collector đóng băng snapshot
+        nghiệp vụ và gửi lại nguyên nội dung khi retry; đổi riêng event_id hoặc trace không tạo
+        nội dung mới. Bản ghi không qua cổng G1-G7 bị cách ly, envelope vẫn được nhận. Quy tắc
+        canonical hóa và trường được băm: ../ingestion/canonicalization.v2.yaml.'
       security:
       - serviceToken: []
       requestBody:
@@ -496,7 +555,7 @@ paths:
               $ref: ../ingestion/result-envelope.v2.schema.json
       responses:
         '202':
-          description: Đã nhận (hoặc đã nhận trước đó)
+          description: Đã nhận, hoặc trả lại receipt đã commit trước đó với duplicate=true (cùng payload_hash).
           content:
             application/json:
               schema:
@@ -504,13 +563,21 @@ paths:
         '400':
           $ref: '#/components/responses/Error'
         '409':
-          $ref: '#/components/responses/Error'
+          description: 'IDEMPOTENCY_CONFLICT: dedup_key đã có nội dung khác (payload_hash khác, hoặc
+            hash chưa có version trước 0006). Server ghi nhận lần nộp vào ingestion_attempt và không
+            thay đổi receipt, revision hay dữ liệu đã nhận; không ghi đè.'
+          content:
+            application/json:
+              schema:
+                $ref: ../common/error.v2.schema.json
   /assets:
     get:
       tags:
       - graph
       operationId: listAssets
-      x-aegis-status: proposed
+      x-aegis-status: deferred
+      x-aegis-reason: 'Truy vấn asset/cursor chưa khóa; graph/history theo asset_id đã khóa.'
+      x-aegis-owner: G1.4a
       summary: Tìm tài sản theo chiến dịch, kind hoặc tiền tố khóa (điểm vào màn hình
         đồ thị)
       parameters:
@@ -964,17 +1031,17 @@ components:
       schema:
         $ref: ../common/ids.v2.schema.json#/$defs/Id
   requestBodies:
-    ActorReason:
+    ReasonRequest:
+      description: 'Lý do cho một hành động (pause/resume/cancel). Body không mang actor —
+        actor của dòng lịch sử do server gán từ principal đã xác minh (C05, X-8).'
       required: true
       content:
         application/json:
           schema:
             type: object
             required:
-            - actor
+            - reason
             properties:
-              actor:
-                $ref: ../common/ids.v2.schema.json#/$defs/Actor
               reason:
                 type: string
                 maxLength: 2000

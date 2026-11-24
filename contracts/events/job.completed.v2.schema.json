@@ -2,19 +2,31 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/job.completed.v2.schema.json",
   "title": "Payload job.completed.v2",
-  "description": "Bên phát: M06. Khóa khử trùng của consumer: job_id.",
+  "description": "Bên phát: M06. Khóa khử trùng của consumer: job_id. Bên nhận: M02 (signal), M26 (SSE UI).",
   "type": "object",
   "required": [
     "job_id",
     "campaign_id",
     "status",
     "evidence_refs",
-    "finished_at"
+    "finished_at",
+    "attempt",
+    "generation"
   ],
   "additionalProperties": false,
   "properties": {
     "job_id": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Attempt của lần chạy đã phát sự kiện; consumer bỏ qua/cách ly callback của attempt cũ."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Generation của job khi phát sự kiện (fencing)."
     },
     "campaign_id": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Id"

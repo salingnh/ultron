@@ -1,0 +1,18 @@
+{
+  "case": "target binding widened: task.targets adds a known asset the input never named",
+  "base_task": "fixtures/valid/approved-task.dnsx.json",
+  "patch": {
+    "targets": [
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b1"
+      },
+      {
+        "canonical_key": "dns:vpn.internal.example"
+      }
+    ]
+  },
+  "expect": {
+    "code": "POLICY_DENIED",
+    "next_action": "FIX_INPUT"
+  }
+}

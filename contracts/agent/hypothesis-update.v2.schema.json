@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/agent/hypothesis-update.v2.schema.json",
   "title": "HypothesisUpdate v2",
-  "description": "Analyst ghi sổ giả thuyết. Mỗi cập nhật là một revision mới (chỉ ghi thêm). Giả thuyết không bao giờ tự thành finding; chỉ M20 tạo finding.",
+  "description": "Analyst ghi sổ giả thuyết. Mỗi cập nhật là một revision mới (chỉ ghi thêm). Giả thuyết không bao giờ tự thành finding; chỉ M20 tạo finding. Bên nhận: M03 (sổ giả thuyết), M26 (hiển thị cho người vận hành).",
   "type": "object",
   "required": [
     "claim",

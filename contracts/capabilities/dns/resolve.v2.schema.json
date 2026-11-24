@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/capabilities/dns/resolve.v2.schema.json",
   "title": "dns.resolve v2",
+  "description": "Input của DNSx. targets là giá trị thô của seed/asset; M05 phân giải thành TargetRef cho task/job và giữ nguyên seed gốc. Trần tham số lấy từ manifest đã pin: concurrency vượt budget.maxConcurrency trả POLICY_DENIED, không tự hạ giá trị. Bản pin DNSx v1.2.2 không có cờ giới hạn số kết quả; trần output do budget.maxOutputMb và collector quyết định.",
   "type": "object",
   "required": [
     "targets"
@@ -9,6 +10,7 @@
   "additionalProperties": false,
   "properties": {
     "targets": {
+      "description": "Domain ASCII/IDNA đã chuẩn hóa (tùy chọn tiền tố dns:). Mỗi phần tử phải khớp seed domain của campaign hoặc canonical_key domain đã biết; giá trị khác trả INPUT_INVALID, không tự suy khóa chuẩn.",
       "type": "array",
       "items": {
         "$ref": "../../common/ids.v2.schema.json#/$defs/DomainTarget"
@@ -40,11 +42,18 @@
       ]
     },
     "resolvers": {
+      "description": "Resolver dùng cho lần chạy (DNSx -r). Mỗi địa chỉ phải là một host của nguồn `protocol: dns` trong `permissions.egressSources` của manifest đã pin (C05, S1.5a); địa chỉ khác bị POLICY_DENIED trước khi dispatch.",
       "type": "array",
       "items": {
         "$ref": "../../common/ids.v2.schema.json#/$defs/IPAddress"
       },
       "maxItems": 10
+    },
+    "concurrency": {
+      "description": "Số truy vấn song song provider được dùng (DNSx -t). Trần là budget.maxConcurrency của manifest đã pin; yêu cầu lớn hơn trả POLICY_DENIED. Vắng = mặc định của provider, vẫn chịu trần đó.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
     }
   }
 }

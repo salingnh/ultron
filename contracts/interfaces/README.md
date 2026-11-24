@@ -27,6 +27,8 @@ def parse(output_dir: Path, task: ApprovedTask, evidence: list[EvidenceObject]) 
 
 Conformance test (`contracts/tests/` + `adapters/<m>/<tool>/fixtures/`): manifest hợp lệ, parser chạy trên fixture cho envelope hợp lệ, chạy hai lần cho kết quả giống hệt, mọi predicate có trong registry, mọi canonical_key qua cổng G1.
 
+Bộ kiểm chạy được từ S1.5b: [test_conformance.py](../tests/test_conformance.py) + [conformance/harness.py](../tests/conformance/harness.py) trên fixture Subfinder và DNSx. Nó kiểm bảy handler: `describe` không side effect; `validate` từ chối input sai (INPUT_INVALID) và vượt trần đã pin (POLICY_DENIED) trước khi gọi OSS; `start` idempotent theo key, từ chối manifest pin thiếu (DEPENDENCY_MISSING) hoặc lệch (POLICY_DENIED) trước side effect; `status` có `retry_after` (0 khi terminal); `cancel` best effort, ghi audit, idempotent và job đã huỷ không sinh envelope (EVIDENCE_INCOMPLETE); `collect` dựng envelope đúng fixture `result-envelope.*.json` với evidence sha256 = byte raw, `seed_targets` = `task.targets`, `input_fingerprint` = `aegis-c14n/1` của input đã chấp nhận, parser chạy hai lần giống hệt và replay giữ `payload_hash`; `health` nêu provider version/ảnh đã pin và phụ thuộc, không tra mạng. Negative fixture cấp registry (capability chưa đăng ký, vượt trần manifest/campaign, target kind không nhận, `task.targets` mở rộng, target ngoài campaign, credential trong input, policy snapshot thiếu, `networkAccess` không đủ) nằm ở [conformance/fixtures/policy](../tests/conformance/fixtures/policy). Đây là kiểm contract tham chiếu, không phải runtime; adapter thật thay `FixtureAdapter` nhưng phải qua đúng bộ kiểm này.
+
 ## 2. ContainerRunner (M06)
 
 ```python
@@ -43,7 +45,10 @@ class ContainerSpec:
     cpu: float; memory_mb: int; timeout_seconds: int
     max_output_bytes: int                                     # bắt buộc, resolve từ manifest đã pin
     network: Literal["exec", "none"]                           # chỉ mạng thực thi hoặc không mạng
-    raw_socket: bool = False                                   # NET_RAW, chỉ khi manifest cho phép
+    egress_mode: Literal["broker"] | None = None               # từ permissions.egressMode; None khi network=none
+    egress_binding: tuple[str, ...] = ()                       # host:port đã kiểm = target đã phân giải ∪ egressSources
+    egress_proxy: str | None = None                           # broker L7 của job (HTTP CONNECT/SOCKS5), do M06 cấp
+    raw_socket: bool = False                                   # GĐ1 luôn false: không có egress L3 (G0.2)
     read_only_rootfs: bool = True; user: str = "65534:65534"
     pids_limit: int = 512                                      # chống fork bomb
     max_output_files: int = 50000                              # trần số file output
@@ -59,10 +64,13 @@ M05 resolve manifest, ghép inputDefaults rồi validate input, ghi pin cùng jo
 | ContainerSpec | Nguồn cấu hình |
 | --- | --- |
 | image_digest, args | runtime.imageDigest và argsTemplate của manifest đã pin; chỉ chèn input đã được M05 kiểm |
+| args rendering | Mỗi phần tử `argsTemplate` là literal hoặc **đúng một** `${input.<field>}` chiếm trọn phần tử: không nối chuỗi, không hai placeholder trong một phần tử, không shell/quoting. Trường được chèn chỉ là `integer`/`number`/`boolean`, chuỗi có `enum`, hoặc mảng các kiểu đó — chuỗi tự do bị từ chối vì giá trị `-rf` sẽ thành cờ. Mảng render thành một argv element cho mỗi item theo thứ tự input (không join, không tách theo dấu phẩy). Literal được bắt đầu bằng `-`; giá trị được chèn không thể, vì kiểu trên không sinh ra dấu `-` đầu chuỗi. Runtime kiểm lại cùng luật trước khi chạy; sai thì POLICY_DENIED, không tự sửa argv. |
 | cpu, memory_mb, timeout_seconds | budget.cpu, memoryMb, timeoutSeconds |
 | max_output_bytes | budget.maxOutputMb × 1048576; thiếu maxOutputMb dùng 256 MiB theo manifest schema |
-| network | permissions.networkAccess none → none; egress → exec |
-| raw_socket | permissions.rawSocket, mặc định false |
+| network | permissions.networkAccess none → none; egress → exec (mạng nội bộ của job, không DNS ngoài) |
+| egress_mode, egress_proxy | permissions.egressMode (GĐ1 chỉ `broker`); M06 cấp proxy/http_proxy cho container, broker là peer duy nhất trên mạng của job |
+| egress_binding | M05 phân giải target thành IP/port đã kiểm rồi hợp với permissions.egressSources; broker chỉ mở tới tập này, đích ngoài tập bị từ chối kèm lý do |
+| raw_socket | GĐ1 cố định false: manifest schema chỉ nhận `rawSocket: false` vì chưa có egress L3 (G0.2) |
 | user/rootfs/PID/file/seccomp | Giới hạn cố định của ContainerSpec ở trên; runtime không đáp ứng thì không dispatch |
 
 policy_version trỏ snapshot cấu hình campaign bất biến để kiểm budget/rate/khung giờ; pin manifest không thay kiểm đó. Job mới lưu manifest_sha256 trong PostgreSQL. Job lịch sử chưa có pin trả null ở API và không được dispatch/replay trước khi được chuyển đổi riêng; không tạo hash giả cho dữ liệu cũ. Semantics idempotency lookup phải giữ lại quyết định/task đã chấp nhận, không resolve manifest mới cho retry.
@@ -82,6 +90,8 @@ Container **không** chạm SeaweedFS (mạng thực thi không vào được m�
 2. Chạy parser của adapter trong tiến trình con không mạng, không credential → `ParsedResults`.
 3. Dựng `ResultEnvelope` và `POST /api/v2/ingestion/results`. `event_id` là UUIDv7 mới mỗi lần nộp; `dedup_key` = `"job:<job_id>:envelope"` (xác định từ job_id) để retry không nhân bản.
 
+Parser thuần không đọc đồng hồ; collector gán `observed_at` theo thời điểm thu và đặt `provenance.seed_targets` bằng nguyên `targets` của ApprovedTask, `provenance.input_fingerprint` bằng sha256 `aegis-c14n/1` của input đã chấp nhận. `coverage.subjects` chỉ chứa asset thực sự được kiểm; seed chưa thành asset ở `seed_targets`. Pin provider trong envelope phải khớp task đã pin.
+
 Object store dùng SeaweedFS qua S3. Collector có đường tải raw lên kho; scanner chỉ ghi output_dir.
 
 ## 4. EvidenceStore (M28)
@@ -97,29 +107,39 @@ class EvidenceStore(Protocol):
 
 ## 5. ModelClient (M04)
 
+Hình dạng là contract, không định nghĩa DTO tay lần hai: [message](../agent/model-message.v2.schema.json) (content block, tool call/result), [request](../agent/model-request.v2.schema.json), [response](../agent/model-response.v2.schema.json). Chữ ký Python dưới đây chỉ để đọc.
+
 ```python
 class ModelClient(Protocol):
-    async def complete(self, req: ModelRequest) -> ModelResponse: ...
+    async def complete(self, req: ModelRequest, budget: Budget) -> ModelResponse: ...
+    # BudgetExceeded khi ngân sách chiến dịch hết trước lời gọi; không gọi model.
 
 @dataclass(frozen=True)
-class ModelRequest:
-    provider: Literal["openai", "anthropic"]
-    model: str
-    messages: list[Message]                 # system/user/assistant/tool
-    response_schema: dict | None            # JSON Schema; driver dùng structured output nếu có, nếu không thì kiểm sau
-    tools: list[ToolSpec] | None
+class ModelRequest:              # model-request.v2
+    provider: Literal["openai", "anthropic"]; model: str
+    messages: list[Message]      # system/user/assistant/tool
+    tools: list[ToolSpec] = field(default_factory=list)
+    response_schema: dict | None = None   # JSON Schema đích; driver structured output rồi kiểm
     campaign_id: str; session_id: str; trace_id: str
     max_output_tokens: int; timeout_seconds: float = 120
 
 @dataclass(frozen=True)
-class ModelResponse:
-    content: str | None; parsed: dict | None; tool_calls: list[ToolCall]
-    model: str; provider: Literal["openai", "anthropic"]
-    input_tokens: int; output_tokens: int; cost_usd: float
-    finish_reason: str
+class ModelResponse:             # model-response.v2
+    provider: Literal["openai", "anthropic"]; model: str
+    message: Message | None      # assistant; vắng chỉ khi provider_error
+    parsed: dict | None          # chỉ khi finish_reason=completed
+    finish_reason: FinishReason  # completed|tool_calls|truncated|refused|invalid_output|provider_error
+    provider_meta: ProviderMeta  # response_id/model_version/raw_finish_reason
+    usage: Usage                 # input/output tokens, cost_usd, latency_ms
+    error: Error | None          # bắt buộc khi provider_error
 ```
 
-Hai driver: `OpenAIChatDriver` (Chat Completions) và `AnthropicMessagesDriver` (Messages). Provider, model, base_url và giới hạn thực thi nằm trong cấu hình triển khai trực tiếp. Trước mỗi lời gọi kiểm ngân sách chiến dịch trong mã; vượt thì ném `BudgetExceeded`. Mỗi lời gọi ghi một dòng `model_usage`.
+`Budget` là ngân sách còn lại của campaign lấy từ snapshot policy_version; không nằm trong request.
+
+- Message giữ content block có kiểu: `text`, `tool_call` (`id`, `name`, `arguments` đã parse, `arguments_raw` nguyên văn của provider) và `tool_result` (`call_id` = `tool_call.id`; thiếu tool_call tương ứng thì từ chối). Hai driver map role/system/tool block sang dạng dây OpenAI/Anthropic nhưng gửi lại đúng id, name và arguments/arguments_raw, nên hai vòng tool call trở lên không đổi định danh hay nội dung.
+- Chuẩn hóa finish: openai `stop`→completed, `tool_calls`→tool_calls, `length`→truncated, `content_filter`→refused; anthropic `end_turn`→completed, `tool_use`→tool_calls, `max_tokens`→truncated, `refusal`→refused. Output không parse hoặc không qua `response_schema` → invalid_output; lỗi transport/HTTP hoặc không có nội dung dùng được → provider_error. `tool_calls` phải có ít nhất một tool_call; `completed` không có tool_call; refused/truncated/invalid_output/provider_error không có `parsed`. Văn bản và đối số thô vẫn nằm trong message; riêng provider_error không có message nên raw provider phải giữ ở log/trace.
+- Hai driver: `OpenAIChatDriver` (Chat Completions) và `AnthropicMessagesDriver` (Messages). Endpoint, base_url, bảng giá và giới hạn thực thi nằm trong cấu hình triển khai; cấu hình cũng giữ danh sách fallback có trần. Kiểm ngân sách chiến dịch trước lời gọi trong mã; vượt thì ném `BudgetExceeded`, ghi `model_usage.status=budget_denied` và không gọi provider.
+- Retry/fallback: chỉ fallback khi `provider_error`, chỉ khi cấu hình có fallback và policy dữ liệu cho phép; số lần thử bị chặn bởi cấu hình. Refusal/invalid_output/truncated không được fallback để che lỗi dữ liệu, trả nguyên finish cho M03 xử lý. Mỗi lời gọi (kể cả fallback) ghi một dòng `model_usage` với trạng thái `ok|error|fallback|budget_denied` cùng provider/model/token/cost/latency/trace.
 
 ## 6. Ingestion API (M27) nội bộ
 
@@ -131,7 +151,7 @@ class Ingestion(Protocol):
 
 Nguồn duy nhất cho receipt là [IngestReceipt](../ingestion/ingest-receipt.v2.schema.json); OpenAPI dùng cùng $ref. Mỗi phần tử quarantined có pointer, gate và reason.
 
-Trình tự trong **một giao dịch** PostgreSQL: đối chiếu inbox theo dedup_key/payload_hash và event_id lần nộp → G1–G7 → upsert asset/alias → insert observation/relationship/finding_candidate → insert outbox_event → commit. Projector Neo4j chạy sau commit. Hash/receipt còn phải khóa theo [C03](../../docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c03--idempotency-hash-và-receipt); vòng đời kết quả theo C06 cùng nguồn.
+Trình tự trong **một giao dịch** PostgreSQL: đối chiếu inbox theo dedup_key/payload_hash và event_id lần nộp → G1–G7 → upsert asset/alias → insert observation/relationship/finding_candidate → insert outbox_event → commit. Projector Neo4j chạy sau commit. Hash/receipt đã khóa theo [C03](../../docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c03--idempotency-hash-và-receipt) (0006, `aegis-c14n/1`); vòng đời kết quả theo C06 (0007) cùng nguồn.
 
 ## 7. Temporal (M02) và Activity
 
@@ -153,8 +173,9 @@ ApprovedTask chứa priority và depends_on do M05 chuẩn hóa. Dependency cùn
 
 ## Phần cần khóa của ModelClient và severity — C07
 
-Chữ ký ModelClient ở trên còn là khung bản nháp; `Message`, `ToolCall`, `ToolResult` và finish_reason chưa đủ để sinh driver hoàn chỉnh. S1.4 phải định nghĩa content blocks, ID liên kết tool call/result, metadata provider cần round-trip; không ép toàn bộ nội dung thành string. Chuẩn hóa completed/tool_calls/truncated/refused/invalid_output/provider_error; retry/fallback có trần và tuân cấu hình dữ liệu/budget.
+Đã khóa ở S1.4 bằng contract và suite offline `contracts/tests/test_model_client.py` (hành vi tham chiếu: `contracts/tests/model_client_ref.py`); chưa có LLM thật.
 
-Severity có input snapshot, trigger (finding mới, evidence mới, intel revision hoặc yêu cầu đánh giá lại), budget và khóa chống trùng theo finding/input revision. Đánh giá thất bại phải ghi lỗi và giữ nguyên lịch sử; đánh giá cũ không được trình bày như kết quả mới. Mục tiêu là lần đánh giá hiện tại có trạng thái chưa đánh giá/UNRATED và tín hiệu thô, không dựng nguồn trích dẫn giả. Hình dạng fallback khi chưa có assessment/source_refs hợp lệ còn phải khóa cùng schema trước S1; chưa tuyên bố contract hiện có đã bao phủ trường hợp này.
-
-Test offline bằng fake driver: ít nhất hai vòng tool call giữ ID/content, output sai schema hoặc bị cắt, refusal, hết budget, fallback provider, lỗi lần đánh giá đầu và đánh giá lại. Không mất raw alert/evidence/history khi model lỗi. Các test/fake này chưa phải implementation đã có trong repo.
+- Message/ToolCall/ToolResult: [model-message.v2](../agent/model-message.v2.schema.json) định nghĩa content block, liên kết tool_result → tool_call.id và round-trip `arguments_raw`; [model-request.v2](../agent/model-request.v2.schema.json) và [model-response.v2](../agent/model-response.v2.schema.json) giữ metadata provider và finish chuẩn hóa. Suite kiểm hai vòng tool call cả hai provider, output sai schema, cắt, refusal, hết ngân sách trước lời gọi, fallback trong cấu hình, và orphan/duplicate tool_result.
+- Severity: mỗi bản ghi có `trigger` (`scan|intel_revision|operator_request|verification`), `input_revision` và `dedup_key = severity:<finding_id>:<input_revision>`; cùng finding và cùng revision trả bản ghi đã có, không gọi model lại, nên đánh giá lại phải có đầu vào mới. `assessed_by`/`inputs`/`trigger`/`input_revision`/`dedup_key` do mã gán; model chỉ sinh phần `$defs/ModelOutput` rồi mã kiểm nguồn trích dẫn.
+- Fallback khi đánh giá thất bại: bản ghi mới `severity=UNRATED`, `failure` (mã lỗi theo error.v2, attempt, finish_reason/provider/model/session khi có lời gọi) và `raw_signals` trỏ finding/finding_source/evidence/intel đã lưu; cấm `source_refs` nên không dựng nguồn giả. Không có `failure` thì `source_refs` bắt buộc. Bảng append-only: bản ghi cũ không đổi, severity cũ không được trình bày như kết quả mới. Hết ngân sách trước lời gọi vẫn tạo UNRATED với `failure.code=POLICY_DENIED`.
+- Ngoài phạm vi S1.4: streaming, content ảnh, block `thinking`/signature của extended thinking (provider trả block lạ bị đánh dấu invalid_output thay vì bỏ im lặng), bảng giá token (cấu hình triển khai) và runtime M04/M20 thật. Các test/fake này chưa phải implementation đã có trong repo.

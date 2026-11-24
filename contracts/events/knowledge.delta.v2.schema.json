@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/knowledge.delta.v2.schema.json",
   "title": "Payload knowledge.delta.v2",
-  "description": "Bên phát: M23. Khóa khử trùng của consumer: revision.",
+  "description": "Bên phát: M23. Khóa khử trùng của consumer: revision. Bên nhận: M02 (context bundle), M03 (phiên agent).",
   "type": "object",
   "required": [
     "revision",

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/artifact.ready.v2.schema.json",
   "title": "Payload artifact.ready.v2",
-  "description": "Bên phát: M28. Khóa khử trùng của consumer: digest.",
+  "description": "Bên phát: M28. Khóa khử trùng của consumer: digest. Bên nhận: M17 (chuỗi phân tích), M24.",
   "type": "object",
   "required": [
     "artifact_id",

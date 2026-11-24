@@ -1,0 +1,115 @@
+# aegis-c14n/1 — the one canonical form used by every content hash in the v2 contract.
+#
+# Normative source for: ResultEnvelope.payload_hash (C03) and ScanJob.job_fingerprint (C03/X-1).
+# Executable reference: contracts/tests/canonicalization.py. Golden vectors:
+# contracts/fixtures/golden/hash/canonicalization.vectors.json.
+#
+# This file is data: the contract tests read it and fail if the reference implementation, the
+# schemas, the migration comments or the docs disagree with it. Change it only with a new version
+# id (`aegis-c14n/2`): a stored hash keeps the version that produced it, and two versions are never
+# compared as equal.
+version: aegis-c14n/1
+status: locked at S1.2a
+standard: RFC 8785 (JSON Canonicalization Scheme)
+
+rules:
+  object_key_order: >-
+    Sort object keys by their UTF-16 code units (RFC 8785 §3.2.3), not by Unicode code point and
+    not by insertion order.
+  strings: >-
+    Every string and every object key is normalized to Unicode NFC before hashing. NFC is applied
+    for hashing only: the submitted envelope bytes stay the evidence of record.
+  duplicates: >-
+    Two object keys that become equal after NFC normalization are rejected; a value is never
+    silently merged or last-wins. Keys must be strings.
+  numbers: >-
+    IEEE-754 double, serialized as ECMAScript Number::toString (RFC 8785 §3.2.2.3): shortest
+    round-tripping digits, `1e+30`, `1e-7`, `0.000001`, no trailing `.0`, `-0.0` -> `0`. Values a
+    double does not hold exactly (integers beyond 2^53, 1e400, NaN, Infinity) are rejected.
+  arrays: >-
+    Order is significant and preserved. Reordering an array changes the hash; sorting for the hash
+    is never implicit.
+  whitespace: No whitespace; `,` and `:` separators only.
+  encoding: UTF-8, no BOM. Non-ASCII characters are emitted literally, not escaped.
+  escaping: >-
+    Only `"`, `\` and control characters below U+0020 are escaped, using `\"`, `\\`, `\b`, `\t`,
+    `\n`, `\f`, `\r` and lowercase `\u00xx` for the rest.
+  unsupported: >-
+    Any value that is not a JSON type (bytes, Decimal, set, ...) is rejected instead of coerced.
+
+hashes:
+  envelope.payload_hash:
+    document: ingestion/result-envelope.v2.schema.json
+    column: ingestion_inbox.payload_hash
+    version: aegis-c14n/1
+    algorithm: sha256(utf8(c14n(envelope minus exclude)))
+    include:
+      - schema_version
+      - job_id
+      - campaign_id
+      - scope_id
+      - capability
+      - provider
+      - policy_version
+      - status
+      - coverage
+      - results
+      - evidence
+      - errors
+      - provenance
+    exclude:
+      event_id: submission id; each retry of the same frozen result carries a new one
+      dedup_key: identity of the logical result, compared before the hash, never content
+      trace: per-submission tracing context
+    notes: >-
+      Every top-level ResultEnvelope property is either included or excluded; the contract test
+      fails when a new property is added without classifying it. Execution timestamps
+      (provenance.started_at/finished_at) stay inside the hash: the collector freezes them with the
+      business snapshot and a retry re-sends them unchanged.
+  job.fingerprint:
+    document: capability/job.v2.schema.json
+    column: scan_job.job_fingerprint
+    version: aegis-c14n/1
+    algorithm: sha256(utf8(c14n(selected fields)))
+    fields:
+      - campaign_id
+      - capability
+      - policy_version
+      - provider
+      - provider_version
+      - adapter_version
+      - image_digest
+      - manifest_sha256
+      - target_refs
+      - input
+      - scan_cycle
+    exclude:
+      targets: legacy canonical-key projection; two keyword/CIDR seeds would collide (S1.1)
+      priority: scheduling, not identification of the scanned data (AGENTS.md:54)
+      depends_on: scheduling
+      job_id: assigned after the fingerprint decides replay
+      decision_id: policy audit reference
+      requested_by: actor audit
+      rationale: free text
+      trace_id: tracing
+      created_at: server time
+      started_at: execution time
+      finished_at: execution time
+      status: changes over the job's life
+      error: changes over the job's life
+      envelope_event_id: changes over the job's life
+    notes: >-
+      Aligns AGENTS.md:54 (campaign, configuration, tool/adapter version, image/manifest pin,
+      targets/input, scan_cycle) with contracts/mcp/README.md and the DDL comment, resolving X-1.
+      `config` is the policy_snapshot version. A NULL pin (history before 0003/0005) is never
+      fingerprinted or dispatched.
+
+receipt:
+  document: ingestion/ingest-receipt.v2.schema.json
+  model: >-
+    ingestion_inbox holds exactly one row per dedup_key: the first committed decision. Its receipt
+    is written once and returned verbatim to every later submission of the same content, with
+    duplicate=true. Same dedup_key with different content (or with an unversioned pre-0006 hash)
+    returns 409 IDEMPOTENCY_CONFLICT and changes nothing but the attempt audit.
+  attempts_table: ingestion_attempt
+  reference_flow: contracts/tests/test_ingestion_concurrency.py

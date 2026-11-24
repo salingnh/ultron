@@ -1,0 +1,41 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-000000000001",
+  "decision_id": "01934f6a-0000-7000-8000-000000000001",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-000000000001",
+  "policy_version": "roe-1",
+  "capability": "dns.enumerate_subdomains",
+  "provider": "subfinder",
+  "provider_version": "v2.6.6",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "4c6b8fc3a5d4d7616bf52af29173f7c5e69ecc40f249f2b73737de913e9a1448",
+  "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000001",
+  "input": {
+    "targets": [
+      "example.test"
+    ],
+    "recursive": false
+  },
+  "targets": [
+    {
+      "seed_id": "01934f6a-0000-7000-8000-0000000000b1"
+    }
+  ],
+  "idempotency_key": "fixture:manifest-pin",
+  "requested_by": {
+    "kind": "agent",
+    "id": "01934f6a-0000-7000-8000-0000000000c1"
+  },
+  "proposed_by": {
+    "kind": "agent",
+    "id": "01934f6a-0000-7000-8000-0000000000c1"
+  },
+  "rationale": "invalid: the agent declaring itself as initiator must be rejected, it is not server-derived",
+  "trace": {
+    "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "signature": "hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "priority": 50,
+  "depends_on": []
+}

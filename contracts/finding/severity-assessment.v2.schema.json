@@ -2,16 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/finding/severity-assessment.v2.schema.json",
   "title": "Đánh giá mức nghiêm trọng v2",
-  "description": "Đánh giá mức nghiêm trọng do agent, không dùng công thức trọng số. Mỗi lần đánh giá lại là bản ghi mới. LLM sinh severity/reasons/uncertainty/recommended_actions; mã gán assessed_by và inputs. Output không hợp lệ ghi OUTPUT_INVALID, giữ lịch sử bất biến; không tự dùng severity cũ như kết quả mới. Hình dạng fallback khi chưa có assessment hoặc source_refs hợp lệ còn phải khóa ở S1.4 (contracts/interfaces/README.md), không tạo nguồn giả để vượt schema.",
+  "description": "Đánh giá mức nghiêm trọng do agent, không dùng công thức trọng số. Mỗi lần đánh giá lại là bản ghi mới; khóa chống trùng là dedup_key dựng từ finding_id và input_revision, nên cùng đầu vào chỉ có một lần đánh giá. LLM sinh severity/reasons/uncertainty/recommended_actions và đề xuất source_refs; mã gán assessed_by, inputs, trigger, input_revision, dedup_key và kiểm nguồn trích dẫn. Khi đánh giá thất bại, bản ghi fallback có severity=UNRATED, failure mô tả lỗi (theo error.v2) và raw_signals trỏ dữ liệu thô đã lưu; không có source_refs và không dựng nguồn giả. Lịch sử bất biến: không dùng lại severity cũ như kết quả mới.",
   "type": "object",
   "required": [
     "severity",
     "reasons",
-    "source_refs",
     "uncertainty",
     "recommended_actions",
     "assessed_by",
-    "inputs"
+    "inputs",
+    "trigger",
+    "input_revision",
+    "dedup_key"
   ],
   "additionalProperties": false,
   "properties": {
@@ -28,7 +30,7 @@
       "maxItems": 20
     },
     "source_refs": {
-      "description": "Mỗi lý do phải dẫn được về evidence hoặc bản ghi intel.",
+      "description": "Mỗi kết luận phải dẫn được về evidence hoặc bản ghi intel. Bắt buộc khi không có failure; cấm khi failure, vì fallback UNRATED không được dựng nguồn trích dẫn giả.",
       "type": "array",
       "minItems": 1,
       "items": {
@@ -165,7 +167,7 @@
       }
     },
     "assessed_by": {
-      "description": "Nguồn đánh giá do mã gán; agent ghi model trực tiếp, không phân nhóm model.",
+      "description": "Nguồn đánh giá do mã gán; agent ghi model trực tiếp, không phân nhóm model. kind=rule là bản ghi do mã tạo, gồm fallback UNRATED.",
       "type": "object",
       "required": [
         "kind"
@@ -226,8 +228,79 @@
           }
         }
       ]
+    },
+    "trigger": {
+      "description": "Nguồn kích hoạt lần đánh giá: scan=finding mới hoặc evidence mới trong lần chạy; intel_revision=feed tri thức đổi (C07/M18); verification=kết quả M21; operator_request=người vận hành yêu cầu đánh giá lại.",
+      "$ref": "#/$defs/Trigger"
+    },
+    "input_revision": {
+      "description": "Revision của ảnh chụp đầu vào (finding/evidence/intel/graph) do M20 chọn khi kích hoạt; cùng finding và cùng revision là cùng một lần đánh giá.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "dedup_key": {
+      "description": "Khóa chống trùng: 'severity:<finding_id>:<input_revision>'. Lần đánh giá lại phải có input_revision mới; retry cùng đầu vào trả bản ghi đã có, không gọi model lần nữa.",
+      "type": "string",
+      "pattern": "^severity:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[0-9]+$"
+    },
+    "raw_signals": {
+      "description": "Tín hiệu thô đã lưu dùng cho lần đánh giá thất bại; là con trỏ đối chiếu, không phải nguồn trích dẫn cho một kết luận. Chỉ có khi failure.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/RawSignal"
+      }
+    },
+    "failure": {
+      "description": "Lần đánh giá tự động không tạo được kết quả hợp lệ. Có failure thì severity bắt buộc UNRATED và assessed_by là rule/operator; agent không được đứng tên bản ghi fallback.",
+      "$ref": "#/$defs/Failure"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "failure"
+        ]
+      },
+      "then": {
+        "required": [
+          "raw_signals"
+        ],
+        "not": {
+          "required": [
+            "source_refs"
+          ]
+        },
+        "properties": {
+          "severity": {
+            "const": "UNRATED"
+          },
+          "assessed_by": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "rule",
+                  "operator"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "source_refs"
+        ],
+        "not": {
+          "required": [
+            "raw_signals"
+          ]
+        }
+      }
+    }
+  ],
   "$defs": {
     "Severity": {
       "type": "string",
@@ -239,6 +312,112 @@
         "INFO",
         "UNRATED"
       ]
+    },
+    "Trigger": {
+      "type": "string",
+      "enum": [
+        "scan",
+        "intel_revision",
+        "operator_request",
+        "verification"
+      ]
+    },
+    "RawSignal": {
+      "type": "object",
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "finding",
+            "finding_source",
+            "evidence",
+            "observation",
+            "intel"
+          ]
+        },
+        "ref": {
+          "description": "ID bản ghi đã lưu; finding_source dùng '<finding_id>/<scan_id>/<provider>'.",
+          "type": "string",
+          "maxLength": 500
+        },
+        "value": {
+          "description": "Giá trị thô đáng chú ý giữ nguyên, vd scanner_severity.",
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "Failure": {
+      "type": "object",
+      "required": [
+        "code",
+        "message",
+        "attempt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "../common/error.v2.schema.json#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "attempt": {
+          "description": "Số lời gọi model đã thực hiện cho lần đánh giá này, tính cả fallback; 1 khi ngân sách chặn trước lời gọi.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "finish_reason": {
+          "description": "Kết thúc chuẩn hóa của lời gọi thất bại; vắng khi chưa có lời gọi (hết ngân sách).",
+          "$ref": "../agent/model-response.v2.schema.json#/$defs/FinishReason"
+        },
+        "provider": {
+          "$ref": "../agent/model-request.v2.schema.json#/$defs/Provider"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "session_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        }
+      }
+    },
+    "ModelOutput": {
+      "description": "Phần do model sinh cho severity, dùng làm response_schema của ModelRequest (C07); mã gán assessed_by, inputs, trigger, input_revision, dedup_key rồi kiểm bản ghi đầy đủ và kiểm source_refs tồn tại.",
+      "type": "object",
+      "required": [
+        "severity",
+        "reasons",
+        "source_refs",
+        "uncertainty",
+        "recommended_actions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "reasons": {
+          "$ref": "#/properties/reasons"
+        },
+        "source_refs": {
+          "$ref": "#/properties/source_refs"
+        },
+        "uncertainty": {
+          "$ref": "#/properties/uncertainty"
+        },
+        "recommended_actions": {
+          "$ref": "#/properties/recommended_actions"
+        }
+      }
     }
   }
 }

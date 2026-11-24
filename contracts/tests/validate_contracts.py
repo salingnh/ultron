@@ -27,6 +27,7 @@ errors: list[str] = []
 check_manifest_binding = runpy.run_path(str(ROOT / "tests/manifest_binding.py"))["check_manifest_binding"]
 conformance = runpy.run_path(str(ROOT / "validation.py"))
 FORMAT_CHECKER = conformance["format_checker"]()
+DENIED_EGRESS_HOST = conformance["denied_egress_host"]
 
 
 def fail(msg: str) -> None:
@@ -114,6 +115,36 @@ for path, ops in openapi["paths"].items():
                 fail(f"OpenAPI {m.upper()} {path}: POST tạo tài nguyên phải có Idempotency-Key")
 
 
+# Ma trận producer → consumer (OI-13). Mỗi event phải khai bên nhận và có mặt trong bảng của README;
+# capability chưa có provider phải được đánh dấu "chưa đăng ký" thay vì lặng lẽ nằm trong danh mục.
+CONTRACT_README = (ROOT / "README.md").read_text()
+for event_file in sorted((ROOT / "events").glob("*.schema.json")):
+    event = json.loads(event_file.read_text())
+    if "Bên nhận:" not in event.get("description", ""):
+        fail(f"events/{event_file.name}: description phải khai 'Bên nhận:' (ma trận producer/consumer)")
+    if f"events/{event_file.name}" not in CONTRACT_README:
+        fail(f"events/{event_file.name}: chưa có trong ma trận producer/consumer của contracts/README.md")
+if "chưa đăng ký" not in CONTRACT_README:
+    fail("README: capability chưa có provider (network.discover_services) phải được đánh dấu chưa đăng ký")
+if not (ROOT / "capabilities/network/discover-services.v2.schema.json").exists() or \
+        "network/discover-services.v2" not in CONTRACT_README:
+    fail("README: ma trận phải nêu network/discover-services")
+
+# Hình dạng endpoint: `proposed` bị cấm sau S1 follow-up (OI-11); `deferred` phải nói lý do.
+SHAPE_STATUSES = {"locked", "deferred"}
+for path, ops in openapi["paths"].items():
+    for m, op in ops.items():
+        if m not in {"get", "post"} or not isinstance(op, dict):
+            continue
+        status = op.get("x-aegis-status", "locked")
+        if status not in SHAPE_STATUSES:
+            fail(f"OpenAPI {m.upper()} {path}: x-aegis-status={status!r} không hợp lệ "
+                 f"(chỉ {sorted(SHAPE_STATUSES)}; endpoint không gắn nhãn mặc định là locked)")
+        if status == "deferred" and not op.get("x-aegis-reason"):
+            fail(f"OpenAPI {m.upper()} {path}: endpoint deferred phải có x-aegis-reason")
+if openapi["paths"]["/campaigns/{campaign_id}/flow"]["get"].get("x-aegis-status") != "locked":
+    fail("OpenAPI GET /campaigns/{campaign_id}/flow phải khóa hình dạng (G1.5a đọc wait_reason/cancel)")
+
 # 3. Fixture
 def validator_for(target: str) -> Draft202012Validator:
     file_part, _, pointer = target.partition("#")
@@ -137,43 +168,124 @@ for fixture in index["valid"]:
     for obs in (data.get("results") or {}).get("observations", []):
         if obs["predicate"] not in predicates:
             fail(f"fixtures/{fixture}: predicate {obs['predicate']} không có trong registry")
-manifest = load(ROOT / "fixtures/valid/manifest.subfinder.yaml")
-for pred in manifest["spec"].get("emits", {}).get("predicates", []):
-    if pred not in predicates:
-        fail(f"manifest subfinder: predicate {pred} không có trong registry")
-m = re.fullmatch(r"schema://([a-z0-9-]+)/([a-z0-9-]+)/v(\d+)", manifest["spec"]["inputSchemaRef"])
-if not m or f"capabilities/{m[1]}/{m[2]}.v{m[3]}.schema.json" not in schemas:
-    fail("manifest subfinder: inputSchemaRef không ánh xạ được tới file schema")
+MANIFEST_FIXTURES = ["valid/manifest.subfinder.yaml", "valid/manifest.dnsx.yaml"]
+manifests = {name: load(ROOT / "fixtures" / name) for name in MANIFEST_FIXTURES}
+for name, manifest in manifests.items():
+    for pred in manifest["spec"].get("emits", {}).get("predicates", []):
+        if pred not in predicates:
+            fail(f"fixtures/{name}: predicate {pred} không có trong registry")
+    m = re.fullmatch(r"schema://([a-z0-9-]+)/([a-z0-9-]+)/v(\d+)", manifest["spec"]["inputSchemaRef"])
+    if not m or f"capabilities/{m[1]}/{m[2]}.v{m[3]}.schema.json" not in schemas:
+        fail(f"fixtures/{name}: inputSchemaRef không ánh xạ được tới file schema")
 
+# Mọi output graph-queries phải công bố truncated + limits_applied; nếu không, người đọc không
+# phân biệt được "toàn bộ" với "bị cắt" (05 §cổng G5/G6, 04 §Tiêu chí thêm tool).
+graph_queries = schemas["mcp/graph-queries.v2.schema.json"]["$defs"]
+for qname, query in graph_queries.items():
+    output = query.get("properties", {}).get("output", {})
+    required = set(output.get("required", []))
+    for field in ("truncated", "limits_applied"):
+        if field not in required:
+            fail(f"mcp/graph-queries.v2 {qname}.output: bắt buộc phải có {field}")
+    limits = output.get("properties", {}).get("limits_applied", {})
+    if limits.get("additionalProperties") is not False:
+        fail(f"mcp/graph-queries.v2 {qname}.limits_applied: phải đóng danh sách trường (additionalProperties=false)")
+    if "timeout_ms" not in limits.get("required", []):
+        fail(f"mcp/graph-queries.v2 {qname}.limits_applied: thiếu trần timeout_ms")
+if set(graph_queries) != {
+        "get_asset_neighbors", "get_recent_observations", "get_unverified_hypotheses",
+        "get_package_cve_matches", "summarize_campaign_delta", "get_evidence_excerpt"}:
+    fail(f"mcp/graph-queries.v2: phải giữ đúng sáu truy vấn, đang có {sorted(graph_queries)}")
+
+
+
+_ARGV_SCALAR_TYPES = {"integer", "number", "boolean"}
+
+
+def _argv_eligible(prop: dict | None) -> bool:
+    """True when a value of this input field can be substituted without becoming an extra flag.
+
+    Allowed: numbers/booleans; a string fixed by its enum; an array of those. Everything else (free
+    string, object, array of free strings, or a $ref the registry has to resolve) is refused, because
+    a value like `-rf` would reach argv as a flag instead of a value.
+    """
+    if not isinstance(prop, dict) or "$ref" in prop:
+        return False
+    kind = prop.get("type")
+    if kind in _ARGV_SCALAR_TYPES:
+        return True
+    if kind == "string":
+        return isinstance(prop.get("enum"), list) and len(prop["enum"]) > 0
+    if kind == "array":
+        return _argv_eligible(prop.get("items"))
+    return False
 
 
 def check_manifest(path: Path, data: dict) -> list[str]:
-    """Luật conformance ngoài JSON Schema: không shell, placeholder chỉ trỏ tới trường của input schema."""
+    """Luật conformance ngoài JSON Schema: không shell, và cách argsTemplate render input.
+
+    Rule (OI-12, interfaces/README.md): an element is a literal or exactly one whole placeholder
+    `${input.<field>}`; an array field renders one argv element per item; only scalar/enum values are
+    substitutable. Nothing is joined, quoted or split, so the value can never become a flag.
+    """
     out = []
     spec = data.get("spec", {})
     args = spec.get("runtime", {}).get("argsTemplate", [])
     if args and Path(str(args[0])).name in {"sh", "bash", "ash", "dash", "zsh", "busybox"}:
         out.append(f"{path}: argsTemplate không được gọi shell")
     mm = re.fullmatch(r"schema://([a-z0-9-]+)/([a-z0-9-]+)/v(\d+)", spec.get("inputSchemaRef", ""))
-    props = set(schemas.get(f"capabilities/{mm[1]}/{mm[2]}.v{mm[3]}.schema.json", {}).get("properties", {})) if mm else set()
+    input_schema = schemas.get(f"capabilities/{mm[1]}/{mm[2]}.v{mm[3]}.schema.json", {}) if mm else {}
+    props = input_schema.get("properties", {})
+    # OI-5: the deny set is a platform constant that takes precedence over egressSources, so a manifest
+    # may not declare a source inside it (loopback, link-local/metadata incl. fe80::/10, multicast,
+    # unspecified, NAT64/6to4/Teredo). Binding = (resolved targets ∪ egressSources) − deny set.
+    for source in spec.get("permissions", {}).get("egressSources", []):
+        for host in source.get("hosts", []):
+            if DENIED_EGRESS_HOST(str(host)):
+                out.append(f"{path}: egressSources {source.get('id')!r} khai host {host!r} thuộc tập luôn chặn "
+                           f"(deny set thắng egressSources; broker không bao giờ mở tới đó)")
     for a in args:
-        for field in re.findall(r"\$\{input\.([a-z0-9_]+)\}", str(a)):
-            if field not in props:
-                out.append(f"{path}: placeholder input.{field} không có trong input schema")
+        element = str(a)
+        placeholders = re.findall(r"\$\{([^}]*)\}", element)
+        if len(placeholders) > 1:
+            out.append(f"{path}: argv element {element!r} chứa {len(placeholders)} placeholder")
+            continue
+        if not placeholders:
+            continue
+        match = re.fullmatch(r"\$\{input\.([a-z0-9_]+)\}", element)
+        if not match:
+            out.append(f"{path}: placeholder trong {element!r} phải chiếm trọn một argv element dạng ${{input.<field>}}")
+            continue
+        field = match[1]
+        prop = props.get(field)
+        if prop is None:
+            out.append(f"{path}: placeholder input.{field} không có trong input schema")
+        elif not _argv_eligible(prop):
+            out.append(f"{path}: input.{field} không được chèn vào argv "
+                       f"(chỉ số/boolean/chuỗi enum/mảng của chúng; chuỗi tự do có thể thành cờ)")
     return out
 
 
-for e in check_manifest(Path("fixtures/valid/manifest.subfinder.yaml"), manifest):
-    fail(e)
-for e in check_manifest_binding(
-        load(ROOT / "fixtures/valid/approved-task.subfinder.json"),
-        (ROOT / "fixtures/valid/manifest.subfinder.yaml").read_bytes()):
-    fail(f"approved-task fixture: {e}")
+for name, manifest in manifests.items():
+    for e in check_manifest(Path(f"fixtures/{name}"), manifest):
+        fail(e)
+for provider in ("subfinder", "dnsx"):
+    for e in check_manifest_binding(
+            load(ROOT / f"fixtures/valid/approved-task.{provider}.json"),
+            (ROOT / f"fixtures/valid/manifest.{provider}.yaml").read_bytes()):
+        fail(f"approved-task {provider} fixture: {e}")
 receipt_ref = openapi["paths"]["/ingestion/results"]["post"]["responses"]["202"]["content"]["application/json"]["schema"]
 if receipt_ref != {"$ref": "../ingestion/ingest-receipt.v2.schema.json"}:
     fail("OpenAPI receipt must reference the shared IngestReceipt schema")
 if not check_manifest(Path("x"), load(ROOT / "fixtures/invalid/manifest.tag-not-digest.yaml")):
     fail("check_manifest: không bắt được manifest gọi shell")
+for broken, expect in [
+        ("fixtures/invalid/manifest.args-free-string.yaml", "không được chèn vào argv"),
+        ("fixtures/invalid/manifest.args-embedded-placeholder.yaml", "chiếm trọn một argv element"),
+        ("fixtures/invalid/manifest.egress-source-in-deny-set.yaml", "thuộc tập luôn chặn")]:
+    found = [e for e in check_manifest(Path("x"), load(ROOT / broken)) if expect in e]
+    if not found:
+        fail(f"check_manifest: không bắt được {broken} ({expect})")
 manifest_validator = validator_for("capability/provider-manifest.v2.schema.json")
 for mp in sorted((ROOT.parent / "adapters").glob("**/manifest.yaml")):
     data = load(mp)
@@ -208,11 +320,24 @@ for t in load(ROOT / "finding/transitions.v2.yaml")["transitions"]:
         if s is not None and s not in statuses:
             fail(f"transitions.v2.yaml: trạng thái lạ {s}")
 codes = schemas["common/error.v2.schema.json"]["$defs"]["ErrorCode"]["enum"]
-if len(codes) != 13:
-    fail(f"Mã lỗi: schema hiện hành có 13 mã, đang có {len(codes)}")
+if len(codes) != 14:
+    fail(f"Mã lỗi: schema hiện hành có 14 mã, đang có {len(codes)}")
 job_status = set(schemas["capability/job.v2.schema.json"]["$defs"]["JobStatus"]["enum"])
 if ddl_enum(r"CREATE TABLE scan_job.*?status\s+text\s+NOT NULL DEFAULT 'QUEUED'\s+") != job_status:
     fail("scan_job.status trong DDL lệch với job.v2")
+
+severity_schema = schemas["finding/severity-assessment.v2.schema.json"]
+if ddl_enum(r"CREATE TABLE severity_assessment \(.*?severity\s+text") != set(severity_schema["$defs"]["Severity"]["enum"]):
+    fail("severity_assessment.severity trong DDL lệch với severity-assessment.v2")
+if ddl_enum(r"CREATE TABLE severity_assessment \(.*?kind\s+text") != set(severity_schema["properties"]["assessed_by"]["properties"]["kind"]["enum"]):
+    fail("severity_assessment.kind trong DDL lệch với assessed_by.kind của severity-assessment.v2")
+if ddl_enum(r"CREATE TABLE severity_assessment \(.*?trigger\s+text") != set(severity_schema["$defs"]["Trigger"]["enum"]):
+    fail("severity_assessment.trigger trong DDL lệch với trigger của severity-assessment.v2")
+finish_reasons = set(schemas["agent/model-response.v2.schema.json"]["$defs"]["FinishReason"]["enum"])
+if finish_reasons != {"completed", "tool_calls", "truncated", "refused", "invalid_output", "provider_error"}:
+    fail(f"FinishReason của model-response.v2 phải là sáu giá trị chuẩn hóa C07, đang là {sorted(finish_reasons)}")
+if severity_schema["properties"]["failure"]["$ref"].rsplit("/", 1)[-1] != "Failure":
+    fail("severity-assessment.v2: failure phải trỏ tới $defs/Failure")
 
 if errors:
     print(f"THẤT BẠI: {len(errors)} lỗi")

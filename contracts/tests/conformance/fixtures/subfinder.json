@@ -1,0 +1,20 @@
+{
+  "provider": "subfinder",
+  "manifest": "fixtures/valid/manifest.subfinder.yaml",
+  "task": "fixtures/valid/approved-task.subfinder.json",
+  "envelope": "fixtures/valid/result-envelope.subfinder.json",
+  "raw": "tests/conformance/fixtures/subfinder/raw",
+  "raw_file": "result.jsonl",
+  "job_id": "01934f6a-0000-7000-8000-00000000d001",
+  "event_id": "01934f6a-0000-7000-8000-00000000e001",
+  "started_at": "2026-11-15T02:59:10Z",
+  "finished_at": "2026-11-15T03:00:00Z",
+  "retry_after_seconds": 10,
+  "coverage_subjects": [
+    "dns:internal.example"
+  ],
+  "dependencies": [
+    "passive-http-sources",
+    "dns-resolver"
+  ]
+}

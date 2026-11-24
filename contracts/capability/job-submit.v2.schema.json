@@ -2,14 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/capability/job-submit.v2.schema.json",
   "title": "Yêu cầu gửi job v2",
-  "description": "Body của POST /api/v2/jobs: người vận hành (UI) hoặc dịch vụ nội bộ gửi job thủ công. Vẫn đi qua điểm kiểm M05 như lời gọi MCP; không có đường tắt tới M06.",
+  "description": "Body của POST /api/v2/jobs: người vận hành (UI) hoặc dịch vụ nội bộ gửi job thủ công. Vẫn đi qua điểm kiểm M05 như lời gọi MCP; không có đường tắt tới M06. Body KHÔNG mang actor: M05 gán requested_by từ principal đã xác minh của server và REST không bao giờ đặt proposed_by (không có phiên agent đứng sau một lời gọi REST).",
   "type": "object",
   "required": [
     "campaign_id",
     "capability",
     "input",
-    "rationale",
-    "actor"
+    "rationale"
   ],
   "additionalProperties": false,
   "properties": {
@@ -25,7 +24,7 @@
     },
     "input": {
       "type": "object",
-      "description": "Tham số đã có kiểu của tool; M05 ghép inputDefaults và kiểm input schema."
+      "description": "Tham số đã có kiểu của tool; M05 ghép inputDefaults và kiểm input schema. Mục tiêu trong input là giá trị thô của seed hoặc canonical_key: M05 phân giải thành TargetRef cho task (khớp campaign_target cùng campaign/scope -> seed_id, không chuyển keyword/CIDR thành asset giả; canonical_key đã có -> canonical_key). Giá trị không khớp seed hoặc asset đã biết bị từ chối, không tự suy ra khóa chuẩn."
     },
     "scan_cycle": {
       "description": "Tùy chọn: truyền để ép cùng một lần quét (retry); bỏ trống thì M05 cấp scan_cycle mới, tạo lần quét mới không trùng job cũ.",
@@ -35,9 +34,6 @@
       "type": "string",
       "minLength": 3,
       "maxLength": 2000
-    },
-    "actor": {
-      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
     },
     "priority": {
       "type": "integer",

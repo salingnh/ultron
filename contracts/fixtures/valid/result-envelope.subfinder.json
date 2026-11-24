@@ -8,11 +8,11 @@
   "capability": "dns.enumerate_subdomains",
   "provider": {
     "name": "subfinder",
-    "version": "v2.6.6",
+    "version": "v2.17.0",
     "adapter_version": "1.0.0",
-    "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    "image_digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf"
   },
-  "policy_version": "roe-12",
+  "policy_version": "roe-1",
   "status": "succeeded",
   "coverage": {
     "subjects": [
@@ -28,7 +28,7 @@
         "discovered_from": [
           "dns:internal.example"
         ],
-        "confidence": 0.8,
+        "confidence": 0.7,
         "evidence_refs": [
           {
             "local_ref": "raw"
@@ -61,7 +61,19 @@
         "predicate": "asset.seen",
         "value": true,
         "observed_at": "2026-11-15T03:00:00Z",
-        "confidence": 0.8,
+        "confidence": 0.7,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "subject": "dns:xn--bcher-kva.internal.example",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-15T03:00:00Z",
+        "confidence": 0.7,
         "evidence_refs": [
           {
             "local_ref": "raw"
@@ -81,6 +93,18 @@
             "local_ref": "raw"
           }
         ]
+      },
+      {
+        "type": "SUBDOMAIN_OF",
+        "from": "dns:xn--bcher-kva.internal.example",
+        "to": "dns:internal.example",
+        "observed_at": "2026-11-15T03:00:00Z",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
       }
     ],
     "findings": []
@@ -88,9 +112,9 @@
   "evidence": [
     {
       "local_ref": "raw",
-      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
-      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d001/2222222222222222222222222222222222222222222222222222222222222222",
-      "size_bytes": 1834,
+      "sha256": "1e1c8bcdd33168e15528d61a006bf5e5e5a31e5b8e4d4d4f1f10ad0876240a9f",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d001/1e1c8bcdd33168e15528d61a006bf5e5e5a31e5b8e4d4d4f1f10ad0876240a9f",
+      "size_bytes": 288,
       "media_type": "application/x-ndjson",
       "classification": "INTERNAL",
       "kind": "raw_output"
@@ -98,20 +122,22 @@
   ],
   "errors": [],
   "provenance": {
-    "input_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+    "input_fingerprint": "28d8394bdbe0b2de58d0c71d56f2d6763e51d228275dfaf29e1dd293fa0eadc0",
     "started_at": "2026-11-15T02:59:10Z",
     "finished_at": "2026-11-15T03:00:00Z",
     "seed_targets": [
-      "dns:internal.example"
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b1"
+      }
     ],
     "exit_code": 0
   },
   "trace": {
-    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "campaign_id": "01934f6a-0000-7000-8000-000000000001",
     "job_id": "01934f6a-0000-7000-8000-00000000d001",
     "capability_id": "dns.enumerate_subdomains",
-    "provider_version": "v2.6.6",
-    "policy_version": "roe-12"
+    "provider_version": "v2.17.0",
+    "policy_version": "roe-1"
   }
 }

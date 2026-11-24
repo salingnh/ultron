@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/mcp/graph-queries.v2.schema.json",
   "title": "Sáu truy vấn đồ thị đã đăng ký của M23 v2",
-  "description": "Mỗi mục là một công cụ MCP chỉ đọc (tên graph.<name>). Giới hạn cứng nằm ở mã M23: tối đa 2 bước nhảy, 200 bản ghi, timeout 2 giây, luôn lọc theo campaign_id. Vượt giới hạn thì cắt và truncated=true. Dùng chung cho Web UI qua REST.",
+  "description": "Mỗi mục là một công cụ MCP chỉ đọc (tên graph.<name>). Giới hạn cứng nằm ở mã M23: tối đa 2 bước nhảy, 200 bản ghi, timeout 2 giây, luôn lọc theo campaign_id. Mọi output bắt buộc có truncated và limits_applied: truncated=true khi bất kỳ trần nào (số bản ghi, bước nhảy, timeout, kích thước đoạn trích) cắt kết quả; limits_applied ghi các trần hiệu lực đã áp cho lần gọi đó (trần của server, không phải giá trị client yêu cầu) để người đọc phân biệt 'toàn bộ' với 'bị cắt'. Dùng chung cho Web UI qua REST.",
   "$defs": {
     "get_asset_neighbors": {
       "type": "object",
@@ -47,9 +47,10 @@
         "output": {
           "type": "object",
           "required": [
+            "truncated",
+            "limits_applied",
             "nodes",
-            "edges",
-            "truncated"
+            "edges"
           ],
           "additionalProperties": false,
           "properties": {
@@ -135,16 +136,32 @@
               "type": "boolean"
             },
             "limits_applied": {
+              "description": "Các trần hiệu lực server đã áp cho lần gọi này; có mặt ở mọi output.",
               "type": "object",
+              "required": [
+                "max_hops",
+                "limit",
+                "timeout_ms"
+              ],
+              "additionalProperties": false,
               "properties": {
                 "max_hops": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2,
+                  "description": "Trần bước nhảy đã áp cho lần gọi này (M23 cố định 2)."
                 },
                 "limit": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Trần số bản ghi đã áp (trần server 200; giá trị client yêu cầu có thể nhỏ hơn)."
                 },
                 "timeout_ms": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms)."
                 }
               }
             }
@@ -191,9 +208,10 @@
         "output": {
           "type": "object",
           "required": [
+            "truncated",
+            "limits_applied",
             "observations",
-            "revision",
-            "truncated"
+            "revision"
           ],
           "additionalProperties": false,
           "properties": {
@@ -243,16 +261,25 @@
               "type": "boolean"
             },
             "limits_applied": {
+              "description": "Các trần hiệu lực server đã áp cho lần gọi này; có mặt ở mọi output.",
               "type": "object",
+              "required": [
+                "limit",
+                "timeout_ms"
+              ],
+              "additionalProperties": false,
               "properties": {
-                "max_hops": {
-                  "type": "integer"
-                },
                 "limit": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Trần số bản ghi đã áp (trần server 200; giá trị client yêu cầu có thể nhỏ hơn)."
                 },
                 "timeout_ms": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms)."
                 }
               }
             }
@@ -288,8 +315,9 @@
         "output": {
           "type": "object",
           "required": [
-            "hypotheses",
-            "truncated"
+            "truncated",
+            "limits_applied",
+            "hypotheses"
           ],
           "additionalProperties": false,
           "properties": {
@@ -303,16 +331,25 @@
               "type": "boolean"
             },
             "limits_applied": {
+              "description": "Các trần hiệu lực server đã áp cho lần gọi này; có mặt ở mọi output.",
               "type": "object",
+              "required": [
+                "limit",
+                "timeout_ms"
+              ],
+              "additionalProperties": false,
               "properties": {
-                "max_hops": {
-                  "type": "integer"
-                },
                 "limit": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Trần số bản ghi đã áp (trần server 200; giá trị client yêu cầu có thể nhỏ hơn)."
                 },
                 "timeout_ms": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms)."
                 }
               }
             }
@@ -354,8 +391,9 @@
         "output": {
           "type": "object",
           "required": [
-            "matches",
-            "truncated"
+            "truncated",
+            "limits_applied",
+            "matches"
           ],
           "additionalProperties": false,
           "properties": {
@@ -400,16 +438,25 @@
               "type": "boolean"
             },
             "limits_applied": {
+              "description": "Các trần hiệu lực server đã áp cho lần gọi này; có mặt ở mọi output.",
               "type": "object",
+              "required": [
+                "limit",
+                "timeout_ms"
+              ],
+              "additionalProperties": false,
               "properties": {
-                "max_hops": {
-                  "type": "integer"
-                },
                 "limit": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Trần số bản ghi đã áp (trần server 200; giá trị client yêu cầu có thể nhỏ hơn)."
                 },
                 "timeout_ms": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms)."
                 }
               }
             }
@@ -451,11 +498,12 @@
         "output": {
           "type": "object",
           "required": [
+            "truncated",
+            "limits_applied",
             "from_revision",
             "to_revision",
             "counts",
-            "highlights",
-            "truncated"
+            "highlights"
           ],
           "additionalProperties": false,
           "properties": {
@@ -495,16 +543,25 @@
               "type": "boolean"
             },
             "limits_applied": {
+              "description": "Các trần hiệu lực server đã áp cho lần gọi này; có mặt ở mọi output.",
               "type": "object",
+              "required": [
+                "limit",
+                "timeout_ms"
+              ],
+              "additionalProperties": false,
               "properties": {
-                "max_hops": {
-                  "type": "integer"
-                },
                 "limit": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Trần số bản ghi đã áp (trần server 200; giá trị client yêu cầu có thể nhỏ hơn)."
                 },
                 "timeout_ms": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms)."
                 }
               }
             }
@@ -552,11 +609,12 @@
         "output": {
           "type": "object",
           "required": [
+            "truncated",
+            "limits_applied",
             "evidence_id",
             "sha256",
             "excerpt",
-            "total_bytes",
-            "truncated"
+            "total_bytes"
           ],
           "additionalProperties": false,
           "properties": {
@@ -580,16 +638,25 @@
               "type": "boolean"
             },
             "limits_applied": {
+              "description": "Các trần hiệu lực server đã áp cho lần gọi này; có mặt ở mọi output.",
               "type": "object",
+              "required": [
+                "max_bytes",
+                "timeout_ms"
+              ],
+              "additionalProperties": false,
               "properties": {
-                "max_hops": {
-                  "type": "integer"
-                },
-                "limit": {
-                  "type": "integer"
+                "max_bytes": {
+                  "type": "integer",
+                  "minimum": 64,
+                  "maximum": 8192,
+                  "description": "Trần byte của đoạn trích đã áp (tối đa 8192)."
                 },
                 "timeout_ms": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000,
+                  "description": "Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms)."
                 }
               }
             }

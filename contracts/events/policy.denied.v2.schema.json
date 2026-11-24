@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/policy.denied.v2.schema.json",
   "title": "Payload policy.denied.v2",
-  "description": "Bên phát: M05. Khóa khử trùng của consumer: decision_id.",
+  "description": "Bên phát: M05. Khóa khử trùng của consumer: decision_id. Bên nhận: M26 (UI/SSE), M03 (phiên bị từ chối).",
   "type": "object",
   "required": [
     "decision_id",
@@ -30,6 +30,7 @@
       "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
     },
     "targets": {
+      "description": "Mục tiêu thô như request gửi (seed keyword/CIDR/domain hoặc canonical_key), giữ nguyên để audit lý do từ chối; đây không phải TargetRef đã phân giải như task/job.",
       "type": "array",
       "items": {
         "type": "string"

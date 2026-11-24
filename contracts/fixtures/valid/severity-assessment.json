@@ -44,5 +44,8 @@
     "session_id": "01934f6a-0000-7000-8000-0000000c0001",
     "model": "configured-model",
     "prompt_version": "severity-v1"
-  }
+  },
+  "trigger": "scan",
+  "input_revision": 2,
+  "dedup_key": "severity:01934f6a-0000-7000-8000-0000000e0001:2"
 }

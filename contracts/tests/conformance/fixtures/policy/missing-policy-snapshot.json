@@ -1,0 +1,11 @@
+{
+  "case": "policy snapshot missing: a task may not run against an unpinned policy version",
+  "base_task": "fixtures/valid/approved-task.dnsx.json",
+  "patch": {
+    "policy_version": "roe-9"
+  },
+  "expect": {
+    "code": "POLICY_DENIED",
+    "next_action": "FIX_INPUT"
+  }
+}

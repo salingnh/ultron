@@ -1,0 +1,11 @@
+{
+  "case": "capability not registered: the request names a capability no manifest declares",
+  "base_task": "fixtures/valid/approved-task.dnsx.json",
+  "patch": {
+    "capability": "dns.enumerate_domains"
+  },
+  "expect": {
+    "code": "POLICY_DENIED",
+    "next_action": "FIX_INPUT"
+  }
+}

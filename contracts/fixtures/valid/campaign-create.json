@@ -38,9 +38,5 @@
       "max_jobs": 2000,
       "idle_cycles_before_pause": 3
     }
-  },
-  "actor": {
-    "kind": "operator",
-    "id": "soc-analyst-1"
   }
 }

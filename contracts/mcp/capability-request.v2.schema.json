@@ -13,7 +13,7 @@
   "properties": {
     "input": {
       "type": "object",
-      "description": "Tham số đã có kiểu của tool; M05 ghép inputDefaults và kiểm input schema."
+      "description": "Tham số đã có kiểu của tool; M05 ghép inputDefaults và kiểm input schema. Mục tiêu trong input là giá trị thô của seed hoặc canonical_key: M05 phân giải thành TargetRef cho task/Job trả về (khớp campaign_target cùng campaign/scope -> seed_id, không chuyển keyword/CIDR thành asset giả; canonical_key đã có -> canonical_key). Giá trị không khớp seed hoặc asset đã biết trả INPUT_INVALID, không tự suy ra khóa chuẩn."
     },
     "rationale": {
       "description": "Lý do chọn mục tiêu và capability; ghi vào audit (FR-002).",
