@@ -90,14 +90,11 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
       }
       await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
 
-      // 6. Tool Catalogue Screen
+      // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
       await page.goto('/tools');
       await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
-      if (isRealMode) {
-        await expect(page.getByText('Chưa có API backend cho Danh mục Công cụ')).toBeVisible();
-      } else {
-        await expect(page.getByText('dns.enumerate_subdomains')).toBeVisible();
-      }
+      await expect(page.getByText('dns.enumerate_subdomains')).toBeVisible();
+      await expect(page.getByText('subfinder')).toBeVisible();
       await captureScreen(page, `06-tool-catalogue-${theme}.png`);
     });
   }

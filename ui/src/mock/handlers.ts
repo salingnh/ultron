@@ -129,7 +129,7 @@ export const mockHandlers = {
     return mockAssetGraph;
   },
 
-  async listCapabilities(): Promise<CapabilitiesResponse> {
+  async listCapabilities(_campaignId?: string): Promise<CapabilitiesResponse> {
     return mockCapabilities;
   },
 

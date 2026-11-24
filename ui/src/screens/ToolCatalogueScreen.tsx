@@ -1,73 +1,56 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Wrench,
   Shield,
   FileCode,
   Box,
+  Filter,
+  CheckCircle2,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
-import type { CapabilityItem } from '../api/types';
+import type { CapabilityItem, Campaign } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 
 export const ToolCatalogueScreen: React.FC = () => {
   const [capabilities, setCapabilities] = useState<CapabilityItem[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadCapabilities();
-  }, []);
-
-  const loadCapabilities = async () => {
-    if (!apiClient.isMock) {
-      setLoading(false);
-      return;
-    }
+  const loadCapabilities = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiClient.listCapabilities();
+      const res = await apiClient.listCapabilities(selectedCampaignId || undefined);
       setCapabilities(res.items);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Không thể nạp danh mục công cụ');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCampaignId]);
 
-  if (!apiClient.isMock) {
-    return (
-      <div>
-        <div className="filter-bar">
-          <div>
-            <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--ink)' }}>
-              Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)
-            </h1>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--muted)', marginTop: 2 }}>
-              Đăng ký năng lực (Capabilities Registry M05), bộ điều hợp (Adapters), phiên bản và trạng thái sức khỏe vận hành.
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="status-chip warning" style={{ fontSize: '11px', padding: '2px 8px' }}>
-              Chưa có API (Đang chờ GET /capabilities)
-            </span>
-          </div>
-        </div>
+  useEffect(() => {
+    loadCapabilities();
+  }, [loadCapabilities]);
 
-        <div className="state-box" style={{ marginTop: 32, padding: '48px 24px' }}>
-          <Wrench size={44} style={{ color: 'var(--muted)', marginBottom: 14 }} />
-          <div className="state-title" style={{ fontSize: 'var(--text-lg)', marginBottom: 6 }}>
-            Chưa có API backend cho Danh mục Công cụ
-          </div>
-          <div className="state-desc" style={{ maxWidth: 540, margin: '0 auto', lineHeight: 1.6 }}>
-            Endpoint <code>GET /capabilities</code> đang được hoàn thiện và tích hợp vào router của backend.
-            Trong chế độ Real API, giao diện tuân thủ nguyên tắc trung thực dữ liệu (Data Honesty), không hiển thị dữ liệu giả lập (mock).
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Load campaigns for RoE denylist filter dropdown
+  useEffect(() => {
+    let mounted = true;
+    apiClient
+      .listCampaigns()
+      .then((res) => {
+        if (mounted) setCampaigns(res.items);
+      })
+      .catch(() => {
+        // non-blocking
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div>
@@ -81,9 +64,37 @@ export const ToolCatalogueScreen: React.FC = () => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {/* Campaign RoE Denylist filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Filter size={14} style={{ color: 'var(--muted)' }} />
+            <label htmlFor="campaign-filter" style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', fontWeight: 600 }}>
+              Lọc theo RoE:
+            </label>
+            <select
+              id="campaign-filter"
+              value={selectedCampaignId}
+              onChange={(e) => setSelectedCampaignId(e.target.value)}
+              style={{
+                fontSize: 'var(--text-xs)',
+                padding: '4px 8px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--surface)',
+                border: '1px solid var(--line)',
+                color: 'var(--ink)',
+              }}
+            >
+              <option value="">Tất cả (Không lọc)</option>
+              {campaigns.map((c) => (
+                <option key={c.campaign_id} value={c.campaign_id}>
+                  {c.name} ({c.status})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <span className="brand-badge" style={{ backgroundColor: 'var(--accent-bg)', color: 'var(--accent)' }}>
-            G1 Foundation Tools: Subfinder, DNSx
+            M05 Registry Validated (GET /capabilities)
           </span>
         </div>
       </div>
@@ -93,6 +104,18 @@ export const ToolCatalogueScreen: React.FC = () => {
       {loading ? (
         <div className="state-box">
           <div className="state-title">Đang nạp danh mục công cụ...</div>
+        </div>
+      ) : capabilities.length === 0 ? (
+        <div className="state-box" style={{ marginTop: 24, padding: '40px 24px' }}>
+          <Wrench size={40} style={{ color: 'var(--muted)', marginBottom: 12 }} />
+          <div className="state-title" style={{ fontSize: 'var(--text-base)', marginBottom: 6 }}>
+            Không có capability nào phù hợp
+          </div>
+          <div className="state-desc" style={{ maxWidth: 500, margin: '0 auto', fontSize: 'var(--text-xs)' }}>
+            {selectedCampaignId
+              ? 'Chiến dịch được chọn có thể đã cấm các capability qua capability_denylist trong RoE, hoặc chưa có công cụ nào được đăng ký trong Registry M05.'
+              : 'Hiện chưa có manifest công cụ nào được tiếp nhận vào Registry M05.'}
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -130,7 +153,12 @@ export const ToolCatalogueScreen: React.FC = () => {
                   </div>
                 </div>
 
-                <span className="brand-badge">M05 Registry Validated</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={14} style={{ color: 'var(--success)' }} />
+                  <span className="brand-badge" style={{ fontSize: '11px' }}>
+                    {item.providers.length} Provider
+                  </span>
+                </div>
               </div>
 
               {/* Providers under this capability */}
@@ -154,7 +182,7 @@ export const ToolCatalogueScreen: React.FC = () => {
                         <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--ink)' }}>{p.name}</strong>
                         <span className="brand-badge">{p.version}</span>
                       </div>
-                      <StatusChip status={p.health} />
+                      <StatusChip status={p.health} kind="health" />
                     </div>
 
                     {p.module && (

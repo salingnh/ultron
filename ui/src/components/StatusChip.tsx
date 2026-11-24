@@ -39,13 +39,19 @@ const statusConfig: Record<string, { label: string; variant: 'success' | 'warnin
   approved: { label: 'Đã duyệt (Approved)', variant: 'success' },
   rejected: { label: 'Từ chối (Rejected)', variant: 'danger' },
 
-  // Health
-  healthy: { label: 'Khỏe mạnh (Healthy)', variant: 'success' },
+  // Health (G1.5a M05 manifest registry contract: healthy = manifest re-admittable + pin match)
+  healthy: { label: 'Khớp Manifest (Healthy)', variant: 'success' },
   degraded: { label: 'Suy giảm (Degraded)', variant: 'warning' },
   unavailable: { label: 'Không khả dụng', variant: 'danger' },
 };
 
-export const StatusChip: React.FC<StatusChipProps> = ({ status, waitReason, size = 'sm' }) => {
+const healthTooltips: Record<string, string> = {
+  healthy: 'healthy = manifest re-admittable + pin match (not a runtime probe)',
+  degraded: 'degraded: manifest suy giảm hoặc không thể đọc lại đầy đủ',
+  unavailable: 'unavailable: không đọc lại được manifest hoặc không khớp pin',
+};
+
+export const StatusChip: React.FC<StatusChipProps> = ({ status, waitReason, kind, size = 'sm' }) => {
   // If job is QUEUED and has a wait_reason, map from contract values without inventing status values
   if (status === 'QUEUED' && waitReason) {
     const label = waitReasonLabels[waitReason.code] || `Đang chờ: ${waitReason.code}`;
@@ -74,13 +80,17 @@ export const StatusChip: React.FC<StatusChipProps> = ({ status, waitReason, size
     variant: 'neutral' as const,
   };
 
+  const tooltip = (kind === 'health' || status in healthTooltips)
+    ? (healthTooltips[status] || config.label)
+    : config.label;
+
   const style: React.CSSProperties = {
     fontSize: size === 'sm' ? 'var(--text-xs)' : 'var(--text-sm)',
     padding: size === 'sm' ? '2px 8px' : '4px 10px',
   };
 
   return (
-    <span className={`status-chip ${config.variant}`} style={style}>
+    <span className={`status-chip ${config.variant}`} style={style} title={tooltip}>
       <span
         style={{
           width: 6,

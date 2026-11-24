@@ -32,6 +32,14 @@ describe('Ultron UI Reusable Components', () => {
 
     render(<StatusChip status="FAILED" />);
     expect(screen.getByText('Thất bại (Failed)')).toBeInTheDocument();
+
+    render(<StatusChip status="healthy" kind="health" />);
+    const healthChip = screen.getByText('Khớp Manifest (Healthy)');
+    expect(healthChip).toBeInTheDocument();
+    expect(healthChip.closest('.status-chip')).toHaveAttribute(
+      'title',
+      'healthy = manifest re-admittable + pin match (not a runtime probe)'
+    );
   });
 
   it('renders CopyableId with monospace font and copy button', () => {

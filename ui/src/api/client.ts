@@ -193,9 +193,10 @@ export const apiClient = {
     return request<AssetGraphResponse>(`/assets/${encodeURIComponent(assetId)}/graph?${query.toString()}`);
   },
 
-  async listCapabilities(): Promise<CapabilitiesResponse> {
-    if (this.isMock) return mockHandlers.listCapabilities();
-    return request<CapabilitiesResponse>('/capabilities');
+  async listCapabilities(campaignId?: string): Promise<CapabilitiesResponse> {
+    if (this.isMock) return mockHandlers.listCapabilities(campaignId);
+    const query = campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : '';
+    return request<CapabilitiesResponse>(`/capabilities${query}`);
   },
 
   async getProvenance(targetId: string): Promise<ProvenanceDetail | null> {
