@@ -1,0 +1,24 @@
+{
+  "id": "chatcmpl-fake-0001",
+  "model": "configured-model-2026-01-01",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_01934f6a0000700080000000a0000001",
+            "type": "function",
+            "function": {
+              "name": "dns/enumerate-subdomains",
+              "arguments": "{\"targets\": [\"example.test\"]}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": { "prompt_tokens": 120, "completion_tokens": 18 }
+}
