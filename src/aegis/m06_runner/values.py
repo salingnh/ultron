@@ -8,7 +8,12 @@ every M06 module converts through `text()` instead of `str()`.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+#: Prefixes of `common/ids.v2` canonical keys (`dns:`, `ip:`, `url:`, `service:`, `app:`). A target
+#: value handed to a tool has them stripped: they are platform notation, not part of the name.
+TARGET_PREFIXES = re.compile(r"^(?:dns|ip|url|service|app):")
 
 
 def text(value: Any) -> str:

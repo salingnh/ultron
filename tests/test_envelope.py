@@ -262,3 +262,84 @@ def test_evidence_object_port_shape_is_what_the_envelope_claims() -> None:
     built = _build(evidence=[reference])
     assert built.evidence[0].local_ref == "raw"
     assert built.evidence[0].classification == Classification.PUBLIC
+
+
+# --- the parser result shape the adapters really produce (G1.5c) ------------------------------
+# `contracts/tests/conformance/harness.py` hands a parser one evidence entry named `raw`, lets it
+# report `coverage_subjects`, and the collector stamps `observed_at`. The adapters follow that, so
+# the collector must accept it: a real job's envelope would otherwise be rejected (or worse, its
+# records quarantined by M27), which is what the G1.5c demo found.
+
+
+def test_the_collector_turns_coverage_subjects_into_the_envelope_coverage() -> None:
+    results = {
+        "assets": [],
+        "observations": [
+            {"subject": "dns:a.internal.example", "predicate": "asset.seen", "value": True}
+        ],
+        "relationships": [],
+        "findings": [],
+        "coverage_subjects": ["dns:internal.example", "dns:b.internal.example"],
+    }
+    built = _build(results=results)
+    from aegis.m06_runner.values import text as plain
+
+    assert [plain(item) for item in built.coverage.subjects] == [
+        "dns:b.internal.example",
+        "dns:internal.example",
+    ]
+    assert built.coverage.complete is True
+
+
+def test_the_collector_stamps_observed_at_on_every_record() -> None:
+    results = {
+        "assets": [],
+        "observations": [
+            {"subject": "dns:a.internal.example", "predicate": "asset.seen", "value": True}
+        ],
+        "relationships": [
+            {
+                "type": "SUBDOMAIN_OF",
+                "from": "dns:a.internal.example",
+                "to": "dns:internal.example",
+                "confidence": 1.0,
+            }
+        ],
+        "findings": [],
+        "coverage_subjects": ["dns:internal.example"],
+    }
+    from datetime import UTC, datetime
+
+    built = _build(results=results, finished_at="2026-11-24T06:00:00Z")
+    stamped = datetime(2026, 11, 24, 6, 0, tzinfo=UTC)
+    observation_at = built.results.observations[0].observed_at
+    assert observation_at is not None and observation_at.root == stamped
+    relationship_at = built.results.relationships[0].observed_at
+    assert relationship_at is not None and relationship_at.root == stamped
+
+
+def test_a_partial_run_keeps_its_subjects_but_not_a_complete_claim() -> None:
+    results = {
+        "assets": [],
+        "observations": [],
+        "relationships": [],
+        "findings": [],
+        "coverage_subjects": ["dns:internal.example"],
+        "coverage": {"subjects": ["dns:internal.example"], "complete": False},
+    }
+    built = _build(results=results, status="partial")
+    from aegis.m06_runner.values import text as plain
+
+    assert built.coverage.complete is False
+    assert [plain(item) for item in built.coverage.subjects] == ["dns:internal.example"]
+
+
+def test_parser_results_without_coverage_are_still_refused() -> None:
+    results: dict[str, Any] = {
+        "assets": [],
+        "observations": [],
+        "relationships": [],
+        "findings": [],
+    }
+    with pytest.raises(envelopes.EnvelopeError, match="coverage_subjects"):
+        _build(results=results)

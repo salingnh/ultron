@@ -30,6 +30,7 @@ from aegis.m23_graph import contract
 from aegis.m23_graph.models import (
     ASSET_EVENT,
     FINDING_EVENT,
+    OBSERVATION_EVENT,
     AssetSnapshot,
     CypherOp,
     EvidenceSnapshot,
@@ -198,6 +199,7 @@ def plan_round(
     findings: Mapping[str, FindingSnapshot],
     evidence: Mapping[str, EvidenceSnapshot],
     partitions: int,
+    incoming: Mapping[str, Sequence[RelationshipSnapshot]] | None = None,
 ) -> RoundPlan:
     """The Neo4j work and the checkpoint facts of one batch.
 
@@ -212,12 +214,14 @@ def plan_round(
             continue
         applied.append((event.event_id, event.inbox_key))
         if event.type == ASSET_EVENT:
-            _plan_asset(builder, event, assets, relationships, partitions)
+            _plan_asset(builder, event, assets, relationships, partitions, incoming or {})
+        elif event.type == OBSERVATION_EVENT:
+            _plan_observation(builder, event, assets, relationships, partitions, incoming or {})
         elif event.type == FINDING_EVENT:
             _plan_finding(builder, event, assets, findings, evidence, partitions)
-        # observation.changed.v2 and every non-graph event have no statement in the committed
-        # template: the projector still checkpoints past them (the node types they would feed,
-        # `:Observation`/`:Target`/`:Campaign`/`:Job`, have no projector statement yet).
+        # Every other event has no statement in the committed template: the projector still
+        # checkpoints past it (the node types it would feed - `:Observation`/`:Target`/`:Campaign`/
+        # `:Job` - have no projector statement yet).
     return RoundPlan(
         ops=tuple(builder.ops),
         applied=tuple(applied),
@@ -232,19 +236,84 @@ def _plan_asset(
     assets: Mapping[str, AssetSnapshot],
     relationships: Mapping[str, Sequence[RelationshipSnapshot]],
     partitions: int,
+    incoming: Mapping[str, Sequence[RelationshipSnapshot]],
 ) -> None:
     asset_id = str(event.payload.get("asset_id") or "")
+    revision = int(event.payload.get("revision") or 0) or 0
+    _plan_asset_state(builder, asset_id, revision, assets, relationships, incoming, partitions)
+
+
+def _plan_observation(
+    builder: _Builder,
+    event: OutboxEvent,
+    assets: Mapping[str, AssetSnapshot],
+    relationships: Mapping[str, Sequence[RelationshipSnapshot]],
+    partitions: int,
+    incoming: Mapping[str, Sequence[RelationshipSnapshot]],
+) -> None:
+    """An observation's subject is an asset: plan that asset and its edges.
+
+    The committed template has no `:Observation` statement, but the *asset* an observation is about
+    is in the graph, and this is the event that makes a later edge projectable: `dns.resolve`
+    creates `RESOLVES_TO` edges between a name discovered by an earlier envelope and an address
+    discovered by this one, so no `asset.discovered.v2` in this batch names the edge's start. The
+    payload carries the subject (`subject_id`) and the revision, so re-merging the node and its
+    edges is idempotent (MERGE by `canonical_key`/`relationship_id`) and the incremental projection
+    matches what a rebuild produces.
+    """
+    subject_id = str(event.payload.get("subject_id") or "")
+    revision = int(event.payload.get("revision") or 0) or 0
+    _plan_asset_state(builder, subject_id, revision, assets, relationships, incoming, partitions)
+
+
+def _plan_asset_state(
+    builder: _Builder,
+    asset_id: str,
+    revision: int,
+    assets: Mapping[str, AssetSnapshot],
+    relationships: Mapping[str, Sequence[RelationshipSnapshot]],
+    incoming: Mapping[str, Sequence[RelationshipSnapshot]],
+    partitions: int,
+) -> None:
     snapshot = assets.get(asset_id)
     if snapshot is None:
         return  # the asset row is gone (append-only, so this is a data bug the caller logs)
-    revision = int(event.payload.get("revision") or 0) or 0
+    _plan_node(builder, snapshot, revision, partitions)
+    # The asset's whole neighbourhood, in both directions: M27 opens `DISCOVERED_FROM` from the
+    # source to the asset it found, so a batch naming only the found asset would never plan it.
+    for edge in (*relationships.get(asset_id, ()), *incoming.get(asset_id, ())):
+        # Both ends of an edge must be committed before the statement of phase 1 runs: an edge can
+        # point at an asset no event of this batch discovered (a seed the campaign started from, an
+        # address a later resolver found).
+        start = None
+        for endpoint_id in (edge.from_asset_id, edge.to_asset_id):
+            endpoint = assets.get(endpoint_id)
+            if endpoint is None:
+                continue
+            _plan_node(builder, endpoint, revision, partitions)
+            if endpoint_id == edge.from_asset_id:
+                start = endpoint
+        partition = (
+            partition_of(start.canonical_key, partitions)
+            if start is not None
+            else partition_of(snapshot.canonical_key, partitions)
+        )
+        builder.upsert_edge(_edge_op(edge, partition), edge.relationship_id)
+
+
+def _plan_node(builder: _Builder, snapshot: AssetSnapshot, revision: int, partitions: int) -> int:
+    """Plan one asset node for every campaign it belongs to; returns its partition.
+
+    `campaign_ids` is M27's data (`asset_campaign`): the projector never adds a membership because
+    an edge happens to cross campaigns, it only writes the node with the memberships PostgreSQL
+    already states.
+    """
     partition = partition_of(snapshot.canonical_key, partitions)
     for campaign_id in snapshot.campaign_ids:
         builder.upsert_asset(
-            _asset_op(snapshot, campaign_id, revision, partition), asset_id, campaign_id
+            _asset_op(snapshot, campaign_id, revision, partition), snapshot.asset_id, campaign_id
         )
-    for edge in relationships.get(asset_id, ()):
-        builder.upsert_edge(_edge_op(edge, partition), edge.relationship_id)
+    return partition
 
 
 def _plan_finding(

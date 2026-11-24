@@ -31,6 +31,7 @@ from typing import Any
 
 from aegis.common.ports import ContainerRunner, ContainerSpec, RunHandle, RunState
 from aegis.m06_runner import netpolicy
+from aegis.m06_runner.lab import LabJob, LabProfile
 
 PODMAN = os.environ.get("AEGIS_PODMAN") or shutil.which("podman") or "podman"
 ROLE_LABEL = "aegis.role"
@@ -130,7 +131,10 @@ class PodmanRunner(ContainerRunner):
     network_pool: str = "10.97.0.0/16"
     network_prefix: int = 24
     poll_seconds: float = 0.2
+    #: Deployment profile of the authorized lab (G1.5c); None means "never run on the lab".
+    lab: LabProfile | None = None
     _subnets: dict[str, str] = field(default_factory=dict, init=False)
+    _images: dict[str, str] = field(default_factory=dict, init=False)
 
     # -- layout -----------------------------------------------------------------------------
 
@@ -171,17 +175,73 @@ class PodmanRunner(ContainerRunner):
             # Idempotent by job id: a restarted runner adopts the container instead of starting a
             # second one (a retry is a new attempt, not a second container for the same job).
             return RunHandle(job_id=spec.job_id, container_id=existing)
-        network = "none"
-        if spec.network == "exec":
+        lab = self.lab_for(spec.image_digest)
+        network = self.lab.network if (lab is not None and self.lab is not None) else "none"
+        if lab is None and spec.network == "exec":
             network = self._ensure_network(spec.job_id)
-        argv = self._run_argv(spec, layout, network)
-        started = _podman(*argv, timeout=120)
+        argv = self._run_argv(spec, layout, network, lab=lab)
+        try:
+            started = _podman(*argv, timeout=120)
+        except subprocess.CalledProcessError as failure:
+            # A sandbox that cannot start is a job error, never an exception that escapes the
+            # runner loop: `JobRunner` records INTERNAL_ERROR and discards what was prepared.
+            raise RunnerError(
+                f"podman could not start the job: {(failure.stderr or '').strip()[:2000]}"
+            ) from failure
         lines = started.stdout.strip().splitlines()
         if not lines:
             raise RunnerError(f"podman run did not report a container id: {started.stderr.strip()}")
         container_id = lines[-1]
-        self._write_markers(spec.job_id, {"job_id": spec.job_id, "spec": _spec_document(spec)})
+        markers: dict[str, object] = {"job_id": spec.job_id, "spec": _spec_document(spec)}
+        if lab is not None and self.lab is not None:
+            markers["lab"] = {"network": self.lab.network, "args": list(lab.args)}
+        self._write_markers(spec.job_id, markers)
         return RunHandle(job_id=spec.job_id, container_id=container_id)
+
+    def image_reference(self, image_digest: str) -> str:
+        """A runnable Podman reference for a contract `ImageDigest`.
+
+        A manifest pins the **registry** digest of the provider image (`deploy/lab/images.env`,
+        OCI *manifest-list* digest), and Podman only accepts that digest next to a repository name
+        (`docker.io/projectdiscovery/subfinder@sha256:...`); bare `sha256:...` resolves only for a
+        local image id. So: a local image whose repo digest is exactly this digest wins, and
+        anything else is passed through unchanged (an image id, which is what the tests' probe
+        image is). Nothing is pulled: the pinned digest must already be on the host.
+        """
+        cached = self._images.get(image_digest)
+        if cached is not None:
+            return cached
+        listed = _podman(
+            "images", "--digests", "--format", "{{.Repository}}@{{.Digest}}", check=False
+        )
+        for line in listed.stdout.splitlines():
+            repository, _, digest = line.partition("@")
+            if digest == image_digest and repository and "<none>" not in repository:
+                reference = f"{repository}@{digest}"
+                self._images[image_digest] = reference
+                return reference
+        self._images[image_digest] = image_digest
+        return image_digest
+
+    def lab_for(self, image_digest: str) -> LabJob | None:
+        """The lab profile entry of a pinned image, or None (the runner then behaves as before)."""
+        return None if self.lab is None else self.lab.for_image(image_digest)
+
+    def owned_jobs(self) -> tuple[str, ...]:
+        """Job ids of this runner's containers (running, exited or created), sorted."""
+        return tuple(sorted({job_id for _name, job_id in self._containers(JOB_ROLE)}))
+
+    def started(self, job_id: str) -> bool:
+        """True when this runner has a job directory for the job (it began it at some point).
+
+        A runner that was killed between claiming a job and starting its container leaves a row in
+        `RUNNING` and nothing on the host but this directory, so it is the record that makes such a
+        job resumable by this runner and by no other.
+        """
+        try:
+            return self.layout(job_id).root.exists()
+        except RunnerError:
+            return False
 
     def inspect(self, handle: RunHandle) -> RunState:
         data = self._inspect(self.container_name(handle.job_id))
@@ -456,7 +516,9 @@ class PodmanRunner(ContainerRunner):
 
     # -- internals --------------------------------------------------------------------------
 
-    def _run_argv(self, spec: ContainerSpec, layout: JobLayout, network: str) -> list[str]:
+    def _run_argv(
+        self, spec: ContainerSpec, layout: JobLayout, network: str, *, lab: LabJob | None = None
+    ) -> list[str]:
         argv = [
             "run",
             "--detach",
@@ -497,12 +559,21 @@ class PodmanRunner(ContainerRunner):
             argv += ["--cap-add=NET_RAW"]
         # Never host network, never the Podman socket, never --privileged.
         argv += ["--network", network if network != "none" else "none"]
+        if lab is not None:
+            # The lab deployment profile: its network was passed in as `network`, and these are the
+            # endpoint data the lab needs (resolver flag, /etc/hosts, CA). Trusted deploy config,
+            # never a job input - see aegis.m06_runner.lab.
+            argv += lab.argv()
         for key, value in self._egress_env(spec).items():
             argv += ["--env", f"{key}={value}"]
         argv += ["--mount", f"type=bind,src={layout.output},dst=/out,rw,Z"]
         if any(layout.input.iterdir()):
             argv += ["--mount", f"type=bind,src={layout.input},dst=/in,ro,Z"]
-        argv += [spec.image_digest, *spec.args]
+        argv += [
+            self.image_reference(spec.image_digest),
+            *spec.args,
+            *(lab.args if lab is not None else ()),
+        ]
         return argv
 
     @staticmethod

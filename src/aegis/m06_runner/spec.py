@@ -623,8 +623,15 @@ def build_spec(
     target_denylist: Sequence[str] = (),
     manifest_bytes: bytes | None = None,
     resolver: netpolicy.Resolver | None = None,
+    lab_network: bool = False,
 ) -> ContainerSpec:
-    """Assemble the sandbox spec of one job, or raise `SpecError` before anything runs."""
+    """Assemble the sandbox spec of one job, or raise `SpecError` before anything runs.
+
+    `lab_network` is the G1.5c deployment exception: the job runs on the authorized lab network
+    (`aegis-lab-lab`, internal, no gateway) instead of its own per-job network, so it needs no
+    broker proxy. The egress binding is still computed and checked (E-1); only where the container
+    is attached changes, and only an explicit lab profile in the runner can ask for it.
+    """
     verify_task(task_body, key_ring)
     _check_pins(task, manifest, manifest_bytes)
     runtime = manifest.spec.runtime
@@ -654,7 +661,7 @@ def build_spec(
         target_denylist=target_denylist,
         resolver=resolver,
     )
-    if egress and broker_proxy is None:
+    if egress and broker_proxy is None and not lab_network:
         raise SpecError("POLICY_DENIED", "an egress job needs the broker proxy of its network")
     if permissions.targetBinding == "required" and not policy.target_ips:
         raise SpecError(
@@ -672,6 +679,6 @@ def build_spec(
         network="exec" if egress else "none",
         egress_mode="broker" if egress else None,
         egress_binding=policy.binding_hosts,
-        egress_proxy=broker_proxy if egress else None,
+        egress_proxy=broker_proxy if egress and not lab_network else None,
         raw_socket=bool(permissions.rawSocket),
     )

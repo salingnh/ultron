@@ -34,6 +34,7 @@ from aegis.m23_graph import graph, pg
 from aegis.m23_graph.models import (
     ASSET_EVENT,
     FINDING_EVENT,
+    OBSERVATION_EVENT,
     CypherOp,
     OutboxEvent,
     ProjectorStats,
@@ -68,12 +69,20 @@ class ProjectorBusy(RuntimeError):
     """Another live holder owns the dispatcher lease; a second projector must not run."""
 
 
+HOLDER_ENV = "AEGIS_PROJECTOR_HOLDER"
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectorConfig:
     """Tunables of one projector process; all of them have an environment override."""
 
     consumer: str = DEFAULT_CONSUMER
     dispatcher: str = "m23-projector"
+    #: Identity that holds the dispatcher lease. Default: this process (`host:pid`), so a restart
+    #: waits out the previous lease (60 s). A deployment that restarts the projector as a service
+    #: pins `AEGIS_PROJECTOR_HOLDER` to a stable name: the restart takes its own lease back at once,
+    #: and the fencing token (`take_lease` increments it) still invalidates the old process, so two
+    #: projectors can never write at the same time.
     holder: str = f"{socket.gethostname()}:{os.getpid()}"
     batch: int = 1000
     partitions: int = 4
@@ -90,6 +99,7 @@ class ProjectorConfig:
     def from_env(cls) -> ProjectorConfig:
         return cls(
             consumer=os.environ.get(CONSUMER_ENV, DEFAULT_CONSUMER),
+            holder=os.environ.get(HOLDER_ENV, "") or f"{socket.gethostname()}:{os.getpid()}",
             batch=int(os.environ.get("AEGIS_PROJECTOR_BATCH", "1000")),
             partitions=int(os.environ.get("AEGIS_PROJECTOR_PARTITIONS", "4")),
             poll_seconds=int(os.environ.get("AEGIS_PROJECTOR_POLL_MS", "50")) / 1000,
@@ -257,6 +267,18 @@ class Projector:
             )
         seen = pg.read_inbox(self._conn, self.config.consumer, [event.inbox_key for event in batch])
         assets = pg.prefetch_assets(self._conn, self._asset_ids(batch))
+        # An edge's other end may be an asset no event of this batch names (a seed, an address a
+        # later resolver found): fetch those nodes too, so the edge's phase can MERGE onto them.
+        edges = pg.prefetch_relationships(self._conn, list(assets))
+        incoming = pg.prefetch_incoming_relationships(self._conn, list(assets))
+        endpoint_ids = {
+            endpoint
+            for group in (*edges.values(), *incoming.values())
+            for edge in group
+            for endpoint in (edge.from_asset_id, edge.to_asset_id)
+        } - set(assets)
+        if endpoint_ids:
+            assets = {**assets, **pg.prefetch_assets(self._conn, sorted(endpoint_ids))}
         findings = pg.prefetch_findings(
             self._conn, pg.event_ids(batch, FINDING_EVENT, "finding_id")
         )
@@ -272,7 +294,8 @@ class Projector:
             batch,
             seen=seen,
             assets=assets,
-            relationships=pg.prefetch_relationships(self._conn, list(assets)),
+            relationships=edges,
+            incoming=incoming,
             findings=findings,
             evidence=evidence,
             partitions=max(self.config.partitions, 1),
@@ -331,7 +354,11 @@ class Projector:
         )
 
     def _asset_ids(self, batch: list[OutboxEvent]) -> list[str]:
-        return pg.event_ids(batch, ASSET_EVENT, "asset_id")
+        """Every asset this batch can change: a discovered one, or an observation's subject."""
+        return [
+            *pg.event_ids(batch, ASSET_EVENT, "asset_id"),
+            *pg.event_ids(batch, OBSERVATION_EVENT, "subject_id"),
+        ]
 
     def _apply(self, ops: list[CypherOp]) -> int:
         """Apply one phase, one Neo4j transaction per partition, all partitions in parallel."""

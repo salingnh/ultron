@@ -36,8 +36,14 @@ from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import collector, parser_host
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner import spec as specs
+from aegis.m06_runner import values as texts
 from aegis.m06_runner.collector import CollectionError, CollectionResult
-from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle, LifecycleError
+from aegis.m06_runner.lifecycle import (
+    TERMINAL_DB_STATUSES,
+    JobClaim,
+    JobLifecycle,
+    LifecycleError,
+)
 from aegis.m06_runner.podman import JobLayout, PodmanRunner, RunnerError, WaitResult
 from aegis.m06_runner.values import text
 from aegis.m28_evidence.catalog import CatalogError, EvidenceCatalog
@@ -128,9 +134,17 @@ class JobRunner:
     # -- public -----------------------------------------------------------------------------
 
     def prepare(self, plan: JobPlan) -> tuple[Any, Any]:
-        """The spec and egress policy of the job, before any container exists."""
+        """The spec and egress policy of the job, before any container exists.
+
+        A job whose pinned image has a lab profile entry (G1.5c) runs on the authorized lab network
+        instead of its own per-job network, so it gets no broker proxy and no job network is
+        created; the egress policy is still built and checked (E-1) so the task's binding is
+        verified exactly as for any other job.
+        """
         body = _task_body(plan)
-        self.runner.ensure_network(plan.job_id)
+        lab = self.runner.lab_for(text(plan.task.image_digest))
+        if lab is None:
+            self.runner.ensure_network(plan.job_id)
         try:
             policy = specs.build_policy(
                 plan.task,
@@ -142,7 +156,11 @@ class JobRunner:
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
             )
-            proxy = self.runner.broker_proxy(plan.job_id) if policy.mode == "egress" else None
+            proxy = (
+                self.runner.broker_proxy(plan.job_id)
+                if policy.mode == "egress" and lab is None
+                else None
+            )
             spec = specs.build_spec(
                 plan.task,
                 plan.manifest,
@@ -154,6 +172,7 @@ class JobRunner:
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
                 manifest_bytes=plan.manifest_bytes,
+                lab_network=lab is not None,
             )
         except Exception:
             self.runner.discard(plan.job_id)
@@ -210,6 +229,39 @@ class JobRunner:
                         )
                     ],
                 )
+        return self._run_claimed(plan, claim, cancel, adopted=False)
+
+    def resume(
+        self, plan: JobPlan, claim: JobClaim, *, cancel: Callable[[], bool] | None = None
+    ) -> JobOutcome:
+        """Continue a job this runner already claimed (a restarted runner, G1.5c).
+
+        The container is adopted by name in `PodmanRunner.run` (idempotent by job id), so a job
+        interrupted by a dead process reaches exactly one terminal row and one envelope: the tool
+        keeps running in its container, and what it wrote is collected once. The generation and
+        attempt come from the row, so the terminal callback is still the contract's compare-and-set.
+        """
+        return self._run_claimed(plan, claim, cancel, adopted=True)
+
+    def _run_claimed(
+        self,
+        plan: JobPlan,
+        claim: JobClaim | None,
+        cancel: Callable[[], bool] | None,
+        *,
+        adopted: bool,
+    ) -> JobOutcome:
+        """Run or adopt one claimed job: prepare, run, collect, parse, submit, terminalize."""
+        move_to_running = claim is not None and self.lifecycle is not None
+        if adopted and claim is not None and self.lifecycle is not None:
+            # A resumed job is normally already RUNNING; only a runner that died between claiming
+            # and starting the container still has its row in DISPATCHED. Either way the row says
+            # whether a container may exist for this attempt, and it is read once, before anything
+            # starts.
+            current = self.lifecycle.status(plan.job_id)
+            if current in TERMINAL_DB_STATUSES:
+                return JobOutcome(job_id=plan.job_id, status="skipped", error=f"JOB_{current}")
+            move_to_running = current == "DISPATCHED"
         signal = _CancelSignal(
             cancel, self.lifecycle, plan.job_id, interval_seconds=self.cancel_poll_seconds
         )
@@ -227,7 +279,10 @@ class JobRunner:
             layout = self.runner.layout(plan.job_id).create()
             self._write_inputs(layout.input, plan.input)
             try:
-                if policy.mode == "egress":
+                if (
+                    policy.mode == "egress"
+                    and self.runner.lab_for(text(plan.task.image_digest)) is None
+                ):
                     self.runner.start_broker(plan.job_id, policy)
                 started_at = envelopes.now_timestamp()
                 handle = self.runner.run(spec)
@@ -244,7 +299,7 @@ class JobRunner:
                 outcome.error = str(error)
                 return outcome
             try:
-                if claim is not None and self.lifecycle is not None:
+                if move_to_running and self.lifecycle is not None and claim is not None:
                     if not self.lifecycle.running(claim):
                         self.runner.stop(handle)
                         outcome.status = "skipped"
@@ -361,9 +416,19 @@ class JobRunner:
 
     @staticmethod
     def _write_inputs(input_dir: Path, input_values: Mapping[str, Any]) -> None:
+        """Write the tool's input files; a target is written as the tool's value, not as a key.
+
+        `input.targets` carries the contract's `DomainTarget`/`CanonicalKey` form, where the
+        `dns:`/`ip:`/`url:`/... prefix is optional platform notation. A tool reading
+        `/in/targets.txt` (the pinned `argsTemplate` of both DNS adapters) understands names and
+        addresses, never our prefixes: writing `dns:lab.aegis.test` into the file makes Subfinder
+        enumerate nothing at all, silently. So the known canonical prefixes are stripped here, once,
+        and the parser keeps working on the keys it is handed.
+        """
         targets = input_values.get("targets")
         if isinstance(targets, list) and all(isinstance(item, str) for item in targets):
-            (input_dir / "targets.txt").write_text("\n".join(targets) + "\n", encoding="utf-8")
+            values = [texts.TARGET_PREFIXES.sub("", item, count=1) for item in targets]
+            (input_dir / "targets.txt").write_text("\n".join(values) + "\n", encoding="utf-8")
 
     def _collect(
         self, plan: JobPlan, spec: ContainerSpec, layout: JobLayout, outcome: JobOutcome
@@ -487,6 +552,49 @@ class JobRunner:
                     next_action="FIX_INPUT",
                 )
             )
+            return
+        problem = self._resolve_raw_refs(outcome, [ref.local_ref for ref in outcome.references])
+        if problem is not None:
+            outcome.error = problem
+            outcome.errors.append(
+                envelopes.error_object(
+                    "OUTPUT_INVALID",
+                    "the adapter parser referenced evidence the job does not have",
+                    technical_cause=problem[:4000],
+                    next_action="FIX_INPUT",
+                )
+            )
+
+    @staticmethod
+    def _resolve_raw_refs(outcome: JobOutcome, refs: list[str]) -> str | None:
+        """Make a parser's contract `raw` evidence ref name a file the envelope actually carries.
+
+        `interfaces/README.md` §1 and `contracts/tests/conformance/harness.py` hand a parser one
+        evidence entry called `raw` (the tool's output), and both adapters emit
+        `evidence_refs: [{local_ref: raw}]` because that is what they were given. The collector
+        names its files after their path (`result-jsonl`), which is what the envelope publishes, so
+        a `raw` ref has to be resolved once, here: to the job's single top-level output file (the
+        tool writes into the manifest's `outputPath`). More than one candidate is a contract
+        ambiguity that must fail loudly, not pick one.
+        """
+        if outcome.parser is None or not isinstance(outcome.parser.result, dict):
+            return None
+        raw_candidates = [ref for ref in refs if "/" not in ref]
+        known = set(refs)
+        for collection in ("observations", "relationships", "findings"):
+            items = outcome.parser.result.get(collection) or []
+            for item in items:
+                for reference in item.get("evidence_refs") or []:
+                    local_ref = reference.get("local_ref")
+                    if local_ref not in (None, "raw") or local_ref in known:
+                        continue
+                    if len(raw_candidates) != 1:
+                        return (
+                            "OUTPUT_INVALID: the parser referenced 'raw' but the job wrote "
+                            f"{len(raw_candidates)} top-level output files, so 'raw' is ambiguous"
+                        )
+                    reference["local_ref"] = raw_candidates[0]
+        return None
 
     @staticmethod
     def _status_of(outcome: JobOutcome) -> tuple[EnvelopeStatus, list[dict[str, Any]]]:
@@ -535,9 +643,10 @@ class JobRunner:
         if outcome.parser is None or outcome.parser.result is None:
             return
         results = dict(outcome.parser.result)
-        coverage = results.get("coverage")
-        if isinstance(coverage, Mapping) and outcome.status != "succeeded":
-            results["coverage"] = {**coverage, "complete": False}
+        subjects = results.get("coverage_subjects")
+        if isinstance(subjects, list) and outcome.status != "succeeded":
+            # A partial run still names what it checked, but must not claim a complete coverage.
+            results["coverage"] = {"subjects": subjects, "complete": False}
         try:
             envelope = envelopes.build_envelope(
                 task=plan.task,
