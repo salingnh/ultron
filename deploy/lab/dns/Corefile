@@ -1,0 +1,11 @@
+# Authoritative resolver for the authorized AEGIS lab zone (G0.4c).
+#
+# The container is started with `-conf /etc/coredns/Corefile`; the image does not default to
+# this path. Only the lab zone is served: queries for any other name get REFUSED, which the
+# dnsx fixture records as a deliberate probe of the lab boundary.
+
+lab.aegis.test:53 {
+    errors
+    log
+    file /etc/coredns/lab.aegis.test.zone
+}

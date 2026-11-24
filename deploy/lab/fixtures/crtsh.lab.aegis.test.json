@@ -1,0 +1,10 @@
+[
+  {
+    "id": 202611241,
+    "entry_timestamp": "2026-11-24T00:00:00.000",
+    "not_before": "2026-11-01T00:00:00",
+    "not_after": "2027-11-01T00:00:00",
+    "common_name": "lab.aegis.test",
+    "name_value": "www.lab.aegis.test\nvpn.lab.aegis.test\napi.lab.aegis.test\nwww.lab.aegis.test\n*.lab.aegis.test\nnot-lab.example.com"
+  }
+]

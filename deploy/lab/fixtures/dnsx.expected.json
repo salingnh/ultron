@@ -1,0 +1,12 @@
+{
+  "zone": "lab.aegis.test.",
+  "resolver": "10.114.53.53",
+  "probes": [
+    {"host": "www.lab.aegis.test", "status_code": "NOERROR", "a": ["203.0.113.10"], "aaaa": ["2001:db8::10"], "cname": []},
+    {"host": "api.lab.aegis.test", "status_code": "NOERROR", "a": ["203.0.113.30"], "aaaa": [], "cname": []},
+    {"host": "mail.lab.aegis.test", "status_code": "NOERROR", "a": ["203.0.113.20"], "aaaa": [], "cname": []},
+    {"host": "vpn.lab.aegis.test", "status_code": "NOERROR", "a": ["203.0.113.10"], "aaaa": ["2001:db8::10"], "cname": ["www.lab.aegis.test"]},
+    {"host": "ghost.lab.aegis.test", "status_code": "NXDOMAIN", "a": [], "aaaa": [], "cname": []},
+    {"host": "example.com", "status_code": "REFUSED", "a": [], "aaaa": [], "cname": []}
+  ]
+}

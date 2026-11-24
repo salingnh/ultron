@@ -1,6 +1,6 @@
 # TASKS
 
-G0 đã nghiệm thu phần contract, spike và sizing; kết luận spike G0.1/G0.2/G0.3a, bảng pin và môi trường dev/CI còn chờ merge PR #13/#9/#7/#14 vào `main`. Cổng G0 còn mở ở lab mục tiêu và quyết định của chủ sản phẩm, ghi ở PROGRESS (mục Hồ sơ cổng G0). Thứ tự và nghiệm thu theo [quyết định kiến trúc](docs/s1/00-thanh-phan-va-quyet-dinh.md). Đây là backlog duy nhất. Chỉ làm giai đoạn đang mở trừ phần chủ sản phẩm trực tiếp yêu cầu. Trạng thái kiểm chứng ở PROGRESS, cổng giao hàng ở kế hoạch triển khai.
+G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trường dev + CI (#14) và lab mục tiêu (#27). Cổng G0 đạt theo [PROGRESS](PROGRESS.md) mục Hồ sơ cổng G0: OD-2 chuyển sang G1 với fake model; Product Team ký cổng đã ghi nhận (leader ký dưới ủy quyền của chủ, 2026-11-24). Thứ tự và nghiệm thu theo [quyết định kiến trúc](docs/s1/00-thanh-phan-va-quyet-dinh.md). Đây là backlog duy nhất. Chỉ làm giai đoạn đang mở trừ phần chủ sản phẩm trực tiếp yêu cầu. Trạng thái kiểm chứng ở PROGRESS, cổng giao hàng ở kế hoạch triển khai.
 
 ## G0 — khóa contract và spike
 
@@ -13,13 +13,13 @@ G0 đã nghiệm thu phần contract, spike và sizing; kết luận spike G0.1/
 - [x] S1.5 Khóa input/output schema cho chuỗi tool đầu tiên, actor/provenance mọi job, query limits/truncation và registry/adapter conformance; review cổng S1 (C05).
 - [x] S1.6 Khóa đường chuyển campaign/cấu hình đã lưu sang contract hiện hành: snapshot JSON cũ bất biến và current_policy_version không tự thành cấu hình mới. Tạo snapshot hợp lệ, xử lý job đang chạy/chờ và test; không tự resume dữ liệu cũ.
 - [x] S1.7 Đóng N01–N06 ở [C08](docs/living/dac-ta-ky-thuat/05-du-lieu-api-su-kien.md#c08--kiểm-biên-schema-và-openapi): OpenAPI đầy đủ, identity/input, severity event, khung giờ, usage và response đúng phạm vi; kiểm conformance Python 3.12 và migration giữ lịch sử.
-- [ ] G0.1 Spike Temporal/LangGraph restart/replay/cancel; quyết định cách lồng phiên theo kết quả — đạt nghiệm thu, chờ merge #13 vào `main`.
-- [ ] G0.2 Spike Podman/network/resource limits và raw socket; kiểm parser/collector isolation; BBOT thụ động: ánh xạ JSON → ResultEnvelope và giấy phép bản pin; khóa version/digest/giấy phép tool được chọn — đạt nghiệm thu, chờ merge #9 vào `main`.
-- [ ] G0.3a Spike MCP transport/_meta/idempotency/query và đo latency — đạt nghiệm thu, chờ merge #7 vào `main`.
+- [x] G0.1 Spike Temporal/LangGraph restart/replay/cancel; quyết định cách lồng phiên theo kết quả (#13).
+- [x] G0.2 Spike Podman/network/resource limits và raw socket; kiểm parser/collector isolation; BBOT thụ động: ánh xạ JSON → ResultEnvelope và giấy phép bản pin; khóa version/digest/giấy phép tool được chọn (#9).
+- [x] G0.3a Spike MCP transport/_meta/idempotency/query và đo latency (#7).
 - [x] G0.3b Spike graph upsert đồng thời và replay/rebuild (kết luận ở #19, migration 0013 ở #22).
 - [x] G0.3c Khóa quy tắc chuẩn hóa/identity có golden fixtures (#18).
-- [ ] G0.4a/b Dựng môi trường dev PostgreSQL/Neo4j/S3/Temporal/Podman trên máy đã có, bootstrap bằng một lệnh; nối schema/conformance vào CI — đạt nghiệm thu, chờ merge #14 vào `main`.
-- [ ] G0.4c Lab mục tiêu được phép và fixture schema/parser/adapter trên lab: chờ OD-1.
+- [x] G0.4a/b Dựng môi trường dev PostgreSQL/Neo4j/S3/Temporal/Podman trên máy đã có, bootstrap bằng một lệnh; nối schema/conformance vào CI (#14).
+- [x] G0.4c Lab mục tiêu được phép và fixture schema/parser/adapter trên lab: lab DNS nội bộ + passive stub, Subfinder/DNSx chạy tái lập được và so fixture (#27, `deploy/lab/`).
 - [x] G0.4d Đo capacity/sizing theo mục tiêu NFR, ước lượng backlog từ workload đã khóa (#21).
 
 ## G1 — vòng nền tảng
