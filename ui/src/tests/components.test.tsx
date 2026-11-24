@@ -76,7 +76,25 @@ describe('Ultron UI Reusable Components', () => {
     expect(screen.getByText('subfinder')).toBeInTheDocument();
     expect(screen.getByText('v2.17.0')).toBeInTheDocument();
     expect(screen.getByText('1e1c8bcdd33168e15528d61a006bf5e5e5a31e5b8e4d4d4f1f10ad0876240a9f')).toBeInTheDocument();
+    expect(screen.getByText('Bằng chứng SHA-256 (Evidence SHA-256)')).toBeInTheDocument();
     expect(screen.getByText('90%')).toBeInTheDocument();
+  });
+
+  it('renders ProvenancePanel with Evidence ID when returned without SHA-256', () => {
+    const mockProvenance = {
+      tool: 'subfinder',
+      version: 'v2.6.8',
+      jobId: '01a20cfb-fa5e-7002-b2ff-03d86947d84b',
+      observedAt: '2026-11-24T16:56:11Z',
+      evidenceIds: ['01a20cfc-0041-75b1-b041-ccf5c4fba5a8'],
+      sourceAsset: 'dns:www.lab.aegis.test',
+      targetAsset: 'dns:lab.aegis.test',
+    };
+
+    render(<ProvenancePanel data={mockProvenance} onClose={() => {}} />);
+    expect(screen.getByText('Mã bằng chứng (Evidence ID)')).toBeInTheDocument();
+    expect(screen.getByText('01a20cfc-0041-75b1-b041-ccf5c4fba5a8')).toBeInTheDocument();
+    expect(screen.queryByText('Bằng chứng SHA-256 (Evidence SHA-256)')).not.toBeInTheDocument();
   });
 
   it('renders ErrorDisplay with standard error code, description, and next_action', () => {

@@ -17,7 +17,7 @@ Operations console for Ultron security orchestration, implementing Item #51 (Car
 3. **Asset Graph & Provenance Panel (`/assets`)**
    - SVG topology graph displaying assets (domains, IPs, services) and relationships.
    - Truncated banner notification when query limits cap result sets (`truncated: true`).
-   - Slide-over Provenance Panel displaying tool name, tool version, job ID, observation timestamps, confidence bar, and full unmasked 64-character SHA-256 evidence digests.
+   - Slide-over Provenance Panel displaying tool name, tool version, job ID, observation timestamps, confidence bar, and unmasked evidence IDs (UUIDv7) as returned by `/assets/{id}/history`.
 
 4. **Tool Catalogue (`/capabilities`)**
    - Operations catalogue listing all registered execution tools and adapters.
@@ -87,7 +87,7 @@ VITE_USE_MOCK=true npm run dev
 - **Kế hoạch & Luồng Job (`/jobs`)**: Chuyển đổi giữa bảng Job chi tiết và Đồ thị Luồng tương tác (React Flow).
 - **Đồ thị Tri thức & Nguồn gốc Tài sản (`/assets`)**:
   - Khảo sát các đỉnh (Node: tên miền, IP) và cạnh quan hệ (Edge: SUBDOMAIN_OF, RESOLVES_TO).
-  - Nhấp vào bất kỳ Node hoặc Edge để mở **Bảng điều khiển Nguồn gốc (Provenance Panel)** ở cạnh phải, hiển thị đầy đủ công cụ trinh sát, phiên bản, Job ID, thời điểm quan sát, độ tin cậy và mã băm bằng chứng SHA-256 không bị che giấu.
+  - Nhấp vào bất kỳ Node hoặc Edge để mở **Bảng điều khiển Nguồn gốc (Provenance Panel)** ở cạnh phải, hiển thị đầy đủ công cụ trinh sát, phiên bản, Job ID, thời điểm quan sát, độ tin cậy và mã bằng chứng (Evidence ID) không bị che giấu.
   - Chuyển sang **Bảng Tài sản** để xem dưới dạng bảng mật độ cao kèm bộ lọc theo loại tài sản (`domain`, `ip`) và tìm kiếm canonical key.
 - **Danh mục Công cụ (`/tools`)**: Xem trạng thái đăng ký M05, phiên bản OCI container sandbox và sức khỏe các công cụ trinh sát.
 
@@ -145,3 +145,9 @@ npm run build
   ```bash
   npm run test:e2e
   ```
+
+### Isolated E2E Mutation Testing Guard
+The live SSE mutation test (`Test 3` in `ui/e2e/screens.spec.ts` using `ui/e2e/terminalise.py`) creates and transitions a job to verify real-time status updates without reload:
+- To protect soak environments and shared databases, mutating operations (`prepare`, `terminalise`) **strictly require** `AEGIS_E2E_THROWAWAY_DSN`.
+- `terminalise.py` explicitly refuses execution if `AEGIS_E2E_THROWAWAY_DSN` matches `AEGIS_PG_DSN` or if the target database contains any non-test campaigns (e.g. soak campaigns).
+- When `AEGIS_E2E_THROWAWAY_DSN` is unset (such as in CI or local developer runs against the soak stack), the mutation test is safely skipped.

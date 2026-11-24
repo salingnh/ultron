@@ -1,4 +1,5 @@
 """Helper for Playwright live status change test: creates fresh job, moves to RUNNING, and triggers real M06 terminal callback + outbox event."""
+import os
 import sys
 from pathlib import Path
 
@@ -10,15 +11,59 @@ from tests.db_support import SeededCampaign
 from tests.g15a_support import emit_event, job_completed_payload
 from tests.m02_support import accept_job, run_job, service
 
+THROWAWAY_DSN_ENV = "AEGIS_E2E_THROWAWAY_DSN"
+PG_DSN_ENV = "AEGIS_PG_DSN"
+
+
+def verify_throwaway_database(dsn: str) -> None:
+    """Refuse to touch any database that is not an explicit throwaway test DB or contains non-test campaigns."""
+    required_dsn = os.environ.get(THROWAWAY_DSN_ENV)
+    if not required_dsn:
+        print(
+            f"REFUSED: mutating operations (prepare/terminalise) require explicit {THROWAWAY_DSN_ENV} "
+            f"environment variable to prevent modifying soak or shared databases."
+        )
+        sys.exit(10)
+
+    if dsn != required_dsn:
+        print(f"REFUSED: passed DSN does not match {THROWAWAY_DSN_ENV}.")
+        sys.exit(11)
+
+    soak_dsn = os.environ.get(PG_DSN_ENV)
+    if soak_dsn and dsn == soak_dsn:
+        print(
+            f"REFUSED: {THROWAWAY_DSN_ENV} must be separate from {PG_DSN_ENV} to prevent writing to soak databases."
+        )
+        sys.exit(12)
+
+    with psycopg.connect(dsn) as conn:
+        # Check if database already contains non-test campaigns (soak, demo, production)
+        rows = conn.execute(
+            """
+            SELECT campaign_id, name FROM aegis.campaign
+            WHERE name NOT LIKE 'E2E Test%' AND name NOT LIKE 'e2e-test%'
+            LIMIT 5
+            """
+        ).fetchall()
+        if rows:
+            print(
+                f"REFUSED: target database contains campaigns not created by e2e test: {rows}. "
+                f"Must use an isolated throwaway database."
+            )
+            sys.exit(13)
+
 
 def main() -> None:
     if len(sys.argv) < 3:
-        print("Usage: python terminalise.py <dsn> <prepare|terminalise> [job_id_or_campaign_id]")
+        print("Usage: python terminalise.py <dsn> <prepare|terminalise|get_asset> [job_id_or_campaign_id]")
         sys.exit(1)
 
     dsn = sys.argv[1]
     action = sys.argv[2]
     target_id = sys.argv[3] if len(sys.argv) > 3 else None
+
+    if action in ("prepare", "terminalise"):
+        verify_throwaway_database(dsn)
 
     if action == "prepare":
         with psycopg.connect(dsn) as conn:

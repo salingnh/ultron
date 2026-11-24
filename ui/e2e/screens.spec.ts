@@ -130,7 +130,9 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     await expect(page.getByText('Chưa có API backend cho Đồ thị Tài sản')).not.toBeVisible();
     const provHeading = page.getByText('Nguồn gốc & Bằng chứng', { exact: true });
     if (await provHeading.isVisible()) {
-      await expect(page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)')).toBeVisible();
+      const hasEvidenceId = await page.getByText('Mã bằng chứng (Evidence ID)').isVisible();
+      const hasSha256 = await page.getByText('Bằng chứng SHA-256 (Evidence SHA-256)').isVisible();
+      expect(hasEvidenceId || hasSha256).toBe(true);
     }
     await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
 
@@ -151,11 +153,12 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
   });
 
   test('Live update: a status change made via API appears in the UI within 2 s without reload', async ({ page }) => {
-    const isRealMode = process.env.VITE_USE_MOCK === 'false' && Boolean(process.env.AEGIS_PG_DSN);
+    const throwawayDsn = process.env.AEGIS_E2E_THROWAWAY_DSN;
+    const isRealMode = process.env.VITE_USE_MOCK === 'false' && Boolean(throwawayDsn);
     const token = process.env.VITE_BEARER_TOKEN || 'token-of-soc-1-0123456789';
-    const pgDsn = process.env.AEGIS_PG_DSN || '';
 
-    if (!isRealMode) {
+    if (!isRealMode || !throwawayDsn) {
+      console.log('AEGIS_E2E_THROWAWAY_DSN not configured; skipping live mutation test to protect soak/production DB.');
       test.skip();
       return;
     }
@@ -183,7 +186,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     // Prepare a fresh RUNNING job in this campaign via real M05 submission & runner dispatch
     let targetJobId = '';
     try {
-      const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', pgDsn, 'prepare', campaignId], {
+      const out = execFileSync('../.venv/bin/python', ['e2e/terminalise.py', throwawayDsn, 'prepare', campaignId], {
         stdio: 'pipe',
       }).toString();
       const match = out.match(/PREPARED_JOB_ID\s+([^\s]+)/);
@@ -211,7 +214,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     await captureScreen(page, '07-live-status-before.png');
 
     // Trigger terminalise of target job via real M06 backend callback and outbox event
-    execFileSync('../.venv/bin/python', ['e2e/terminalise.py', pgDsn, 'terminalise', targetJobId], { stdio: 'pipe' });
+    execFileSync('../.venv/bin/python', ['e2e/terminalise.py', throwawayDsn, 'terminalise', targetJobId], { stdio: 'pipe' });
     const startTime = Date.now();
 
     // Wait for the UI to reflect the status change without page reload (< 2s)

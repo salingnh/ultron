@@ -115,11 +115,20 @@ export const ProvenancePanel: React.FC<ProvenancePanelProps> = ({ data, onClose 
         </div>
       )}
 
-      {(data.sha256 || (data.evidenceIds && data.evidenceIds.length > 0)) && (
+      {data.evidenceIds && data.evidenceIds.length > 0 && (
+        <div className="provenance-item">
+          <span className="provenance-label">Mã bằng chứng (Evidence ID)</span>
+          <div style={{ marginTop: 2, maxWidth: '100%' }}>
+            <CopyableId value={data.evidenceIds[0]} truncate={false} />
+          </div>
+        </div>
+      )}
+
+      {data.sha256 && (
         <div className="provenance-item">
           <span className="provenance-label">Bằng chứng SHA-256 (Evidence SHA-256)</span>
           <div style={{ marginTop: 2, maxWidth: '100%' }}>
-            <CopyableId value={data.sha256 || data.evidenceIds![0]} truncate={false} />
+            <CopyableId value={data.sha256} truncate={false} />
           </div>
         </div>
       )}
