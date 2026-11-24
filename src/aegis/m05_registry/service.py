@@ -28,6 +28,16 @@ schema) is
 `400 INPUT_INVALID` and writes no decision: 0012 requires every new decision to carry resolved refs,
 and
 OpenAPI only publishes `policy.denied.v2` for a policy refusal (403/429).
+
+Two caller-shaped facts are parameters, never request fields (C05):
+
+* `requested_by` is the server-verified initiator (`operator|module`); the REST route passes the
+  operator principal, the MCP server passes its module identity;
+* `proposed_by` is the proposing agent session (`{kind: agent, id}`) and is only set on the MCP
+  path, where a bound `agent_session` exists. It is written to the decision (with `session_id`, as
+  0012 requires) and to the job, and it binds the `Idempotency-Key` to that session (E-4): a replay
+  of a key whose decision names another session - or a REST caller without one - is
+  `IDEMPOTENCY_CONFLICT`, not a job.
 """
 
 from __future__ import annotations
@@ -111,6 +121,7 @@ class _StoredRequest:
     decision: str
     rule: str | None
     error: Mapping[str, Any] | None
+    session_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +140,7 @@ class JobService(Protocol):
         *,
         requested_by: Mapping[str, str],
         idempotency_key: str,
+        proposed_by: Mapping[str, str] | None = None,
         trace_id: str | None = None,
     ) -> SubmitOutcome: ...
 
@@ -192,6 +204,7 @@ class PostgresJobService:
         *,
         requested_by: Mapping[str, str],
         idempotency_key: str,
+        proposed_by: Mapping[str, str] | None = None,
         trace_id: str | None = None,
     ) -> SubmitOutcome:
         if not idempotency_key or not idempotency_key.strip():
@@ -206,6 +219,7 @@ class PostgresJobService:
                         conn,
                         request=request,
                         requested_by=actor,
+                        proposed_by=None if proposed_by is None else dict(proposed_by),
                         idempotency_key=idempotency_key.strip(),
                         body_hash=body_hash,
                         trace_id=trace,
@@ -232,6 +246,7 @@ class PostgresJobService:
         *,
         request: JobSubmit,
         requested_by: dict[str, str],
+        proposed_by: dict[str, str] | None,
         idempotency_key: str,
         body_hash: str,
         trace_id: str,
@@ -239,7 +254,7 @@ class PostgresJobService:
         campaign = self._campaign(conn, str(_plain(request.campaign_id)))
         stored = self._stored_request(conn, campaign.campaign_id, idempotency_key)
         if stored is not None:
-            return self._replay_stored(conn, stored, body_hash=body_hash)
+            return self._replay_request(conn, stored, proposed_by=proposed_by, body_hash=body_hash)
 
         try:
             return self._accept(
@@ -247,6 +262,7 @@ class PostgresJobService:
                 request=request,
                 campaign=campaign,
                 requested_by=requested_by,
+                proposed_by=proposed_by,
                 idempotency_key=idempotency_key,
                 body_hash=body_hash,
                 trace_id=trace_id,
@@ -261,6 +277,7 @@ class PostgresJobService:
         request: JobSubmit,
         campaign: CampaignPolicy,
         requested_by: dict[str, str],
+        proposed_by: dict[str, str] | None,
         idempotency_key: str,
         body_hash: str,
         trace_id: str,
@@ -291,6 +308,7 @@ class PostgresJobService:
                 campaign=campaign,
                 decision_id=decision_id,
                 requested_by=requested_by,
+                proposed_by=proposed_by,
                 idempotency_key=idempotency_key,
                 body_hash=body_hash,
                 trace_id=trace_id,
@@ -341,6 +359,7 @@ class PostgresJobService:
                 campaign=campaign,
                 decision_id=decision_id,
                 requested_by=requested_by,
+                proposed_by=proposed_by,
                 idempotency_key=idempotency_key,
                 body_hash=body_hash,
                 trace_id=trace_id,
@@ -384,6 +403,7 @@ class PostgresJobService:
             merged_input=merged_input,
             targets=targets,
             requested_by=requested_by,
+            proposed_by=proposed_by,
             rationale=rationale,
             trace_id=trace_id,
             scan_cycle=scan_cycle,
@@ -409,6 +429,7 @@ class PostgresJobService:
                     merged_input=merged_input,
                     targets=targets,
                     requested_by=requested_by,
+                    proposed_by=proposed_by,
                     idempotency_key=idempotency_key,
                     body_hash=body_hash,
                     trace_id=trace_id,
@@ -426,6 +447,7 @@ class PostgresJobService:
                     merged_input=merged_input,
                     targets=targets,
                     requested_by=requested_by,
+                    proposed_by=proposed_by,
                     rationale=str(request.rationale),
                     trace_id=trace_id,
                     priority=priority,
@@ -448,7 +470,9 @@ class PostgresJobService:
                 )
             stored = self._stored_request(conn, campaign.campaign_id, idempotency_key)
             if stored is not None:
-                return self._replay_stored(conn, stored, body_hash=body_hash)
+                return self._replay_request(
+                    conn, stored, proposed_by=proposed_by, body_hash=body_hash
+                )
             raise error
         return SubmitOutcome(
             job=self._job_payload(conn, job_id), replayed=False, decision_id=decision_id
@@ -503,8 +527,8 @@ class PostgresJobService:
         self, conn: psycopg.Connection[Any], campaign_id: str, idempotency_key: str
     ) -> _StoredRequest | None:
         row = conn.execute(
-            "SELECT decision_id, request_hash, decision, rule, error FROM policy_decision "
-            "WHERE campaign_id = %s AND idempotency_key = %s",
+            "SELECT decision_id, request_hash, decision, rule, error, session_id "
+            "FROM policy_decision WHERE campaign_id = %s AND idempotency_key = %s",
             (campaign_id, idempotency_key),
         ).fetchone()
         if row is None:
@@ -515,6 +539,7 @@ class PostgresJobService:
             decision=str(row[2]),
             rule=None if row[3] is None else str(row[3]),
             error=row[4],
+            session_id=None if row[5] is None else str(row[5]),
         )
 
     @staticmethod
@@ -568,6 +593,30 @@ class PostgresJobService:
             targets=self._raw_targets(request),
             details=details,
         )
+
+    def _replay_request(
+        self,
+        conn: psycopg.Connection[Any],
+        stored: _StoredRequest,
+        *,
+        proposed_by: Mapping[str, str] | None,
+        body_hash: str,
+    ) -> SubmitOutcome | _Rejection:
+        """Replay the request a key already produced - only to the caller that key belongs to.
+
+        E-4: `(campaign_id, idempotency_key)` is unique per campaign in 0001, so a second agent
+        session could send another session's `<session>:step:<n>` key and receive its job. The
+        decision row records the proposing session, and the key is answered to that session only;
+        any other caller (another session, or a REST caller without a session) is a conflict.
+        """
+        caller = None if proposed_by is None else str(proposed_by.get("id") or "")
+        if stored.session_id != caller:
+            raise M05Error.idempotency_conflict(
+                "Idempotency-Key belongs to another session; a key is not transferable between "
+                "sessions - reuse the key your own session created the request with, or use a new "
+                "key"
+            )
+        return self._replay_stored(conn, stored, body_hash=body_hash)
 
     def _replay_stored(
         self, conn: psycopg.Connection[Any], stored: _StoredRequest, *, body_hash: str
@@ -658,6 +707,7 @@ class PostgresJobService:
         merged_input: Mapping[str, Any],
         targets: ResolvedTargets,
         requested_by: Mapping[str, str],
+        proposed_by: Mapping[str, str] | None,
         rationale: str,
         trace_id: str,
         scan_cycle: str,
@@ -666,7 +716,7 @@ class PostgresJobService:
         idempotency_key: str,
         binding: EgressBinding,
     ) -> dict[str, Any]:
-        return {
+        task: dict[str, Any] = {
             "task_id": task_id,
             "decision_id": decision_id,
             "campaign_id": campaign.campaign_id,
@@ -689,6 +739,11 @@ class PostgresJobService:
             "depends_on": list(depends_on),
             "egress_binding": binding.to_json(),
         }
+        if proposed_by is not None:
+            # Server-derived proposer (C05): only the MCP path has an agent session, and the value
+            # comes from the session M05 resolved, never from the request body.
+            task["proposed_by"] = dict(proposed_by)
+        return task
 
     @staticmethod
     def _validate_task(task: Mapping[str, Any]) -> None:
@@ -710,6 +765,7 @@ class PostgresJobService:
         merged_input: Mapping[str, Any],
         targets: ResolvedTargets,
         requested_by: Mapping[str, str],
+        proposed_by: Mapping[str, str] | None,
         idempotency_key: str,
         body_hash: str,
         trace_id: str,
@@ -722,13 +778,14 @@ class PostgresJobService:
             """
             INSERT INTO policy_decision (
               decision_id, campaign_id, session_id, capability, provider, targets, target_refs,
-              input, decision, rule, error, rationale, requested_by, policy_version, scope_id,
-              idempotency_key, trace_id, request_hash)
-            VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+              input, decision, rule, error, rationale, requested_by, proposed_by, policy_version,
+              scope_id, idempotency_key, trace_id, request_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 decision_id,
                 campaign.campaign_id,
+                None if proposed_by is None else proposed_by.get("id"),
                 capability,
                 provider,
                 list(targets.projection),
@@ -739,6 +796,7 @@ class PostgresJobService:
                 None if error is None else Jsonb(dict(error)),
                 str(task["rationale"]) if task else f"refused by policy {campaign.policy_version}",
                 Jsonb(dict(requested_by)),
+                None if proposed_by is None else Jsonb(dict(proposed_by)),
                 campaign.policy_version,
                 campaign.scope_id,
                 idempotency_key,
@@ -760,6 +818,7 @@ class PostgresJobService:
         merged_input: Mapping[str, Any],
         targets: ResolvedTargets,
         requested_by: Mapping[str, str],
+        proposed_by: Mapping[str, str] | None,
         rationale: str,
         trace_id: str,
         priority: int,
@@ -770,10 +829,10 @@ class PostgresJobService:
             INSERT INTO scan_job (
               job_id, campaign_id, decision_id, capability, provider, provider_version,
               adapter_version, image_digest, scan_cycle, job_fingerprint, policy_version, scope_id,
-              input, targets, target_refs, requested_by, rationale, trace_id, priority,
+              input, targets, target_refs, requested_by, proposed_by, rationale, trace_id, priority,
               manifest_sha256,
               approved_task)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s)
             """,
             (
@@ -793,6 +852,7 @@ class PostgresJobService:
                 list(targets.projection),
                 Jsonb(list(targets.refs)),
                 Jsonb(dict(requested_by)),
+                None if proposed_by is None else Jsonb(dict(proposed_by)),
                 rationale,
                 trace_id,
                 priority,
@@ -808,6 +868,7 @@ class PostgresJobService:
         campaign: CampaignPolicy,
         decision_id: str,
         requested_by: Mapping[str, str],
+        proposed_by: Mapping[str, str] | None,
         idempotency_key: str,
         body_hash: str,
         trace_id: str,
@@ -827,6 +888,7 @@ class PostgresJobService:
             merged_input=merged_input,
             targets=targets,
             requested_by=requested_by,
+            proposed_by=proposed_by,
             idempotency_key=idempotency_key,
             body_hash=body_hash,
             trace_id=trace_id,

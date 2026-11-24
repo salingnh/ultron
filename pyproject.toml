@@ -26,6 +26,8 @@ dependencies = [
   # M02 CampaignWorkflow, scheduler activities and the outbox dispatcher (G1.1d). Same pin as the
   # G0.1 spike (deploy/pins.json on the spike branch), so replay tests and the dev stack agree.
   "temporalio==1.36.1",
+  # MCP boundary (G1.2b): the SDK line spike G0.3a verified on the wire (2.3.0, protocol 2025-11-25).
+  "mcp==2.3.0",
 ]
 
 [dependency-groups]

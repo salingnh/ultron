@@ -48,3 +48,39 @@ Còn mở:
 - Spike mới đo với fingerprint rút gọn; G1.2b phải băm đúng định nghĩa aegis-c14n/1 trong [canonicalization.v2.yaml](../ingestion/canonicalization.v2.yaml) (`policy_version`, `target_refs`) và trả `IDEMPOTENCY_CONFLICT` thay cho `INPUT_INVALID` mà spike tạm dùng.
 - `scan_cycle` không có trong bảng `_meta`; spike lấy từ ngữ cảnh session phía server. G1.1c/G1.2b phải chốt khi nào agent bắt đầu `scan_cycle` mới (nay chỉ quy định "lần quét mới có scan_cycle mới").
 - `capability-response.v2` không trả lại idempotency key/scan_cycle; agent đối chiếu qua `job_id`. Cân nhắc khi schema response được mở lại.
+
+## G1.2b — triển khai (Streamable HTTP, session, `graph.*`)
+
+`src/aegis/m05_registry/mcp/` hiện thực phần trên bằng `mcp` 2.3.0 (lowlevel `Server` +
+`streamable_http_app`, JSON response mặc định). Entry point: `uvicorn aegis.m05_registry.mcp.main:app`.
+Service tách khỏi transport (`service.py`) để test chạy đúng đường thật của handler.
+
+- **`tools/list`**: có `_meta` thì lọc theo `capability_denylist` của campaign và kiểm session như
+  `tools/call`; không có khóa `aegis.io/*` nào thì trả danh mục capability đã đăng ký (không lọc) vì
+  không có campaign để lọc — nhánh này cho chính SDK: client gọi `tools/list` không `_meta` để đối
+  chiếu `outputSchema` trước khi trả kết quả. `_meta` có namespace `aegis.io/` nhưng thiếu/sai thì
+  vẫn `-32602`, không lặng lẽ bỏ lọc.
+- **Session**: `Mcp-Session-Id` bind đúng một cặp `(campaign, agent_session)`; nguồn quyền là hàng
+  `agent_session` (0001) và session phải `RUNNING` (đọc lại mỗi lần bind, không cache trong process
+  quá một lần gọi). `objective_id` trong arguments phải trùng objective của session khi session có
+  objective.
+- **`scan_cycle`**: không có khóa `_meta` nên G1 lấy `scan_cycle = agent_session.session_id`: một
+  session là một lần quét, retry trong session trùng đúng job cũ, restart của cùng session resume
+  được; lần quét mới = session mới cho tới khi contract mở khóa riêng. (Đóng mục còn mở của spike
+  cho G1; nếu G1.2c cần nhiều cycle trong một session thì phải sửa contract trước.)
+- **Actor**: `requested_by = {kind: module, id: "M05"}` (agent không thể là initiator, C05) và
+  `proposed_by = {kind: agent, id: <session>}` do M05 gán từ session đã bind; cả hai nằm trong
+  ApprovedTask đã ký.
+- **E-4 khoá idempotency theo session**: `policy_decision` ghi `session_id` của người đề xuất; một
+  caller khác (session khác, hoặc REST không có session) dùng lại cùng key nhận
+  `IDEMPOTENCY_CONFLICT` (`isError=true`, không có `field`) và không nhận job đó. Trùng fingerprint
+  của cùng một phép quét vẫn trả `duplicate` như contract (NFR-02), kể cả khi do session khác gửi.
+- **`graph.*`**: schema lấy nguyên từ `graph-queries.v2`, giới hạn do server áp (2 bước nhảy, 200 bản
+  ghi, 2000 ms, 8192 byte) và `limits_applied` là trần hiệu lực của lần gọi (client xin nhỏ hơn thì
+  ghi giá trị nhỏ hơn); `truncated` do M23 trả. `campaign_id` trong input phải trùng campaign đã bind.
+  Chưa có M23 (G1.4b) nên provider mặc định trả `isError` `DEPENDENCY_MISSING`/`ESCALATE`, **không**
+  trả trang rỗng: `truncated=false` với 0 bản ghi là khẳng định "không có gì", sai về một thành phần
+  chưa tồn tại.
+- **Lỗi**: `_meta`/schema sai → `-32602` + `error.v2` (HTTP 400 ở tầng transport 2.3.0); quyết định
+  registry/policy và xung đột idempotency → `isError=true` + `capability-response.v2`, `field` chỉ có
+  ở `INPUT_INVALID`. Xung đột giờ là `IDEMPOTENCY_CONFLICT` (đóng mục còn mở của spike).
