@@ -150,10 +150,11 @@ def _assert_keys_and_predicates(parsed: dict[str, Any]) -> None:
 
 def _assert_lab_cross_check(adapter: Adapter, run: dict[str, Any], parsed: dict[str, Any]) -> None:
     """Compare the parser's view of the run with the committed G0.4c lab fixture."""
-    cross_check = run.get("cross_check") or {}
-    path = REPO_ROOT / str(cross_check.get("file", ""))
-    if not path.is_file():
-        pytest.skip(f"{adapter.provider}: no independent lab fixture at {path}")
+    cross_check = run.get("cross_check")
+    if not cross_check:
+        return  # a tool without a committed lab fixture list has nothing independent to compare to
+    path = REPO_ROOT / str(cross_check["file"])
+    assert path.is_file(), f"{adapter.provider}: the cross-check fixture {path} is missing"
     expected: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     keys = {asset["canonical_key"] for asset in parsed["assets"]}
     if cross_check["kind"] == "domains":
@@ -278,11 +279,19 @@ def test_parser_fails_loudly_on_corrupt_output(adapter: Adapter, tmp_path: Path)
         adapter.parse_function()(tmp_path / "missing", {"input": {"targets": ["x.example"]}}, [])
 
 
-@pytest.mark.parametrize("adapter", ADAPTERS_FOUND, ids=[_id(item) for item in ADAPTERS_FOUND])
+def _adapters_with_result_cap() -> list[Adapter]:
+    """Adapters whose capability schema caps the number of results (`input.max_results`)."""
+    return [
+        adapter
+        for adapter in ADAPTERS_FOUND
+        if "max_results" in (adapter.input_schema().get("properties") or {})
+    ]
+
+
+@pytest.mark.parametrize(
+    "adapter", _adapters_with_result_cap(), ids=[_id(item) for item in _adapters_with_result_cap()]
+)
 def test_parser_applies_the_result_cap(adapter: Adapter) -> None:
-    properties = adapter.input_schema().get("properties") or {}
-    if "max_results" not in properties:
-        pytest.skip(f"{adapter.provider} has no max_results cap in its input schema")
     run = adapter.lab_run
     assert run is not None
     task = {"input": {**run["input"], "max_results": 1}}
