@@ -362,6 +362,10 @@ class GatewayProcess:
     def stop(self) -> None:
         if self.container:
             subprocess.run(["podman", "rm", "-f", self.container], check=False, capture_output=True)
+        # The config dir is this test's own throwaway copy of the owner's files; leaving it behind
+        # would litter a shared runner (and CI runs on one) with a secrets file per run.
+        if self.config_dir.parts:
+            shutil.rmtree(self.config_dir, ignore_errors=True)
 
     def logs(self, tail: int = 60) -> str:
         result = subprocess.run(
