@@ -147,3 +147,7 @@ product runner.
   `deploy/lab/.run/runs/` is kept; delete it manually when it is no longer needed.
 - Changing the zone: edit the zone file, `inventory.json` and the expected fixtures
   together; `scripts/lab/check_inventory.py` fails on any drift before a run starts.
+
+## Dịch vụ cho chuỗi discovery (G1.6)
+
+Lab có thêm các dịch vụ bản cũ (pin digest, `cap_drop: ALL`, không mở port ra host) để quét port, nhận diện version và khớp CVE: `web-legacy` (nginx 1.18.0), `app` (Tomcat 9.0.30, 8080/8009), `ssh` (OpenSSH 9.9, case âm), `cache` (Redis 6.0.5), `legacy-httpd` (Apache httpd 2.4.49); địa chỉ và CVE kỳ vọng ở `inventory.json`. Lệnh: `make lab-naabu`, `make lab-fingerprintx`, `make lab-httpx`, `make lab-httpx-proxy` (fingerprintx build bằng `make lab-build-fingerprintx`); `make lab-check` chạy cả các lệnh này. Job chỉ vào mạng lab khi RoE của campaign khai `network_profile: lab`; file profile một mình không quyết định. Redis và AJP 8009 hiện không lộ product/version (fingerprintx chưa có bản release đọc INFO; không có detector AJP) — xem backlog.

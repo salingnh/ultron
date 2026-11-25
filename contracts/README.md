@@ -19,11 +19,13 @@ Một schema chỉ được coi là đã phát hành khi biết ai phát và ai 
 | [common/ids.v2](common/ids.v2.schema.json), [common/error.v2](common/error.v2.schema.json) | dùng chung | mọi module | không phải event |
 | [campaign/campaign-create.v2](campaign/campaign-create.v2.schema.json) | UI/client → M26 | M01 | body REST, không mang actor (OI-10) |
 | [campaign/campaign.v2](campaign/campaign.v2.schema.json) | M26 (từ dữ liệu M01) | UI | read model |
-| [campaign/roe-policy.v2](campaign/roe-policy.v2.schema.json) | M01 (qua `/campaigns/{id}/policy`) | M05 (trần tham số), M02 (budget), DDL `is_roe_policy_v2` | phản chiếu trong baseline, test so khớp |
+| [campaign/roe-policy.v2](campaign/roe-policy.v2.schema.json) | M01 (qua `/campaigns/{id}/policy`) | M05 (trần tham số, `network_profile` lab\|internet ký vào task), M02 (budget), DDL `is_roe_policy_v2` | phản chiếu trong baseline, test so khớp |
 | [capabilities/dns/enumerate-subdomains.v2](capabilities/dns/enumerate-subdomains.v2.schema.json), [dns/resolve.v2](capabilities/dns/resolve.v2.schema.json) | M03 (input MCP) / người vận hành (job-submit) | M05, adapter M08 (Subfinder/DNSx) | |
-| [capabilities/network/discover-services.v2](capabilities/network/discover-services.v2.schema.json) | — | — | **chưa đăng ký**: không có provider/manifest, chỉ có schema mẫu |
+| [capabilities/network/discover-services.v2](capabilities/network/discover-services.v2.schema.json) | M03 (input MCP) / người vận hành (job-submit) | M05, adapter M09 (naabu v2.7.0) | egress target-bound (`targetBinding: required`); port set qua `/in/ports.txt` |
+| [capabilities/service/fingerprint.v2](capabilities/service/fingerprint.v2.schema.json) | M03 / người vận hành | M05, adapter M08 (fingerprintx, `egressMode: l3`) | service.protocol/product {product, version, cpe}; version chỉ khi tool in ra |
+| [capabilities/web/probe-http.v2](capabilities/web/probe-http.v2.schema.json) | M03 / người vận hành | M05, adapter M08 (httpx, `egressMode: broker`) | Application + SERVES, http.status/title/technology, tls.certificate; version lấy từ header/body/title thật in ra |
 | [capability/provider-manifest.v2](capability/provider-manifest.v2.schema.json) | gói adapter (`adapters/**/manifest.yaml`) | M05 registry, M06 ContainerSpec | |
-| [capability/approved-task.v2](capability/approved-task.v2.schema.json) | M05 | M06 | nội dung được ký khóa ở G1.1c (OI-7): `signature_key_id` + input `aegis-c14n/1`; `egress_binding` (E-1) |
+| [capability/approved-task.v2](capability/approved-task.v2.schema.json) | M05 | M06 | nội dung được ký khóa ở G1.1c (OI-7): `signature_key_id` + input `aegis-c14n/1`; `egress_binding` (E-1); `network_profile` (lab\|internet) do M05 ký, M06 cưỡng chế theo profile |
 | [capability/job-submit.v2](capability/job-submit.v2.schema.json) | UI/dịch vụ nội bộ → M26 | M05 | body REST, không mang actor (OI-10) |
 | [capability/job.v2](capability/job.v2.schema.json) | M26 (read model của `scan_job`) | UI, M03 (đọc qua query) | |
 | [mcp/capability-request.v2](mcp/capability-request.v2.schema.json) | M03 (MCP client) | M05 (MCP server) | không có trường danh tính |

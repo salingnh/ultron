@@ -2,7 +2,7 @@
 
 Mỗi capability có một schema `schema://<nhóm>/<tên>/v2` ánh xạ tới file trong thư mục này; output là ResultEnvelope v2. M05 ghép inputDefaults từ manifest, validate input, kiểm mục tiêu và giới hạn trước dispatch. Không nhận args/command tự do.
 
-Bộ mẫu: dns/enumerate-subdomains, dns/resolve, network/discover-services. Tool mới phải thêm schema/parser/fixture trước khi đăng ký; không coi danh mục OSS là adapter đã triển khai. Priority/dependency nằm ở request chung, không trộn vào tham số CLI.
+Bộ mẫu: dns/enumerate-subdomains, dns/resolve, network/discover-services (Naabu), service/fingerprint (fingerprintx), web/probe-http (httpx). Tool mới phải thêm schema/parser/fixture trước khi đăng ký; không coi danh mục OSS là adapter đã triển khai. Priority/dependency nằm ở request chung, không trộn vào tham số CLI.
 
 Giữ quy tắc trần tham số: rate/depth/concurrency trong input không được vượt cấu hình campaign/manifest đã pin. Vượt trần trả POLICY_DENIED, không tự hạ giá trị rồi chạy một yêu cầu khác. InputDefaults chỉ bù trường chưa có và phải validate lại toàn bộ input cuối trước dispatch.
 
@@ -17,7 +17,9 @@ Cùng một capability xuất hiện dưới hai dạng, cả hai đều cố ý
 
 Không chuyển dạng này sang dạng kia bằng cách thay ký tự: `enumerate_subdomains` ≠ `enumerate-subdomains` theo quy tắc máy móc, và tên riêng có thể khác nhau. Muốn biết schema của một capability thì đọc manifest của provider (Regexp/Pattern không phải nguồn duy nhất). Envelope, task, job và event luôn dùng `CapabilityId`; chỉ manifest dùng `schema://`. Validator `validate_contracts.py` kiểm `inputSchemaRef` phân giải được tới file schema, và test conformance kiểm manifest đã pin phục vụ đúng `capability` của task.
 
-`network/discover-services` chưa có provider/manifest: schema tồn tại không có nghĩa capability đã đăng ký.
+`network/discover-services` có provider `adapters/m09/naabu` (CONNECT scan, `rawSocket: false`); port set tới tool qua `/in/ports.txt` (`-ports-file`), `version_intensity` cố định 0 trong manifest — product/version là việc của `service/fingerprint`.
+
+`proxyAware` phải trung thực: `egressMode: broker` đòi `proxyAware: true`; `egressMode: l3` cho phép `false` (gateway lọc theo tập IP:port đã ký). M06 từ chối (fail closed) tool không proxy-aware trên profile internet nếu không ở chế độ l3.
 
 ## Chuỗi DNS đầu tiên: dns.enumerate_subdomains và dns.resolve
 
