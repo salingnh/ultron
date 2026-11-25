@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { CampaignListScreen } from './screens/CampaignListScreen';
+import { CampaignCreateScreen } from './screens/CampaignCreateScreen';
 import { CampaignDetailScreen } from './screens/CampaignDetailScreen';
 import { JobTableFlowScreen } from './screens/JobTableFlowScreen';
 import { AssetGraphScreen } from './screens/AssetGraphScreen';
@@ -13,6 +14,7 @@ export const App: React.FC = () => {
       <Route path="/" element={<Layout />}>
         <Route index element={<Navigate to="/campaigns" replace />} />
         <Route path="campaigns" element={<CampaignListScreen />} />
+        <Route path="campaigns/new" element={<CampaignCreateScreen />} />
         <Route path="campaigns/:id" element={<CampaignDetailScreen />} />
         <Route path="jobs" element={<JobTableFlowScreen />} />
         <Route path="assets" element={<AssetGraphScreen />} />

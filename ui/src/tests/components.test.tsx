@@ -10,8 +10,12 @@ import { ServiceTable } from '../components/ServiceTable';
 import { AssetGraphScreen } from '../screens/AssetGraphScreen';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { TokenConfigModal } from '../components/TokenConfigModal';
+import { Layout } from '../components/Layout';
+import { CampaignListScreen } from '../screens/CampaignListScreen';
+import { CampaignCreateScreen } from '../screens/CampaignCreateScreen';
 import { CampaignDetailScreen } from '../screens/CampaignDetailScreen';
-import { apiClient, getOperatorToken } from '../api/client';
+import { ApiError, apiClient, getOperatorToken, setOperatorToken } from '../api/client';
+import { resetMockData } from '../mock/handlers';
 
 describe('Ultron UI Reusable Components', () => {
   it('renders StatusChip with Vietnamese text and correct styling', () => {
@@ -277,5 +281,158 @@ describe('Ultron UI Reusable Components', () => {
     // Switch to Service Table
     fireEvent.click(screen.getByRole('button', { name: /Bảng Dịch vụ/ }));
     expect(await screen.findByRole('table', { name: 'Bảng dịch vụ theo chiến dịch' })).toBeInTheDocument();
+  });
+
+  it('shows first-run token help banner when operator token is not set', () => {
+    setOperatorToken('');
+    render(
+      <MemoryRouter initialEntries={['/campaigns']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route path="campaigns" element={<CampaignListScreen />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('region', { name: 'Hướng dẫn cấu hình Operator Token lần đầu' })).toBeInTheDocument();
+    expect(screen.getByText(/\.local\/operator-token/)).toBeInTheDocument();
+    expect(screen.getByText(/ultron-operator-token/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Cấu hình Operator Token/ }));
+    expect(screen.getByText('Cấu hình Operator Bearer Token')).toBeInTheDocument();
+  });
+
+  it('navigates from CampaignListScreen Create button without alert()', async () => {
+    resetMockData();
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    render(
+      <MemoryRouter initialEntries={['/campaigns']}>
+        <Routes>
+          <Route path="/campaigns" element={<CampaignListScreen />} />
+          <Route path="/campaigns/new" element={<div>Create Page Marker</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const createLink = await screen.findByRole('link', { name: /Tạo chiến dịch/ });
+    expect(createLink).toHaveAttribute('href', '/campaigns/new');
+    fireEvent.click(createLink);
+    expect(await screen.findByText('Create Page Marker')).toBeInTheDocument();
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('validates CampaignCreateScreen inputs, requires internet confirmation, and maps server error.v2 inline', async () => {
+    resetMockData();
+    render(
+      <MemoryRouter initialEntries={['/campaigns/new']}>
+        <Routes>
+          <Route path="/campaigns/new" element={<CampaignCreateScreen />} />
+          <Route path="/campaigns/:id" element={<div>Created Detail Screen</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Safe defaults: lab selected
+    const labRadio = screen.getByLabelText(/lab \(Mặc định an toàn\)/) as HTMLInputElement;
+    expect(labRadio.checked).toBe(true);
+
+    // Submit empty -> client-side inline errors
+    fireEvent.click(screen.getByRole('button', { name: /Tạo chiến dịch/ }));
+    expect(await screen.findByText('Tên chiến dịch là bắt buộc.')).toBeInTheDocument();
+    expect(screen.getByText('Mục tiêu chiến dịch là bắt buộc.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Cần ít nhất một mục tiêu hợp lệ (domain, IP/CIDR hoặc từ khóa).')
+    ).toBeInTheDocument();
+
+    // Fill valid fields, switch to internet -> confirmation modal required
+    fireEvent.change(screen.getByLabelText(/Tên chiến dịch/), { target: { value: 'UI Test Scan' } });
+    fireEvent.change(screen.getByLabelText(/Mục tiêu tác chiến/), {
+      target: { value: 'Verify form flow' },
+    });
+    fireEvent.change(screen.getByLabelText(/Tên miền \(targets\.domains/), {
+      target: { value: 'lab.aegis.test' },
+    });
+    fireEvent.click(screen.getByLabelText(/internet \(Ra ngoài qua Broker\)/));
+    fireEvent.change(screen.getByLabelText(/Chủ sở hữu hợp pháp \(authorization\.owner\)/), {
+      target: { value: 'owner' },
+    });
+    fireEvent.change(screen.getByLabelText(/Ngày ủy quyền \(authorization\.date/), {
+      target: { value: '2026-11-25' },
+    });
+    fireEvent.change(screen.getByLabelText(/Tham chiếu bằng chứng ủy quyền \(authorization\.reference/), {
+      target: { value: 'owner, item 61, 2026-11-25' },
+    });
+    fireEvent.change(screen.getByLabelText(/Hậu tố tên miền được phép \(authorization\.authorized_suffixes/), {
+      target: { value: 'lab.aegis.test' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Kiểm tra & Xác nhận Internet/ }));
+    expect(
+      await screen.findByText('Quét chủ động ra internet — chỉ trên tài sản bạn sở hữu/được ủy quyền')
+    ).toBeInTheDocument();
+    const confirmBtn = screen.getByRole('button', { name: /Xác nhận & Thực thi/ });
+    expect(confirmBtn).toBeDisabled();
+
+    // Cancel confirmation, switch to lab, simulate server error.v2 inline on /targets/domains/0
+    fireEvent.click(screen.getByRole('button', { name: /Quay lại chỉnh sửa/ }));
+    fireEvent.click(labRadio);
+
+    vi.spyOn(apiClient, 'createCampaign').mockRejectedValueOnce(
+      new ApiError(400, {
+        code: 'INPUT_INVALID',
+        message: 'request body does not satisfy campaign-create: bad domain seed',
+        next_action: 'FIX_INPUT',
+        field: '/targets/domains/0',
+      })
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Tạo chiến dịch/ }));
+    expect(await screen.findAllByText(/\/targets\/domains\/0/)).not.toHaveLength(0);
+    expect(screen.getAllByText(/INPUT_INVALID/).length).toBeGreaterThanOrEqual(1);
+
+    // Retry succeeds and navigates
+    fireEvent.click(screen.getByRole('button', { name: /Tạo chiến dịch/ }));
+    expect(await screen.findByText('Created Detail Screen')).toBeInTheDocument();
+  });
+
+  it('allows adopting a new RoE policy snapshot on active campaign in CampaignDetailScreen', async () => {
+    resetMockData();
+    render(
+      <MemoryRouter initialEntries={['/campaigns/01934f6a-0000-7000-8000-000000000001']}>
+        <Routes>
+          <Route path="/campaigns/:id" element={<CampaignDetailScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const editBtn = await screen.findByRole('button', { name: /Tạo bản chụp RoE mới/ });
+    fireEvent.click(editBtn);
+
+    fireEvent.change(screen.getByLabelText(/Lý do cập nhật RoE/), {
+      target: { value: 'Cap nhat gioi han dong thoi len 3' },
+    });
+    fireEvent.change(screen.getByLabelText(/Số job đồng thời tối đa/), {
+      target: { value: '3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Lưu & Kích hoạt RoE mới/ }));
+
+    expect(await screen.findByText(/Đã tạo và kích hoạt bản chụp RoE mới: roe-/)).toBeInTheDocument();
+  });
+
+  it('disables policy adoption on terminal COMPLETED campaign in CampaignDetailScreen', async () => {
+    resetMockData();
+    render(
+      <MemoryRouter initialEntries={['/campaigns/01934f6a-0000-7000-8000-000000000003']}>
+        <Routes>
+          <Route path="/campaigns/:id" element={<CampaignDetailScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByText(/Chiến dịch đã kết thúc \(COMPLETED\) — API chỉ cho phép tạo bản chụp RoE mới/)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Tạo bản chụp RoE mới/ })).not.toBeInTheDocument();
   });
 });

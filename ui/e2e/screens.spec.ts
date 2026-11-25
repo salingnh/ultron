@@ -4,11 +4,22 @@ import fs from 'fs';
 import path from 'path';
 
 const SCREENSHOT_DIR = path.resolve(process.cwd(), 'screenshots');
-const LEADER_DIR_G16D = '/orca/bots/ultron-lead/memory/reports/screenshots/g16-d-ui';
+const LEADER_DIR =
+  process.env.AEGIS_LEADER_SHOTS_DIR || '/orca/bots/ultron-lead/memory/reports/screenshots/ui-ops';
+
+function resolveTestToken(): string {
+  if (process.env.AEGIS_TEST_OPERATOR_TOKEN) return process.env.AEGIS_TEST_OPERATOR_TOKEN;
+  if (process.env.VITE_BEARER_TOKEN) return process.env.VITE_BEARER_TOKEN;
+  const localTokenPath = path.resolve(process.cwd(), '../.local/operator-token');
+  if (process.env.VITE_USE_MOCK === 'false' && fs.existsSync(localTokenPath)) {
+    return fs.readFileSync(localTokenPath, 'utf8').trim();
+  }
+  return 'token-of-soc-1-0123456789';
+}
 
 test.beforeAll(() => {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-  fs.mkdirSync(LEADER_DIR_G16D, { recursive: true });
+  fs.mkdirSync(LEADER_DIR, { recursive: true });
 });
 
 async function captureScreen(page: Page, filename: string) {
@@ -31,7 +42,7 @@ async function captureScreen(page: Page, filename: string) {
   // or when explicitly enabled, so CI mock tests never overwrite leader review artifacts.
   if (isRealMode || process.env.COPY_LEADER_SHOTS === 'true') {
     try {
-      fs.copyFileSync(localPath, path.join(LEADER_DIR_G16D, filename));
+      fs.copyFileSync(localPath, path.join(LEADER_DIR, filename));
     } catch {
       // ignore if directory permission restricts in some sandboxes
     }
@@ -44,7 +55,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
   test('Capture all screens in light theme', async ({ page }) => {
     const theme = 'light';
     const isRealMode = process.env.VITE_USE_MOCK === 'false';
-    const token = process.env.VITE_BEARER_TOKEN || 'token-of-soc-1-0123456789';
+    const token = resolveTestToken();
 
     // Set theme and token in localStorage before navigating
     await page.addInitScript(({ t, tok }) => {
@@ -77,10 +88,10 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     let campaignId = process.env.AEGIS_SCREENSHOT_CAMPAIGN_ID || '01934f6a-0000-7000-8000-000000000001';
     if (!process.env.AEGIS_SCREENSHOT_CAMPAIGN_ID) {
       const preferredLink = page
-        .locator('tr', { hasText: /G1\.6c|vulnlab-lab-httpd/ })
+        .locator('table tr', { hasText: /G1\.6c|vulnlab-lab-httpd/ })
         .locator('a[href^="/campaigns/"]')
         .first();
-      const detailLink = page.locator('a[href^="/campaigns/"]').first();
+      const detailLink = page.locator('table a[href^="/campaigns/"]').first();
       try {
         await detailLink.waitFor({ state: 'visible', timeout: 6000 });
         const targetLink = (await preferredLink.count()) > 0 ? preferredLink : detailLink;
@@ -161,6 +172,113 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     await captureScreen(page, `06-tool-catalogue-${theme}.png`);
   });
 
+  test('Campaign create form, internet confirmation, validation error, policy adopt, and first-run token help', async ({
+    page,
+  }) => {
+    if (process.env.AEGIS_WATCH_CAMPAIGN_COMPLETE === 'true') {
+      test.setTimeout(300000);
+    }
+    const theme = 'light';
+    const isRealMode = process.env.VITE_USE_MOCK === 'false';
+    const token = resolveTestToken();
+
+    // First-run help check without token
+    await page.addInitScript(({ t }) => {
+      window.localStorage.setItem('ultron-theme', t);
+      document.documentElement.setAttribute('data-theme', t);
+      window.localStorage.removeItem('ultron-operator-token');
+    }, { t: theme });
+
+    await page.goto('/campaigns');
+    await expect(
+      page.getByRole('region', { name: 'Hướng dẫn cấu hình Operator Token lần đầu' })
+    ).toBeVisible();
+    await captureScreen(page, `00-first-run-token-help-${theme}.png`);
+
+    // Set operator token via the modal (or direct storage for subsequent flows)
+    if (token) {
+      await page.getByRole('button', { name: /Cấu hình Operator Token/ }).click();
+      await expect(page.getByText('Cấu hình Operator Bearer Token')).toBeVisible();
+      await page.getByLabel('Nhập Operator Token').fill(token);
+      await page.getByRole('button', { name: 'Lưu Token' }).click();
+      await expect(page.getByText('Cấu hình Operator Bearer Token')).toBeHidden();
+      await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
+    }
+
+    await expect(
+      page
+        .getByRole('table', { name: 'Bảng danh sách chiến dịch' })
+        .or(page.getByText('Chưa có chiến dịch nào'))
+    ).toBeVisible();
+    if (isRealMode) {
+      await expect(page.getByText('REAL API')).toBeVisible();
+      await captureScreen(page, `01-campaign-list-real-${theme}.png`);
+    }
+
+    // Navigate to Campaign Create via button (no alert)
+    await page.getByRole('link', { name: /Tạo chiến dịch/ }).click();
+    await expect(page.getByText('Tạo chiến dịch mới (Create Campaign)')).toBeVisible();
+    await expect(page.getByLabel(/lab \(Mặc định an toàn\)/)).toBeChecked();
+    if (isRealMode) {
+      await expect(page.getByText('REAL API')).toBeVisible();
+    }
+    await captureScreen(page, `01b-campaign-create-form-${theme}.png`);
+
+    // Validation error inline check
+    await page.getByLabel(/Tên miền \(targets\.domains/).fill('https://invalid domain!');
+    await page.getByRole('button', { name: /Tạo chiến dịch/ }).click();
+    await expect(page.getByText('Tên chiến dịch là bắt buộc.')).toBeVisible();
+    await expect(page.getByText(/không hợp lệ/)).toBeVisible();
+    await captureScreen(page, `01c-campaign-create-validation-error-${theme}.png`);
+
+    // Fill valid fields and trigger internet confirmation step
+    const uniqueSuffix = Date.now().toString(36);
+    await page.getByLabel(/Tên chiến dịch/).fill(`UI Ops Lab Scan ${uniqueSuffix}`);
+    await page.getByLabel(/Mục tiêu tác chiến/).fill('Khảo sát vùng lab nội bộ từ UI');
+    await page.getByLabel(/Tham chiếu ủy quyền/).fill('owner, item 63, 2026-11-25');
+    await page.getByLabel(/Tên miền \(targets\.domains/).fill('lab.aegis.test');
+    await page.getByLabel(/internet \(Ra ngoài qua Broker\)/).click();
+    await page.getByLabel(/Chủ sở hữu hợp pháp \(authorization\.owner\)/).fill('owner');
+    await page.getByLabel(/Ngày ủy quyền \(authorization\.date/).fill('2026-11-25');
+    await page.getByLabel(/Tham chiếu bằng chứng ủy quyền \(authorization\.reference/).fill('owner, item 63, 2026-11-25');
+    await page.getByLabel(/Hậu tố tên miền được phép \(authorization\.authorized_suffixes/).fill('lab.aegis.test');
+    await page.getByRole('button', { name: /Kiểm tra & Xác nhận Internet/ }).click();
+
+    await expect(
+      page.getByText('Quét chủ động ra internet — chỉ trên tài sản bạn sở hữu/được ủy quyền')
+    ).toBeVisible();
+    await expect(page.getByText('Tóm tắt giới hạn an toàn (Caps & RoE)')).toBeVisible();
+    await captureScreen(page, `01d-campaign-create-internet-confirm-${theme}.png`);
+
+    // Cancel internet confirmation, switch back to safe lab profile and submit
+    await page.getByRole('button', { name: /Quay lại chỉnh sửa/ }).click();
+    await page.getByLabel(/lab \(Mặc định an toàn\)/).click();
+    await page.getByRole('button', { name: /Tạo chiến dịch/ }).click();
+
+    await page.waitForURL(/\/campaigns\/[0-9a-f-]+$/);
+    await expect(page.getByText(`UI Ops Lab Scan ${uniqueSuffix}`)).toBeVisible();
+    await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
+
+    // Adopt a new RoE snapshot while campaign is active (CREATED/RUNNING/WAITING)
+    const adoptBtn = page.getByRole('button', { name: /Tạo bản chụp RoE mới/ });
+    if (await adoptBtn.isVisible()) {
+      await adoptBtn.click();
+      await page.getByLabel(/Lý do cập nhật RoE/).fill('Tang song song len 3 tu UI');
+      await page.getByLabel(/Số job đồng thời tối đa/).fill('3');
+      await page.getByRole('button', { name: /Lưu & Kích hoạt RoE mới/ }).click();
+      await expect(page.getByText(/Đã tạo và kích hoạt bản chụp RoE mới: roe-/)).toBeVisible();
+    }
+
+    // In real mode with workers running, watch the created lab campaign reach COMPLETED
+    if (isRealMode && process.env.AEGIS_WATCH_CAMPAIGN_COMPLETE === 'true') {
+      await expect(page.locator('.status-chip', { hasText: 'Hoàn thành (Completed)' })).toBeVisible({
+        timeout: 240000,
+      });
+    }
+
+    await captureScreen(page, `02b-campaign-created-detail-${theme}.png`);
+  });
+
   test('Live update: a status change made via API appears in the UI within 2 s without reload', async ({ page }) => {
     const throwawayDsn = process.env.AEGIS_E2E_THROWAWAY_DSN;
     const isRealMode = process.env.VITE_USE_MOCK === 'false' && Boolean(throwawayDsn);
@@ -186,7 +304,7 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
         window.dispatchEvent(new CustomEvent('ultron-token-changed', { detail: { token: tok } }));
       }, token);
     }
-    const detailLink = page.locator('a[href^="/campaigns/"]').first();
+    const detailLink = page.locator('table a[href^="/campaigns/"]').first();
     await detailLink.waitFor({ state: 'visible', timeout: 6000 });
     const href = await detailLink.getAttribute('href');
     const campaignId = href ? href.replace('/campaigns/', '') : '';

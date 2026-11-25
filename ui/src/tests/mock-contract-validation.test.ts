@@ -13,6 +13,10 @@ import {
   mockCapabilities,
 } from '../mock/fixtures';
 import { mockHandlers, resetMockData } from '../mock/handlers';
+import {
+  SAFE_LAB_POLICY_DEFAULTS,
+  validateCampaignForm,
+} from '../utils/campaignValidation';
 
 describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
   let ajv: Ajv2020;
@@ -278,5 +282,87 @@ describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
     const valid = validate(mockCapabilities);
     expect(validate.errors).toBeNull();
     expect(valid).toBe(true);
+  });
+
+  it('validates CampaignCreateScreen safe-default payload and mockHandlers.createCampaign()', async () => {
+    resetMockData();
+    const { errors, payload } = validateCampaignForm({
+      ...SAFE_LAB_POLICY_DEFAULTS,
+      name: 'Contract check lab campaign',
+      objective: 'Verify campaign-create.v2 contract conformance from UI defaults',
+      authorizationLabel: 'owner, item 63, 2026-11-25',
+      domainsText: 'lab.aegis.test',
+      ipsText: '10.20.0.0/24',
+      keywordsText: 'aegis lab',
+    });
+    expect(errors).toEqual({});
+    expect(payload).toBeDefined();
+
+    const createReqSchema = ajv.getSchema(
+      'https://aegis.io/contracts/campaign/campaign-create.v2.schema.json'
+    )!;
+    expect(createReqSchema(payload)).toBe(true);
+    expect(createReqSchema.errors).toBeNull();
+
+    const createResSchema = ajv.compile(
+      openApiDoc.paths['/campaigns']?.post?.responses['202']?.content['application/json']?.schema
+    );
+    const created = await mockHandlers.createCampaign(payload!, 'contract-test-key-1234');
+    expect(createResSchema(created)).toBe(true);
+    expect(createResSchema.errors).toBeNull();
+
+    const campaignSchema = ajv.getSchema(
+      'https://aegis.io/contracts/campaign/campaign.v2.schema.json'
+    )!;
+    const fetched = await mockHandlers.getCampaign(created.campaign_id);
+    expect(campaignSchema(fetched)).toBe(true);
+    expect(campaignSchema.errors).toBeNull();
+  });
+
+  it('validates mockHandlers.updateCampaignPolicy() matches /campaigns/{id}/policy POST schema', async () => {
+    resetMockData();
+    const policyReqSchema = ajv.compile(
+      openApiDoc.paths['/campaigns/{campaign_id}/policy']?.post?.requestBody?.content[
+        'application/json'
+      ]?.schema
+    );
+    const policyResSchema = ajv.compile(
+      openApiDoc.paths['/campaigns/{campaign_id}/policy']?.post?.responses['200']?.content[
+        'application/json'
+      ]?.schema
+    );
+
+    const body = {
+      policy: {
+        network_profile: 'internet' as const,
+        max_parallel_jobs: 2,
+        max_duration_hours: 4,
+        rate_limits: {
+          requests_per_second_per_host: 1,
+          max_concurrent_connections_per_host: 2,
+        },
+        budget: {
+          max_jobs: 10,
+          idle_cycles_before_pause: 3,
+        },
+        authorization: {
+          owner: 'owner',
+          reference: 'owner, item 61, 2026-11-25',
+          date: '2026-11-25',
+          authorized_suffixes: ['example.com'],
+        },
+      },
+      reason: 'Thu hep gioi han toc do theo RoE moi',
+    };
+    expect(policyReqSchema(body)).toBe(true);
+    expect(policyReqSchema.errors).toBeNull();
+
+    const res = await mockHandlers.updateCampaignPolicy(
+      mockCampaigns[0].campaign_id,
+      body,
+      'policy-contract-key-1234'
+    );
+    expect(policyResSchema(res)).toBe(true);
+    expect(policyResSchema.errors).toBeNull();
   });
 });

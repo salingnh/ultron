@@ -1,5 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { apiClient, getOperatorToken, setOperatorToken, STORAGE_KEY_TOKEN } from '../api/client';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  ApiError,
+  apiClient,
+  getOperatorToken,
+  setOperatorToken,
+  STORAGE_KEY_TOKEN,
+} from '../api/client';
 import { resetMockData } from '../mock/handlers';
 import { parseSSEBlock } from '../api/sse';
 
@@ -177,5 +183,104 @@ describe('ApiClient (Mock & Contract Operations)', () => {
     });
     expect(res.items.length).toBeGreaterThanOrEqual(9);
     expect(res.items.every((ev) => ev.type === 'asset.discovered.v2')).toBe(true);
+  });
+
+  it('creates a campaign with Idempotency-Key replay and 409 conflict handling in mock mode', async () => {
+    const payload = {
+      name: 'Lab verification campaign',
+      objective: 'Test lab campaign creation',
+      targets: { domains: ['lab.aegis.test'] },
+      policy: {
+        network_profile: 'lab' as const,
+        max_parallel_jobs: 2,
+        max_duration_hours: 2,
+      },
+    };
+    const key = 'test-create-idemp-key-0001';
+    const created = await apiClient.createCampaign(payload, { idempotencyKey: key });
+    expect(created.status).toBe('CREATED');
+    expect(created.policy_version).toMatch(/^roe-\d+$/);
+
+    const replayed = await apiClient.createCampaign(payload, { idempotencyKey: key });
+    expect(replayed.campaign_id).toBe(created.campaign_id);
+
+    await expect(
+      apiClient.createCampaign({ ...payload, name: 'Different body' }, { idempotencyKey: key })
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'IDEMPOTENCY_CONFLICT',
+    });
+
+    const fetched = await apiClient.getCampaign(created.campaign_id);
+    expect(fetched.name).toBe('Lab verification campaign');
+    expect(fetched.policy?.network_profile).toBe('lab');
+  });
+
+  it('adopts a new policy snapshot on active campaign and rejects terminal campaign', async () => {
+    const activeId = '01934f6a-0000-7000-8000-000000000001';
+    const res = await apiClient.updateCampaignPolicy(
+      activeId,
+      {
+        policy: {
+          network_profile: 'lab',
+          max_parallel_jobs: 4,
+          max_duration_hours: 12,
+        },
+        reason: 'Tang gioi han song song len 4',
+      },
+      { idempotencyKey: 'test-policy-key-0001' }
+    );
+    expect(res.policy_version).toMatch(/^roe-\d+$/);
+    const updated = await apiClient.getCampaign(activeId);
+    expect(updated.policy_version).toBe(res.policy_version);
+    expect(updated.policy?.max_parallel_jobs).toBe(4);
+
+    // Campaign 0003 is COMPLETED -> 409 conflict
+    await expect(
+      apiClient.updateCampaignPolicy(
+        '01934f6a-0000-7000-8000-000000000003',
+        {
+          policy: { max_parallel_jobs: 2, max_duration_hours: 4 },
+          reason: 'Khong duoc phep tren terminal',
+        },
+        { idempotencyKey: 'test-policy-key-0002' }
+      )
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('sends Idempotency-Key and Bearer token headers on POST /campaigns in real mode', async () => {
+    setOperatorToken('op-real-token-xyz');
+    apiClient.setMock(false);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          campaign_id: '01934f6a-0000-7000-8000-000000000099',
+          status: 'CREATED',
+          policy_version: 'roe-1',
+          scope_id: '01934f6a-0000-7000-8000-0000000000aa',
+        }),
+        { status: 202, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    try {
+      await apiClient.createCampaign(
+        {
+          name: 'Header check',
+          objective: 'Verify headers',
+          targets: { domains: ['lab.aegis.test'] },
+          policy: { network_profile: 'lab', max_parallel_jobs: 1, max_duration_hours: 1 },
+        },
+        { idempotencyKey: 'fixed-idemp-key-9999' }
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0];
+      const headers = init?.headers as Headers;
+      expect(headers.get('Idempotency-Key')).toBe('fixed-idemp-key-9999');
+      expect(headers.get('Authorization')).toBe('Bearer op-real-token-xyz');
+    } finally {
+      fetchSpy.mockRestore();
+      apiClient.setMock(null);
+    }
   });
 });

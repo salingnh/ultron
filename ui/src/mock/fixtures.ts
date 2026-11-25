@@ -34,6 +34,7 @@ export const mockCampaigns: Campaign[] = [
       },
       rate_limits: {
         requests_per_second_per_host: 10,
+        max_concurrent_connections_per_host: 5,
         packets_per_second: 100,
         jobs_per_minute: 20,
       },
@@ -73,6 +74,10 @@ export const mockCampaigns: Campaign[] = [
       network_profile: 'lab',
       max_parallel_jobs: 3,
       max_duration_hours: 24,
+      rate_limits: {
+        requests_per_second_per_host: 2,
+        max_concurrent_connections_per_host: 2,
+      },
       budget: {
         idle_cycles_before_pause: 3,
       },
