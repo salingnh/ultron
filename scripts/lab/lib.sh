@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts/lab/*.sh. Source it; do not execute it directly.
 #
-# Everything here operates on compose project `aegis-lab` (deploy/lab/compose.yaml) and its
-# network `aegis-lab-lab`. Run containers are named `aegis-lab-*` and labelled
-# `aegis.lab=aegis-lab-run`; nothing outside the project is inspected or removed.
+# Everything here operates on one compose project - `aegis-lab` by default, or the name in
+# `AEGIS_LAB_PROJECT` (repo .env) for a checkout with its own isolated stack - and its network
+# `<project>-lab` (deploy/lab/compose.yaml). Run containers are named after the project and labelled
+# `aegis.lab=<project>-run`; nothing outside the project is inspected or removed.
 
 set -euo pipefail
 
@@ -18,17 +19,36 @@ FIXTURES_DIR="$LAB_DIR/fixtures"
 RUN_DIR="$LAB_DIR/.run"
 TLS_DIR="$RUN_DIR/tls"
 
-LAB_PROJECT=aegis-lab
-LAB_NETWORK=aegis-lab-lab
-DNS_CONTAINER=aegis-lab-dns
-PASSIVE_CONTAINER=aegis-lab-passive
+# shellcheck source=scripts/lib/stack.sh
+. "$(cd "$LAB_SCRIPTS/../lib" && pwd)/stack.sh"
+
+# The project name and everything derived from it; AEGIS_LAB_PROJECT comes from the repo .env when
+# it exists (make lab-up runs before dev-up on a fresh checkout, so .env may not be there yet).
+lab_project_from_env() {
+  if [ -f "$REPO_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$REPO_ROOT/.env"
+    set +a
+  fi
+}
+set_lab_names() {
+  LAB_PROJECT=${AEGIS_LAB_PROJECT:-aegis-lab}
+  LAB_NETWORK="$LAB_PROJECT-lab"
+  DNS_CONTAINER="$LAB_PROJECT-dns"
+  PASSIVE_CONTAINER="$LAB_PROJECT-passive"
+  RUN_LABEL="aegis.lab=$LAB_PROJECT-run"
+  # The G1.6a service containers: the hosts and ports a scanner should see open.
+  SERVICE_CONTAINERS=(
+    "$LAB_PROJECT-web-legacy" "$LAB_PROJECT-app" "$LAB_PROJECT-ssh" "$LAB_PROJECT-cache"
+    "$LAB_PROJECT-httpd"
+  )
+}
+lab_project_from_env
+set_lab_names
 LAB_ZONE=lab.aegis.test
 DNS_IP=10.114.53.53
 PASSIVE_IP=10.114.53.80
-RUN_LABEL=aegis.lab=aegis-lab-run
-
-# The G1.6a service containers: the hosts and ports a scanner should see open.
-SERVICE_CONTAINERS=(aegis-lab-web-legacy aegis-lab-app aegis-lab-ssh aegis-lab-cache aegis-lab-httpd)
 SERVICE_ENDPOINTS=(
   "web.lab.aegis.test:80"
   "web.lab.aegis.test:443"
@@ -62,6 +82,43 @@ load_images() {
 }
 
 compose() { podman-compose -p "$LAB_PROJECT" -f "$COMPOSE_FILE" "$@"; }
+
+# Ownership of the lab project on a shared host (scripts/lib/stack.sh): the checkout that created it
+# owns it, and only that checkout removes or recreates it.
+LAB_IDENTITY="$RUN_DIR/identity"
+
+lab_stack_fingerprint() {
+  stack_config_fingerprint "$COMPOSE_FILE" "$IMAGES_FILE" "$REPO_ROOT/.env" AEGIS_LAB_PROJECT
+}
+
+require_lab_stack_ownership() {
+  require_stack_ownership lab "$LAB_PROJECT" "$LAB_DIR" "$COMPOSE_FILE" \
+    "$(lab_stack_fingerprint)" "$LAB_IDENTITY" AEGIS_LAB_PROJECT
+}
+
+# laid out as stack_verdict: absent | ours | other:<owner dir> | config:<fingerprint>
+lab_stack_verdict() {
+  stack_verdict "$LAB_PROJECT" "$LAB_DIR" "$COMPOSE_FILE" "$(lab_stack_fingerprint)" "$LAB_IDENTITY"
+}
+
+# The lab of this host belongs to the checkout that created it, but one lab serves the whole host
+# (its subnet and addresses are fixed). A checkout that finds another one's lab uses it as it is
+# (never `compose up`, which could recreate the containers) and takes that lab's throwaway CA, so its
+# own scanner jobs trust the certificate the lab actually serves.
+adopt_running_lab() {
+  local owner_lab=$1 owner
+  owner=$(cd "$owner_lab/../.." && pwd)
+  local ca="$owner_lab/.run/tls/ca.crt"
+  [ -f "$ca" ] ||
+    die "the lab belongs to $owner but its CA is missing ($ca); run 'make lab-up' there, or set AEGIS_LAB_PROJECT in .env for a lab of your own"
+  mkdir -p "$TLS_DIR"
+  cp -f "$ca" "$TLS_DIR/ca.crt"
+  log "lab: using the running lab of $owner (no recreate); its CA is in $TLS_DIR/ca.crt"
+}
+
+record_lab_stack_identity() {
+  record_stack_identity "$LAB_IDENTITY" "$LAB_PROJECT" "$LAB_DIR" "$(lab_stack_fingerprint)"
+}
 
 container_exists() { podman container exists "$1" 2>/dev/null; }
 

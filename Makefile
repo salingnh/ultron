@@ -19,14 +19,15 @@ help:
 	@printf '%s\n' \
 	  'make dev-up          start PostgreSQL 16, Neo4j 5.26, SeaweedFS (S3) and Temporal;' \
 	  '                     apply migrations, graph constraints and the raw bucket' \
-	  'make dev-down        remove only the aegis-dev compose project (containers + volumes)' \
+	  'make dev-down        remove only this checkout\'s dev compose project (containers + volumes);' \
+	  '                     AEGIS_DEV_PROJECT in .env names it when several checkouts share a host' \
 	  'make dev-reset       dev-down then dev-up: a database from the replaced migration chain is' \
 	  '                     reset (the contract schema has one baseline migration)' \
 	  'make dev-status      health and endpoints of the dev stack (non-zero if not healthy)' \
 	  'make dev-logs        follow the dev stack logs' \
-	  'make lab-up          start the authorized lab: lab zone DNS + local passive-source stub' \
-	  '                     on an internal network (aegis-lab, no published ports)' \
-	  'make lab-down        remove only the aegis-lab compose project and the throwaway lab CA' \
+	  'make lab-up          start the authorized lab (or use the one already running on this host):' \
+	  '                     lab zone DNS + local passive-source stub on an internal network' \
+	  'make lab-down        remove only this checkout\'s lab project and the throwaway lab CA' \
 	  'make lab-status      lab health and boundary (non-zero if not healthy)' \
 	  'make lab-check       inventory consistency + Subfinder, DNSx and Naabu runs compared to' \
 	  '                     fixtures' \

@@ -5,14 +5,15 @@
 # migrations, graph constraints and the S3 bucket are applied in order.
 # Direct podman-compose runs must export deploy/dev/images.env and root .env first.
 #
-# Project name is fixed by the caller (`podman-compose -p aegis-dev`): it is the only
-# stack this repo owns, and `make dev-down` removes nothing else.
-name: aegis-dev
+# Project name comes from the caller (`podman-compose -p <AEGIS_DEV_PROJECT or aegis-dev>`): it is
+# the only stack this repo owns, `make dev-down` removes nothing else, and a checkout on a shared host
+# can run its own copy under another name (AEGIS_DEV_PROJECT + free ports in .env).
+name: ${AEGIS_DEV_PROJECT:-aegis-dev}
 
 services:
   pg:
     image: ${AEGIS_PG_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
-    container_name: aegis-dev-pg
+    container_name: ${AEGIS_DEV_PROJECT:-aegis-dev}-pg
     restart: "no"
     environment:
       POSTGRES_USER: ${AEGIS_PG_USER:-aegis}
@@ -32,7 +33,7 @@ services:
 
   neo4j:
     image: ${AEGIS_NEO4J_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
-    container_name: aegis-dev-neo4j
+    container_name: ${AEGIS_DEV_PROJECT:-aegis-dev}-neo4j
     restart: "no"
     environment:
       NEO4J_AUTH: neo4j/${AEGIS_NEO4J_PASSWORD:?set in .env - see .env.example}
@@ -54,7 +55,7 @@ services:
 
   seaweedfs:
     image: ${AEGIS_SEAWEEDFS_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
-    container_name: aegis-dev-seaweedfs
+    container_name: ${AEGIS_DEV_PROJECT:-aegis-dev}-seaweedfs
     restart: "no"
     command: ["mini", "-dir=/data"]
     environment:
@@ -74,7 +75,7 @@ services:
 
   temporal:
     image: ${AEGIS_TEMPORAL_IMAGE:?run through make dev-up so deploy/dev/images.env is exported}
-    container_name: aegis-dev-temporal
+    container_name: ${AEGIS_DEV_PROJECT:-aegis-dev}-temporal
     restart: "no"
     depends_on:
       pg:

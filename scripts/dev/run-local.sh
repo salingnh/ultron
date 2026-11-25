@@ -35,7 +35,6 @@ require_cmd curl
 require_cmd ss "install iproute2"
 require_cmd uv "install uv (https://docs.astral.sh/uv/)"
 
-STATE_DIR="$REPO_ROOT/.local"
 mkdir -p "$STATE_DIR"
 TOKENS_FILE="$STATE_DIR/operators.json"
 TOKEN_FILE="$STATE_DIR/operator-token"
@@ -43,6 +42,9 @@ SERVICE_TOKEN_FILE="$STATE_DIR/service-token"
 STACK_MARKER="$STATE_DIR/stack.started"
 LAB_MARKER="$STATE_DIR/lab.started"
 LAB_PROFILE="$REPO_ROOT/deploy/lab/runner-profile.json"
+# The lab profile names the lab network; a checkout with its own lab project gets its own network and
+# therefore its own copy of the profile (absolute paths, so the copy can live under .local/).
+LAB_PROFILE_LOCAL="$STATE_DIR/lab-runner-profile.json"
 INTERNET_PROFILE="$REPO_ROOT/deploy/internet/runner-profile.json"
 BROKER_IMAGE=${AEGIS_M06_BROKER_IMAGE:-localhost/aegis-broker:g16}
 MCP_PORT=${MCP_PORT:-8105}
@@ -122,7 +124,23 @@ export AEGIS_API_URL="http://127.0.0.1:$API_PORT"
 # profile is deploy config (deploy/lab/runner-profile.json); without it jobs keep their own per-job
 # network and broker, and a lab tool would have no endpoint to reach.
 if [ "${LAB:-1}" = 1 ] && [ -f "$LAB_PROFILE" ]; then
-  export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE"
+  if [ "$LAB_NETWORK" = "aegis-lab-lab" ]; then
+    export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE"
+  else
+    require_cmd python3
+    python3 - "$LAB_PROFILE" "$LAB_PROFILE_LOCAL" "$LAB_NETWORK" <<'PY_PROFILE'
+import json, sys
+from pathlib import Path
+source, target, network = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+document = json.loads(source.read_text(encoding="utf-8"))
+document["network"] = network
+for job in document.get("jobs", []):
+    for mount in job.get("mounts", []):
+        mount["source"] = str((source.parent / mount["source"]).resolve())
+target.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
+PY_PROFILE
+    export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE_LOCAL"
+  fi
 fi
 # The internet profile (G1.6) is what an operator campaign needs: its `network` is the broker's
 # uplink, and the broker image is the stdlib-only broker container. Both are deploy config; a job

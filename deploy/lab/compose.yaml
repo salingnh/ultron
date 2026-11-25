@@ -5,15 +5,15 @@
 # throwaway lab CA, wait for readiness and verify the lab boundary. Direct podman-compose
 # runs must export deploy/lab/images.env first.
 #
-# Project name is fixed by the caller (`podman-compose -p aegis-lab`): it is the only stack
+# Project name comes from the caller (`podman-compose -p <AEGIS_LAB_PROJECT or aegis-lab>`): it is the only stack
 # this file owns, and `make lab-down` removes nothing else. There is no published port: the
 # only clients are the scanner containers that join `aegis-lab-lab`.
-name: aegis-lab
+name: ${AEGIS_LAB_PROJECT:-aegis-lab}
 
 services:
   dns:
     image: ${AEGIS_LAB_DNS_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-dns
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-dns
     restart: "no"
     # The image entrypoint is just /coredns, so the config path must be explicit.
     command: ["-conf", "/etc/coredns/Corefile"]
@@ -37,7 +37,7 @@ services:
 
   passive:
     image: ${AEGIS_LAB_PASSIVE_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-passive
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-passive
     restart: "no"
     command: ["python3", "/srv/crtsh_stub.py"]
     read_only: true
@@ -79,7 +79,7 @@ services:
   # port/service and CVE chain, that one publishes a current version for banner fingerprinting.
   web-legacy:
     image: ${AEGIS_LAB_WEB_LEGACY_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-web-legacy
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-web-legacy
     restart: "no"
     # The image's /docker-entrypoint.d scripts rewrite the baked-in config; the lab mounts its own,
     # so nginx is started directly and never writes to its root filesystem.
@@ -104,7 +104,7 @@ services:
 
   app:
     image: ${AEGIS_LAB_APP_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-app
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-app
     restart: "no"
     read_only: true
     cap_drop: [ALL]
@@ -122,7 +122,7 @@ services:
 
   ssh:
     image: ${AEGIS_LAB_SSH_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-ssh
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-ssh
     restart: "no"
     environment:
       PUID: "1000"
@@ -153,7 +153,7 @@ services:
   # real discovery chain can show a candidate without a fixture standing in for the scanner.
   legacy-httpd:
     image: ${AEGIS_LAB_HTTPD_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-httpd
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-httpd
     restart: "no"
     read_only: true
     cap_drop: [ALL]
@@ -170,7 +170,7 @@ services:
 
   cache:
     image: ${AEGIS_LAB_CACHE_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-cache
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-cache
     restart: "no"
     command: ["redis-server", "--save", "", "--appendonly", "no", "--bind", "0.0.0.0"]
     read_only: true
@@ -188,7 +188,7 @@ services:
 
 networks:
   lab:
-    name: aegis-lab-lab
+    name: ${AEGIS_LAB_PROJECT:-aegis-lab}-lab
     internal: true
     ipam:
       config:
