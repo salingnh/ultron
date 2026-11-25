@@ -9,7 +9,7 @@
   "provider": {
     "name": "naabu",
     "version": "v2.7.0",
-    "adapter_version": "1.0.1",
+    "adapter_version": "1.0.2",
     "image_digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa"
   },
   "policy_version": "roe-1",

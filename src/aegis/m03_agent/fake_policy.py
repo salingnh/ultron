@@ -349,6 +349,7 @@ class ScriptedLabPolicy:
                     "targets": addresses[:100],
                     "ports": list(SERVICE_PORTS),
                     "packets_per_second": SERVICE_PACKETS_PER_SECOND,
+                    "concurrency": 1,
                 },
                 "rationale": DISCOVER_RATIONALE,
                 "expected_signal": "open ports on the campaign's addresses (EXPOSES edges)",

@@ -512,6 +512,12 @@ def test_egress_job_reaches_only_its_broker(
         records = runner.audit_records(job_id)
         reasons = {str(record["reason"]) for record in records}
         assert {"OK", "DENY_LOOPBACK", "DENY_PRIVATE"} <= reasons
+        # A refused connection is not a result: the envelope says the coverage is incomplete.
+        assert outcome.envelope is not None
+        coverage = outcome.envelope.coverage
+        assert coverage.complete is False
+        codes = {str(limit.code) for limit in coverage.limitations or []}
+        assert "EGRESS_DENIED" in codes
         assert {str(record["network_profile"]) for record in records} == {"internet"}
         assert runner.list_jobs() == ()
         assert runner.layout(job_id).audit.joinpath("egress.jsonl").exists()

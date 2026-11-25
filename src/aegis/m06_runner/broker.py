@@ -45,15 +45,18 @@ HANDSHAKE_TIMEOUT_SECONDS = 30.0
 RELAY_CHUNK = 64 * 1024
 IDLE_RELAY_SECONDS = 60.0
 DENY_STATUS = "403 Forbidden"
+#: A connection waits at most this long for a RoE slot before it is refused (the only refusal).
+MAX_WAIT_SECONDS = 10.0
+WAIT_POLL_SECONDS = 0.05
 
 
 class HostLimiter:
     """Per-host safety caps of the internet profile (RoE `rate_limits`), enforced before dialling.
 
-    A token bucket per host gives the campaign's `requests_per_second_per_host` a burst of at most
-    one second's worth (at least one request, so a slow cap still lets a tool start), and a counter
-    caps the tunnels that are open to the same host at `max_concurrent_connections_per_host`.
-    A refused handshake is a deny with a stable reason, never a silent wait: the tool sees the cap.
+    The caps pace a tool, they do not fail it: a connection waits in a bounded queue for a rate
+    token or a free tunnel, and is refused only when the bounded wait itself times out. That matters
+    for a scanner, which reads a refused CONNECT as "port closed": a deny would be a silent false
+    negative. A timeout is a real refusal and the job reports it as incomplete coverage.
     """
 
     def __init__(
@@ -62,54 +65,76 @@ class HostLimiter:
         rate_per_second: float | None,
         max_connections: int | None,
         now: Callable[[], float] = time.monotonic,
+        max_wait_seconds: float = MAX_WAIT_SECONDS,
     ) -> None:
         self.rate = rate_per_second
         self.max_connections = max_connections
+        self.max_wait = max_wait_seconds
         self._now = now
-        self._lock = threading.Lock()
+        self._changed = threading.Condition()
         self._tokens: dict[str, float] = {}
         self._filled_at: dict[str, float] = {}
         self._live: dict[str, int] = {}
+        self.waited_seconds = 0.0
 
     @property
     def capacity(self) -> float:
         return max(1.0, float(self.rate or 0.0))
 
     def admit(self, host: str) -> str | None:
-        """None when the connection may open, else the deny reason code."""
+        """None when the connection may open, else the deny reason after the bounded wait."""
         key = denyset.host_key(host)
-        with self._lock:
-            if self.max_connections is not None and self._live.get(key, 0) >= self.max_connections:
-                return netpolicy.Reason.CONCURRENCY_LIMITED.value
-            if self.rate is not None:
-                moment = self._now()
-                capacity = self.capacity
-                tokens = self._tokens.get(key, capacity)
-                filled = self._filled_at.get(key, moment)
-                tokens = min(capacity, tokens + max(0.0, moment - filled) * self.rate)
-                if tokens < 1.0:
-                    self._tokens[key] = tokens
-                    self._filled_at[key] = moment
-                    return netpolicy.Reason.RATE_LIMITED.value
-                self._tokens[key] = tokens - 1.0
-                self._filled_at[key] = moment
-            if self.max_connections is not None:
-                self._live[key] = self._live.get(key, 0) + 1
-            return None
+        # The bounded wait is wall-clock time (a fake clock is only for the rate arithmetic): a
+        # policy that never frees a slot must not hang the broker.
+        deadline = time.monotonic() + self.max_wait
+        waiting_since = self._now()
+        with self._changed:
+            while True:
+                now = self._now()
+                blocked: str | None = None
+                if (
+                    self.max_connections is not None
+                    and self._live.get(key, 0) >= self.max_connections
+                ):
+                    blocked = netpolicy.Reason.CONCURRENCY_LIMITED.value
+                elif self.rate is not None:
+                    capacity = self.capacity
+                    tokens = self._tokens.get(key, capacity)
+                    filled = self._filled_at.get(key, now)
+                    tokens = min(capacity, tokens + max(0.0, now - filled) * self.rate)
+                    if tokens < 1.0:
+                        self._tokens[key] = tokens
+                        self._filled_at[key] = now
+                        blocked = netpolicy.Reason.RATE_LIMITED.value
+                    else:
+                        self._tokens[key] = tokens - 1.0
+                        self._filled_at[key] = now
+                if blocked is None:
+                    if self.max_connections is not None:
+                        self._live[key] = self._live.get(key, 0) + 1
+                    self.waited_seconds += max(0.0, now - waiting_since)
+                    return None
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    # The bounded wait is over: this is the only real refusal (a timeout).
+                    self.waited_seconds += max(0.0, self._now() - waiting_since)
+                    return blocked
+                self._changed.wait(min(remaining, WAIT_POLL_SECONDS))
 
     def release(self, host: str) -> None:
         if self.max_connections is None:
             return
         key = denyset.host_key(host)
-        with self._lock:
+        with self._changed:
             live = self._live.get(key, 0)
             if live <= 1:
                 self._live.pop(key, None)
             else:
                 self._live[key] = live - 1
+            self._changed.notify_all()
 
     def live(self, host: str) -> int:
-        with self._lock:
+        with self._changed:
             return self._live.get(denyset.host_key(host), 0)
 
 

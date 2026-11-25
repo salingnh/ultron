@@ -5,7 +5,7 @@
       "imageDigest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
       "args": [
         "-sources",
-        "crtsh,otx",
+        "crtsh,alienvault,hackertarget,rapiddns,waybackarchive,commoncrawl",
         "-proxy",
         "${broker_http}"
       ],

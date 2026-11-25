@@ -17,7 +17,12 @@ import pytest
 from adapters.m09.naabu.parser import ParserInputError, parse
 
 TASK: dict[str, Any] = {
-    "input": {"targets": ["ip:10.114.53.211"], "ports": [80, 443], "packets_per_second": 100}
+    "input": {
+        "targets": ["ip:10.114.53.211"],
+        "ports": [80, 443],
+        "packets_per_second": 100,
+        "concurrency": 1,
+    }
 }
 
 
