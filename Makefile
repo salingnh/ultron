@@ -12,7 +12,7 @@ SHELL := /bin/bash
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-recovery soak-start soak-stop \
-	run-local stop-local seed-demo
+	run-local stop-local seed-demo llm-smoke
 
 help:
 	@printf '%s\n' \
@@ -46,7 +46,9 @@ help:
 	  '                     DNSx -> raw + metadata + graph + events, with the evidence printed' \
 	  'make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate' \
 	  'make soak-start      start the shortened 24 h soak (SOAK_HOURS=... to change) in .local/soak/' \
-	  'make soak-stop       stop the soak; its report stays in .local/soak/report.txt'
+	  'make soak-stop       stop the soak; its report stays in .local/soak/report.txt' \
+	  'make llm-smoke       ONE real provider call with the key from .env (never in CI);' \
+	  '                     prints the provider answer, tokens and cost - see .env.example'
 
 dev-up:
 	@scripts/dev/dev-up.sh
@@ -179,3 +181,10 @@ stop-local:
 seed-demo:
 	@scripts/dev/seed-demo.py --api-url "$${AEGIS_API_URL:-http://127.0.0.1:8000}" \
 		--token "$${AEGIS_DEV_TOKEN:?set AEGIS_DEV_TOKEN to the token make run-local printed}"
+
+# --- G1.6: the live model (owner decision 2026-11-25) --------------------------
+# One real provider call with the key from .env (or the environment). Manual only: it sends a
+# request the platform pays for, so it is not part of any CI gate. The script validates the live
+# settings first (a missing key/price/provider is an error, never a silent 0) and refuses a CI host.
+llm-smoke:
+	@uv run --frozen python scripts/dev/llm-smoke.py

@@ -1,0 +1,15 @@
+{
+  "id": "msg_g16plan0002",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-5-20260201",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"decision\":\"stop\",\"summary\":\"the campaign objective is met; nothing is left to propose\"}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": { "input_tokens": 946, "output_tokens": 31 }
+}
