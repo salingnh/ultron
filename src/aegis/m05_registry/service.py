@@ -58,7 +58,12 @@ from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
 from aegis.contracts_gen.common.error_v2_schema import NextAction
 from aegis.m01_campaign.audit import record_audit
 from aegis.m05_registry.canonical import job_fingerprint, sha256_hex
-from aegis.m05_registry.caps import CampaignPolicy, check_campaign_caps, merge_input
+from aegis.m05_registry.caps import (
+    CampaignPolicy,
+    check_campaign_caps,
+    merge_input,
+    network_profile,
+)
 from aegis.m05_registry.dependency import check_dependencies
 from aegis.m05_registry.egress import (
     EgressBinding,
@@ -784,6 +789,10 @@ class PostgresJobService:
             "campaign_id": campaign.campaign_id,
             "scope_id": campaign.scope_id,
             "policy_version": campaign.policy_version,
+            # The campaign's RoE decides the network profile; it is signed with the task so M06
+            # never picks lab vs internet from its own environment (G1.6). A campaign that omits
+            # the field runs on `internet` (the operator default); demo/CI set `lab` explicitly.
+            "network_profile": network_profile(campaign.policy),
             "capability": record.capability,
             "provider": record.provider,
             "provider_version": record.provider_version,

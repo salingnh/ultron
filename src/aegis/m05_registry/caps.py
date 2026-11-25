@@ -34,7 +34,27 @@ __all__ = [
     "CampaignPolicy",
     "check_campaign_caps",
     "merge_input",
+    "network_profile",
 ]
+
+#: The profile a campaign with no `network_profile` in its RoE runs on: the operator default is
+#: the internet profile; demo/CI set `lab` explicitly (G1.6).
+DEFAULT_NETWORK_PROFILE = "internet"
+PROFILES = frozenset({"lab", "internet"})
+
+
+def network_profile(policy: Mapping[str, Any]) -> str:
+    """The campaign's network profile, signed into every task it produces."""
+    value = policy.get("network_profile")
+    profile = DEFAULT_NETWORK_PROFILE if value is None else str(value)
+    if profile not in PROFILES:
+        # The schema and the DDL already close the enum; this is the fail-closed read in M05.
+        raise M05Error.policy_denied(
+            "network_profile_unknown",
+            f"campaign RoE names an unknown network_profile {profile!r}",
+            field="/policy/network_profile",
+        )
+    return profile
 
 
 def merge_input(record: ManifestRecord, submitted: Mapping[str, Any]) -> dict[str, Any]:

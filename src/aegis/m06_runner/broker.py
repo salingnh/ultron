@@ -30,12 +30,13 @@ import socketserver
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from aegis.m06_runner import netpolicy
+from aegis.m06_runner import denyset, netpolicy
 
 MAX_HEADER_BYTES = 64 * 1024
 HANDSHAKE_TIMEOUT_SECONDS = 30.0
@@ -44,12 +45,89 @@ IDLE_RELAY_SECONDS = 60.0
 DENY_STATUS = "403 Forbidden"
 
 
+class HostLimiter:
+    """Per-host safety caps of the internet profile (RoE `rate_limits`), enforced before dialling.
+
+    A token bucket per host gives the campaign's `requests_per_second_per_host` a burst of at most
+    one second's worth (at least one request, so a slow cap still lets a tool start), and a counter
+    caps the tunnels that are open to the same host at `max_concurrent_connections_per_host`.
+    A refused handshake is a deny with a stable reason, never a silent wait: the tool sees the cap.
+    """
+
+    def __init__(
+        self,
+        *,
+        rate_per_second: float | None,
+        max_connections: int | None,
+        now: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.rate = rate_per_second
+        self.max_connections = max_connections
+        self._now = now
+        self._lock = threading.Lock()
+        self._tokens: dict[str, float] = {}
+        self._filled_at: dict[str, float] = {}
+        self._live: dict[str, int] = {}
+
+    @property
+    def capacity(self) -> float:
+        return max(1.0, float(self.rate or 0.0))
+
+    def admit(self, host: str) -> str | None:
+        """None when the connection may open, else the deny reason code."""
+        key = denyset.host_key(host)
+        with self._lock:
+            if self.max_connections is not None and self._live.get(key, 0) >= self.max_connections:
+                return netpolicy.Reason.CONCURRENCY_LIMITED.value
+            if self.rate is not None:
+                moment = self._now()
+                capacity = self.capacity
+                tokens = self._tokens.get(key, capacity)
+                filled = self._filled_at.get(key, moment)
+                tokens = min(capacity, tokens + max(0.0, moment - filled) * self.rate)
+                if tokens < 1.0:
+                    self._tokens[key] = tokens
+                    self._filled_at[key] = moment
+                    return netpolicy.Reason.RATE_LIMITED.value
+                self._tokens[key] = tokens - 1.0
+                self._filled_at[key] = moment
+            if self.max_connections is not None:
+                self._live[key] = self._live.get(key, 0) + 1
+            return None
+
+    def release(self, host: str) -> None:
+        if self.max_connections is None:
+            return
+        key = denyset.host_key(host)
+        with self._lock:
+            live = self._live.get(key, 0)
+            if live <= 1:
+                self._live.pop(key, None)
+            else:
+                self._live[key] = live - 1
+
+    def live(self, host: str) -> int:
+        with self._lock:
+            return self._live.get(denyset.host_key(host), 0)
+
+
 class AuditLog:
     """One JSON line per decision, flushed per line: an audit line is evidence, not a buffer."""
 
-    def __init__(self, path: Path, job_id: str) -> None:
+    def __init__(
+        self,
+        path: Path,
+        job_id: str,
+        *,
+        profile: str = "lab",
+        campaign_id: str = "",
+        authorization: str = "",
+    ) -> None:
         self.path = path
         self.job_id = job_id
+        self.profile = profile
+        self.campaign_id = campaign_id
+        self.authorization = authorization
         self._lock = threading.Lock()
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -57,6 +135,9 @@ class AuditLog:
         record: dict[str, Any] = {
             "ts": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "job_id": self.job_id,
+            "campaign_id": self.campaign_id,
+            "network_profile": self.profile,
+            "authorization": self.authorization,
             **decision.as_audit(),
         }
         line = json.dumps(record, sort_keys=True) + "\n"
@@ -163,16 +244,37 @@ def _origin_form(target: str) -> str:
 
 
 class EgressBroker:
-    """Decision + dialling shared by both front ends."""
+    """Decision + admission + dialling shared by both front ends."""
 
-    def __init__(self, policy: netpolicy.JobEgressPolicy, audit: AuditLog) -> None:
+    def __init__(
+        self,
+        policy: netpolicy.JobEgressPolicy,
+        audit: AuditLog,
+        *,
+        limiter: HostLimiter | None = None,
+    ) -> None:
         self.policy = policy
         self.audit = audit
+        self.limiter = limiter or HostLimiter(
+            rate_per_second=policy.per_host_rps,
+            max_connections=policy.per_host_max_connections,
+        )
 
-    def decide(self, host: str, port: int) -> netpolicy.Decision:
+    def admit(self, host: str, port: int) -> netpolicy.Decision:
+        """Decide one connection, apply the host caps and write exactly one audit line."""
         decision = netpolicy.decide(self.policy, host, port)
+        if decision.allowed:
+            refused = self.limiter.admit(host)
+            if refused is not None:
+                decision = replace(
+                    decision, allowed=False, reason=netpolicy.Reason(refused), pinned=None
+                )
         self.audit.write(decision)
         return decision
+
+    def release(self, decision: netpolicy.Decision) -> None:
+        if decision.allowed:
+            self.limiter.release(decision.host)
 
     def dial(self, decision: netpolicy.Decision) -> socket.socket | None:
         if decision.pinned is None:
@@ -238,35 +340,38 @@ def _http(conn: socket.socket, broker: EgressBroker) -> None:
         conn.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
         return
 
-    decision = broker.decide(parsed.host, parsed.port)
+    decision = broker.admit(parsed.host, parsed.port)
     if not decision.allowed:
         conn.sendall(_deny_response(decision))
         return
     upstream = broker.dial(decision)
-    if upstream is None:
-        conn.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
-        return
-    with upstream:
-        if method == "CONNECT":
-            conn.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+    try:
+        if upstream is None:
+            conn.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+            return
+        with upstream:
+            if method == "CONNECT":
+                conn.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                conn.settimeout(None)
+                upstream.settimeout(None)
+                _relay(conn, upstream)
+                return
+            headers = [
+                line
+                for line in lines[1:]
+                if line and not line.lower().startswith((b"proxy-", b"connection:"))
+            ]
+            request = (
+                f"{method} {upstream_target} {version}\r\n".encode("ascii", "replace")
+                + b"\r\n".join(headers)
+                + b"\r\n\r\n"
+            )
+            upstream.sendall(request)
             conn.settimeout(None)
             upstream.settimeout(None)
             _relay(conn, upstream)
-            return
-        headers = [
-            line
-            for line in lines[1:]
-            if line and not line.lower().startswith((b"proxy-", b"connection:"))
-        ]
-        request = (
-            f"{method} {upstream_target} {version}\r\n".encode("ascii", "replace")
-            + b"\r\n".join(headers)
-            + b"\r\n\r\n"
-        )
-        upstream.sendall(request)
-        conn.settimeout(None)
-        upstream.settimeout(None)
-        _relay(conn, upstream)
+    finally:
+        broker.release(decision)
 
 
 def _socks5(conn: socket.socket, broker: EgressBroker) -> None:
@@ -292,21 +397,24 @@ def _socks5(conn: socket.socket, broker: EgressBroker) -> None:
     if len(port_bytes) != 2:
         return
     port = int.from_bytes(port_bytes, "big")
-    decision = broker.decide(host, port)
+    decision = broker.admit(host, port)
     if not decision.allowed:
         conn.sendall(b"\x05\x02\x00\x01\x00\x00\x00\x00\x00\x00")
         return
     upstream = broker.dial(decision)
-    if upstream is None:
-        conn.sendall(b"\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00")
-        return
-    with upstream:
-        bind_host, bind_port = upstream.getsockname()[:2]
-        reply = b"\x05\x00\x00\x01" + ipaddress.IPv4Address(str(bind_host)).packed
-        conn.sendall(reply + int(bind_port).to_bytes(2, "big"))
-        conn.settimeout(None)
-        upstream.settimeout(None)
-        _relay(conn, upstream)
+    try:
+        if upstream is None:
+            conn.sendall(b"\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00")
+            return
+        with upstream:
+            bind_host, bind_port = upstream.getsockname()[:2]
+            reply = b"\x05\x00\x00\x01" + ipaddress.IPv4Address(str(bind_host)).packed
+            conn.sendall(reply + int(bind_port).to_bytes(2, "big"))
+            conn.settimeout(None)
+            upstream.settimeout(None)
+            _relay(conn, upstream)
+    finally:
+        broker.release(decision)
 
 
 def _read_socks_address(conn: socket.socket, address_type: int) -> str | None:
@@ -371,7 +479,13 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     serve(
         policy,
-        AuditLog(args.audit, policy.job_id),
+        AuditLog(
+            args.audit,
+            policy.job_id,
+            profile=policy.profile,
+            campaign_id=policy.campaign_id,
+            authorization=policy.authorization,
+        ),
         http_port=args.http_port,
         socks_port=args.socks_port,
         bind=args.bind,

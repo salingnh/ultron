@@ -43,6 +43,8 @@ SERVICE_TOKEN_FILE="$STATE_DIR/service-token"
 STACK_MARKER="$STATE_DIR/stack.started"
 LAB_MARKER="$STATE_DIR/lab.started"
 LAB_PROFILE="$REPO_ROOT/deploy/lab/runner-profile.json"
+INTERNET_PROFILE="$REPO_ROOT/deploy/internet/runner-profile.json"
+BROKER_IMAGE=${AEGIS_M06_BROKER_IMAGE:-localhost/aegis-broker:g16}
 MCP_PORT=${MCP_PORT:-8105}
 
 # "Present" means anything of the project exists - a container (running or not) or a volume - so a
@@ -121,6 +123,30 @@ export AEGIS_API_URL="http://127.0.0.1:$API_PORT"
 # network and broker, and a lab tool would have no endpoint to reach.
 if [ "${LAB:-1}" = 1 ] && [ -f "$LAB_PROFILE" ]; then
   export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE"
+fi
+# The internet profile (G1.6) is what an operator campaign needs: its `network` is the broker's
+# uplink, and the broker image is the stdlib-only broker container. Both are deploy config; a job
+# whose campaign names `internet` without them is refused before a container exists (fail closed).
+if [ "${INTERNET:-1}" = 1 ] && [ -f "$INTERNET_PROFILE" ]; then
+  export AEGIS_M06_INTERNET_PROFILE="$INTERNET_PROFILE"
+  if ! podman image exists "$BROKER_IMAGE" >/dev/null 2>&1; then
+    log "broker: building $BROKER_IMAGE (deploy/broker/Containerfile)"
+    podman build --quiet --file "$REPO_ROOT/deploy/broker/Containerfile" --tag "$BROKER_IMAGE" \
+      "$REPO_ROOT" >/dev/null
+  fi
+  export AEGIS_M06_BROKER_IMAGE="$BROKER_IMAGE"
+  # The broker's outbound leg gets a network of its own (G1.6): never the host's default bridge,
+  # where unrelated containers could reach the broker or impersonate an upstream. run-local creates
+  # it once and removes it only when it created it (marker file).
+  UPLINK_NETWORK=${UPLINK_NETWORK:-aegis-uplink}
+  if podman network exists "$UPLINK_NETWORK" >/dev/null 2>&1; then
+    log "uplink: reusing network $UPLINK_NETWORK"
+  else
+    podman network create --label aegis.uplink=run-local "$UPLINK_NETWORK" >/dev/null
+    printf '%s' "$UPLINK_NETWORK" >"$UPLINK_MARKER"
+    log "uplink: created network $UPLINK_NETWORK (stop-local will remove it)"
+  fi
+  export AEGIS_UPLINK_NETWORK="$UPLINK_NETWORK"
 fi
 
 # --- 2. migrations through the one runner ------------------------------------
@@ -243,6 +269,10 @@ export AEGIS_ALLOW_DEV_SIGNING_KEY=1
 export AEGIS_OPERATOR_TOKEN="$(cat "$TOKEN_FILE")"
 export AEGIS_OPERATOR_TOKENS_FILE="$TOKENS_FILE"
 export AEGIS_M06_LAB_PROFILE="${AEGIS_M06_LAB_PROFILE:-}"
+export AEGIS_M06_INTERNET_PROFILE="${AEGIS_M06_INTERNET_PROFILE:-}"
+export AEGIS_M06_BROKER_IMAGE="${AEGIS_M06_BROKER_IMAGE:-}"
+export AEGIS_UPLINK_NETWORK="${AEGIS_UPLINK_NETWORK:-}"
+export AEGIS_SUBFINDER_PROVIDER_CONFIG="${AEGIS_SUBFINDER_PROVIDER_CONFIG:-}"
 export AEGIS_WORKERS="${WORKERS:-1}"
 RUNENV
 )

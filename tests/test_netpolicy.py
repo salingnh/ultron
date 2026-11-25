@@ -194,3 +194,80 @@ def test_declared_metadata_names_are_denied_at_runtime(host: str) -> None:
     policy = _source_only(host)
     resolver = StubResolver({host: ["169.254.169.254"]})
     assert decide(policy, host, 443, resolver=resolver).reason is Reason.DENY_METADATA
+
+
+# --- internet profile (G1.6) -----------------------------------------------------------------
+
+PRIVATE = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")
+
+
+def _internet(*hosts: str, targets: tuple[str, ...] = ()) -> JobEgressPolicy:
+    return JobEgressPolicy(
+        job_id="job-1",
+        profile="internet",
+        sources=(SourceAllow(id="crtsh", hosts=hosts, ports=(443,)),),
+        target_ips=tuple(ipaddress.ip_network(f"{address}/32") for address in targets),
+        private_cidrs=tuple(ipaddress.ip_network(entry) for entry in PRIVATE),
+    )
+
+
+def test_a_private_answer_is_denied_on_the_internet_profile() -> None:
+    policy = _internet("intranet.example")
+    resolver = StubResolver({"intranet.example": ["10.1.2.3"]})
+    decision = decide(policy, "intranet.example", 443, resolver=resolver)
+    assert decision.reason is Reason.DENY_PRIVATE
+    assert decision.resolved == ("10.1.2.3",)
+    # An IPv6 ULA is the same rule, not a second code path.
+    resolver6 = StubResolver({"intranet.example": ["fd00::10"]})
+    assert decide(policy, "intranet.example", 443, resolver=resolver6).reason is Reason.DENY_PRIVATE
+
+
+def test_a_private_address_the_campaign_targets_is_allowed() -> None:
+    # Owner decision (item 61): private ranges are reachable only when the campaign explicitly
+    # targets them - the signed target address is that statement.
+    policy = _internet("internal.example", targets=("10.1.2.3",))
+    resolver = StubResolver({"internal.example": ["10.1.2.3"]})
+    decision = decide(policy, "internal.example", 443, resolver=resolver)
+    assert decision.allowed and decision.pinned == "10.1.2.3"
+
+
+def test_the_lab_profile_keeps_private_ranges_reachable_when_bound() -> None:
+    # A lab job runs on the lab network; `private_cidrs` is empty there, so the G1.5c behaviour is
+    # unchanged and a signed binding is still required.
+    policy = JobEgressPolicy(
+        job_id="job-1",
+        profile="lab",
+        sources=(SourceAllow(id="lab", hosts=("crt.sh",), ports=(443,)),),
+    )
+    resolver = StubResolver({"crt.sh": ["10.114.53.80"]})
+    assert decide(policy, "crt.sh", 443, resolver=resolver).allowed
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ({"job_id": "job-1"}, "profile"),
+        ({"job_id": "job-1", "profile": "dmz"}, "unknown network profile"),
+    ],
+)
+def test_a_policy_document_without_a_valid_profile_is_refused(
+    document: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        netpolicy.load_policy(document)
+
+
+def test_the_policy_document_carries_the_profile_caps_and_authorization() -> None:
+    policy = JobEgressPolicy(
+        job_id="job-1",
+        profile="internet",
+        campaign_id="01934f6a-0000-7000-8000-000000000001",
+        authorization="owner, item 61, 2026-11-25",
+        private_cidrs=(ipaddress.ip_network("10.0.0.0/8"),),
+        per_host_rps=0.5,
+        per_host_max_connections=1,
+    )
+    document = netpolicy.policy_document(policy)
+    assert document["profile"] == "internet"
+    assert document["authorization"] == "owner, item 61, 2026-11-25"
+    assert netpolicy.load_policy(document) == policy

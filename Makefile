@@ -13,7 +13,7 @@ SHELL := /bin/bash
 	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-recovery soak-start soak-stop \
-	run-local stop-local seed-demo llm-smoke
+	run-local stop-local seed-demo llm-smoke broker-image internet-smoke
 
 help:
 	@printf '%s\n' \
@@ -61,6 +61,9 @@ help:
 	  'make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS intel ->' \
 	  '                     candidate AFFECTED_BY in PostgreSQL and Neo4j + the candidate read API' \
 	  'make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate' \
+	  'make broker-image    build the internet-profile egress broker image (stdlib-only)' \
+	  'make internet-smoke  passive Subfinder on an authorized domain over the internet profile;' \
+	  '                     needs make run-local up, usage: make internet-smoke DOMAIN=<domain>' \
 	  'make soak-start      start the shortened 24 h soak (SOAK_HOURS=... to change) in .local/soak/' \
 	  'make soak-stop       stop the soak; its report stays in .local/soak/report.txt' \
 	  'make llm-smoke       ONE real provider call with the key from .env (never in CI);' \
@@ -190,6 +193,21 @@ demo-g16c:
 demo-recovery:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
 		uv run --frozen python scripts/demo/demo-recovery.py
+
+# --- G1.6 internet profile: broker image and the owner's manual smoke -----------------------
+# The broker image is the stdlib-only broker container (`deploy/broker/Containerfile`). The smoke
+# is manual: it refuses a domain the owner has not authorized (owner, item 61, 2026-11-25) and runs
+# one passive Subfinder job only. `make run-local` builds the image itself; this target is for a
+# runner started by hand, or after changing `aegis.m06_runner`.
+broker-image:
+	@podman build --file deploy/broker/Containerfile --tag localhost/aegis-broker:g16 .
+	@echo "broker image: localhost/aegis-broker:g16 (set AEGIS_M06_BROKER_IMAGE to it)"
+
+internet-smoke:
+	@if [ -z "$(DOMAIN)" ]; then \
+		echo "usage: make internet-smoke DOMAIN=<domain you own>" >&2; exit 2; fi
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/internet/smoke.py "$(DOMAIN)"
 
 # The soak runs detached and keeps writing .local/soak/report.{jsonl,txt} until SOAK_HOURS is up
 # (default 24) or `make soak-stop`. Starting it twice is refused, not silently duplicated.

@@ -5,8 +5,10 @@
     AEGIS_DEV_TOKEN=<token> make seed-demo          # same thing through make
 
 The body is the contract's own valid `campaign-create` fixture, so the demo campaign can never
-drift from the contract; only its name is made unique. The token is the one `make run-local`
-printed (only its sha256 is stored on disk, so it cannot be recovered later).
+drift from the contract; only its name is made unique and its RoE is pinned to the lab network
+profile (`network_profile: lab`, G1.6) - a dev campaign must not egress to the internet. The token
+is the one `make run-local` printed (only its sha256 is stored on disk, so it cannot be recovered
+later).
 
 Exit codes: 0 = created, 1 = the API refused (its `error.v2` body is printed), 2 = usage.
 """
@@ -31,6 +33,7 @@ TOKEN_ENV = "AEGIS_DEV_TOKEN"
 def campaign_body(name: str) -> dict[str, object]:
     body = json.loads(FIXTURE.read_text(encoding="utf-8"))
     body["name"] = name
+    body["policy"]["network_profile"] = "lab"
     return body
 
 
