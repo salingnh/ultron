@@ -39,6 +39,23 @@ export type AssetGraphResponse = operations['getAssetGraph']['responses'][200]['
 export type AssetGraphNode = AssetGraphResponse['nodes'][number];
 export type AssetGraphEdge = AssetGraphResponse['edges'][number];
 export type AssetHistoryResponse = operations['getAssetHistory']['responses'][200]['content']['application/json'];
+export type AssetHistoryItem = AssetHistoryResponse['items'][number];
+export type AssetVulnerabilitiesResponse = Omit<
+  operations['listAssetVulnerabilities']['responses'][200]['content']['application/json'],
+  '$defs'
+>;
+export type VulnerabilityCandidate = components['schemas']['Candidate'];
+
+export type EventEnvelope = Omit<components['schemas']['event-envelope.v2.schema'], 'payload'> & {
+  payload: Record<string, unknown>;
+};
+export type CampaignEventsResponse = Omit<
+  operations['streamCampaignEvents']['responses'][200]['content']['application/json'],
+  'items'
+> & {
+  items: EventEnvelope[];
+};
+export type AssetDiscoveredPayload = components['schemas']['asset.discovered.v2.schema'];
 
 // Capability / Tool types
 export type CapabilitiesResponse = operations['listCapabilities']['responses'][200]['content']['application/json'];
@@ -69,4 +86,44 @@ export interface ProvenanceDetail {
   predicate?: string;
   polarity?: string;
   evidenceIds?: string[];
+}
+
+// Service & Vulnerability view models (derived strictly from contract observations & Candidate)
+export interface ServiceProductValue {
+  product?: string;
+  version?: string;
+  cpe?: string;
+}
+
+export interface AssetEnrichment {
+  protocol?: string;
+  portState?: string;
+  product?: ServiceProductValue;
+  technologies: string[];
+  tlsSubjectCn?: string;
+  tlsSha256?: string;
+  httpStatus?: number;
+  httpTitle?: string;
+}
+
+export interface ServiceRowData {
+  asset: Asset;
+  host: string;
+  port: string;
+  transport: string;
+  protocol: string;
+  product: string;
+  version: string;
+  cpe: string;
+  candidates: VulnerabilityCandidate[];
+  candidateCount: number;
+  kevCount: number;
+  truncatedCandidates: boolean;
+}
+
+export interface SelectedVulnerabilityState {
+  candidate: VulnerabilityCandidate;
+  assetKey: string;
+  assetId: string;
+  siblings?: VulnerabilityCandidate[];
 }

@@ -6,6 +6,8 @@ import type {
   AssetGraphNode,
   AssetGraphEdge,
   AssetHistoryResponse,
+  AssetVulnerabilitiesResponse,
+  CampaignEventsResponse,
   Asset,
   CapabilitiesResponse,
   ProvenanceDetail,
@@ -225,6 +227,37 @@ export const apiClient = {
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString() ? `?${query.toString()}` : '';
     return request<AssetHistoryResponse>(`/assets/${encodeURIComponent(assetId)}/history${qs}`);
+  },
+
+  async listAssetVulnerabilities(
+    assetId: string,
+    params?: { campaign_id?: string; kev_only?: boolean; cursor?: string; limit?: number }
+  ): Promise<AssetVulnerabilitiesResponse> {
+    if (this.isMock) return mockHandlers.listAssetVulnerabilities(assetId, params);
+    const query = new URLSearchParams();
+    if (params?.campaign_id) query.set('campaign_id', params.campaign_id);
+    if (params?.kev_only !== undefined) query.set('kev_only', String(params.kev_only));
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<AssetVulnerabilitiesResponse>(
+      `/assets/${encodeURIComponent(assetId)}/vulnerabilities${qs}`
+    );
+  },
+
+  async listCampaignEvents(
+    campaignId: string,
+    params?: { cursor?: string; limit?: number; types?: string[] }
+  ): Promise<CampaignEventsResponse> {
+    if (this.isMock) return mockHandlers.listCampaignEvents(campaignId, params);
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.types && params.types.length > 0) query.set('types', params.types.join(','));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<CampaignEventsResponse>(
+      `/campaigns/${encodeURIComponent(campaignId)}/events${qs}`
+    );
   },
 
   async listCapabilities(campaignId?: string): Promise<CapabilitiesResponse> {
