@@ -21,7 +21,7 @@ from psycopg.rows import dict_row
 from aegis import validation
 from aegis.m01_campaign.campaigns import create_campaign
 from aegis.migrations import apply_contract_migrations
-from tests.m23_support import graph_driver, project_all
+from tests.m23_support import graph_driver, project_all, requires_pipeline
 from tests.pg import throwaway_database
 
 CAMPAIGN: dict[str, Any] = {
@@ -64,6 +64,11 @@ def _graph_nodes(driver: Any, campaign_id: str) -> list[dict[str, Any]]:
         return [dict(record) for record in result]
 
 
+# A database test like the other projector ones: the throwaway PostgreSQL (AEGIS_TEST_PG_DSN) and a
+# harness-owned Neo4j are required, so an environment without them skips here instead of failing
+# inside the fixture with KeyError('AEGIS_TEST_PG_DSN'). AEGIS_NO_SKIPS=1 (CI, scripts/ci/
+# python-gate.sh) turns that skip into a failure, which is the loud behaviour a gate wants.
+@requires_pipeline
 def test_a_seed_only_campaign_has_the_same_assets_in_postgres_and_neo4j() -> None:
     with throwaway_database() as dsn, graph_driver() as driver:
         with psycopg.connect(dsn, autocommit=True) as connection:
@@ -97,7 +102,10 @@ def test_a_seed_only_campaign_has_the_same_assets_in_postgres_and_neo4j() -> Non
 
 
 def test_an_m27_asset_event_still_carries_its_job_and_revision() -> None:
-    """The seed shape is additive: the producer that reports a job keeps its fields."""
+    """The seed shape is additive: the producer that reports a job keeps its fields.
+
+    Pure schema check: it needs no database and no graph, so it runs in every environment.
+    """
     payload = {
         "asset_id": "01a20c00-0000-7000-8000-000000000001",
         "canonical_key": "dns:seed-only.example",
