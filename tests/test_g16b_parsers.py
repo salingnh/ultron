@@ -174,6 +174,55 @@ def test_httpx_does_not_guess_a_product_from_an_unrelated_page(tmp_path: Path) -
     assert _observations(parsed, "service.product") == []
 
 
+def test_httpx_reads_the_version_tomcat_prints_in_its_error_page(tmp_path: Path) -> None:
+    """The 404 body carries `Apache Tomcat/9.0.30`; the tool's own CPE names the product."""
+    record = {
+        "input": "10.1.2.3:8080",
+        "url": "http://10.1.2.3:8080",
+        "status_code": 404,
+        "title": "HTTP Status 404 – Not Found",
+        "header": {},
+        "body": "<html><body><h3>Apache Tomcat/9.0.30</h3></body></html>",
+        "cpe": [
+            {
+                "product": "tomcat",
+                "vendor": "apache",
+                "cpe": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*",
+            }
+        ],
+    }
+    parsed = httpx.parse(_write(tmp_path, [record]), HTTPX_TASK, [])
+    product = _observations(parsed, "service.product")[0]["value"]
+    assert product == {
+        "product": "tomcat",
+        "version": "9.0.30",
+        "cpe": "cpe:2.3:a:apache:tomcat:9.0.30:*:*:*:*:*:*:*",
+    }
+
+
+def test_httpx_keeps_a_versionless_cpe_consistent_without_a_printed_version(
+    tmp_path: Path,
+) -> None:
+    """A wildcard CPE with no version anywhere in the response is not a product claim."""
+    record = {
+        "input": "10.1.2.3:8080",
+        "url": "http://10.1.2.3:8080",
+        "status_code": 404,
+        "title": "HTTP Status 404 – Not Found",
+        "header": {},
+        "body": "<html><body><h3>Apache Tomcat</h3></body></html>",
+        "cpe": [
+            {
+                "product": "tomcat",
+                "vendor": "apache",
+                "cpe": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*",
+            }
+        ],
+    }
+    parsed = httpx.parse(_write(tmp_path, [record]), HTTPX_TASK, [])
+    assert _observations(parsed, "service.product") == []
+
+
 def test_httpx_refuses_a_result_that_names_another_input(tmp_path: Path) -> None:
     record = {"input": "10.9.9.9:8080", "url": "http://10.9.9.9:8080", "status_code": 200}
     with pytest.raises(httpx.ParserInputError, match="did not target"):

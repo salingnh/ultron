@@ -27,6 +27,7 @@ spec:
     - -cpe
     - -tls-grab
     - -irh
+    - -irr
     - -threads
     - ${input.concurrency}
     - -timeout

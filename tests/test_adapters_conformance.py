@@ -212,10 +212,13 @@ def _assert_lab_cross_check(adapter: Adapter, run: dict[str, Any], parsed: dict[
         by_key = {asset["canonical_key"]: asset for asset in parsed["assets"]}
         edges = {(edge["from"], edge["to"]) for edge in parsed["relationships"]}
         claims: dict[str, dict[str, Any]] = {}
+        service_products: dict[str, dict[str, Any]] = {}
         for observation in parsed["observations"]:
             claims.setdefault(observation["subject"], {})[observation["predicate"]] = observation[
                 "value"
             ]
+            if observation["predicate"] == "service.product":
+                service_products[str(observation["subject"])] = observation["value"]
         for entry in expected["applications"]:
             assert entry["key"] in by_key, f"{adapter.provider}: {entry['key']} is not an asset"
             assert (entry["service"], entry["key"]) in edges, (
@@ -224,6 +227,19 @@ def _assert_lab_cross_check(adapter: Adapter, run: dict[str, Any], parsed: dict[
             assert claims[entry["key"]]["http.status"] == entry["status"]
             if entry.get("title"):
                 assert claims[entry["key"]]["http.title"] == entry["title"]
+            if entry.get("product"):
+                product = service_products.get(entry["service"]) or {}
+                assert product.get("product") == entry["product"], (
+                    f"{entry['service']}: product {product.get('product')!r} "
+                    f"!= {entry['product']!r}"
+                )
+                assert product.get("version") == entry.get("version"), (
+                    f"{entry['service']}: version {product.get('version')!r} "
+                    f"!= {entry.get('version')!r}"
+                )
+                assert product.get("cpe") == entry.get("cpe"), (
+                    f"{entry['service']}: cpe {product.get('cpe')!r} != {entry.get('cpe')!r}"
+                )
             if entry.get("technology"):
                 technologies = set(claims[entry["key"]]["http.technology"])
                 missing = {item.lower() for item in entry["technology"]} - technologies

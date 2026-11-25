@@ -28,8 +28,12 @@ Bọc `httpx` (ProjectDiscovery) theo capability mới `web.probe_http` (G1.6b):
 - `proxyAware: true` — httpx có `-proxy` (http **hoặc socks5**) và mặc định đọc
   `HTTP_PROXY/HTTPS_PROXY/NO_PROXY`; broker là đường ra duy nhất của job. Bằng chứng trong PR là lần
   chạy lab có proxy chặn ở giữa (xem "Proxy verification" dưới).
-- argv cố định: `-json -silent -tech-detect -cpe -tls-grab -irh -threads ${input.concurrency}
-  -timeout ${input.timeout_seconds} -no-color`. Tên trường là `concurrency` (không phải `threads`)
+- argv cố định: `-json -silent -tech-detect -cpe -tls-grab -irh -irr -threads
+  ${input.concurrency} -timeout ${input.timeout_seconds} -no-color`. `-irr` (include response) giữ
+  cả body trong JSONL: một trang in sản phẩm/phiên bản trong body (trang 404 của Tomcat in
+  `Apache Tomcat/9.0.30`) chỉ đọc được nhờ nó. Body nằm trong file raw mà M06 lưu (bằng chứng), và
+  `budget.maxOutputMb` của manifest chặn kích thước; khi quét internet nhiều trang lớn thì trần này
+  là thứ siết trước. Tên trường là `concurrency` (không phải `threads`)
   để M05 cưỡng chế trần `budget.maxConcurrency` như mọi provider khác; `-threads` là cách httpx
   nhận giá trị đó. httpx v1.12 luôn `InsecureSkipVerify` khi dò (không có cờ `-insecure`): việc đọc
   certificate không phụ thuộc CA, và đó là lý do manifest không cần mount CA của lab.
@@ -50,9 +54,11 @@ Bọc `httpx` (ProjectDiscovery) theo capability mới `web.probe_http` (G1.6b):
   raw evidence), `http.technology` (mỗi mục `<name>` hoặc `<name>:<version>`, tên lowercase, version
   chuẩn hóa), `tls.certificate` (`{subject_cn, sans[], issuer, not_before, not_after, sha256}`, thời
   gian UTC `Z`, sha256 từ `fingerprint_hash.sha256`).
-- `service.product` trên **service**: chỉ khi httpx trả CPE có version cụ thể — đó là sản phẩm
-  web-server fingerprintx có thể chưa nhận ra, và version là thứ nối CVE. Không có CPE version thì
-  không có observation (fingerprintx đã phủ sản phẩm ở cùng service).
+- `service.product` trên **service**, theo thứ tự bằng chứng: CPE có version cụ thể; CPE không
+  version của chính tool (`apache:tomcat:*`) + version đọc được trong response (body/title
+  `Apache Tomcat/9.0.30`, header `X-Jenkins: 2.138`); technology có version (`jenkins:2.138`) qua
+  bảng `TECHNOLOGY_CPES`; cuối cùng là bảng `PRODUCT_SIGNALS`. Không có version ở đâu thì **không**
+  sinh observation — CPE `*` không chứng minh phiên bản và sẽ khớp CVE sai.
 - Không emit `service.protocol`: fingerprintx sở hữu khẳng định đó; hai producer với hai chuỗi khác
   nhau sẽ biến một service thành mâu thuẫn.
 
