@@ -36,6 +36,7 @@ if str(REPO) not in sys.path:
 from tests.vulnlab.catalog import CATALOG_PATH, HOSTNAME, Case, load_catalog  # noqa: E402
 
 IMAGES_FILE = REPO / "deploy" / "vulnlab" / "images.env"
+ENV_FILE = REPO / "deploy" / "vulnlab" / ".env"
 LAB_NETWORK = "aegis-lab-lab"
 RUN_LABEL = "aegis.vulnlab=aegis-vulnlab-run"
 PROBE_TIMEOUT_SECONDS = 20
@@ -95,6 +96,23 @@ class LiveResult:
     ok: bool
     detail: str
     probe: Probe | None
+
+
+def load_vulnlab_env() -> None:
+    """Export deploy/vulnlab/.env (hostnames); an explicit environment value wins.
+
+    `make vulnlab-up` already exports it, but the check must also work when run on its own
+    (`make vulnlab-check PROFILE=internet`) - the names are deployment state, not arguments.
+    """
+    if not ENV_FILE.is_file():
+        return
+    for raw in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, separator, value = line.partition("=")
+        if separator:
+            os.environ.setdefault(name.strip(), value.strip())
 
 
 def probe_image() -> str:
@@ -303,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     arguments = parser.parse_args(argv)
 
+    load_vulnlab_env()
     catalog = load_catalog(CATALOG_PATH)
     cases = catalog.cases
     if arguments.case:

@@ -9,8 +9,11 @@ the same verdict the runner prints.
 
 from __future__ import annotations
 
+import importlib.util
 import ipaddress
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -480,3 +483,36 @@ def test_compare_does_not_assert_a_null_product_or_empty_cve_list(catalog: Catal
 def test_cpe_parser_rejects_a_shorthand_without_product(tmp_path: Path) -> None:
     with pytest.raises(CatalogError):
         Cpe.parse("cpe:2.3:a:apache:*:2.4.49")
+
+
+def test_check_live_loads_hostnames_from_the_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`make vulnlab-check PROFILE=internet` must work standalone: the names are deployment state.
+
+    Regression guard for the first live run: the check was executed from the Makefile without
+    `vulnlab-up`'s exported environment and every public host looked empty.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "vulnlab_check_live", REPO / "scripts" / "vulnlab" / "check_live.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module: Any = importlib.util.module_from_spec(spec)
+    # dataclasses resolves postponed annotations through sys.modules[cls.__module__].
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AEGIS_VULNLAB_HOST_HTTPD=vl-httpd.example.test\n"
+        "AEGIS_VULNLAB_HOST_NGINX=from-file.example.test\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "ENV_FILE", env_file)
+    monkeypatch.delenv("AEGIS_VULNLAB_HOST_HTTPD", raising=False)
+    monkeypatch.setenv("AEGIS_VULNLAB_HOST_NGINX", "from-environment.example.test")
+
+    module.load_vulnlab_env()
+
+    assert os.environ["AEGIS_VULNLAB_HOST_HTTPD"] == "vl-httpd.example.test"
+    assert os.environ["AEGIS_VULNLAB_HOST_NGINX"] == "from-environment.example.test"
