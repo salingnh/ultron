@@ -1,0 +1,432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/agent/activity.v2.schema.json",
+  "title": "CampaignActivity",
+  "description": "Dòng thời gian hoạt động của agent trong một chiến dịch, mới nhất trước: phiên bắt đầu/kết thúc kèm lý do dừng, từng quyết định policy cho một lời gọi tool (capability, TargetRef, approved/denied, mã lý do, job), mục idle/blocker và ảnh chụp ngân sách. Bên phát: M26 (read model dựng từ agent_session, policy_decision + scan_job, campaign_ledger của M03). Bên nhận: UI (màn hình hoạt động của chiến dịch). Mọi trường đều là dữ liệu có cấu trúc lấy từ cột đã đặt tên; rationale, input và mọi văn bản do model sinh KHÔNG được phát ra, và output tool không bao giờ nằm trong tài liệu này. Người xem đọc được agent đã làm gì mà không cần log.",
+  "type": "object",
+  "required": [
+    "items",
+    "truncated"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "description": "Các mục của trang này, mới nhất trước. Mỗi mục là một sự kiện có cấu trúc (Entry).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Entry"
+      }
+    },
+    "next_cursor": {
+      "description": "Cursor keyset của mục cũ nhất trong trang; vắng mặt = đã hết. Truyền lại qua `cursor` để đọc trang kế tiếp.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "truncated": {
+      "description": "true khi còn mục cũ hơn chưa nằm trong trang này - UI phải hiển thị dữ liệu bị cắt thay vì coi trang là toàn bộ dòng thời gian. Đúng khi và chỉ khi có `next_cursor`.",
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "next_cursor"
+        ]
+      },
+      "then": {
+        "properties": {
+          "truncated": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "next_cursor"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "truncated": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "EntryId": {
+      "description": "Định danh ổn định của một mục trong dòng thời gian: `<nguồn>:<khóa>`, vd `session:<session_id>:start`, `decision:<decision_id>`, `ledger:<seq>`. Dùng làm khóa React và để đối chiếu với hàng nguồn.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "Entry": {
+      "description": "Một mục của dòng thời gian. Loại mục do `kind` quyết định; trường nào thuộc loại nào do oneOf dưới đây khóa. Không mục nào mang văn bản tự do do model sinh.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SessionStarted"
+        },
+        {
+          "$ref": "#/$defs/SessionFinished"
+        },
+        {
+          "$ref": "#/$defs/Decision"
+        },
+        {
+          "$ref": "#/$defs/IdleCycle"
+        },
+        {
+          "$ref": "#/$defs/Blocker"
+        },
+        {
+          "$ref": "#/$defs/Budget"
+        }
+      ]
+    },
+    "SessionStarted": {
+      "description": "Một phiên agent đã mở (agent_session). Cùng sự kiện với campaign_ledger `cycle_started`; dòng agent_session là nguồn.",
+      "type": "object",
+      "required": [
+        "kind",
+        "entry_id",
+        "at",
+        "session_id",
+        "policy_version",
+        "revision_from"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "session_started"
+        },
+        "entry_id": {
+          "$ref": "#/$defs/EntryId"
+        },
+        "at": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        },
+        "session_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "objective_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "policy_version": {
+          "description": "Policy snapshot the session ran under.",
+          "$ref": "../common/ids.v2.schema.json#/$defs/PolicyVersion"
+        },
+        "revision_from": {
+          "description": "Graph revision the session read its context from.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "SessionFinished": {
+      "description": "Một phiên agent đã kết thúc: trạng thái, quyết định cuối và lý do dừng (agent_session). Cùng sự kiện với campaign_ledger `cycle_finished`/`stop_condition`; dòng agent_session là nguồn.",
+      "type": "object",
+      "required": [
+        "kind",
+        "entry_id",
+        "at",
+        "session_id",
+        "status",
+        "decision",
+        "steps_used"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "session_finished"
+        },
+        "entry_id": {
+          "$ref": "#/$defs/EntryId"
+        },
+        "at": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        },
+        "session_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "status": {
+          "description": "Trạng thái cuối của agent_session. RUNNING không phát ra: mục này chỉ có khi phiên đã kết thúc.",
+          "type": "string",
+          "enum": [
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "decision": {
+          "description": "Cùng enum với session-result.v2 (agent_session.decision).",
+          "type": "string",
+          "enum": [
+            "continue",
+            "wait",
+            "stop"
+          ]
+        },
+        "stop_reason": {
+          "description": "Cùng enum với session-result.v2 `stop_reason`; vắng mặt khi phiên dừng mà không có lý do (decision=wait).",
+          "type": "string",
+          "enum": [
+            "objective_met",
+            "no_new_evidence",
+            "budget_exhausted",
+            "step_limit",
+            "blocked",
+            "operator"
+          ]
+        },
+        "steps_used": {
+          "description": "Số bước model đã dùng trong phiên (agent_session.steps_used, trần 30).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        }
+      }
+    },
+    "Decision": {
+      "description": "Một quyết định policy cho một lời gọi tool (policy_decision). `requested_by` là người khởi động do server xác minh, `proposed_by` là phiên agent đã đề xuất; job đã cấp (nếu có) đi kèm qua job_id. Không mang rationale hay input của request.",
+      "type": "object",
+      "required": [
+        "kind",
+        "entry_id",
+        "at",
+        "decision_id",
+        "capability",
+        "decision",
+        "targets",
+        "requested_by",
+        "policy_version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "decision"
+        },
+        "entry_id": {
+          "$ref": "#/$defs/EntryId"
+        },
+        "at": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        },
+        "decision_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "capability": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
+        },
+        "provider": {
+          "description": "Provider M05 đã chọn cho lời gọi; vắng mặt khi quyết định bị từ chối trước khi resolve provider.",
+          "type": "string",
+          "maxLength": 200
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "approved",
+            "denied"
+          ]
+        },
+        "reason": {
+          "description": "Mã lý do khi bị từ chối: error.v2 `code` của quyết định và luật policy đã từ chối. Chỉ có khi decision=denied.",
+          "type": "object",
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "../common/error.v2.schema.json#/$defs/ErrorCode"
+            },
+            "rule": {
+              "description": "Luật policy đã từ chối (policy_decision.rule), vd schema, rate_limit, dependency_invalid, capability_unknown.",
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        },
+        "targets": {
+          "description": "TargetRef đã phân giải của lời gọi (policy_decision.target_refs), giữ nguyên thứ tự.",
+          "type": "array",
+          "items": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/TargetRef"
+          }
+        },
+        "job_id": {
+          "description": "Job đã cấp cho quyết định này (scan_job.decision_id); vắng mặt khi bị từ chối.",
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "requested_by": {
+          "description": "Người/kênh khởi động do server gán (policy_decision.requested_by).",
+          "$ref": "../common/ids.v2.schema.json#/$defs/RequestedBy"
+        },
+        "proposed_by": {
+          "description": "Phiên agent đã đề xuất (policy_decision.proposed_by); vắng mặt khi người vận hành gửi trực tiếp, không bịa phiên.",
+          "$ref": "../common/ids.v2.schema.json#/$defs/ProposedBy"
+        },
+        "policy_version": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/PolicyVersion"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "denied"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "approved"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "reason"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "IdleCycle": {
+      "description": "Một chu kỳ không có bằng chứng mới (campaign_ledger `idle_cycle`): M02 dùng nó cho ngưỡng idle_cycles_before_pause.",
+      "type": "object",
+      "required": [
+        "kind",
+        "entry_id",
+        "at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "idle_cycle"
+        },
+        "entry_id": {
+          "$ref": "#/$defs/EntryId"
+        },
+        "at": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        },
+        "session_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "cycle": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "Blocker": {
+      "description": "Một đường bị chặn mà phiên ghi lại (campaign_ledger `blocker`), vd graph M23 không đọc được và context lấy từ hàng M27. Chỉ mã lỗi chuẩn và nhãn ngữ cảnh của module, không có văn bản do model sinh.",
+      "type": "object",
+      "required": [
+        "kind",
+        "entry_id",
+        "at",
+        "code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "blocker"
+        },
+        "entry_id": {
+          "$ref": "#/$defs/EntryId"
+        },
+        "at": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        },
+        "session_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "code": {
+          "$ref": "../common/error.v2.schema.json#/$defs/ErrorCode"
+        },
+        "context": {
+          "description": "Nhãn ngữ cảnh của module đã ghi blocker, vd 'context graph'.",
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "Budget": {
+      "description": "Ảnh chụp ngân sách sau một phiên (campaign_ledger `budget`): đã dùng bao nhiêu và còn lại bao nhiêu. Trần không đặt thì trường còn lại vắng mặt (không gửi null, không gửi 0).",
+      "type": "object",
+      "required": [
+        "kind",
+        "entry_id",
+        "at",
+        "sent_tokens",
+        "sent_cost_usd"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "budget"
+        },
+        "entry_id": {
+          "$ref": "#/$defs/EntryId"
+        },
+        "at": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+        },
+        "session_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "sent_tokens": {
+          "description": "Token đã gửi trong phiên (input + output).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "sent_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "remaining_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "models": {
+          "description": "Model đã dùng trong phiên, theo thứ tự dùng.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    }
+  }
+}

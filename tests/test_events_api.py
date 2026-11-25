@@ -352,6 +352,7 @@ def test_every_mounted_operation_requires_the_operator_token(
         "getJob",
         "cancelJob",
         "getCampaignFlow",
+        "getCampaignActivity",
         "streamCampaignEvents",
         "listCapabilities",
         # G1.4b: the two locked graph reads (asset graph and its history).

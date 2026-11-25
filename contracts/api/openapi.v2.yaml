@@ -448,6 +448,50 @@ paths:
                           type: string
         '401':
           $ref: '#/components/responses/Error'
+  /campaigns/{campaign_id}/activity:
+    parameters:
+    - $ref: '#/components/parameters/CampaignId'
+    get:
+      tags:
+      - campaigns
+      operationId: getCampaignActivity
+      x-aegis-status: locked
+      x-aegis-locked-by: G1.6-activity
+      summary: Dòng thời gian hoạt động của agent trong chiến dịch (mới nhất trước)
+      description: 'Read model cho màn hình "agent đã làm gì": phiên bắt đầu/kết thúc kèm lý do dừng,
+        từng quyết định policy cho một lời gọi tool (capability, TargetRef, approved/denied,
+        mã lý do, job id), mục idle/blocker và ảnh chụp ngân sách. Thứ tự keyset `(at, kind, entry_id)`
+        GIẢM dần; `next_cursor` vắng = hết trang. `truncated` nói trang này chưa phải toàn bộ
+        dòng thời gian (đúng khi và chỉ khi có `next_cursor`).
+
+        Nguồn là bốn bảng đã có: `agent_session` (phiên, lý do dừng), `policy_decision` cùng
+        `scan_job.decision_id` (quyết định và job), `campaign_ledger` với ba kind `idle_cycle`,
+        `blocker`, `budget` (M03 ghi).
+
+        Không phát ra rationale, input của request, prompt hay văn bản do model sinh, và output
+        tool không bao giờ nằm trong tài liệu này: chỉ cột có cấu trúc. Cần operator token như mọi
+        thao tác campaign (OD-5); campaign không tồn tại trả 404. Không có sự kiện outbox riêng cho
+        dòng thời gian này nên client đọc bằng phân trang (polling), không qua SSE của `/events`.
+
+        '
+      security:
+      - operatorToken: []
+      parameters:
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../agent/activity.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /capabilities:
     get:
       tags:
