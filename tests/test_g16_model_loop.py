@@ -30,6 +30,7 @@ from aegis.m03_agent.session import SessionRun, run_session
 from aegis.m04_model import deployment
 from aegis.m04_model.deployment import ModelDeployment
 from aegis.m04_model.raw import usage_tokens
+from aegis.m04_model.transport import HttpAnswer
 from aegis.m04_model.usage import InMemoryUsageSink, ModelUsage
 from tests.m03_support import (
     ENUMERATE,
@@ -91,12 +92,12 @@ class RecordedHttp:
 
     def __call__(
         self, url: str, headers: dict[str, str], body: bytes, timeout: float
-    ) -> tuple[int, bytes]:
+    ) -> HttpAnswer:
         wire: Any = json.loads(body)
         assert isinstance(wire, dict), "the driver must send a JSON object"
         self.calls.append({"url": url, "headers": dict(headers), "wire": wire, "timeout": timeout})
         assert self.bodies, "the loop sent more provider requests than the recording has answers"
-        return 200, json.dumps(self.bodies.pop(0)).encode()
+        return HttpAnswer(200, json.dumps(self.bodies.pop(0)).encode())
 
 
 def tool_call_body(provider: Provider, arguments: Mapping[str, Any]) -> dict[str, Any]:
@@ -288,10 +289,10 @@ def test_a_provider_failure_ends_the_session_without_leaking_the_key(
     live = configure_live(monkeypatch, provider)
     seen: list[dict[str, str]] = []
 
-    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
         seen.append(headers)
         echoed = headers.get("authorization") or headers.get("x-api-key") or ""
-        return 401, json.dumps({"error": f"invalid api key {echoed}"}).encode()
+        return HttpAnswer(401, json.dumps({"error": f"invalid api key {echoed}"}).encode())
 
     sink = InMemoryUsageSink()
     deps = deps_for(

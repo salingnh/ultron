@@ -13,6 +13,7 @@ session uses, read from the environment (or a `.env` file `make run-local` sourc
     AEGIS_MODEL_PRICE_OUTPUT_PER_MTOK         USD per million output tokens (required)
     AEGIS_MODEL_TIMEOUT_SECONDS               optional; per-call ceiling
     AEGIS_MODEL_MAX_OUTPUT_TOKENS             optional; per-call answer ceiling
+    AEGIS_MODEL_GATEWAY                       optional; 1 says the base URL is the LLM gateway
 
 Both standards the owner supports are ordinary driver dialects here: OpenAI Chat Completions
 (any OpenAI-compatible base URL, e.g. a self-hosted gateway) and Anthropic Messages. The selection
@@ -20,11 +21,17 @@ is explicit: `AEGIS_SESSION_LIVE_MODEL` unset/`0` means the scripted G1 policy, 
 client, and any other value is a configuration error - never a silent fallback in either direction
 (`aegis.m03_agent.activities.build_model` is the single switch).
 
+The gateway (G1.6, `deploy/llm-gateway`) is the one place that rotates upstreams when one runs out
+of quota, so `AEGIS_MODEL_GATEWAY=1` means: the base URL is required (never a provider default), the
+cost the gateway reports per request is authoritative, and an in-app fallback chain is refused
+rather than run in parallel with the gateway's rotation.
+
 Why the prices are required (leader decision 2026-11-25): `aegis.model_usage.cost_usd` and the
 campaign budget are only honest with a real price, so a missing price stops start-up instead of
-recording a fake `0`. The credential is never logged and never returned by `describe()`; a
-provider error body is passed through `ModelDeployment.redacted` before it can reach a log or a
-`model_usage` row.
+recording a fake `0`. Behind a gateway the configured price is the fallback for an answer the
+gateway did not price; it is never a guess, because the same variables must be readable. The
+credential is never logged and never returned by `describe()`; a provider error body is passed
+through `ModelDeployment.redacted` before it can reach a log or a `model_usage` row.
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ from urllib.parse import urlparse
 
 from aegis.contracts_gen.agent.model_request_v2_schema import Provider
 from aegis.m04_model.client import ModelClient
+from aegis.m04_model.config import ModelConfig
 from aegis.m04_model.transport import HttpTransport, PostJson, Price
 from aegis.m04_model.usage import UsageSink
 
@@ -45,6 +53,7 @@ __all__ = [
     "API_KEY_ENV",
     "BASE_URL_ENV",
     "DEFAULT_BASE_URLS",
+    "GATEWAY_ENV",
     "INPUT_PRICE_ENV",
     "LIVE_MODEL_ENV",
     "MAX_OUTPUT_TOKENS_ENV",
@@ -54,6 +63,8 @@ __all__ = [
     "TIMEOUT_SECONDS_ENV",
     "ModelDeployment",
     "ModelDeploymentError",
+    "gateway_enabled",
+    "gateway_endpoint",
     "live_model_enabled",
     "model_status",
     "redact",
@@ -68,6 +79,8 @@ INPUT_PRICE_ENV = "AEGIS_MODEL_PRICE_INPUT_PER_MTOK"
 OUTPUT_PRICE_ENV = "AEGIS_MODEL_PRICE_OUTPUT_PER_MTOK"
 TIMEOUT_SECONDS_ENV = "AEGIS_MODEL_TIMEOUT_SECONDS"
 MAX_OUTPUT_TOKENS_ENV = "AEGIS_MODEL_MAX_OUTPUT_TOKENS"
+#: 1 says the base URL is the owner's LLM gateway (`deploy/llm-gateway`), not a provider.
+GATEWAY_ENV = "AEGIS_MODEL_GATEWAY"
 
 #: Official endpoints: OpenAI includes its `/v1`, Anthropic's base is the origin.
 DEFAULT_BASE_URLS: dict[Provider, str] = {
@@ -110,6 +123,19 @@ def live_model_enabled(environ: Mapping[str, str] | None = None) -> bool:
     raise ModelDeploymentError(
         f"{LIVE_MODEL_ENV} must be 1 (live provider) or 0/unset (scripted policy), "
         f"got {raw!r}: the model mode is selected explicitly, never guessed"
+    )
+
+
+def gateway_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """Read `AEGIS_MODEL_GATEWAY` strictly: the same no-third-state rule as the live flag."""
+    source = os.environ if environ is None else environ
+    raw = str(source.get(GATEWAY_ENV) or "").strip().lower()
+    if raw in _LIVE_WORDS:
+        return True
+    if raw in _SCRIPTED_WORDS:
+        return False
+    raise ModelDeploymentError(
+        f"{GATEWAY_ENV} must be 1 (the base URL is the LLM gateway) or 0/unset, got {raw!r}"
     )
 
 
@@ -165,6 +191,20 @@ def _endpoint(provider: Provider, base_url: str) -> str:
     return base + "/v1" + ANTHROPIC_MESSAGES_PATH
 
 
+def gateway_endpoint(provider: Provider, base_url: str) -> str:
+    """The POST target behind the gateway: one base URL (`http://host:4000`, `.../v1` or a full
+    endpoint) serves both standards, because the gateway exposes both `/v1/chat/completions` and
+    `/v1/messages` under the same credential.
+    """
+    base = base_url.rstrip("/")
+    path = OPENAI_CHAT_PATH if provider is Provider.openai else ANTHROPIC_MESSAGES_PATH
+    if base.endswith(path):
+        return base
+    if not base.endswith("/v1"):
+        base = base + "/v1"
+    return base + path
+
+
 @dataclass(frozen=True, slots=True)
 class ModelDeployment:
     """One provider, one model, one credential and the real prices of that model.
@@ -181,6 +221,8 @@ class ModelDeployment:
     output_usd_per_million: float
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
+    #: The base URL is the owner's LLM gateway: its reported cost wins and rotation lives there.
+    gateway: bool = False
 
     def __post_init__(self) -> None:
         if not self.model.strip():
@@ -206,6 +248,8 @@ class ModelDeployment:
     @property
     def endpoint(self) -> str:
         """The exact URL `HttpTransport` posts to (never includes the key)."""
+        if self.gateway:
+            return gateway_endpoint(self.provider, self.base_url)
         return _endpoint(self.provider, self.base_url)
 
     @property
@@ -226,15 +270,33 @@ class ModelDeployment:
             pricing={(self.provider, self.model): self.price},
             redact=self.redacted,
             post=post,
+            read_response_cost=self.gateway,
         )
 
-    def client(self, usage: UsageSink, *, post: PostJson | None = None) -> ModelClient:
-        """The live M04 client with this deployment's single attempt (no fallback implied)."""
-        return ModelClient(self.transport(post=post), usage)
+    def client(
+        self,
+        usage: UsageSink,
+        *,
+        post: PostJson | None = None,
+        config: ModelConfig | None = None,
+    ) -> ModelClient:
+        """The live M04 client over this deployment, with no attempt chain of its own.
+
+        A gateway already rotates upstreams when one runs out of quota; a fallback chain here would
+        rotate a second time, on a different axis, and double the spend on every exhausted call. So
+        a gateway deployment refuses one, and the default chain (no fallback) is what runs.
+        """
+        chain = config or ModelConfig()
+        if self.gateway and chain.allow_fallback:
+            raise ModelDeploymentError(
+                f"{GATEWAY_ENV}=1: the gateway owns rotation; remove the in-app fallback chain "
+                "from the live model client"
+            )
+        return ModelClient(self.transport(post=post), usage, chain)
 
     def describe(self) -> dict[str, Any]:
         """What a log line or `/healthz` may say: everything except the credential."""
-        return {
+        described: dict[str, Any] = {
             "provider": self.provider.value,
             "model": self.model,
             "endpoint": self.endpoint,
@@ -243,6 +305,10 @@ class ModelDeployment:
             "timeout_seconds": self.timeout_seconds,
             "max_output_tokens": self.max_output_tokens,
         }
+        if self.gateway:
+            described["gateway"] = True
+            described["cost_source"] = "gateway-reported, else the configured price"
+        return described
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> ModelDeployment:
@@ -259,6 +325,7 @@ class ModelDeployment:
             ) from None
         model = _required_text(source, MODEL_NAME_ENV, "the live model needs the model id it calls")
         api_key = _required_text(source, API_KEY_ENV, "the live model needs a provider credential")
+        gateway = gateway_enabled(source)
         input_price = _number(
             source,
             INPUT_PRICE_ENV,
@@ -278,7 +345,16 @@ class ModelDeployment:
                 f"{INPUT_PRICE_ENV} and {OUTPUT_PRICE_ENV} must be > 0: a zero price would record "
                 "a cost the campaign did not spend"
             )
-        base_url = _text(source, BASE_URL_ENV) or DEFAULT_BASE_URLS[provider]
+        base_url = _text(source, BASE_URL_ENV)
+        if gateway:
+            base_url = _required_text(
+                source,
+                BASE_URL_ENV,
+                f"{GATEWAY_ENV}=1 names the gateway, so its URL is required "
+                "(e.g. http://127.0.0.1:4000/v1)",
+            )
+        elif not base_url:
+            base_url = DEFAULT_BASE_URLS[provider]
         timeout = _number(
             source,
             TIMEOUT_SECONDS_ENV,
@@ -303,6 +379,7 @@ class ModelDeployment:
             output_usd_per_million=output_price,
             timeout_seconds=timeout,
             max_output_tokens=max_tokens,
+            gateway=gateway,
         )
 
 
