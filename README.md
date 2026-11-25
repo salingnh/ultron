@@ -37,6 +37,26 @@ VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
   VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
 ```
 
+## LLM gateway (bạn quản lý, tự xoay vòng endpoint)
+
+ultron chỉ gọi model qua LLM gateway của bạn: một LiteLLM proxy chạy local (`deploy/llm-gateway`, pin digest, lõi MIT) tự chuyển sang endpoint kế tiếp khi một endpoint hết quota (429), lỗi 5xx hoặc timeout, và cho endpoint lỗi nghỉ `cooldown_time` giây. Cấu hình nằm ngoài checkout:
+
+```bash
+mkdir -p ~/.config/ultron/llm-gateway
+cp deploy/llm-gateway/config.example.yaml ~/.config/ultron/llm-gateway/config.yaml
+cp deploy/llm-gateway/secrets.env.example ~/.config/ultron/llm-gateway/secrets.env
+chmod 600 ~/.config/ultron/llm-gateway/secrets.env
+$EDITOR ~/.config/ultron/llm-gateway/config.yaml     # các endpoint, rồi nhóm định tuyến (thứ tự ưu tiên)
+$EDITOR ~/.config/ultron/llm-gateway/secrets.env     # key (không bao giờ commit)
+make llm-gateway-up        # kiểm hai file trước, rồi chạy chỉ trên 127.0.0.1
+make llm-gateway-status    # từng endpoint: healthy / cooling down / no traffic yet
+make llm-gateway-reload    # áp cấu hình đã sửa (ultron vẫn chạy; gateway gián đoạn vài giây)
+make llm-gateway-down      # gỡ gateway của checkout này
+make llm-gateway-test      # chạy image đã pin với 2 endpoint giả (một cái hết quota), không cần key
+```
+
+Trỏ ultron vào gateway trong `.env` (xem `.env.example`): `AEGIS_SESSION_LIVE_MODEL=1`, `AEGIS_MODEL_GATEWAY=1`, `AEGIS_MODEL_BASE_URL=http://127.0.0.1:4000/v1`, `AEGIS_MODEL_NAME=aegis-smart` (tên nhóm định tuyến, không phải model upstream), `AEGIS_MODEL_API_KEY=<LITELLM_MASTER_KEY>`, `AEGIS_MODEL_PROVIDER=openai|anthropic` (upstream chỉ có chat-completions thì dùng `openai`), cùng hai giá (chỉ dùng khi gateway không báo chi phí). `make llm-smoke` gửi một lời gọi thật qua gateway. Xoay vòng chỉ nằm ở gateway: `AEGIS_MODEL_GATEWAY=1` từ chối fallback trong app. Nội dung request/response không bao giờ bị log; metadata (model, endpoint, status, token, chi phí, độ trễ) nằm ở `aegis.model_usage` và `/metrics` của proxy (sau master key).
+
 ## Chạy G1 một mình
 
 Ba lệnh dưới đây là bằng chứng của cổng G1 (`docs/living/02-ke-hoach-trien-khai.md` dòng 28 và 33). Chúng cần một checkout sạch, rootless Podman và image đã có trên máy (`make lab-up` dùng image Subfinder/DNSx đã pin).
