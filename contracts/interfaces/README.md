@@ -111,6 +111,8 @@ class EvidenceStore(Protocol):
 
 ## 5. ModelClient (M04)
 
+Sau LLM gateway của chủ (`AEGIS_MODEL_GATEWAY=1`), base URL là gateway, chi phí từng request do gateway báo là nguồn chính (giá cấu hình chỉ là dự phòng), và không được cấu hình chuỗi fallback trong app: xoay vòng thuộc về gateway.
+
 Hình dạng là contract, không định nghĩa DTO tay lần hai: [message](../agent/model-message.v2.schema.json) (content block, tool call/result), [request](../agent/model-request.v2.schema.json), [response](../agent/model-response.v2.schema.json). Chữ ký Python dưới đây chỉ để đọc.
 
 ```python
