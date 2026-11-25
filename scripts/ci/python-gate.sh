@@ -87,6 +87,18 @@ NEO4J_PORT=$(podman port "$NEO4J" 7687/tcp | head -1 | sed 's/.*://')
 log "neo4j $(podman exec "$NEO4J" cypher-shell -u neo4j -p "$NEO4J_PASSWORD" \
   'CALL dbms.components() YIELD versions RETURN versions' 2>/dev/null | tail -1) on 127.0.0.1:$NEO4J_PORT"
 
+# The LLM gateway rotation test (G1.6) runs the digest-pinned LiteLLM proxy
+# (deploy/llm-gateway/images.env) against two fake upstreams: no real provider, no key, no spend.
+# Pull it once per runner; a missing image would otherwise turn the test into a silent skip, and
+# AEGIS_NO_SKIPS rightly treats a check that did not run as a failure.
+GATEWAY_IMAGE=$(sed -n 's/^AEGIS_LLM_GATEWAY_IMAGE=//p' "$REPO_ROOT/deploy/llm-gateway/images.env")
+[[ -n $GATEWAY_IMAGE ]] || die "deploy/llm-gateway/images.env: AEGIS_LLM_GATEWAY_IMAGE missing"
+if ! podman image exists "$GATEWAY_IMAGE" >/dev/null 2>&1; then
+  log "pulling the pinned LLM gateway image (one-time, ~1.3 GB)"
+  podman pull "$GATEWAY_IMAGE" >/dev/null || die "cannot pull $GATEWAY_IMAGE"
+fi
+export AEGIS_TEST_LLM_GATEWAY=1
+
 export AEGIS_TEST_PG_DSN="postgresql://aegis:${PG_PASSWORD}@127.0.0.1:${PG_PORT}/postgres"
 export AEGIS_TEST_NEO4J_URI="bolt://127.0.0.1:${NEO4J_PORT}"
 export AEGIS_TEST_NEO4J_PASSWORD="$NEO4J_PASSWORD"

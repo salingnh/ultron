@@ -20,6 +20,7 @@ from aegis.m04_model.drivers import (
 from aegis.m04_model.fake import FakeModelClient
 from aegis.m04_model.raw import usage_tokens
 from aegis.m04_model.transport import (
+    HttpAnswer,
     HttpTransport,
     MissingEndpoint,
     Price,
@@ -40,6 +41,7 @@ from aegis.m04_model.usage import (
 __all__ = [
     "AnthropicMessagesDriver",
     "FakeModelClient",
+    "HttpAnswer",
     "HttpTransport",
     "InMemoryUsageSink",
     "MissingEndpoint",

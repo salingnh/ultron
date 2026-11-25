@@ -1,0 +1,121 @@
+# LLM gateway configuration (G1.6) - the owner's file, NOT repository state.
+#
+# Copy this file to /home/admin/.config/ultron/llm-gateway/config.yaml and edit it there; the
+# repository never reads the copy and `make llm-gateway-up` refuses to start without it. The
+# matching /home/admin/.config/ultron/llm-gateway/secrets.env holds the keys (0600) and is loaded
+# into the container as environment variables, so every `api_key:` below is a variable NAME, never
+# a value.
+#
+# How the pieces fit (this is the shape `make llm-gateway-test` runs):
+#
+#   ultron (AEGIS_MODEL_NAME=aegis-smart)
+#        |  POST /v1/chat/completions or /v1/messages, `Authorization: Bearer $LITELLM_MASTER_KEY`
+#        v
+#   gateway: one callable routing group `aegis-smart`
+#        |  priority 1            priority 2            priority 3
+#        v                       v                     v
+#   endpoint A              endpoint B            endpoint C
+#   (OpenAI-compatible)     (OpenAI-compatible)   (Anthropic)
+#
+# A request goes to the lowest-priority-number endpoint that is not cooling down. When an endpoint
+# answers 429 (out of quota / rate limit), 5xx or times out, the router puts it in cooldown for
+# `cooldown_time` seconds, serves the request from the next endpoint, and later requests skip the
+# cooling one. When every endpoint is cooling or failing, the gateway answers HTTP 429 with
+# "No deployments available for selected model" and the cooldown list, which M04 records as a
+# `provider_error` / `RATE_LIMITED` usage row - a clear failure, not a crash.
+#
+# `num_retries: 0` + `max_retries: 0` are deliberate: each endpoint is attempted at most once per
+# request, so an exhausted pool costs one call per endpoint, never a retry storm. Rotation happens
+# in exactly one place - here - so M04 runs with no fallback chain of its own.
+
+model_list:
+  # Endpoint A: an OpenAI-compatible upstream (vLLM, LM Studio, OpenRouter, a provider, ...).
+  # `model_info.input_cost_per_token` / `output_cost_per_token` are USD per token and make the
+  # gateway report a real per-request cost in `x-litellm-response-cost`; without them the gateway
+  # reports 0 and M04 records the price from .env instead. `id` is what
+  # `make llm-gateway-status` and the metrics use to name this endpoint.
+  - model_name: aegis-endpoint-a
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/UPSTREAM_A_API_KEY
+      timeout: 120
+      # One attempt per endpoint per request: the router's order is the retry policy.
+      max_retries: 0
+    model_info:
+      id: aegis-endpoint-a
+      input_cost_per_token: 0.00000015
+      output_cost_per_token: 0.0000006
+
+  # Endpoint B: another OpenAI-compatible upstream, used when A is out of quota or failing.
+  - model_name: aegis-endpoint-b
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_base: https://api.example-provider.net/v1
+      api_key: os.environ/UPSTREAM_B_API_KEY
+      timeout: 120
+      max_retries: 0
+    model_info:
+      id: aegis-endpoint-b
+      input_cost_per_token: 0.00000015
+      output_cost_per_token: 0.0000006
+
+  # Endpoint C: an Anthropic upstream. Any client standard works through the gateway: an
+  # OpenAI-standard call is translated to Anthropic Messages and back; an Anthropic-standard call
+  # passes through. (The reverse holds for A/B: the Anthropic standard reaches OpenAI-compatible
+  # upstreams through their /v1/responses endpoint, so an upstream that only speaks
+  # /v1/chat/completions should be paired with AEGIS_MODEL_PROVIDER=openai in .env.)
+  - model_name: aegis-endpoint-c
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-latest
+      api_key: os.environ/UPSTREAM_C_API_KEY
+      timeout: 120
+      max_retries: 0
+    model_info:
+      id: aegis-endpoint-c
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+
+router_settings:
+  # The name ultron asks for (AEGIS_MODEL_NAME). A routing group is callable exactly like a model,
+  # and its members are visited in `model_priorities` order - lower numbers first, equal numbers
+  # share traffic. That is the ordered fallback; it is not a random shuffle.
+  routing_groups:
+    - group_name: aegis-smart
+      models: [aegis-endpoint-a, aegis-endpoint-b, aegis-endpoint-c]
+      routing_strategy: priority
+      model_priorities:
+        aegis-endpoint-a: 1
+        aegis-endpoint-b: 2
+        aegis-endpoint-c: 3
+  # No retries at the router either: the next endpoint in the group is the retry.
+  num_retries: 0
+  # Cool a failing endpoint down for five minutes. A 429 is usually a spent quota window, so the
+  # next request must not wait for it; a 5xx or a timeout is treated the same way (allowed_fails: 0
+  # means one failure is enough) and the endpoint is retried when the cooldown expires.
+  cooldown_time: 300
+  allowed_fails: 0
+  # Keep one endpoint's failure from failing the whole group: the router moves on immediately.
+  disable_cooldowns: false
+
+litellm_settings:
+  # PRIVACY: never log request or response bodies. Prompts and answers contain scan data
+  # (targets, findings); what is kept is metadata only - model, endpoint, status, tokens, cost,
+  # latency - in aegis.model_usage (M04) and this proxy's /metrics.
+  turn_off_message_logging: true
+  set_verbose: false
+  json_logs: false
+  # Tolerate parameters an upstream does not support instead of failing the call.
+  drop_params: true
+  # /metrics exposes litellm_deployment_state (0 healthy, 1 partial, 2 cooling down) and the
+  # cooldown counters `make llm-gateway-status` reads. Auth stays ON: the status reader presents
+  # the master key, so any other process on the host cannot scrape the routing state.
+  callbacks: ["prometheus"]
+  require_auth_for_metrics_endpoint: true
+
+general_settings:
+  # Required: without it the proxy would be open to anything on the loopback port.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # No database in this deployment (MIT core only): nothing is persisted by the gateway itself.
+  # Cost and usage live in aegis.model_usage, written by M04 from the answered call.
+  disable_spend_logs: true

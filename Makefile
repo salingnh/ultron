@@ -14,7 +14,8 @@ SHELL := /bin/bash
 	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-recovery soak-start soak-stop \
-	run-local stop-local seed-demo llm-smoke broker-image internet-smoke
+	run-local stop-local seed-demo llm-smoke broker-image internet-smoke \
+	llm-gateway-up llm-gateway-down llm-gateway-status llm-gateway-reload llm-gateway-test
 
 help:
 	@printf '%s\n' \
@@ -76,7 +77,17 @@ help:
 	  'make soak-start      start the shortened 24 h soak (SOAK_HOURS=... to change) in .local/soak/' \
 	  'make soak-stop       stop the soak; its report stays in .local/soak/report.txt' \
 	  'make llm-smoke       ONE real provider call with the key from .env (never in CI);' \
-	  '                     prints the provider answer, tokens and cost - see .env.example'
+	  '                     prints the provider answer, tokens and cost - see .env.example' \
+	  'make llm-gateway-up  start the owner LLM gateway (LiteLLM proxy, pinned image) on' \
+	  '                     127.0.0.1 only; its config and keys live in ~/.config/ultron/llm-gateway' \
+	  '                     and are validated before a container exists' \
+	  'make llm-gateway-status   container, readiness, model groups, and per endpoint' \
+	  '                     healthy/cooling-down with its cooldown count' \
+	  'make llm-gateway-reload   apply an edited owner config: recreate only the gateway' \
+	  '                     container, then prove the router serves the file groups/endpoints' \
+	  'make llm-gateway-down     remove only this checkout gateway project' \
+	  'make llm-gateway-test     two fake upstreams (one 429, one OK) behind the pinned gateway:' \
+	  '                     rotation, cooldown skip, all-exhausted -> RATE_LIMITED, both standards'
 
 dev-up:
 	@scripts/dev/dev-up.sh
@@ -292,3 +303,22 @@ seed-demo:
 # settings first (a missing key/price/provider is an error, never a silent 0) and refuses a CI host.
 llm-smoke:
 	@uv run --frozen python scripts/dev/llm-smoke.py
+
+# --- G1.6: the owner's LLM gateway (deploy/llm-gateway) -----------------------
+# The scripts validate the owner's config and keys first, keep the compose project to this checkout
+# and never touch another stack. `llm-gateway-test` runs the shipped example shape against two fake
+# upstreams - no real provider is called, in CI or locally.
+llm-gateway-up:
+	@scripts/llm-gateway/up.sh
+
+llm-gateway-down:
+	@scripts/llm-gateway/down.sh
+
+llm-gateway-status:
+	@scripts/llm-gateway/status.sh
+
+llm-gateway-reload:
+	@scripts/llm-gateway/reload.sh
+
+llm-gateway-test:
+	@AEGIS_TEST_LLM_GATEWAY=1 uv run --frozen python -m pytest tests/test_llm_gateway_rotation.py -x -q

@@ -17,6 +17,7 @@ from aegis.contracts_gen.agent.model_response_v2_schema import FinishReason, Mod
 from aegis.contracts_gen.common.error_v2_schema import ErrorCode, NextAction
 from aegis.m04_model import (
     FakeModelClient,
+    HttpAnswer,
     HttpTransport,
     InMemoryUsageSink,
     MissingEndpoint,
@@ -243,7 +244,7 @@ def test_fake_driver_is_a_first_class_model_client() -> None:
 
 
 def http_transport(
-    post: Callable[[str, dict[str, str], bytes, float], tuple[int, bytes]],
+    post: Callable[[str, dict[str, str], bytes, float], HttpAnswer],
     *,
     model: str = "configured-model",
 ) -> HttpTransport:
@@ -264,9 +265,9 @@ def test_http_transport_posts_and_prices_the_answer() -> None:
     raw = recorded("openai-completed")
     seen: list[dict[str, Any]] = []
 
-    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
         seen.append({"url": url, "headers": headers, "body": json.loads(body), "timeout": timeout})
-        return 200, json.dumps(raw).encode()
+        return HttpAnswer(200, json.dumps(raw).encode())
 
     answer = run(
         http_transport(post).send(
@@ -285,9 +286,9 @@ def test_http_transport_posts_and_prices_the_answer() -> None:
 def test_http_transport_uses_anthropic_headers() -> None:
     seen: list[dict[str, str]] = []
 
-    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
         seen.append(headers)
-        return 200, json.dumps(recorded("anthropic-completed")).encode()
+        return HttpAnswer(200, json.dumps(recorded("anthropic-completed")).encode())
 
     transport = HttpTransport(
         endpoints={Provider.anthropic: "https://api.test/v1/messages"},
@@ -316,8 +317,8 @@ def test_http_transport_uses_anthropic_headers() -> None:
     ],
 )
 def test_http_transport_maps_error_statuses(status: int, code: ErrorCode) -> None:
-    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
-        return status, b'{"error": {"message": "provider says no"}}'
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
+        return HttpAnswer(status, b'{"error": {"message": "provider says no"}}')
 
     with pytest.raises(TransportError) as caught:
         run(
@@ -333,7 +334,7 @@ def test_http_transport_maps_error_statuses(status: int, code: ErrorCode) -> Non
 
 
 def test_http_transport_maps_timeout_and_garbage_to_transport_errors() -> None:
-    def timeout(url: str, headers: dict[str, str], body: bytes, wait: float) -> tuple[int, bytes]:
+    def timeout(url: str, headers: dict[str, str], body: bytes, wait: float) -> HttpAnswer:
         raise TimeoutError
 
     with pytest.raises(TransportError) as caught:
@@ -347,8 +348,8 @@ def test_http_transport_maps_timeout_and_garbage_to_transport_errors() -> None:
         )
     assert caught.value.code is ErrorCode.NETWORK_TIMEOUT
 
-    def garbage(url: str, headers: dict[str, str], body: bytes, wait: float) -> tuple[int, bytes]:
-        return 200, b"<html>not json</html>"
+    def garbage(url: str, headers: dict[str, str], body: bytes, wait: float) -> HttpAnswer:
+        return HttpAnswer(200, b"<html>not json</html>")
 
     with pytest.raises(TransportError) as caught:
         run(
@@ -363,8 +364,8 @@ def test_http_transport_maps_timeout_and_garbage_to_transport_errors() -> None:
 
 
 def test_http_transport_refuses_missing_configuration_loudly() -> None:
-    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
-        return 200, b"{}"
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
+        return HttpAnswer(200, b"{}")
 
     transport = http_transport(post)
     with pytest.raises(PricingUnknown):

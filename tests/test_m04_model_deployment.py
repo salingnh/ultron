@@ -22,6 +22,7 @@ from aegis.m03_agent.config import SessionConfig, SessionConfigError
 from aegis.m03_agent.fake_policy import ScriptedLabPolicy
 from aegis.m04_model import deployment
 from aegis.m04_model.client import ModelClient
+from aegis.m04_model.config import ModelConfig, ProviderSpec
 from aegis.m04_model.deployment import (
     ModelDeployment,
     ModelDeploymentError,
@@ -29,7 +30,7 @@ from aegis.m04_model.deployment import (
     model_status,
     redact,
 )
-from aegis.m04_model.transport import HttpTransport, TransportError
+from aegis.m04_model.transport import HttpAnswer, HttpTransport, TransportError
 from aegis.m04_model.usage import InMemoryUsageSink, PostgresUsageSink
 from aegis.m26_api.app import create_app
 from tests.m04_support import budget, recorded, request
@@ -45,6 +46,7 @@ MODEL_VARIABLES = (
     deployment.OUTPUT_PRICE_ENV,
     deployment.TIMEOUT_SECONDS_ENV,
     deployment.MAX_OUTPUT_TOKENS_ENV,
+    deployment.GATEWAY_ENV,
 )
 
 
@@ -60,6 +62,7 @@ def live_env(provider: str = "openai", **overrides: str) -> dict[str, str]:
         "output_price": deployment.OUTPUT_PRICE_ENV,
         "timeout_seconds": deployment.TIMEOUT_SECONDS_ENV,
         "max_output_tokens": deployment.MAX_OUTPUT_TOKENS_ENV,
+        "gateway": deployment.GATEWAY_ENV,
     }
     env = {
         deployment.LIVE_MODEL_ENV: "1",
@@ -228,8 +231,10 @@ def test_no_status_or_repr_surface_carries_the_key() -> None:
 def test_a_provider_echo_of_the_key_is_redacted_in_the_transport_error() -> None:
     live = ModelDeployment.from_env(live_env())
 
-    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
-        return 401, json.dumps({"error": f"bad credential {headers['authorization']}"}).encode()
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
+        return HttpAnswer(
+            401, json.dumps({"error": f"bad credential {headers['authorization']}"}).encode()
+        )
 
     with pytest.raises(TransportError) as caught:
         asyncio.run(
@@ -296,9 +301,9 @@ def test_the_live_client_posts_to_the_derived_endpoint_and_prices_the_answer() -
     seen: list[dict[str, Any]] = []
     raw = recorded("openai-completed")
 
-    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
         seen.append({"url": url, "headers": headers, "body": json.loads(body)})
-        return 200, json.dumps(raw).encode()
+        return HttpAnswer(200, json.dumps(raw).encode())
 
     sink = InMemoryUsageSink()
     answer = asyncio.run(
@@ -382,3 +387,141 @@ def test_the_timeout_and_output_ceiling_reach_the_plan_request() -> None:
         live_model=True,
     )
     assert (config.max_output_tokens, config.timeout_seconds) == (256, 30.0)
+
+
+# ---------------------------------------------------------------------------
+# the gateway: one base URL, its cost is authoritative, rotation lives there
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["2", "gateway", "01"])
+def test_an_unknown_gateway_flag_is_an_error_not_a_default(value: str) -> None:
+    with pytest.raises(ModelDeploymentError, match=deployment.GATEWAY_ENV):
+        ModelDeployment.from_env(live_env(gateway=value))
+
+
+@pytest.mark.parametrize(
+    ("provider", "base_url", "endpoint"),
+    [
+        ("openai", "http://127.0.0.1:4000", "http://127.0.0.1:4000/v1/chat/completions"),
+        ("openai", "http://127.0.0.1:4000/v1/", "http://127.0.0.1:4000/v1/chat/completions"),
+        (
+            "openai",
+            "http://127.0.0.1:4000/v1/chat/completions",
+            "http://127.0.0.1:4000/v1/chat/completions",
+        ),
+        ("anthropic", "http://127.0.0.1:4000", "http://127.0.0.1:4000/v1/messages"),
+        ("anthropic", "http://127.0.0.1:4000/v1", "http://127.0.0.1:4000/v1/messages"),
+        ("anthropic", "http://127.0.0.1:4000/v1/messages", "http://127.0.0.1:4000/v1/messages"),
+    ],
+)
+def test_the_gateway_serves_both_standards_from_one_base_url(
+    provider: str, base_url: str, endpoint: str
+) -> None:
+    live = ModelDeployment.from_env(live_env(provider, base_url=base_url, gateway="1"))
+    assert live.gateway is True
+    assert live.endpoint == endpoint
+
+
+def test_gateway_mode_requires_its_base_url_instead_of_a_provider_default() -> None:
+    with pytest.raises(ModelDeploymentError) as caught:
+        ModelDeployment.from_env(live_env(gateway="1"))
+    assert deployment.BASE_URL_ENV in str(caught.value)
+
+
+def test_gateway_mode_refuses_an_in_app_fallback_chain() -> None:
+    live = ModelDeployment.from_env(
+        live_env("openai", base_url="http://127.0.0.1:4000/v1", gateway="1")
+    )
+    chain = ModelConfig(
+        fallback=(ProviderSpec(Provider.anthropic, "other-model"),), allow_fallback=True
+    )
+    with pytest.raises(ModelDeploymentError, match="gateway owns rotation"):
+        live.client(InMemoryUsageSink(), config=chain)
+
+
+def test_the_default_live_client_never_falls_back() -> None:
+    """Rotation is the gateway's job in gateway mode; the direct client has one attempt too."""
+    for overrides in ({"gateway": "1"}, {}):
+        live = ModelDeployment.from_env(
+            live_env("openai", base_url="http://127.0.0.1:4000/v1", **overrides)
+        )
+        client = live.client(InMemoryUsageSink())
+        assert client.config.allow_fallback is False
+        assert client.config.fallback == ()
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ("0.000123", 0.000123),
+        ("1.7e-05", 0.000017),
+        (" 0.5 ", 0.5),
+    ],
+)
+def test_the_gateway_reported_cost_is_what_m04_records(header: str, expected: float) -> None:
+    live = ModelDeployment.from_env(
+        live_env("openai", base_url="http://127.0.0.1:4000/v1", gateway="1")
+    )
+    raw = recorded("openai-completed")
+
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
+        return HttpAnswer(200, json.dumps(raw).encode(), {"X-LiteLLM-Response-Cost": header})
+
+    sink = InMemoryUsageSink()
+    client = live.client(sink, post=post)
+    answer = asyncio.run(client.complete(request(Provider.openai, "configured-model"), budget()))
+    # The configured price of this call would be 0.000432; the gateway's number wins.
+    assert answer.usage.cost_usd == pytest.approx(expected)
+    assert sink.rows[-1].cost_usd == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("header", [None, "0", "0.0", "", "not-a-number"])
+def test_a_gateway_answer_without_its_cost_is_priced_from_the_deployment(
+    header: str | None, caplog: pytest.LogCaptureFixture
+) -> None:
+    live = ModelDeployment.from_env(
+        live_env("openai", base_url="http://127.0.0.1:4000/v1", gateway="1")
+    )
+    raw = recorded("openai-completed")
+
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
+        response_headers = {} if header is None else {"x-litellm-response-cost": header}
+        return HttpAnswer(200, json.dumps(raw).encode(), response_headers)
+
+    answer = asyncio.run(
+        live.client(InMemoryUsageSink(), post=post).complete(
+            request(Provider.openai, "configured-model"), budget()
+        )
+    )
+    assert answer.usage.cost_usd == pytest.approx(0.000432), "never 0, never a guess"
+    if header not in (None, ""):
+        assert "configured price" in caplog.text, "an unusable gateway cost is visible, not silent"
+
+
+def test_a_direct_provider_call_ignores_a_cost_header() -> None:
+    """Only a gateway stamps a cost; a provider header must not change the price table."""
+    live = ModelDeployment.from_env(live_env("openai", base_url="http://127.0.0.1:4000/v1"))
+    raw = recorded("openai-completed")
+
+    def post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpAnswer:
+        return HttpAnswer(200, json.dumps(raw).encode(), {"x-litellm-response-cost": "9.0"})
+
+    answer = asyncio.run(
+        live.client(InMemoryUsageSink(), post=post).complete(
+            request(Provider.openai, "configured-model"), budget()
+        )
+    )
+    assert answer.usage.cost_usd == pytest.approx(0.000432)
+
+
+def test_status_reports_the_gateway_and_its_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = live_env("anthropic", base_url="http://127.0.0.1:4000/v1", gateway="1")
+    with_env(monkeypatch, env)
+    status = model_status(env)
+    assert status["valid"] is True
+    assert status["gateway"] is True
+    assert status["endpoint"] == "http://127.0.0.1:4000/v1/messages"
+    assert SECRET not in json.dumps(status)
