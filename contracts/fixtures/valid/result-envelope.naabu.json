@@ -1,0 +1,185 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-00000000e003",
+  "dedup_key": "job:01934f6a-0000-7000-8000-00000000d003:envelope",
+  "job_id": "01934f6a-0000-7000-8000-00000000d003",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "capability": "network.discover_services",
+  "provider": {
+    "name": "naabu",
+    "version": "v2.7.0",
+    "adapter_version": "1.0.0",
+    "image_digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa"
+  },
+  "policy_version": "roe-1",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": [
+      "ip:198.51.100.10"
+    ],
+    "complete": true
+  },
+  "results": {
+    "assets": [
+      {
+        "kind": "service",
+        "canonical_key": "service:198.51.100.10:80/tcp",
+        "discovered_from": [
+          "ip:198.51.100.10"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "kind": "service",
+        "canonical_key": "service:198.51.100.10:443/tcp",
+        "discovered_from": [
+          "ip:198.51.100.10"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
+    ],
+    "observations": [
+      {
+        "subject": "service:198.51.100.10:80/tcp",
+        "predicate": "asset.seen",
+        "value": true,
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      },
+      {
+        "subject": "service:198.51.100.10:80/tcp",
+        "predicate": "net.port_state",
+        "value": "open",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      },
+      {
+        "subject": "service:198.51.100.10:80/tcp",
+        "predicate": "service.protocol",
+        "value": "tcp",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      },
+      {
+        "subject": "service:198.51.100.10:443/tcp",
+        "predicate": "asset.seen",
+        "value": true,
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      },
+      {
+        "subject": "service:198.51.100.10:443/tcp",
+        "predicate": "net.port_state",
+        "value": "open",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      },
+      {
+        "subject": "service:198.51.100.10:443/tcp",
+        "predicate": "service.protocol",
+        "value": "tcp",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      }
+    ],
+    "relationships": [
+      {
+        "type": "EXPOSES",
+        "from": "ip:198.51.100.10",
+        "to": "service:198.51.100.10:80/tcp",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      },
+      {
+        "type": "EXPOSES",
+        "from": "ip:198.51.100.10",
+        "to": "service:198.51.100.10:443/tcp",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:00:10Z"
+      }
+    ],
+    "findings": []
+  },
+  "evidence": [
+    {
+      "local_ref": "raw",
+      "sha256": "a7bdc210581c704c77a6d769b3da56b3792a44ae1f4e1ad0467af4225f1ab2b2",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d003/a7bdc210581c704c77a6d769b3da56b3792a44ae1f4e1ad0467af4225f1ab2b2",
+      "size_bytes": 214,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
+  ],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "08543ba7ccd400dc5b92979728d7b8b69a8674c66784fc06fe535750115d324e",
+    "started_at": "2026-11-25T00:00:00Z",
+    "finished_at": "2026-11-25T00:00:10Z",
+    "seed_targets": [
+      {
+        "canonical_key": "ip:198.51.100.10"
+      }
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-00000000d003",
+    "capability_id": "network.discover_services",
+    "provider_version": "v2.7.0",
+    "policy_version": "roe-1"
+  }
+}

@@ -56,10 +56,27 @@ else
   status=1
 fi
 
+for container in "${SERVICE_CONTAINERS[@]}"; do
+  if container_running "$container"; then
+    log "$container: running"
+  else
+    log "$container: NOT running"
+    status=1
+  fi
+done
+if ((status == 0)); then
+  if services_ready; then
+    log "services: ${SERVICE_ENDPOINTS[*]}"
+  else
+    log "services: at least one endpoint did not accept a connection"
+    status=1
+  fi
+fi
+
 # `.Ports` in `podman ps` also lists ports the image merely exposes; only a host binding is a
 # published port, so read the container's port bindings instead.
 published=""
-for container in "$DNS_CONTAINER" "$PASSIVE_CONTAINER"; do
+for container in "$DNS_CONTAINER" "$PASSIVE_CONTAINER" "${SERVICE_CONTAINERS[@]}"; do
   container_exists "$container" || continue
   bindings=$(podman inspect --format '{{json .HostConfig.PortBindings}}' "$container")
   [ "$bindings" = "{}" ] || [ "$bindings" = "null" ] || published="$published $container=$bindings"

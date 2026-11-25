@@ -9,10 +9,10 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 .PHONY: help dev-up dev-down dev-reset dev-status dev-logs contracts-gate graph-check ci-local \
-	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
+	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder lab-naabu \
 	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test \
 	deps lint test codegen codegen-check migrate ci-python \
-	temporal-live demo-g15a demo-g1 demo-g16c demo-recovery soak-start soak-stop \
+	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-recovery soak-start soak-stop \
 	run-local stop-local seed-demo llm-smoke
 
 help:
@@ -28,9 +28,11 @@ help:
 	  '                     on an internal network (aegis-lab, no published ports)' \
 	  'make lab-down        remove only the aegis-lab compose project and the throwaway lab CA' \
 	  'make lab-status      lab health and boundary (non-zero if not healthy)' \
-	  'make lab-check       inventory consistency + Subfinder and DNSx runs compared to fixtures' \
+	  'make lab-check       inventory consistency + Subfinder, DNSx and Naabu runs compared to' \
+	  '                     fixtures' \
 	  'make lab-dnsx        only the DNSx run and its fixture comparison' \
 	  'make lab-subfinder   only the Subfinder run and its fixture comparison' \
+	  'make lab-naabu       only the Naabu CONNECT run on the lab service containers' \
 	  'make vulnlab-up      start the CVE test lab (deploy/vulnlab): known-vulnerable HTTP' \
 	  '                     origins on their own internal network + the lab network; auto-stops' \
 	  '                     after VULNLAB_TTL_MINUTES (default 120); the Cloudflare Tunnel only' \
@@ -54,6 +56,8 @@ help:
 	  'make ci-python       the python workflow: deps + lint + test + codegen-check' \
 	  'make demo-g1         end-to-end G1 gate on the lab: campaign -> agent/MCP -> Subfinder ->' \
 	  '                     DNSx -> raw + metadata + graph + events, with the evidence printed' \
+	  'make demo-discovery  G1.6a: the same chain plus Naabu, so IP -> Service and EXPOSES edges' \
+	  '                     are in PostgreSQL and Neo4j' \
 	  'make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS intel ->' \
 	  '                     candidate AFFECTED_BY in PostgreSQL and Neo4j + the candidate read API' \
 	  'make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate' \
@@ -93,12 +97,16 @@ lab-check:
 	@python3 scripts/lab/check_inventory.py
 	@scripts/lab/subfinder-run.sh
 	@scripts/lab/dnsx-run.sh
+	@scripts/lab/naabu-run.sh
 
 lab-dnsx:
 	@scripts/lab/dnsx-run.sh
 
 lab-subfinder:
 	@scripts/lab/subfinder-run.sh
+
+lab-naabu:
+	@scripts/lab/naabu-run.sh
 
 # --- CVE test lab (G1.6 slice E) ----------------------------------------------
 # Known-vulnerable HTTP origins for the discovery chain (port -> fingerprint -> CVE candidates).
@@ -169,6 +177,11 @@ demo-g15a:
 demo-g1:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
 		uv run --frozen python scripts/demo/demo-g1.py
+
+# G1.6a: the discovery chain continues past DNS to the ports/services on the resolved addresses.
+demo-discovery:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/demo/demo-discovery.py
 
 demo-g16c:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \

@@ -21,6 +21,7 @@ from aegis import validation
 from aegis.m05_registry.registry import InMemoryManifestRegistry
 from tests.mcp_support import (
     CAMPAIGN_ID,
+    DISCOVER,
     ENUMERATE,
     GRAPH_TOOLS,
     RESOLVE,
@@ -50,7 +51,7 @@ def _tools(service: Any, **kwargs: Any) -> dict[str, Any]:
 def test_the_catalogue_is_capabilities_plus_graph_queries() -> None:
     tools = _tools(make_service())
 
-    assert sorted(tools) == sorted([ENUMERATE, RESOLVE, *GRAPH_TOOLS])
+    assert sorted(tools) == sorted([ENUMERATE, RESOLVE, DISCOVER, *GRAPH_TOOLS])
 
 
 def test_the_policy_denylist_hides_a_capability_for_that_campaign_only() -> None:

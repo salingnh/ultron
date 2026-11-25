@@ -1,0 +1,54 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c3",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000c4",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "capability": "network.discover_services",
+  "provider": "naabu",
+  "provider_version": "v2.7.0",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "ee4a26953e8dbf256124873bff47ad2fb340bf6af8dbe54b22b3a00ef049f210",
+  "image_digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
+  "input": {
+    "targets": [
+      "ip:198.51.100.10"
+    ],
+    "ports": [
+      80,
+      443
+    ],
+    "packets_per_second": 100,
+    "version_intensity": 0
+  },
+  "targets": [
+    {
+      "canonical_key": "ip:198.51.100.10"
+    }
+  ],
+  "idempotency_key": "fixture:naabu-conformance",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: network.discover_services on one resolved address, target-bound egress; no execution",
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "signature": "hmac-sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "required",
+    "entries": [
+      "198.51.100.10:80",
+      "198.51.100.10:443"
+    ],
+    "target_addresses": [
+      "198.51.100.10"
+    ]
+  },
+  "priority": 60,
+  "depends_on": []
+}

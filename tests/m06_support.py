@@ -149,7 +149,7 @@ def manifest(name: str = "manifest.subfinder.yaml") -> tuple[ProviderManifest, b
 
 
 def target_bound_manifest() -> tuple[ProviderManifest, bytes]:
-    return manifest("manifest.target-bound.yaml")
+    return manifest("manifest.naabu.yaml")
 
 
 def task_for_manifest(

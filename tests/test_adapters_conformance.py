@@ -130,9 +130,27 @@ def _assert_key(key: str) -> None:
     assert not problems, f"{key}: {problems}"
 
 
-def _domain_key(value: str) -> str:
+KEY_NAMESPACES = (
+    "dns:",
+    "ip:",
+    "service:",
+    "app:",
+    "url:",
+    "email:",
+    "purl:",
+    "oci:",
+    "repo:",
+    "git:",
+    "artifact:",
+    "cloud:",
+    "k8s:",
+)
+
+
+def _canonical_key(value: str) -> str:
+    """A target as the canonical key it names: a key stays one, a bare name is a domain."""
     text = str(value).strip().lower().rstrip(".")
-    return text if text.startswith("dns:") else f"dns:{text}"
+    return text if text.startswith(KEY_NAMESPACES) else f"dns:{text}"
 
 
 def _assert_keys_and_predicates(parsed: dict[str, Any]) -> None:
@@ -183,6 +201,23 @@ def _assert_lab_cross_check(adapter: Adapter, run: dict[str, Any], parsed: dict[
         assert not (silent & claimed), (
             f"a name with no answer must not be reported as resolving: {silent & claimed}"
         )
+        return
+    if cross_check["kind"] == "services":
+        # The inventory declares, per lab service, the address its zone name resolves to and the
+        # ports the container answers on; the run's ports are the ones the job bound from input.
+        ports = {int(port) for port in run["input"].get("ports") or []}
+        expected_services = {
+            f"service:{service['address']}:{int(port)}/tcp"
+            for service in expected["services"]
+            for port in service.get("ports") or []
+            if int(port) in ports
+        }
+        assert keys == expected_services, (
+            f"service assets differ from the lab inventory: {keys ^ expected_services}"
+        )
+        edges = {(edge["from"], edge["to"]) for edge in parsed["relationships"]}
+        expected_edges = {(f"ip:{key.split(':')[1]}", key) for key in expected_services}
+        assert edges == expected_edges, f"EXPOSES mismatch: {edges ^ expected_edges}"
         return
     pytest.fail(f"{adapter.provider}: unknown cross_check kind {cross_check['kind']!r}")
 
@@ -254,7 +289,7 @@ def test_lab_fixture_is_the_committed_run(adapter: Adapter) -> None:
     assert first == expected, "the parser no longer produces the committed lab expectation"
 
     _assert_keys_and_predicates(first)
-    expected_coverage = sorted(_domain_key(value) for value in run["input"]["targets"])
+    expected_coverage = sorted(_canonical_key(value) for value in run["input"]["targets"])
     assert first["coverage_subjects"] == expected_coverage, (
         f"coverage must be the input targets, got {first['coverage_subjects']}"
     )

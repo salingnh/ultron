@@ -47,7 +47,7 @@ REFERENCE = _reference()
 
 
 @pytest.mark.parametrize(
-    "name", ["manifest.subfinder.yaml", "manifest.dnsx.yaml", "manifest.target-bound.yaml"]
+    "name", ["manifest.subfinder.yaml", "manifest.dnsx.yaml", "manifest.naabu.yaml"]
 )
 def test_valid_fixtures_are_admitted_and_hash_their_bytes(name: str) -> None:
     raw = _bytes(name)
@@ -93,7 +93,7 @@ def test_unknown_input_schema_is_refused() -> None:
 
 
 def test_target_bound_manifest_needs_a_ports_input_field() -> None:
-    document = parse_document(_bytes("manifest.target-bound.yaml"))
+    document = parse_document(_bytes("manifest.naabu.yaml"))
     assert document["spec"]["permissions"]["targetBinding"] == "required"
     schema = schema_reference_path("schema://network/discover-services/v2")
     assert schema is not None

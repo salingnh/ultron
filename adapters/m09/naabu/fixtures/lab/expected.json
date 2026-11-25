@@ -1,0 +1,415 @@
+{
+  "assets": [
+    {
+      "kind": "service",
+      "canonical_key": "service:10.114.53.215:80/tcp",
+      "discovered_from": [
+        "ip:10.114.53.215"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "service",
+      "canonical_key": "service:10.114.53.211:443/tcp",
+      "discovered_from": [
+        "ip:10.114.53.211"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "service",
+      "canonical_key": "service:10.114.53.211:80/tcp",
+      "discovered_from": [
+        "ip:10.114.53.211"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "service",
+      "canonical_key": "service:10.114.53.214:6379/tcp",
+      "discovered_from": [
+        "ip:10.114.53.214"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "service",
+      "canonical_key": "service:10.114.53.213:2222/tcp",
+      "discovered_from": [
+        "ip:10.114.53.213"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "service",
+      "canonical_key": "service:10.114.53.212:8080/tcp",
+      "discovered_from": [
+        "ip:10.114.53.212"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "service",
+      "canonical_key": "service:10.114.53.212:8009/tcp",
+      "discovered_from": [
+        "ip:10.114.53.212"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "subject": "service:10.114.53.215:80/tcp",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.215:80/tcp",
+      "predicate": "net.port_state",
+      "value": "open",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.215:80/tcp",
+      "predicate": "service.protocol",
+      "value": "tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:443/tcp",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:443/tcp",
+      "predicate": "net.port_state",
+      "value": "open",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:443/tcp",
+      "predicate": "service.protocol",
+      "value": "tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:80/tcp",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:80/tcp",
+      "predicate": "net.port_state",
+      "value": "open",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:80/tcp",
+      "predicate": "service.protocol",
+      "value": "tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.214:6379/tcp",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.214:6379/tcp",
+      "predicate": "net.port_state",
+      "value": "open",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.214:6379/tcp",
+      "predicate": "service.protocol",
+      "value": "tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.213:2222/tcp",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.213:2222/tcp",
+      "predicate": "net.port_state",
+      "value": "open",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.213:2222/tcp",
+      "predicate": "service.protocol",
+      "value": "tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8080/tcp",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8080/tcp",
+      "predicate": "net.port_state",
+      "value": "open",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8080/tcp",
+      "predicate": "service.protocol",
+      "value": "tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8009/tcp",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8009/tcp",
+      "predicate": "net.port_state",
+      "value": "open",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8009/tcp",
+      "predicate": "service.protocol",
+      "value": "tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "type": "EXPOSES",
+      "from": "ip:10.114.53.215",
+      "to": "service:10.114.53.215:80/tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "EXPOSES",
+      "from": "ip:10.114.53.211",
+      "to": "service:10.114.53.211:443/tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "EXPOSES",
+      "from": "ip:10.114.53.211",
+      "to": "service:10.114.53.211:80/tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "EXPOSES",
+      "from": "ip:10.114.53.214",
+      "to": "service:10.114.53.214:6379/tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "EXPOSES",
+      "from": "ip:10.114.53.213",
+      "to": "service:10.114.53.213:2222/tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "EXPOSES",
+      "from": "ip:10.114.53.212",
+      "to": "service:10.114.53.212:8080/tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "EXPOSES",
+      "from": "ip:10.114.53.212",
+      "to": "service:10.114.53.212:8009/tcp",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "coverage_subjects": [
+    "ip:10.114.53.211",
+    "ip:10.114.53.212",
+    "ip:10.114.53.213",
+    "ip:10.114.53.214",
+    "ip:10.114.53.215"
+  ]
+}

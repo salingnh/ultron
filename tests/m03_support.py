@@ -438,8 +438,10 @@ class FakeContext:
         spent_cost_usd: float = 0.0,
         graph_revision: int = 0,
         campaign_id: str = CAMPAIGN_ID,
+        objective_text: str = "Discover the lab domain's subdomains and resolve them",
     ) -> None:
         self.campaign_id = campaign_id
+        self.objective_text = objective_text
         self.observations = tuple(observations)
         self.jobs = tuple(jobs)
         self.targets = tuple(targets)
@@ -460,7 +462,7 @@ class FakeContext:
         self.cursors.append(cursor)
         return CampaignContext(
             campaign_id=campaign_id,
-            objective_text="Discover the lab domain's subdomains and resolve them",
+            objective_text=self.objective_text,
             policy_version="roe-10",
             policy=self.policy,
             graph_revision=self.graph_revision,

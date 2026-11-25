@@ -488,7 +488,7 @@ def test_target_bound_binding_pins_resolved_addresses_and_drops_the_deny_set() -
             )
         registry = PostgresManifestRegistry(lambda: connect(dsn))
         registry.register(
-            (REPO_ROOT / "contracts/fixtures/valid/manifest.target-bound.yaml").read_bytes(),
+            (REPO_ROOT / "contracts/fixtures/valid/manifest.naabu.yaml").read_bytes(),
             registered_by={"kind": "module", "id": "M05"},
         )
         registry.register(
@@ -537,3 +537,61 @@ def test_target_bound_binding_pins_resolved_addresses_and_drops_the_deny_set() -
             )
         assert denied.value.refusal.code == "OUT_OF_SCOPE", denied.value.refusal.message
         assert denied.value.refusal.rule == "target_denied"
+
+
+def test_a_discovered_address_asset_target_binds_its_canonical_key() -> None:
+    """The address-targeted capability takes `ip:` keys; the binding must read the key's address.
+
+    Root cause this covers: `build_egress_binding` handed the *raw input text* to the IP parser,
+    so a target that was an asset the campaign had discovered (`ip:<address>`, the only form the
+    capability schema accepts for an address asset) was refused as "not an IP address" while the
+    same address worked as a seed. The key prefix is notation, not part of the address.
+    """
+    with migrated_database() as dsn:
+        campaign = seed_campaign(dsn)
+        from aegis.m05_registry.ids import uuid7
+
+        address = "203.0.113.10"
+        with connect(dsn) as conn, conn.transaction():
+            asset_id = uuid7()
+            conn.execute(
+                "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen,"
+                " normalization_version) VALUES (%s, %s, 'ip', now(), now(), 'aegis-norm/1')",
+                (asset_id, f"ip:{address}"),
+            )
+            conn.execute(
+                "INSERT INTO asset_campaign (asset_id, campaign_id, first_seen)"
+                " VALUES (%s, %s, now())",
+                (asset_id, campaign.campaign_id),
+            )
+        registry = PostgresManifestRegistry(lambda: connect(dsn))
+        registry.register(
+            (REPO_ROOT / "contracts/fixtures/valid/manifest.naabu.yaml").read_bytes(),
+            registered_by={"kind": "module", "id": "M05"},
+        )
+        jobs = PostgresJobService(
+            lambda: connect(dsn), registry=registry, key_ring=KeyRing.dev(), binder=FakeBinder()
+        )
+        accepted = jobs.submit(
+            JobSubmit.model_validate(
+                {
+                    "campaign_id": campaign.campaign_id,
+                    "capability": "network.discover_services",
+                    "input": {"targets": [f"ip:{address}"], "ports": [443, 80]},
+                    "rationale": "a discovered address is a target, and its key is notation",
+                }
+            ),
+            requested_by=OPERATOR,
+            idempotency_key="key-asset-target-bound",
+        )
+        task = scalar(
+            dsn, "SELECT approved_task FROM scan_job WHERE job_id = %s", (accepted.job["job_id"],)
+        )
+        assert task["targets"] == [{"canonical_key": f"ip:{address}"}]
+        assert task["egress_binding"] == {
+            "mode": "broker",
+            "target_binding": "required",
+            "entries": [f"{address}:443", f"{address}:80"],
+            "target_addresses": [address],
+        }
+        assert KeyRing.dev().verify(task) == "g1-dev-1"

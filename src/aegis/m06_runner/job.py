@@ -424,11 +424,27 @@ class JobRunner:
         addresses, never our prefixes: writing `dns:lab.aegis.test` into the file makes Subfinder
         enumerate nothing at all, silently. So the known canonical prefixes are stripped here, once,
         and the parser keeps working on the keys it is handed.
+
+        An integer-array `ports` input is staged the same way, as `/in/ports.txt` one port per
+        line. The OI-12 rendering rule forbids joining a list into one argv element (an array
+        becomes one argv element per item), and a port scanner has to receive the whole set in
+        one argument (`-ports-file /in/ports.txt`); the file is the same kind of tool input as
+        `targets.txt`, and nothing about the port set comes from the tool's output or from a
+        manifest constant.
         """
         targets = input_values.get("targets")
         if isinstance(targets, list) and all(isinstance(item, str) for item in targets):
             values = [texts.TARGET_PREFIXES.sub("", item, count=1) for item in targets]
             (input_dir / "targets.txt").write_text("\n".join(values) + "\n", encoding="utf-8")
+        ports = input_values.get("ports")
+        if (
+            isinstance(ports, list)
+            and ports
+            and all(isinstance(port, int) and not isinstance(port, bool) for port in ports)
+        ):
+            (input_dir / "ports.txt").write_text(
+                "\n".join(str(port) for port in ports) + "\n", encoding="utf-8"
+            )
 
     def _collect(
         self, plan: JobPlan, spec: ContainerSpec, layout: JobLayout, outcome: JobOutcome

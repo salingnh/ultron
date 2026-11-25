@@ -6,24 +6,37 @@ metadata:
   module: M09
   license: MIT
   upstream: https://github.com/projectdiscovery/naabu
-  licenseNotes: 'Fixture only: image digest is a placeholder, the pinned digest lands with the adapter
-    (G1.3b).'
+  licenseNotes: >-
+    Image pin v2.7.0 is the published image of the pinned upstream release; naabu's CONNECT scan is
+    the only scan type this manifest enables (SYN needs NET_RAW, which a rootless sandbox does not
+    grant, so rawSocket stays false). Version detection is deliberately NOT enabled: the image's
+    `-sV` pass gives one host's probe answer to every host on the same port (repro in the G1.6a
+    report), so a product/version from it would be a false statement in the graph; `service.product`
+    belongs to the dedicated fingerprinter (slice B). input.version_intensity is therefore fixed at 0
+    and the capability answers at the port/service level only.
 spec:
   capability: network.discover_services
   providerVersion: v2.7.0
   runtime:
     type: container
     image: registry.internal/aegis/naabu
-    imageDigest: sha256:7777777777777777777777777777777777777777777777777777777777777777
+    imageDigest: sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa
     argsTemplate:
     - -silent
     - -json
     - -s
     - connect
+    - -duc
     - -list
     - /in/targets.txt
-    - -p
-    - ${input.ports}
+    - -ports-file
+    - /in/ports.txt
+    - -c
+    - "4"
+    - -rate
+    - ${input.packets_per_second}
+    - -timeout
+    - 1s
     - -o
     - /out/result.jsonl
     outputPath: /out
@@ -31,7 +44,6 @@ spec:
   outputSchemaRef: schema://common/result-envelope/v2
   acceptsTargetKinds:
   - ip
-  - service
   permissions:
     scopeRequired: false
     networkAccess: egress
@@ -63,13 +75,18 @@ spec:
     - service
     predicates:
     - asset.seen
+    - net.port_state
+    - service.protocol
     relationships:
     - EXPOSES
     findings: false
   compatibilityTests:
   - schema
   - policy
-  - network-isolation
+  - cancellation
+  - idempotency
   - fixture-replay
+  - network-isolation
   inputDefaults:
+    packets_per_second: 100
     version_intensity: 0

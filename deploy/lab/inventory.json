@@ -2,11 +2,11 @@
   "lab": {
     "id": "aegis-lab",
     "zone": "lab.aegis.test.",
-    "purpose": "Authorized local DNS lab for G0.4c: a lab zone served by an authoritative resolver plus a local passive-source stub, so Subfinder and DNSx runs are reproducible on this host without any internet or external target.",
+    "purpose": "Authorized local lab for G0.4c and G1.6a: a lab zone served by an authoritative resolver, a local passive-source stub and four deliberately old service containers, so the discovery chain (names -> addresses -> ports -> services) is reproducible on this host without any internet or external target.",
     "authorization": {
       "decision": "Leader decision on item 51 (ultron-lead), 2026-11-24, under delegated owner authority: lab = local DNS lab only, in containers on this host; no external targets; third-party passive sources may be queried only for lab/authorized domains, and for the lab zone Subfinder talks to a local stub instead.",
       "recordedAt": "2026-11-24",
-      "scope": "Containers of compose project aegis-lab on this host; internal network aegis-lab-lab; documentation address ranges only. Nothing here resolves or contacts a real host, and no scanner runs against a non-lab target.",
+      "scope": "Containers of compose project aegis-lab on this host; internal network aegis-lab-lab (10.114.53.0/24). The zone's passive names use documentation ranges (RFC 5737 203.0.113.0/24, RFC 3849 2001:db8::/32); the service names added in G1.6a resolve to this host's own lab containers inside 10.114.53.0/24. Nothing here resolves or contacts a real host outside this machine, and no scanner runs against a non-lab target.",
       "evidence": "Linear item 51 comment of 2026-11-24; handoff to ultron-pi; report /orca/bots/ultron-lead/memory/reports/g0.4c.md"
     },
     "network": {
@@ -45,6 +45,48 @@
       "released": "2026-10-08",
       "license": "MIT",
       "role": "G0.2 pin; queries the local passive stub, never a third party"
+    },
+    "app": {
+      "ref": "docker.io/library/tomcat:9.0.30-jdk11-openjdk@sha256:c800cc5439845e4034bb92d36d3e294b1e252c3c7b2233760d7ba3e3fa9b9332",
+      "version": "9.0.30 (JDK 11)",
+      "released": "2019-12-12",
+      "license": "Apache-2.0",
+      "role": "lab service on app.lab.aegis.test: Tomcat HTTP 8080 (and AJP 8009), G1.6a"
+    },
+    "ssh": {
+      "ref": "docker.io/linuxserver/openssh-server:version-9.9_p2-r0@sha256:0485ba3d964e48bf17ab526903d163f1ca913bccac6e2c0a61fefb2840f39840",
+      "version": "9.9_p2-r0 (OpenSSH 9.9p2, image built 2025-06-15)",
+      "released": "2025-04-09",
+      "license": "BSD (OpenSSH); GPL-3.0-only for the image packaging",
+      "role": "lab service on ssh.lab.aegis.test: sshd on 2222, no credential configured, G1.6a"
+    },
+    "cache": {
+      "ref": "docker.io/library/redis:6.0.5-buster@sha256:76ff608805ca40008d6e0f08180d634732d8bf4728b85c18ab9bdbfa0911408d",
+      "version": "6.0.5",
+      "released": "2020-06-09",
+      "license": "BSD-3-Clause",
+      "role": "lab service on cache.lab.aegis.test: Redis 6379, no auth (internal network), G1.6a"
+    },
+    "naabu": {
+      "ref": "docker.io/projectdiscovery/naabu:v2.7.0@sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
+      "version": "v2.7.0",
+      "released": "2024-07-08",
+      "license": "MIT",
+      "role": "G1.6a pin; the only port scanner used by `make lab-naabu` (CONNECT scan, rootless)"
+    },
+    "web-legacy": {
+      "ref": "docker.io/library/nginx:1.18.0@sha256:9b0fc8e09ae1abb0144ce57018fc1e13d23abd108540f135dc83c0ed661081cf",
+      "version": "1.18.0",
+      "released": "2020-04-21",
+      "license": "BSD-2-Clause",
+      "role": "lab service on web.lab.aegis.test: HTTP 80, HTTPS 443 with a certificate from the throwaway lab CA (G1.6a)"
+    },
+    "httpd": {
+      "ref": "docker.io/library/httpd:2.4.49@sha256:4b5cb7697fea2aa6d398504c381b693a54ae9ad5e6317fcdbb7a2d9b8c3b1364",
+      "version": "2.4.49",
+      "released": "2021-09-15",
+      "license": "Apache-2.0",
+      "role": "lab service on httpd.lab.aegis.test: Apache httpd 80, the exact CPE/version CVE-2021-41773 matches (G1.6a/G1.6c)"
     }
   },
   "records": [
@@ -57,7 +99,12 @@
     {"name": "mail.lab.aegis.test.", "type": "MX", "value": "10 mx1.lab.aegis.test."},
     {"name": "mx1.lab.aegis.test.", "type": "A", "value": "203.0.113.25"},
     {"name": "vpn.lab.aegis.test.", "type": "CNAME", "value": "www.lab.aegis.test."},
-    {"name": "txt.lab.aegis.test.", "type": "TXT", "value": "aegis lab zone; not a real domain"}
+    {"name": "txt.lab.aegis.test.", "type": "TXT", "value": "aegis lab zone; not a real domain"},
+    {"name": "web.lab.aegis.test.", "type": "A", "value": "10.114.53.211"},
+    {"name": "app.lab.aegis.test.", "type": "A", "value": "10.114.53.212"},
+    {"name": "ssh.lab.aegis.test.", "type": "A", "value": "10.114.53.213"},
+    {"name": "cache.lab.aegis.test.", "type": "A", "value": "10.114.53.214"},
+    {"name": "httpd.lab.aegis.test.", "type": "A", "value": "10.114.53.215"}
   ],
   "probes": [
     {"host": "www.lab.aegis.test", "status": "NOERROR", "why": "A and AAAA records"},
@@ -71,7 +118,23 @@
     "source": "crtsh",
     "endpoint": "https://crt.sh/?q=%25.lab.aegis.test&output=json",
     "fixture": "fixtures/crtsh.lab.aegis.test.json",
-    "names": ["www.lab.aegis.test", "vpn.lab.aegis.test", "api.lab.aegis.test"],
+    "names": [
+      "api.lab.aegis.test",
+      "app.lab.aegis.test",
+      "cache.lab.aegis.test",
+      "httpd.lab.aegis.test",
+      "ssh.lab.aegis.test",
+      "vpn.lab.aegis.test",
+      "web.lab.aegis.test",
+      "www.lab.aegis.test"
+    ],
     "note": "The stub only answers the exact authorized query for the lab zone; it is reached through /etc/hosts inside the run container and a lab-only CA (generated by make lab-up, never committed)."
-  }
+  },
+  "services": [
+    {"host": "web.lab.aegis.test", "address": "10.114.53.211", "image": "web-legacy", "ports": [80, 443], "cves": ["CVE-2021-23017"], "note": "nginx: HTTPS answers with a certificate from the throwaway lab CA"},
+    {"host": "app.lab.aegis.test", "address": "10.114.53.212", "image": "app", "ports": [8080, 8009], "cves": ["CVE-2020-1938"], "note": "Tomcat: AJP 8009 is open as well; the discovery step only asks for the ports in input"},
+    {"host": "ssh.lab.aegis.test", "address": "10.114.53.213", "image": "ssh", "ports": [2222], "cves": [], "note": "sshd: no credential and no authorized key, banner only"},
+    {"host": "cache.lab.aegis.test", "address": "10.114.53.214", "image": "cache", "ports": [6379], "cves": ["CVE-2022-0543"], "note": "Redis: no auth on the internal network, RDB/AOF disabled"},
+    {"host": "httpd.lab.aegis.test", "address": "10.114.53.215", "image": "httpd", "ports": [80], "cves": ["CVE-2021-41773", "CVE-2021-42013"], "note": "Apache 2.4.49: the origin whose product/version the CVE slice matches exactly"}
+  ]
 }

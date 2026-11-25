@@ -52,6 +52,8 @@ class Demo:
     #: production path today. The fixture's `observations` stand in for what M27 ingested.
     job_service: Any = field(default_factory=lambda: service(graph=UnavailableGraphQueries()))
     observations: list[Mapping[str, Any]] = field(default_factory=list)
+    #: The objective text the bundle carries; the policy reads it to decide how far to go.
+    objective: str = "Discover the lab domain's subdomains and resolve them"
     bundles: list[Any] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
@@ -77,6 +79,7 @@ class Demo:
                 }
             ],
             graph_revision=len(self.observations),
+            objective_text=self.objective,
         )
 
     def session(self, cycle: int) -> Any:
@@ -275,3 +278,89 @@ def _first_request(deps: Any) -> Any:
             "max_output_tokens": 256,
         }
     )
+
+
+def test_a_services_objective_continues_to_the_port_scan_after_dnsx() -> None:
+    """G1.6a: the policy reads the objective, then scans the addresses the resolution recorded.
+
+    `make demo-discovery` states that it wants the services on the resolved addresses, so the same
+    scripted policy adds one step after DNSx. The targets can only come from the bundle's `ip:`
+    observations (M27's rows), never from the lab inventory - that is what the demo proves.
+    """
+    from aegis.m03_agent.fake_policy import DISCOVER, SERVICE_PORTS
+
+    demo = Demo(
+        objective=(
+            "Enumerate the lab zone, resolve the names it found, then discover which ports and "
+            "services those addresses expose"
+        )
+    )
+    first = demo.session(0)
+    assert _call(demo.policy.responses[-1])["name"] == ENUMERATE
+    _complete(demo, first.outcome.job_ids[0], "SUCCEEDED")
+    demo.record_discovered("www.internal.example")
+
+    second = demo.session(1)
+    resolve_call = _call(demo.policy.responses[-1])
+    assert resolve_call["name"] == RESOLVE
+    resolve_job = second.outcome.job_ids[0]
+    _complete(demo, resolve_job, "SUCCEEDED")
+
+    # M27 records the addresses the resolution found; the bundle carries them as `asset.seen` refs.
+    for index, address in enumerate(("10.114.53.211", "10.114.53.212")):
+        demo.observations.append(
+            {
+                "observation_id": f"01934f6a-0000-7000-8000-0000000000a{index}",
+                "subject": f"ip:{address}",
+                "predicate": "asset.seen",
+                "value": True,
+                "revision": len(demo.observations) + 1,
+                "confidence": 1.0,
+            }
+        )
+
+    third = demo.session(2)
+    discover_call = _call(demo.policy.responses[-1])
+    assert discover_call["name"] == DISCOVER
+    assert discover_call["arguments"]["input"]["targets"] == [
+        "ip:10.114.53.211",
+        "ip:10.114.53.212",
+    ]
+    assert discover_call["arguments"]["input"]["ports"] == list(SERVICE_PORTS)
+    assert discover_call["arguments"]["depends_on"] == [resolve_job]
+
+    _complete(demo, third.outcome.job_ids[0], "SUCCEEDED")
+    fourth = demo.session(3)
+    assert fourth.outcome.stop_reason == "objective_met"
+    assert "service discovery" in str(fourth.result["summary"])
+    assert [job["capability"] for job in _job_rows(demo.job_service)] == [
+        ENUMERATE,
+        RESOLVE,
+        DISCOVER,
+    ]
+
+
+def test_a_dns_only_objective_stops_before_the_port_scan() -> None:
+    """`make demo-g1` keeps its two-job chain: its objective never asks for services or ports."""
+    from aegis.m03_agent.fake_policy import DISCOVER
+
+    demo = Demo()
+    first = demo.session(0)
+    _complete(demo, first.outcome.job_ids[0], "SUCCEEDED")
+    demo.record_discovered("www.internal.example")
+    second = demo.session(1)
+    _complete(demo, second.outcome.job_ids[0], "SUCCEEDED")
+    for index, address in enumerate(("10.114.53.211",)):
+        demo.observations.append(
+            {
+                "observation_id": f"01934f6a-0000-7000-8000-0000000000b{index}",
+                "subject": f"ip:{address}",
+                "predicate": "asset.seen",
+                "value": True,
+                "revision": len(demo.observations) + 1,
+                "confidence": 1.0,
+            }
+        )
+    third = demo.session(2)
+    assert third.outcome.stop_reason == "objective_met"
+    assert DISCOVER not in [job["capability"] for job in _job_rows(demo.job_service)]

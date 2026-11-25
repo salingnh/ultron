@@ -1,0 +1,2 @@
+{"ip":"198.51.100.10","port":80,"protocol":"tcp","tls":false,"timestamp":"2026-11-25T00:00:00.000000000Z"}
+{"ip":"198.51.100.10","port":443,"protocol":"tcp","tls":true,"timestamp":"2026-11-25T00:00:00.001000000Z"}

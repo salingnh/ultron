@@ -2,6 +2,7 @@ valid:
   valid/campaign-create.json: campaign/campaign-create.v2.schema.json
   valid/result-envelope.subfinder.json: ingestion/result-envelope.v2.schema.json
   valid/result-envelope.dnsx.json: ingestion/result-envelope.v2.schema.json
+  valid/result-envelope.naabu.json: ingestion/result-envelope.v2.schema.json
   valid/result-envelope.trivy-secret.json: ingestion/result-envelope.v2.schema.json
   valid/result-envelope.seed-provenance.json: ingestion/result-envelope.v2.schema.json
   valid/event.finding-changed.json: events/event-envelope.v2.schema.json
@@ -10,10 +11,11 @@ valid:
   valid/asset-vulnerabilities.json: vulnerability/asset-vulnerabilities.v2.schema.json
   valid/manifest.subfinder.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.dnsx.yaml: capability/provider-manifest.v2.schema.json
-  valid/manifest.target-bound.yaml: capability/provider-manifest.v2.schema.json
+  valid/manifest.naabu.yaml: capability/provider-manifest.v2.schema.json
   valid/severity-assessment.json: finding/severity-assessment.v2.schema.json
   valid/approved-task.subfinder.json: capability/approved-task.v2.schema.json
   valid/approved-task.dnsx.json: capability/approved-task.v2.schema.json
+  valid/approved-task.naabu.json: capability/approved-task.v2.schema.json
   valid/approved-task.seed-kinds.json: capability/approved-task.v2.schema.json
   valid/ingest-receipt.json: ingestion/ingest-receipt.v2.schema.json
   valid/job.queued-waiting.json: capability/job.v2.schema.json

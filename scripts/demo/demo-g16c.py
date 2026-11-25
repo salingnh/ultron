@@ -1,25 +1,30 @@
 #!/usr/bin/env python3
-"""`make demo-g16c` - the G1.6 slice C gate: service fingerprint -> CVE candidate with KEV/EPSS.
+"""`make demo-g16c` - the G1.6 slice C gate: real discovery -> CVE candidate with KEV/EPSS.
 
 What it does, in the order an operator would:
 
-1. `POST /campaigns` - a campaign seeded on the lab zone (the same body `demo-g1` uses).
-2. A fingerprinted service is ingested by M27. Slice A's adapters are a separate task, so
-   `slice_a.py` submits the envelope they will produce (Apache 2.4.49 on :80, nginx 1.18.0 on
-   :8080, and the Spring application nginx serves) through the real ingestion port.
-3. `python -m aegis.m18_intel sync` for the three pinned feed slices (NVD CVE JSON 2.0, CISA KEV,
+1. `POST /campaigns` - a campaign on the lab zone whose objective asks for the services on the
+   resolved addresses (the same body `demo-discovery` uses). The real chain runs: Subfinder ->
+   DNSx -> naabu, and M27 records the Service assets and their port observations.
+2. `python -m aegis.m18_intel sync` for the three pinned feed slices (NVD CVE JSON 2.0, CISA KEV,
    FIRST EPSS): the bytes go to S3 content addressed, `intel_snapshot` +
    `vulnerability_revision` are written, `intel.revision.v2` is published.
-4. The M20 matcher turns the observations' CPEs into candidate `package_vuln_match` rows and
-   `vulnerability.matched.v2` events - candidates, never findings.
-5. The running projector (M23) draws `(service)-[:AFFECTED_BY]->(:Vulnerability)` with the CVSS,
+3. The M20 matcher turns the *product/version/CPE observations* of those services into candidate
+   `package_vuln_match` rows and `vulnerability.matched.v2` events - candidates, never findings.
+4. The running projector (M23) draws `(service)-[:AFFECTED_BY]->(:Vulnerability)` with the CVSS,
    KEV and EPSS values of the pinned intel; the demo waits for the edge instead of writing it.
-6. `GET /assets/{asset_id}/vulnerabilities` returns the same candidates to the operator, validated
+5. `GET /assets/{asset_id}/vulnerabilities` returns the same candidates to the operator, validated
    against the contract.
-7. Every claim is checked against PostgreSQL and Neo4j and written to `.local/demo/`.
+6. Every claim is checked against PostgreSQL and Neo4j and written to `.local/demo/`.
 
-Exit codes: 0 = every check passed, 1 = a check failed (the failing line is printed), 2 = the stack
-is not ready (the message says which setting or container is missing).
+The product/version/CPE row is the dedicated fingerprinter's (slice B): the port scan reports a
+service by address and transport and deliberately does not guess what runs behind it (see the
+naabu manifest's licenseNotes). Until that adapter is on the branch the demo runs the real chain,
+reports which services it found and exits **2 (BLOCKED)**: the chain reached the service level, the
+CVE stage has nothing to match yet. It never writes a stand-in row.
+
+Exit codes: 0 = every check passed, 1 = a check failed (the failing line is printed), 2 = the chain
+ran but the CVE stage has no product observation to match (BLOCKED), or the stack is not ready.
 """
 
 from __future__ import annotations
@@ -34,13 +39,20 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import slice_a  # noqa: E402 - the slice A stand-in, a sibling module
 import support  # noqa: E402 - the demo scripts' shared helpers, a sibling module
 
 INTEL_FIXTURES = support.REPO / "tests/fixtures/intel"
 INTEL_VERSION = "2026-11-24"
 PROJECTION_TIMEOUT_ENV = "G16C_PROJECTION_TIMEOUT"
 DEFAULT_PROJECTION_TIMEOUT = 120.0
+CAMPAIGN_TIMEOUT_ENV = "G16C_CAMPAIGN_TIMEOUT"
+DEFAULT_CAMPAIGN_TIMEOUT = 420.0
+#: The objective the scripted policy reads: it runs the DNS chain and then the port/service step.
+OBJECTIVE = (
+    "Enumerate the subdomains of the authorized lab zone, resolve the names the enumeration "
+    "found, then discover which ports and services those addresses expose so every address is "
+    "linked to the services behind it"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,28 +65,73 @@ def main(argv: list[str] | None = None) -> int:
     support.line("api", os.environ["AEGIS_API_URL"])
     support.line("s3", os.environ.get("AEGIS_S3_ENDPOINT", "-"))
 
-    support.section("1. campaign (POST /campaigns, lab seed)")
-    campaign_id = support.create_campaign("G1.6c CVE/CTI demo")
+    support.section("1. campaign (POST /campaigns, real discovery chain)")
+    campaign_id = support.create_campaign("G1.6c CVE/CTI demo", OBJECTIVE)
     support.line("campaign_id", campaign_id)
+    campaign_timeout = float(os.environ.get(CAMPAIGN_TIMEOUT_ENV) or DEFAULT_CAMPAIGN_TIMEOUT)
+    finished = support.wait_campaign(campaign_id, timeout_seconds=campaign_timeout)
+    status = str(finished.get("status"))
+    support.line("status", status, "|", finished.get("status_reason") or "-")
+    support.require(status == "COMPLETED", f"the campaign ended {status}, not COMPLETED")
 
     connection = support.pg()
     try:
-        support.section("2. slice A stand-in: a fingerprinted service, ingested by M27")
-        ingested = slice_a.ingest_services(connection, campaign_id)
-        support.line("job_id", ingested["job_id"])
-        support.line("receipt", json.dumps(ingested["receipt"], sort_keys=True))
-        for key, asset_id in ingested["assets"].items():
-            support.line("asset", key, "->", asset_id)
+        support.section("2. the services the real adapters reported")
+        services, jobs = _services(connection, campaign_id)
+        for job in jobs:
+            support.line("job", job["capability"], job["provider"], job["status"])
+        support.require(
+            all(job["status"] == "SUCCEEDED" for job in jobs), "a discovery job did not succeed"
+        )
+        support.require(services, "the chain recorded no service asset")
+        for item in services:
+            support.line(
+                "service",
+                item["canonical_key"],
+                "| product",
+                json.dumps(item["product"], sort_keys=True) if item["product"] else "none",
+            )
+        targetable = {item["canonical_key"]: item["asset_id"] for item in services}
+        products = [item for item in services if item["product"]]
 
         support.section("3. intel: pinned NVD/KEV/EPSS slices -> S3 + PostgreSQL")
         reports = _sync_intel(connection)
+
+        if not products:
+            support.section("4. CVE stage: BLOCKED, no product/version/CPE observation")
+            support.line(
+                "reason",
+                "the port scan reports a service by address and transport and does not guess the",
+            )
+            support.line(
+                "        product behind it (naabu's own -sV misattributes a host's probe answer to",
+            )
+            support.line(
+                "        every host on the same port, so it is not enabled); the fingerprinter",
+            )
+            support.line(
+                "        (slice B) is what writes service.product {product, version, cpe}."
+            )
+            support.line("services found", len(services))
+            support.line("result", "BLOCKED - the chain ran on real adapters; nothing to match yet")
+            evidence = {
+                "campaign_id": campaign_id,
+                "jobs": jobs,
+                "services": services,
+                "intel": reports,
+                "verdict": "BLOCKED",
+                "blocked_on": "no service.product observation (fingerprinter, slice B)",
+            }
+            support.section("evidence file")
+            support.line(str(support.write_artifact(f"g16c-{_stamp()}.json", evidence)))
+            return 2
 
         support.section("4. matching: CPE + version -> candidate CVEs")
         from aegis.m20_vuln.matching import Matcher
 
         report = Matcher(connection).run(campaign_id=campaign_id)
         support.line("counters", json.dumps(report.as_dict(), sort_keys=True))
-        candidates = _candidates(connection, ingested["assets"])
+        candidates = _candidates(connection, targetable)
         support.require(
             candidates, "the matcher produced no candidate for the fingerprinted services"
         )
@@ -90,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         support.section("5. graph: :Vulnerability + AFFECTED_BY (M23 projector)")
-        projected = _wait_for_projection(ingested["assets"])
+        projected = _wait_for_projection(targetable)
         for item in projected:
             support.line(
                 "edge",
@@ -102,18 +159,21 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         support.section("6. API: GET /assets/{asset_id}/vulnerabilities")
-        api_items = _api_items(ingested["assets"])
+        api_items = _api_items(targetable)
 
         support.section("7. evidence")
         evidence = {
             "campaign_id": campaign_id,
+            "jobs": jobs,
+            "services": services,
             "intel": reports,
             "matching": report.as_dict(),
             "candidates": candidates,
             "graph": projected,
             "api": api_items,
+            "verdict": "PASS",
         }
-        _check(evidence, ingested)
+        _check(evidence, targetable)
     finally:
         connection.close()
 
@@ -140,6 +200,34 @@ def _masked(dsn: str) -> str:
         return dsn
     rest = tail.split(" ", 1)
     return f"{head} password=***' {rest[1] if len(rest) > 1 else ''}".strip()
+
+
+def _services(
+    connection: Any, campaign_id: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The campaign's service assets with their newest product observation, and its jobs."""
+    jobs = support.rows(
+        connection,
+        "SELECT job_id, capability, provider, status FROM scan_job"
+        " WHERE campaign_id = %s ORDER BY created_at",
+        (campaign_id,),
+    )
+    services = support.rows(
+        connection,
+        """
+        SELECT a.asset_id::text AS asset_id, a.canonical_key,
+               (SELECT o.value FROM observation o
+                 WHERE o.subject_asset_id = a.asset_id
+                   AND o.predicate = 'service.product' AND o.polarity = 'present'
+                 ORDER BY o.revision DESC LIMIT 1) AS product
+          FROM asset a
+          JOIN asset_campaign ac ON ac.asset_id = a.asset_id AND ac.campaign_id = %s
+         WHERE a.kind = 'service'
+         ORDER BY a.canonical_key
+        """,
+        (campaign_id,),
+    )
+    return services, jobs
 
 
 def _sync_intel(connection: Any) -> dict[str, Any]:
@@ -255,7 +343,7 @@ def _api_items(assets: dict[str, str]) -> list[dict[str, Any]]:
     return items
 
 
-def _check(evidence: dict[str, Any], ingested: dict[str, Any]) -> None:
+def _check(evidence: dict[str, Any], assets: dict[str, str]) -> None:
     support.require(
         all(report["records"] > 0 for report in evidence["intel"].values()),
         "an intel snapshot loaded no record",
@@ -268,11 +356,7 @@ def _check(evidence: dict[str, Any], ingested: dict[str, Any]) -> None:
     }
     support.require(
         "CVE-2021-41773" in service_candidates,
-        "the Apache 2.4.49 service has no CVE-2021-41773 candidate",
-    )
-    support.require(
-        any(item["vulnerability_id"] == "CVE-2022-22965" for item in candidates),
-        "the Spring application has no CVE-2022-22965 candidate",
+        "the Apache httpd 2.4.49 service (httpd.lab.aegis.test) has no CVE-2021-41773 candidate",
     )
     kev = [item for item in candidates if item["kev"]]
     support.require(kev, "no candidate carries a KEV flag")
@@ -314,12 +398,7 @@ def _check(evidence: dict[str, Any], ingested: dict[str, Any]) -> None:
         )
     finally:
         connection.close()
-    support.line(
-        "M27 receipt",
-        f"accepted={ingested['receipt'].get('accepted')}",
-        f"duplicate={ingested['receipt'].get('duplicate')}",
-        f"revision={ingested['receipt'].get('revision')}",
-    )
+    support.line("services matched", len({item["canonical_key"] for item in candidates}))
 
 
 def _stamp() -> str:
