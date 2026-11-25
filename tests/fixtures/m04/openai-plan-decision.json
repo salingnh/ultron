@@ -1,0 +1,17 @@
+{
+  "id": "chatcmpl-g16-plan-0002",
+  "object": "chat.completion",
+  "created": 1770000001,
+  "model": "gpt-5-mini-2026-01-01",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "{\"decision\":\"stop\",\"summary\":\"the campaign objective is met; nothing is left to propose\"}"
+      }
+    }
+  ],
+  "usage": { "prompt_tokens": 946, "completion_tokens": 31, "total_tokens": 977 }
+}

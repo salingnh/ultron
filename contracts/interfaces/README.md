@@ -188,7 +188,7 @@ Cách M02 ghi quyết định (G1.1d): job được dispatch bằng transition `
 
 ## Phần cần khóa của ModelClient và severity — C07
 
-Đã khóa ở S1.4 bằng contract và suite offline `contracts/tests/test_model_client.py` (hành vi tham chiếu: `contracts/tests/model_client_ref.py`); chưa có LLM thật.
+Đã khóa ở S1.4 bằng contract và suite offline `contracts/tests/test_model_client.py` (hành vi tham chiếu: `contracts/tests/model_client_ref.py`); G1.6 thêm đường live chọn provider bằng biến môi trường (`aegis.m04_model.deployment`) cho cả hai chuẩn OpenAI/Anthropic; CI chỉ chạy transport ghi sẵn.
 
 - Message/ToolCall/ToolResult: [model-message.v2](../agent/model-message.v2.schema.json) định nghĩa content block, liên kết tool_result → tool_call.id và round-trip `arguments_raw`; [model-request.v2](../agent/model-request.v2.schema.json) và [model-response.v2](../agent/model-response.v2.schema.json) giữ metadata provider và finish chuẩn hóa. Suite kiểm hai vòng tool call cả hai provider, output sai schema, cắt, refusal, hết ngân sách trước lời gọi, fallback trong cấu hình, và orphan/duplicate tool_result.
 - Severity: mỗi bản ghi có `trigger` (`scan|intel_revision|operator_request|verification`), `input_revision` và `dedup_key = severity:<finding_id>:<input_revision>`; cùng finding và cùng revision trả bản ghi đã có, không gọi model lại, nên đánh giá lại phải có đầu vào mới. `assessed_by`/`inputs`/`trigger`/`input_revision`/`dedup_key` do mã gán; model chỉ sinh phần `$defs/ModelOutput` rồi mã kiểm nguồn trích dẫn.

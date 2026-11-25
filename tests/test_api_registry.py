@@ -30,9 +30,14 @@ def _campaigns_router() -> APIRouter:
     return router
 
 
-def test_health_and_openapi_paths() -> None:
+def test_health_and_openapi_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AEGIS_SESSION_LIVE_MODEL", raising=False)
     client = TestClient(create_app())
-    assert client.get("/healthz").json() == {"status": "ok"}
+    body = client.get("/healthz").json()
+    assert body["status"] == "ok"
+    # G1.6: the probe also reports the model mode the deployment's environment selects.
+    assert body["model"]["mode"] == "scripted"
+    assert "api_key" not in body["model"]
     assert client.get(OPENAPI_PATH).status_code == 200
 
 

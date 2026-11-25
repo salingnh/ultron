@@ -12,12 +12,15 @@ The seam is M02's (`SessionRequest` → `SessionOutcome`, `m02_orchestrator/type
   MCP tool client once per worker from the environment. Nothing is constructed at import time, so a
   test can point the activity at a throwaway database and a loopback MCP server.
 
-The model is the scripted G1 policy unless `AEGIS_SESSION_LIVE_MODEL=1` (OD-2 is still open, so the
-live branch is reachable only by explicit configuration) - `build_model()` is that one switch.
+The model is the scripted G1 policy unless `AEGIS_SESSION_LIVE_MODEL=1` (G1.6): the live branch
+builds the M04 `ModelClient` over `HttpTransport` from the `AEGIS_MODEL_*` deployment settings, with
+one `aegis.model_usage` row per attempt. `build_model()` is that one switch and it never falls back
+silently in either direction - a live deployment that is missing its key or prices refuses to start.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
@@ -31,6 +34,9 @@ from aegis.m03_agent import session as session_module
 from aegis.m03_agent.mcp import McpToolClient, ToolClient
 
 __all__ = ["ACTIVITIES", "build_model", "configure", "configure_from_env", "run_agent_session"]
+
+#: Records the selected model mode once per worker process (never the credential: see G1.6).
+logger = logging.getLogger(__name__)
 
 #: Set by `configure()` (the worker entry point) or by a test before it starts a worker.
 _deps: session_module.SessionDeps | None = None
@@ -47,20 +53,41 @@ def _deps_or_fail() -> session_module.SessionDeps:
     return _deps
 
 
-def build_model(config: config_module.SessionConfig) -> ModelClient:
-    """The scripted G1 policy by default; the live M04 client only when the deployment says so."""
+def build_model(config: config_module.SessionConfig, *, dsn: str | None = None) -> ModelClient:
+    """The scripted G1 policy by default; the live M04 client only when the deployment says so.
+
+    The live branch is one provider, one model and one price pair from the environment; it refuses
+    to start when anything it needs is missing (a zero or guessed price would make the campaign
+    budget and the `model_usage` rows dishonest). Nothing here logs the credential.
+    """
     from aegis.m03_agent.fake_policy import ScriptedLabPolicy
 
     if not config.live_model:
         # No database, no provider: the policy decides from the ContextBundle the session hands it
         # (`observe_context`), so the demo proves the M27 -> context -> decision path.
+        logger.info(
+            "model: scripted policy (AEGIS_SESSION_LIVE_MODEL is off) provider=%s model=%s",
+            config.provider,
+            config.model,
+        )
         return ScriptedLabPolicy(provider=config.provider, model=config.model)
-    # The live branch needs OD-2 (provider, endpoint, key, price table) and must never run by
-    # accident in the gate, so it refuses loudly instead of guessing a configuration.
-    raise config_module.SessionConfigError(
-        "AEGIS_SESSION_LIVE_MODEL=1 needs the OD-2 provider endpoint, credentials and price table; "
-        "G1 ships the scripted policy only (card G1.2c: 'Fake model in G1')"
-    )
+
+    from aegis.m04_model.deployment import ModelDeployment
+    from aegis.m04_model.usage import PostgresUsageSink
+
+    deployment = ModelDeployment.from_env()
+    if (deployment.provider.value, deployment.model) != (config.provider, config.model):
+        raise config_module.SessionConfigError(
+            "the live deployment and the session config disagree: "
+            f"AEGIS_MODEL_PROVIDER/AEGIS_MODEL_NAME select "
+            f"{deployment.provider.value}/{deployment.model}, the session asks for "
+            f"{config.provider}/{config.model} (SessionConfig.from_env reads the same variables)"
+        )
+    # One usage row per attempt is the deployment's ledger obligation; without a database the live
+    # client would spend money and leave no record, so a missing DSN is an error, not a fallback.
+    usage_dsn = dsn or config_module.dsn_from_env()
+    logger.info("model: live %s", deployment.describe())
+    return deployment.client(PostgresUsageSink(usage_dsn))
 
 
 def configure(
@@ -80,7 +107,7 @@ def configure(
     resolved_dsn = dsn or config_module.dsn_from_env()
     config = session_config or config_module.SessionConfig.from_env()
 
-    resolved_model = model or build_model(config)
+    resolved_model = model or build_model(config, dsn=resolved_dsn)
     if tool_client is None:
         url = mcp_url or config_module.mcp_url_from_env()
 

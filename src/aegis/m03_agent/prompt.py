@@ -56,15 +56,18 @@ MAX_CONTEXT_CHARS = 12_000
 #: The answer shape for a plan call that does not return a tool call. `stop` has one meaning in
 #: `session-result.v2`: the objective is met; anything else is `wait` (the campaign stays alive and
 #: M02's idle counter decides about pausing with a reason).
+#:
+#: Shape is deliberately inside OpenAI's strict structured-output subset (G1.6): that wire sends
+#: this schema as `response_format.json_schema` with `strict: true`, which requires every property
+#: to be listed in `required` and rejects annotation keywords such as `maxLength`/`$schema`. Length
+#: is bounded where the answer is consumed instead (`SessionResult.summary`, 4000 chars).
 PLAN_DECISION_SCHEMA: dict[str, Any] = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "M03 plan decision",
     "type": "object",
-    "required": ["decision"],
     "additionalProperties": False,
+    "required": ["decision", "summary"],
     "properties": {
         "decision": {"type": "string", "enum": ["stop", "wait"]},
-        "summary": {"type": "string", "maxLength": 4000},
+        "summary": {"type": "string"},
     },
 }
 

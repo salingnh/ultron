@@ -95,6 +95,12 @@ class Price:
 
 #: Injected HTTP boundary of `HttpTransport`: `(url, headers, body, timeout) -> (status, body)`.
 PostJson = Callable[[str, dict[str, str], bytes, float], tuple[int, bytes]]
+#: Masks a deployment secret in text this module is about to raise or keep.
+Redact = Callable[[str], str]
+
+
+def _pass_through(text: str) -> str:
+    return text
 
 
 def _post_json(
@@ -146,12 +152,17 @@ class HttpTransport:
         pricing: Mapping[tuple[Provider, str], Price],
         anthropic_version: str = "2023-06-01",
         post: PostJson | None = None,
+        redact: Redact | None = None,
     ) -> None:
         self._endpoints = dict(endpoints)
         self._api_keys = dict(api_keys)
         self._pricing = dict(pricing)
         self._anthropic_version = anthropic_version
         self._post = post or _post_json
+        #: Provider text can echo anything it was sent; the deployment masks its credential here so
+        #: a `TransportError.message` (which a usage row and a session summary may keep) cannot
+        #: carry the key.
+        self._redact = redact or _pass_through
 
     async def send(
         self,
@@ -195,12 +206,14 @@ class HttpTransport:
                     ErrorCode.NETWORK_TIMEOUT, "provider request timed out"
                 ) from error
             raise TransportError(
-                ErrorCode.INTERNAL_ERROR, f"cannot reach provider: {reason}"
+                ErrorCode.INTERNAL_ERROR, self._redact(f"cannot reach provider: {reason}")
             ) from error
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         if status >= 400:
-            raise TransportError(_http_error_code(status), _http_error_message(status, payload))
+            raise TransportError(
+                _http_error_code(status), self._redact(_http_error_message(status, payload))
+            )
         try:
             raw: Any = json.loads(payload)
         except json.JSONDecodeError as error:

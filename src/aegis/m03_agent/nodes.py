@@ -541,7 +541,11 @@ class SessionNodes:
         )
         messages = list(state.get("messages") or [])
         if answer.message is not None:
-            messages.append(answer.message.model_dump(mode="json"))
+            # `exclude_none`: a provider answer carries only the keys it actually supplied (an
+            # Anthropic tool call has `arguments` but no `arguments_raw`), and `model-message.v2`
+            # forbids the explicit nulls a plain dump would add - the next plan request would be
+            # refused by the request contract before it could reach the provider.
+            messages.append(answer.message.model_dump(mode="json", exclude_none=True))
         update: dict[str, Any] = {
             "step": step,
             "trace_id": trace_id,

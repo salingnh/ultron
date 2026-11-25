@@ -1,0 +1,21 @@
+{
+  "id": "msg_g16plan0001",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-5-20260201",
+  "content": [
+    { "type": "text", "text": "Enumerate the seed domain's subdomains first." },
+    {
+      "type": "tool_use",
+      "id": "toolu_g16plan000100000000001",
+      "name": "dns.enumerate_subdomains",
+      "input": {
+        "input": { "targets": ["internal.example"] },
+        "rationale": "Enumerate the lab domain's subdomains for the campaign objective"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": { "input_tokens": 812, "output_tokens": 64 }
+}

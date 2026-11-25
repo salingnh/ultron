@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from aegis.m04_model.deployment import model_status
 from aegis.m26_api.errors import install_error_handlers
 from aegis.m26_api.operator import OperatorAuthenticator
 from aegis.m26_api.registry import RouterRegistry
@@ -113,8 +114,13 @@ def create_app(
 
     @app.get("/healthz", tags=["ops"], operation_id="healthz", include_in_schema=False)
     def healthz() -> dict[str, Any]:
-        """Liveness only: the process is up; dependencies are reported by readiness checks."""
-        return {"status": "ok"}
+        """Liveness, plus the model mode this deployment's environment selects (G1.6).
+
+        The model block is configuration, not a probe: the API process reads the same environment
+        the workers inherit, so an operator can tell scripted from live without a database call.
+        It never carries the credential (`aegis.m04_model.deployment.model_status`).
+        """
+        return {"status": "ok", "model": model_status()}
 
     routers.include_all(app)
     return app
