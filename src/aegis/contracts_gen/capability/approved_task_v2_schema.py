@@ -11,6 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, conint, constr
 from ..common import ids_v2_schema
 
 
+class NetworkProfile(StrEnum):
+    lab = "lab"
+    internet = "internet"
+
+
 class Mode(StrEnum):
     broker = "broker"
     none = "none"
@@ -68,6 +73,10 @@ class ApprovedTask(BaseModel):
     campaign_id: ids_v2_schema.Id
     scope_id: ids_v2_schema.Id
     policy_version: ids_v2_schema.PolicyVersion
+    network_profile: NetworkProfile = Field(
+        ...,
+        description="Profile mạng đã ký của job, lấy từ RoE của campaign lúc M05 duyệt: `lab` (mạng lab của deployment) hoặc `internet` (mạng riêng của job + broker L7 ra internet). M06 chỉ chạy job trên đúng profile này và từ chối khi deployment không cấu hình được profile đó; nhiệm vụ fail closed nên trường này bắt buộc, không suy diễn từ môi trường.",
+    )
     capability: ids_v2_schema.CapabilityId
     provider: str
     provider_version: str

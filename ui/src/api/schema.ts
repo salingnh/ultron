@@ -487,12 +487,19 @@ export interface components {
          * @description Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency và danh sách mục tiêu bị loại. Không dùng phân loại thao tác. Khung giờ cho phép (allowed/blackout windows) đã bị bỏ khỏi contract theo quyết định chủ 2026-11-24 (G1 chỉ cần luồng chạy được); snapshot cũ còn khung giờ là lịch sử, không được chạy.
          */
         "roe-policy.v2.schema": {
+            /**
+             * @description Mạng job của chiến dịch chạy trên đó. `internet`: container của job chỉ tới được broker L7 của nó, broker ra internet và ép tập luôn chặn, tập địa chỉ đã ký và trần tốc độ/đồng thời theo host. `lab`: mạng lab nội bộ của deployment (không có đường ra internet). Chiến dịch của người vận hành mặc định `internet`; demo/CI đặt `lab` tường minh.
+             * @enum {string}
+             */
+            network_profile?: "lab" | "internet";
             /** @description Danh sách mục tiêu bị loại bổ sung. Sandbox luôn cách ly hạ tầng điều khiển/dữ liệu; kiểm tra cấu hình này áp dụng cho mọi job. */
             target_denylist?: string[];
             max_parallel_jobs: number;
             max_duration_hours: number;
             rate_limits?: {
                 requests_per_second_per_host?: number;
+                /** @description Trần số kết nối đồng thời broker giữ tới một host cho một job. Profile `internet` bắt buộc khai báo cùng `requests_per_second_per_host`; thiếu là POLICY_DENIED (không có trần thì không chạy ra internet). */
+                max_concurrent_connections_per_host?: number;
                 /** @description Trần cho quét cổng (Naabu, Nmap). */
                 packets_per_second?: number;
                 jobs_per_minute?: number;
