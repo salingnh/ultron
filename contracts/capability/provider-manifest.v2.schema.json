@@ -171,16 +171,17 @@
               ]
             },
             "egressMode": {
-              "description": "Chế độ egress: GĐ1 chỉ có `broker` — container chỉ tới được broker của job; broker phân giải ở control plane, kiểm toàn bộ địa chỉ A/AAAA, pin đích đã kiểm và từ chối với mã lý do ổn định. Chế độ khác (vd L3 router cho raw socket) phải có nghiệm thu cưỡng chế trước khi thêm vào enum.",
+              "description": "Kênh egress đã nghiệm thu. `broker`: container chỉ tới được broker L7 của job; broker phân giải ở control plane, kiểm toàn bộ địa chỉ A/AAAA, pin đích đã kiểm và từ chối với mã lý do ổn định. `l3`: broker là gateway của mạng job, forward L3 chỉ tới tập IP:port đã ký (kèm deny set mặc định chặn), ghi audit theo flow; dùng cho công cụ không tôn trọng proxy, container job vẫn không có capability. Chế độ khác phải có nghiệm thu cưỡng chế trước khi thêm vào enum.",
               "type": "string",
               "enum": [
-                "broker"
+                "broker",
+                "l3"
               ],
               "default": "broker"
             },
             "proxyAware": {
-              "description": "Bắt buộc true khi egress: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng. Broker là đường ra duy nhất nên công cụ không tôn trọng proxy sẽ không kết nối được gì; M05 từ chối đăng ký provider như vậy.",
-              "const": true
+              "description": "Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` trường này không bắt buộc và có thể false: công cụ không cần biết proxy, kênh ra do gateway lọc theo IP:port đã ký.",
+              "type": "boolean"
             },
             "egressSources": {
               "description": "Đích ngoài mục tiêu mà provider cần (nguồn dữ liệu thụ động, resolver, API). Bắt buộc khai báo khi egress, kể cả rỗng; rỗng chỉ hợp lệ khi targetBinding=required. Host là tên chính xác, không wildcard/khớp hậu tố. Binding của một job là hợp của tập này với mục tiêu đã phân giải.",
@@ -239,7 +240,7 @@
               }
             },
             {
-              "description": "Egress phải khai đủ chế độ, proxy, nguồn và binding.",
+              "description": "Egress phải khai đủ chế độ, nguồn và binding.",
               "if": {
                 "required": [
                   "networkAccess"
@@ -253,10 +254,32 @@
               "then": {
                 "required": [
                   "egressMode",
-                  "proxyAware",
                   "egressSources",
                   "targetBinding"
                 ]
+              }
+            },
+            {
+              "description": "Kênh L7 (broker) chỉ chạy được công cụ tôn trọng proxy: proxyAware phải là true.",
+              "if": {
+                "required": [
+                  "egressMode"
+                ],
+                "properties": {
+                  "egressMode": {
+                    "const": "broker"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "proxyAware"
+                ],
+                "properties": {
+                  "proxyAware": {
+                    "const": true
+                  }
+                }
               }
             },
             {

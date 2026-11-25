@@ -37,7 +37,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from aegis.m06_runner import denyset, netpolicy
+from aegis.m06_runner import denyset, l3, netpolicy
 from aegis.m06_runner import dns as dns_wire
 
 MAX_HEADER_BYTES = 64 * 1024
@@ -138,6 +138,10 @@ class AuditLog:
 
     def write_dns(self, record: dict[str, Any]) -> None:
         """One line per DNS query (G1.6 item 4): same file, `kind: dns`, same job context."""
+        self._append(record)
+
+    def write_l3(self, record: dict[str, Any]) -> None:
+        """One line per L3 flow event (G1.6 item 5): same file, `kind: l3`."""
         self._append(record)
 
     def _append(self, record: dict[str, Any]) -> None:
@@ -526,6 +530,16 @@ def serve(
         host, _, port_text = dns_upstream.rpartition(":")
         resolver = dns_wire.UpstreamResolver(host or dns_upstream, int(port_text or 53))
     forwarder = dns_wire.DnsForwarder(policy, audit, resolver=resolver, ttl=policy.dns_ttl)
+    gateway: l3.L3Gateway | None = None
+    if policy.egress_mode == "l3":
+        # Rules first: a job must never see an unfiltered gateway, even for a moment.
+        gateway = l3.L3Gateway(policy, audit, bind=bind)
+        try:
+            gateway.install()
+            gateway.start()
+        except (OSError, RuntimeError) as error:
+            print(f"L3 FAILED {error}", flush=True)
+            raise
     servers = [
         _Server((bind, http_port), broker),
         _Server((bind, socks_port), broker),
@@ -545,13 +559,15 @@ def serve(
         ).start()
     print(
         f"READY http={bind}:{http_port} socks={bind}:{socks_port} dns={bind}:{dns_port} "
-        f"job={policy.job_id}",
+        f"channel={policy.egress_mode} job={policy.job_id}",
         flush=True,
     )
     stop.wait()
     for server in servers:
         server.shutdown()
         server.server_close()
+    if gateway is not None:
+        gateway.stop()
 
 
 def main(argv: list[str] | None = None) -> int:

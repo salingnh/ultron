@@ -106,6 +106,11 @@ class JobLayout:
         return self.root / "audit"
 
     @property
+    def hooks(self) -> Path:
+        """Per-job OCI hook directory (L3 mode): the deployment hook plus this job's arguments."""
+        return self.root / "hooks"
+
+    @property
     def run(self) -> Path:
         return self.root / "run.json"
 
@@ -137,6 +142,10 @@ class PodmanRunner(ContainerRunner):
     #: Test/deployment hook: the resolver the broker forwards DNS to (`--dns-upstream`). None uses
     #: the control plane's system resolver, which is what a deployment normally wants.
     broker_dns_upstream: str | None = None
+    #: Deployment-owned OCI hook that installs the L3 job's only default route inside its network
+    #: namespace (`deploy/l3/hooks/aegis-l3-route`). None refuses an L3 job: it never starts a job
+    #: that would have no route or an unfiltered one.
+    l3_hook: Path | None = None
     _subnets: dict[str, str] = field(default_factory=dict, init=False)
     _images: dict[str, str] = field(default_factory=dict, init=False)
 
@@ -203,7 +212,8 @@ class PodmanRunner(ContainerRunner):
         if spec.network != "exec":
             # No egress means no network at all; the profile contributes no endpoint data.
             entry = None
-        argv = self._run_argv(spec, layout, network, entry=entry)
+        hooks_dir = self._write_l3_hook(spec) if spec.egress_mode == "l3" else None
+        argv = self._run_argv(spec, layout, network, entry=entry, hooks_dir=hooks_dir)
         try:
             started = _podman(*argv, timeout=120)
         except subprocess.CalledProcessError as failure:
@@ -399,6 +409,7 @@ class PodmanRunner(ContainerRunner):
             return BrokerHandle(
                 job_id=job_id, container_id=existing, proxy=self.broker_proxy(job_id)
             )
+        l3_mode = policy.egress_mode == "l3"
         argv = [
             "run",
             "--detach",
@@ -420,10 +431,19 @@ class PodmanRunner(ContainerRunner):
             "--tmpfs",
             "/tmp:rw,size=16m,mode=1777",
             "--user",
-            "65534:65534",
+            # The L3 gateway is the only part of the platform that needs NET_ADMIN, and only
+            # inside its own network namespace (rules + forwarding live there); the job never gets
+            # it. Every other channel runs the broker unprivileged.
+            "0:0" if l3_mode else "65534:65534",
             "--network",
             f"{network}:ip={self.broker_ip(job_id)}",
         ]
+        if l3_mode:
+            argv += [
+                "--cap-add=NET_ADMIN",
+                "--sysctl",
+                "net.ipv4.ip_forward=1",
+            ]
         argv += ["--network", self.uplink_network] if self.uplink_network else []
         argv += [
             "--mount",
@@ -478,6 +498,7 @@ class PodmanRunner(ContainerRunner):
         return f"{self.broker_ip(job_id)}:{BROKER_SOCKS_PORT}"
 
     def broker_ip(self, job_id: str) -> str:
+        """The broker's address on the job network (`subnet+2`; `+1` is reserved by netavark)."""
         subnet = self._subnets.get(job_id) or self._existing_subnet(self.network_name(job_id))
         if subnet is None:
             raise RunnerError(f"job network of {job_id} does not exist on this host")
@@ -568,6 +589,7 @@ class PodmanRunner(ContainerRunner):
         network: str,
         *,
         entry: JobProfile | None = None,
+        hooks_dir: Path | None = None,
     ) -> list[str]:
         argv = [
             "run",
@@ -609,9 +631,12 @@ class PodmanRunner(ContainerRunner):
             argv += ["--cap-add=NET_RAW"]
         # Never host network, never the Podman socket, never --privileged.
         argv += ["--network", network if network != "none" else "none"]
-        if spec.egress_proxy:
+        if hooks_dir is not None:
+            argv += ["--hooks-dir", str(hooks_dir)]
+        if spec.egress_mode:
             # The job has no resolver of its own: /etc/resolv.conf names the broker, which answers
-            # every query with the signed-binding checks and audit (G1.6 item 4).
+            # every query with the signed-binding checks and audit (G1.6 item 4). Same for both
+            # channels; the L3 gateway also carries the DNS queries to the broker's own listener.
             argv += ["--dns", self.broker_ip(spec.job_id)]
         if entry is not None:
             # The deployment profile of this job (lab endpoint data, or an internet provider
@@ -631,6 +656,47 @@ class PodmanRunner(ContainerRunner):
             ),
         ]
         return argv
+
+    def _write_l3_hook(self, spec: ContainerSpec) -> Path:
+        """Write the per-job OCI hook config that gives the L3 job its only route.
+
+        The hook binary/script is deployment-owned (`PodmanRunner.l3_hook`), never named by a task;
+        the runner only writes this job's arguments (the broker address). A runner with no hook
+        configured refuses the job: an L3 job would otherwise start on an internal network with no
+        route at all, or (worse, if someone wired one) an unfiltered one.
+        """
+        hook = self.l3_hook
+        if hook is None:
+            raise RunnerError(
+                "an L3 job needs the deployment's OCI route hook (PodmanRunner.l3_hook); refusing "
+                "to start a job without it"
+            )
+        hook = Path(hook)
+        if not hook.is_file() or not os.access(hook, os.X_OK):
+            raise RunnerError(f"the L3 route hook {hook} is missing or not executable")
+        directory = self.layout(spec.job_id).create().hooks
+        directory.mkdir(parents=True, exist_ok=True)
+        hook_config = directory / "aegis-l3-route.json"
+        hook_config.write_text(
+            json.dumps(
+                {
+                    "version": "1.0.0",
+                    "hook": {
+                        "path": str(hook),
+                        "args": [str(hook), self.broker_ip(spec.job_id), "eth0"],
+                        "env": ["PATH=/usr/sbin:/usr/bin:/sbin:/bin"],
+                    },
+                    "when": {"always": True},
+                    # `createContainer` is the stage that runs inside the container's network
+                    # namespace; `prestart` runs on the host and cannot see the job's interface.
+                    "stages": ["createContainer"],
+                },
+                indent=1,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return directory
 
     def _profile_args(self, entry: JobProfile | None, *, broker_dns: str | None) -> list[str]:
         """The deployment profile's extra argv, with the broker DNS placeholder resolved."""
@@ -677,7 +743,7 @@ class PodmanRunner(ContainerRunner):
                 self._subnets[job_id] = str(subnets[0].get("subnet"))
             return name
         subnet = self._free_subnet()
-        _podman(
+        argv = [
             "network",
             "create",
             "--internal",
@@ -691,7 +757,8 @@ class PodmanRunner(ContainerRunner):
             "--label",
             f"{RUNNER_LABEL}={self.owner}",
             name,
-        )
+        ]
+        _podman(*argv)
         self._subnets[job_id] = subnet
         return name
 

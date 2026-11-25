@@ -60,6 +60,7 @@ __all__ = [
     "LoopConfig",
     "LoopTick",
     "RUNNABLE_STATUSES",
+    "L3_HOOK_ENV",
     "SERVICE_TOKEN_ENV",
     "UPLINK_ENV",
     "ServiceTokenMissing",
@@ -80,6 +81,9 @@ BROKER_IMAGE_ENV = "AEGIS_M06_BROKER_IMAGE"
 #: (run-local creates `aegis-uplink`) points the runner at it, so the broker's outbound leg is never
 #: the host's shared default bridge.
 UPLINK_ENV = "AEGIS_UPLINK_NETWORK"
+#: Deployment-owned OCI hook that gives an L3 job its only default route (inside the job netns).
+#: Without it an L3 provider is refused: the job would have no filtered way out.
+L3_HOOK_ENV = "AEGIS_L3_HOOK"
 BASE_DIR_ENV = "AEGIS_M06_BASE_DIR"
 POLL_ENV = "AEGIS_M06_POLL_SECONDS"
 INGESTION_PATH = "/api/v2/ingestion/results"
@@ -108,6 +112,8 @@ class LoopConfig:
     internet: DeploymentProfile | None = None
     #: The broker's uplink network when the deployment overrides the internet profile's default.
     uplink_network: str | None = None
+    #: Deployment-owned OCI hook that installs the L3 job's only default route.
+    l3_hook: Path | None = None
     poll_seconds: float = DEFAULT_POLL_SECONDS
     platform_cidrs: tuple[str, ...] = ()
     parser_python_path: tuple[str, ...] = field(default_factory=tuple)
@@ -136,6 +142,9 @@ class LoopConfig:
             lab=DeploymentProfile.from_env(source, kind="lab"),
             internet=DeploymentProfile.from_env(source, kind="internet"),
             uplink_network=source.get(UPLINK_ENV, "").strip() or None,
+            l3_hook=(
+                Path(source[L3_HOOK_ENV].strip()) if source.get(L3_HOOK_ENV, "").strip() else None
+            ),
             poll_seconds=float(poll) if poll else DEFAULT_POLL_SECONDS,
             platform_cidrs=tuple(
                 item.strip()
@@ -330,6 +339,7 @@ def runner_for(config: LoopConfig, lifecycle: JobLifecycle) -> tuple[PodmanRunne
         # network the broker egresses through, so `AEGIS_M06_INTERNET_PROFILE` cannot disagree with
         # a second setting.
         uplink_network=config.uplink,
+        l3_hook=config.l3_hook,
         profiles={
             kind: profile
             for kind, profile in (("lab", config.lab), ("internet", config.internet))
@@ -490,6 +500,7 @@ def main(argv: list[str] | None = None) -> int:
             lab=config.lab,
             internet=config.internet,
             uplink_network=config.uplink_network,
+            l3_hook=config.l3_hook,
             poll_seconds=args.poll_seconds
             if args.poll_seconds is not None
             else config.poll_seconds,

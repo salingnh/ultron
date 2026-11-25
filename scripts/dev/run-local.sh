@@ -165,6 +165,11 @@ if [ "${INTERNET:-1}" = 1 ] && [ -f "$INTERNET_PROFILE" ]; then
     log "uplink: created network $UPLINK_NETWORK (stop-local will remove it)"
   fi
   export AEGIS_UPLINK_NETWORK="$UPLINK_NETWORK"
+  # The L3 channel's route hook is part of the checkout, so the runner can start L3 jobs; the
+  # hook itself is deployment-owned and never configurable from a task.
+  if [ -x "$REPO_ROOT/deploy/l3/hooks/aegis-l3-route" ]; then
+    export AEGIS_L3_HOOK="$REPO_ROOT/deploy/l3/hooks/aegis-l3-route"
+  fi
 fi
 
 # --- 2. migrations through the one runner ------------------------------------
@@ -290,6 +295,7 @@ export AEGIS_M06_LAB_PROFILE="${AEGIS_M06_LAB_PROFILE:-}"
 export AEGIS_M06_INTERNET_PROFILE="${AEGIS_M06_INTERNET_PROFILE:-}"
 export AEGIS_M06_BROKER_IMAGE="${AEGIS_M06_BROKER_IMAGE:-}"
 export AEGIS_UPLINK_NETWORK="${AEGIS_UPLINK_NETWORK:-}"
+export AEGIS_L3_HOOK="${AEGIS_L3_HOOK:-}"
 export AEGIS_SUBFINDER_PROVIDER_CONFIG="${AEGIS_SUBFINDER_PROVIDER_CONFIG:-}"
 export AEGIS_WORKERS="${WORKERS:-1}"
 RUNENV
