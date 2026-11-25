@@ -95,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
         targetable = {item["canonical_key"]: item["asset_id"] for item in services}
         products = [item for item in services if item["product"]]
 
+        support.section("2b. activity: GET /campaigns/{id}/activity against the rows")
+        activity = _activity(connection, campaign_id)
+
         support.section("3. intel: pinned NVD/KEV/EPSS slices -> S3 + PostgreSQL")
         reports = _sync_intel(connection)
 
@@ -120,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
                 "jobs": jobs,
                 "services": services,
                 "intel": reports,
+                "activity": activity,
                 "verdict": "BLOCKED",
                 "blocked_on": "no service.product observation (fingerprinter, slice B)",
             }
@@ -172,6 +176,7 @@ def main(argv: list[str] | None = None) -> int:
             "candidates": candidates,
             "graph": projected,
             "api": api_items,
+            "activity": activity,
             "verdict": "PASS",
         }
         _check(evidence, targetable)
@@ -291,6 +296,133 @@ def _candidates(connection: Any, assets: dict[str, str]) -> list[dict[str, Any]]
         """,
         (list(assets.values()),),
     )
+
+
+def _activity(connection: Any, campaign_id: str) -> dict[str, Any]:
+    """Every page of the activity feed, checked against the rows it projects (item 63).
+
+    The feed is the operator's answer to "what did the agent do"; this gate proves it is the rows
+    and not a story: same entries as `agent_session`/`policy_decision`/`campaign_ledger`, same
+    timestamps, every approved decision linked to its job, and the pagination flags honest.
+    """
+    import urllib.parse
+
+    from aegis.m01_campaign.campaigns import timestamp
+
+    token = support.operator_token()
+    items: list[dict[str, Any]] = []
+    cursor: str | None = None
+    pages = 0
+    while True:
+        path = f"/api/v2/campaigns/{campaign_id}/activity?limit=100"
+        if cursor is not None:
+            path += "&cursor=" + urllib.parse.quote(cursor)
+        body = support.api("GET", path, token=token)
+        pages += 1
+        items.extend(body["items"])
+        if "next_cursor" not in body:
+            support.require(body["truncated"] is False, "the last activity page says truncated")
+            break
+        support.require(
+            body["truncated"] is True, "an activity page with next_cursor is not marked truncated"
+        )
+        cursor = str(body["next_cursor"])
+        support.require(pages < 100, "the activity feed did not terminate")
+    support.line("pages", pages, "| entries", len(items))
+
+    expected: dict[str, str] = {}
+    for row in support.rows(
+        connection,
+        "SELECT session_id::text AS session_id, started_at, finished_at FROM agent_session"
+        " WHERE campaign_id = %s",
+        (campaign_id,),
+    ):
+        expected[f"session:{row['session_id']}:start"] = timestamp(row["started_at"])
+        if row["finished_at"] is not None:
+            expected[f"session:{row['session_id']}:finish"] = timestamp(row["finished_at"])
+    approved: dict[str, str] = {}
+    for row in support.rows(
+        connection,
+        "SELECT d.decision_id::text AS decision_id, d.decision, d.created_at, j.job_id::text"
+        "        AS job_id"
+        "   FROM policy_decision d LEFT JOIN scan_job j ON j.decision_id = d.decision_id"
+        "  WHERE d.campaign_id = %s",
+        (campaign_id,),
+    ):
+        entry_id = f"decision:{row['decision_id']}"
+        expected[entry_id] = timestamp(row["created_at"])
+        if row["decision"] == "approved":
+            support.require(row["job_id"] is not None, f"{entry_id} is approved without a job")
+            approved[entry_id] = row["job_id"]
+    for row in support.rows(
+        connection,
+        "SELECT seq, created_at FROM campaign_ledger"
+        "  WHERE campaign_id = %s AND kind IN ('idle_cycle', 'blocker', 'budget')",
+        (campaign_id,),
+    ):
+        expected[f"ledger:{row['seq']}"] = timestamp(row["created_at"])
+
+    support.require(expected, "the campaign wrote no agent session at all")
+    published = {item["entry_id"]: item["at"] for item in items}
+    support.require(
+        len(published) == len(items), "the activity feed repeated an entry across pages"
+    )
+    support.require(
+        set(published) == set(expected),
+        "the activity feed and the rows disagree: "
+        f"missing {sorted(set(expected) - set(published))[:5]}, "
+        f"extra {sorted(set(published) - set(expected))[:5]}",
+    )
+    support.require(
+        all(published[entry_id] == at for entry_id, at in expected.items()),
+        "an activity entry carries a timestamp its row does not have",
+    )
+    kinds = support.rows(
+        connection,
+        "SELECT kind, count(*) AS n FROM (SELECT 'decision' AS kind FROM policy_decision"
+        "   WHERE campaign_id = %s UNION ALL SELECT 'session_started' FROM agent_session"
+        "   WHERE campaign_id = %s UNION ALL SELECT 'session_finished' FROM agent_session"
+        "   WHERE campaign_id = %s AND finished_at IS NOT NULL"
+        "   UNION ALL SELECT kind FROM campaign_ledger WHERE campaign_id = %s"
+        "   AND kind IN ('idle_cycle', 'blocker', 'budget')) AS written GROUP BY kind",
+        (campaign_id, campaign_id, campaign_id, campaign_id),
+    )
+    counted: dict[str, int] = {}
+    for item in items:
+        counted[item["kind"]] = counted.get(item["kind"], 0) + 1
+    support.require(
+        counted == {row["kind"]: int(row["n"]) for row in kinds},
+        f"the feed's kinds {counted} are not the rows' {kinds}",
+    )
+    for item in items:
+        if item["kind"] == "decision" and item["decision"] == "approved":
+            support.require(
+                item.get("job_id") == approved[item["entry_id"]],
+                f"{item['entry_id']} does not link the job its decision produced",
+            )
+        if item["kind"] == "decision" and item["decision"] == "denied":
+            support.require(
+                item.get("reason", {}).get("code"),
+                f"{item['entry_id']} is denied without a reason code",
+            )
+        support.require(
+            {"rationale", "input", "detail", "summary"}.isdisjoint(item),
+            f"{item['entry_id']} publishes a free-text field",
+        )
+    for item in items[:8]:
+        support.line(
+            "entry",
+            item["kind"],
+            item["at"],
+            item.get("capability") or item.get("stop_reason") or item.get("code") or "",
+            item.get("job_id", ""),
+        )
+    return {
+        "pages": pages,
+        "entries": len(items),
+        "kinds": counted,
+        "approved_jobs": len(approved),
+    }
 
 
 def _neo4j_driver() -> Any:
