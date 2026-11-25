@@ -12,8 +12,9 @@ DECLARE
   target uuid := '01900000-0000-7000-8000-0000000e1703';
   decision uuid := '01900000-0000-7000-8000-0000000e1704';
   job uuid := '01900000-0000-7000-8000-0000000e1705';
-  plain constant jsonb := '{"max_parallel_jobs":10,"max_duration_hours":24}'::jsonb;
-  windowed constant jsonb := '{"max_parallel_jobs":10,"max_duration_hours":24,
+  plain constant jsonb := '{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":24}'::jsonb;
+  auth constant jsonb := '{"owner":"owner","reference":"owner, item 61, 2026-11-25","date":"2026-11-25","authorized_suffixes":["icomm.vn"]}'::jsonb;
+  windowed constant jsonb := '{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":24,
     "allowed_windows":[{"days":["mon"],"start":"08:00","end":"18:00","timezone":"Asia/Ho_Chi_Minh"}]}'::jsonb;
   rejected int := 0;
 BEGIN
@@ -30,13 +31,33 @@ BEGIN
 
   -- 1b. The network profile is a closed enum and the internet per-host connection cap is an int
   --     in range; a snapshot that carries either in the wrong shape is not v2 configuration.
-  IF aegis.is_roe_policy_v2(plain || '{"network_profile":"internet"}'::jsonb) IS NOT TRUE
-     OR aegis.is_roe_policy_v2(plain || '{"network_profile":"lab"}'::jsonb) IS NOT TRUE THEN
+  IF aegis.is_roe_policy_v2(plain || jsonb_build_object('network_profile','internet',
+                                                          'authorization', auth)) IS NOT TRUE
+     OR aegis.is_roe_policy_v2(plain) IS NOT TRUE THEN
     RAISE EXCEPTION 'is_roe_policy_v2 rejected a valid network_profile';
   END IF;
   IF aegis.is_roe_policy_v2(plain || '{"network_profile":"dmz"}'::jsonb)
      OR aegis.is_roe_policy_v2(plain || '{"network_profile":1}'::jsonb) THEN
     RAISE EXCEPTION 'is_roe_policy_v2 accepted an unknown network_profile';
+  END IF;
+
+  -- 1c. Internet is the default profile, so an internet campaign needs a structured
+  --     authorization; a lab campaign does not. The object shape is closed.
+  IF aegis.is_roe_policy_v2(plain || '{"network_profile":"internet"}'::jsonb) THEN
+    RAISE EXCEPTION 'is_roe_policy_v2 accepted internet without authorization';
+  END IF;
+  IF NOT aegis.is_roe_policy_v2(plain || jsonb_build_object('network_profile','internet',
+                                                             'authorization', auth)) THEN
+    RAISE EXCEPTION 'is_roe_policy_v2 rejected a valid internet authorization';
+  END IF;
+  IF aegis.is_roe_policy_v2(plain || jsonb_build_object('network_profile','internet',
+        'authorization', auth - 'owner'))
+     OR aegis.is_roe_policy_v2(plain || jsonb_build_object('network_profile','internet',
+        'authorization', jsonb_set(auth, '{date}', '"25/11/2026"'::jsonb)))
+     OR aegis.is_roe_policy_v2(plain || jsonb_build_object('network_profile','internet',
+        'authorization', jsonb_set(auth, '{authorized_suffixes}', '[]'::jsonb)))
+     OR aegis.is_roe_policy_v2(plain || '{"network_profile":"internet","authorization":{"owner":"o","reference":"r1","date":"2026-11-25","authorized_suffixes":["x.test"],"extra":1}}'::jsonb) THEN
+    RAISE EXCEPTION 'is_roe_policy_v2 accepted a broken authorization';
   END IF;
   IF aegis.is_roe_policy_v2(plain ||
        '{"rate_limits":{"max_concurrent_connections_per_host":1}}'::jsonb) IS NOT TRUE

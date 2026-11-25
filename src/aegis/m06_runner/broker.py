@@ -48,6 +48,9 @@ DENY_STATUS = "403 Forbidden"
 #: A connection waits at most this long for a RoE slot before it is refused (the only refusal).
 MAX_WAIT_SECONDS = 10.0
 WAIT_POLL_SECONDS = 0.05
+#: Per-job audit cap. One decision is about 370 B; 16 MiB is ~43k decisions, far above a normal
+#: job and far below a disk problem. Repeated identical denies inside one second are aggregated.
+AUDIT_MAX_BYTES = 16 * 1024 * 1024
 
 
 class HostLimiter:
@@ -149,13 +152,18 @@ class AuditLog:
         profile: str = "lab",
         campaign_id: str = "",
         authorization: str = "",
+        max_bytes: int = AUDIT_MAX_BYTES,
     ) -> None:
         self.path = path
         self.job_id = job_id
         self.profile = profile
         self.campaign_id = campaign_id
         self.authorization = authorization
+        self.max_bytes = max_bytes
         self._lock = threading.Lock()
+        self._bytes = path.stat().st_size if path.exists() else 0
+        self._capped = False
+        self._pending: dict[str, Any] | None = None
         path.parent.mkdir(parents=True, exist_ok=True)
 
     def write(self, decision: netpolicy.Decision) -> None:
@@ -170,6 +178,46 @@ class AuditLog:
         self._append(record)
 
     def _append(self, record: dict[str, Any]) -> None:
+        with self._lock:
+            if self._capped:
+                return
+            if record.get("decision") == "deny":
+                # Bytes for a scanner that brute-forces names: the first identical denial in a
+                # second is written, the rest become one aggregate line when the second (or the
+                # record stream) changes.
+                key = "|".join(
+                    str(record.get(name, "")) for name in ("kind", "reason", "host", "port")
+                )
+                second = int(time.time())
+                pending = self._pending
+                if pending is not None and pending["key"] == key and pending["second"] == second:
+                    pending["count"] += 1
+                    return
+                self._flush_pending()
+                self._pending = {"key": key, "second": second, "count": 1, "record": record}
+                self._write(record)
+                return
+            self._flush_pending()
+            self._write(record)
+
+    def _flush_pending(self) -> None:
+        pending = self._pending
+        if pending is None:
+            return
+        self._pending = None
+        if pending["count"] <= 1:
+            return
+        record = dict(pending["record"])
+        record["aggregate"] = True
+        record["count"] = pending["count"]
+        self._write(record)
+
+    def close(self) -> None:
+        """Flush the last aggregate and stop writing (the broker calls this on shutdown)."""
+        with self._lock:
+            self._flush_pending()
+
+    def _write(self, record: dict[str, Any]) -> None:
         entry: dict[str, Any] = {
             "ts": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "job_id": self.job_id,
@@ -179,10 +227,34 @@ class AuditLog:
             **record,
         }
         line = json.dumps(entry, sort_keys=True) + "\n"
-        with self._lock, self.path.open("a", encoding="utf-8") as handle:
+        with self.path.open("a", encoding="utf-8") as handle:
             handle.write(line)
             handle.flush()
             os.fsync(handle.fileno())
+        self._bytes += len(line.encode("utf-8"))
+        if self._bytes > self.max_bytes:
+            self._capped = True
+            marker = (
+                json.dumps(
+                    {
+                        "ts": datetime.now(UTC)
+                        .isoformat(timespec="milliseconds")
+                        .replace("+00:00", "Z"),
+                        "job_id": self.job_id,
+                        "campaign_id": self.campaign_id,
+                        "network_profile": self.profile,
+                        "kind": "audit",
+                        "event": "capped",
+                        "bytes": self._bytes,
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(marker)
+                handle.flush()
+                os.fsync(handle.fileno())
 
 
 def _deny_response(decision: netpolicy.Decision) -> bytes:
@@ -593,6 +665,7 @@ def serve(
         server.server_close()
     if gateway is not None:
         gateway.stop()
+    audit.close()
 
 
 def main(argv: list[str] | None = None) -> int:

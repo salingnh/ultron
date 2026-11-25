@@ -28,7 +28,7 @@ CAMPAIGN: dict[str, Any] = {
     "name": "Seed only",
     "objective": "A campaign whose only assets are its seed targets",
     "targets": {"domains": ["seed-only.example"], "ips": ["10.20.30.40"], "keywords": ["acme"]},
-    "policy": {"max_parallel_jobs": 2, "max_duration_hours": 24},
+    "policy": {"network_profile": "lab", "max_parallel_jobs": 2, "max_duration_hours": 24},
 }
 ACTOR = {"kind": "operator", "id": "op-seed-test"}
 EXPECTED = {"dns:seed-only.example", "ip:10.20.30.40"}

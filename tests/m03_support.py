@@ -449,6 +449,7 @@ class FakeContext:
             policy
             or {
                 "budget": {"max_llm_tokens": 100000, "max_llm_cost_usd": 5.0},
+                "network_profile": "lab",
                 "max_parallel_jobs": 2,
                 "rate_limits": {"jobs_per_minute": 30},
             }

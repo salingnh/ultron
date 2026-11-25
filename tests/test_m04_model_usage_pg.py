@@ -41,7 +41,10 @@ def seed_campaign(dsn: str) -> None:
     """
     actor = json.dumps({"kind": "operator", "operator_id": "g1.2a"}, sort_keys=True)
     # 0009 requires a roe-policy.v2 shape for a new snapshot; these are the mandatory limits.
-    policy = json.dumps({"max_parallel_jobs": 1, "max_duration_hours": 1}, sort_keys=True)
+    policy = json.dumps(
+        {"network_profile": "lab", "max_parallel_jobs": 1, "max_duration_hours": 1},
+        sort_keys=True,
+    )
     scope_id = "01934f6a-0000-7000-8000-000000000004"
     with psycopg.connect(dsn) as connection:
         connection.execute(

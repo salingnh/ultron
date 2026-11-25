@@ -1,0 +1,14 @@
+{
+  "network_profile": "internet",
+  "max_parallel_jobs": 2,
+  "max_duration_hours": 24,
+  "rate_limits": {
+    "requests_per_second_per_host": 1,
+    "max_concurrent_connections_per_host": 1,
+    "jobs_per_minute": 2
+  },
+  "budget": {
+    "max_jobs": 20,
+    "idle_cycles_before_pause": 3
+  }
+}

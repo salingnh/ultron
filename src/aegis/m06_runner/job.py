@@ -155,6 +155,14 @@ class JobRunner:
         # A provider without networkAccess has no network at all: the profile contributes nothing.
         egress = plan.manifest.spec.permissions.networkAccess == "egress"
         entry = self.runner.profile_entry(profile, text(plan.task.image_digest)) if egress else None
+        if egress and not lab and not plan.platform_cidrs:
+            # The platform's own networks must be in every internet policy; without the set the
+            # job is refused rather than dispatched with an incomplete deny list (B1).
+            raise specs.SpecError(
+                "DEPENDENCY_MISSING",
+                "the platform deny set is not loaded (podman networks/host addresses); refusing "
+                "an internet job without it",
+            )
         if egress and lab and entry is None:
             raise specs.SpecError(
                 "POLICY_DENIED",

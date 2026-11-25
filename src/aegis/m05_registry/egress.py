@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -117,6 +117,27 @@ def _denied(address: str) -> bool:
     return validation.denied_egress_host(address)
 
 
+Network = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+def _networks(values: Sequence[str]) -> tuple[Network, ...]:
+    networks: list[Network] = []
+    for value in values:
+        try:
+            networks.append(ipaddress.ip_network(value, strict=False))
+        except ValueError:
+            continue
+    return tuple(networks)
+
+
+def _in_platform(address: str, networks: Sequence[Network]) -> bool:
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return any(parsed.version == net.version and parsed in net for net in networks)
+
+
 def check_declared_destinations(record: ManifestRecord, merged_input: Mapping[str, Any]) -> None:
     """Refuse input that reaches a destination the pinned manifest does not declare (C05)."""
     permissions = record.permissions
@@ -157,14 +178,24 @@ def build_egress_binding(
     merged_input: Mapping[str, Any],
     targets: ResolvedTargets,
     binder: TargetBinder,
+    network_profile: str = "internet",
+    platform_cidrs: Sequence[str] = (),
 ) -> EgressBinding:
-    """Compute the signed allow-set; refuse a binding that would be empty or unbounded."""
+    """Compute the signed allow-set; refuse a binding that would be empty or unbounded.
+
+    On the internet profile a `protocol: dns` source is not signed: a raw tunnel to a public
+    resolver would bypass the broker's DNS name binding (F4). Targets are checked against the
+    platform's own networks (B1) before they can be signed.
+    """
     permissions = record.permissions
     if permissions.get("networkAccess") != "egress":
         return EgressBinding(mode="none", target_binding="none", entries=(), target_addresses=())
 
+    platform = _networks(platform_cidrs)
     entries: set[str] = set()
     for source in permissions.get("egressSources") or []:
+        if network_profile == "internet" and str(source.get("protocol")) == "dns":
+            continue
         for host in source.get("hosts") or []:
             for port in source.get("ports") or []:
                 entries.add(f"{_format_host(str(host))}:{int(port)}")
@@ -184,6 +215,14 @@ def build_egress_binding(
             for address in resolved:
                 if _denied(address):
                     continue  # deny set wins over resolved targets (OI-5)
+                if network_profile == "internet" and _in_platform(address, platform):
+                    # B1: on the internet profile the platform's own networks are never a signed
+                    # target. A lab campaign targets the authorized lab network by design.
+                    raise M05Error.policy_denied(
+                        "target_platform_network",
+                        f"target address {address} is inside the platform deny set",
+                        next_action=NextAction.FIX_INPUT,
+                    )
                 addresses.append(address)
                 for port in ports:
                     entries.add(f"{_format_host(address)}:{port}")
@@ -195,6 +234,16 @@ def build_egress_binding(
             )
 
     if not entries:
+        declared = permissions.get("egressSources") or []
+        dns_only = bool(declared) and all(
+            str(source.get("protocol")) == "dns" for source in declared
+        )
+        if network_profile == "internet" and dns_only and target_binding != "required":
+            # A passive DNS provider (DNSx) has no L7 destination on the internet profile: its
+            # egress is the broker's DNS front end, which is not part of this binding (F4).
+            return EgressBinding(
+                mode="broker", target_binding="none", entries=(), target_addresses=()
+            )
         raise M05Error.policy_denied(
             "egress_binding_empty",
             f"manifest provider {record.provider} declares egress but no openable destination; an "

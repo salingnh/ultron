@@ -15,5 +15,6 @@
   },
   "capability_denylist": [
     "network.discover_services"
-  ]
+  ],
+  "network_profile": "lab"
 }

@@ -6,6 +6,7 @@ and the ingestion endpoint is a thread in this process. The isolation tests use 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -13,6 +14,7 @@ import socket
 import subprocess
 import threading
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -93,14 +95,32 @@ def image_present(image: str) -> bool:
 # --- contract fixtures ----------------------------------------------------------------------
 
 
-#: The published development signing key (OI-7); tests sign the tasks M06 must verify.
+#: The published development signing key (OI-7); lab tasks use it (M06 refuses it for internet).
 DEV_RING = KeyRing.dev()
+#: A test-only key for internet tasks: M06 refuses an internet task signed with the published
+#: development key, so the test suite signs those with its own id.
+INTERNET_RING = KeyRing(
+    active_key_id="g16-test-1",
+    keys={
+        "g16-test-1": hashlib.sha256(b"aegis-test-internet-key-not-a-deployment-key").digest(),
+        "g1-dev-1": KeyRing.dev().keys["g1-dev-1"],
+    },
+)
+#: Verifies both the dev key and the internet test key (a job runner in tests may see either).
+ANY_RING = INTERNET_RING
+
+
+def ring_for(task: Any) -> KeyRing:
+    """The ring that must verify this task: internet test tasks are not signed with the dev key."""
+    return INTERNET_RING if str(task.network_profile) == "internet" else DEV_RING
 
 
 def sign_task(
-    payload: dict[str, Any], *, key_ring: KeyRing = DEV_RING
+    payload: dict[str, Any], *, key_ring: KeyRing | None = None
 ) -> tuple[ApprovedTask, dict[str, Any]]:
     """Sign a task dict the way M05 does and return `(DTO, exact signed document)`."""
+    if key_ring is None:
+        key_ring = INTERNET_RING if payload.get("network_profile") == "internet" else DEV_RING
     body = {
         key: value for key, value in payload.items() if key not in {"signature", "signature_key_id"}
     }
@@ -409,3 +429,79 @@ def host_lan_ip() -> str:
 
 def unique(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+# --- helpers for the safety-review regressions ------------------------------------------------
+
+
+def fixture_payload(name: str) -> dict[str, Any]:
+    """A mutable copy of one valid contract fixture."""
+    payload: dict[str, Any] = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+    return payload
+
+
+def record(name: str) -> Any:
+    """A ``ManifestRecord`` for a fixture manifest (the M05 input the binding builder takes)."""
+    from aegis.m05_registry.manifest import ManifestRecord
+
+    raw = (FIXTURES / name).read_bytes()
+    return ManifestRecord(
+        sha256=hashlib.sha256(raw).hexdigest(), raw=raw, document=yaml.safe_load(raw)
+    )
+
+
+class StaticBinder:
+    """A ``TargetBinder`` over a fixed table (no DNS in tests)."""
+
+    def __init__(self, table: dict[str, list[str]]) -> None:
+        self.table = table
+
+    def addresses(self, value: str) -> tuple[str, ...]:
+        return tuple(self.table.get(value, [value]))
+
+
+def resolved_targets(rec: Any, values: list[str]) -> Any:
+    """The ``ResolvedTargets`` M05 would build for these raw values (one ref per value)."""
+    from aegis.m05_registry.targets import ResolvedTargets
+
+    refs: list[dict[str, str]] = []
+    kinds: list[str] = []
+    raw: list[str] = []
+    for value in values:
+        text = str(value)
+        if text.startswith("dns:"):
+            refs.append({"canonical_key": text})
+            kinds.append("domain")
+        else:
+            refs.append({"canonical_key": f"ip:{text}"})
+            kinds.append("ip")
+        raw.append(text)
+    return ResolvedTargets(refs=tuple(refs), kinds=tuple(kinds), raw=tuple(raw))
+
+
+def build_policy_for(
+    task: Any,
+    manifest: Any,
+    raw: bytes,
+    *,
+    authorization: str = "owner | owner, item 61, 2026-11-25 | 2026-11-25 | x.test",
+    task_body: Mapping[str, Any] | None = None,
+    **kwargs: Any,
+) -> Any:
+    """``spec.build_policy`` with the internet profile's mandatory inputs filled in."""
+    from aegis.m06_runner import spec as spec_module
+
+    kwargs.setdefault("platform_cidrs", ("10.88.0.0/16",))
+    kwargs.setdefault("per_host_rps", 1.0)
+    kwargs.setdefault("per_host_max_connections", 1)
+    values = kwargs.pop("input_values", {"targets": ["internal.example"], "concurrency": 1})
+    return spec_module.build_policy(
+        task,
+        manifest,
+        values,
+        job_id="job-safety",
+        task_body=task_body or body_of(task),
+        key_ring=ANY_RING,
+        authorization=authorization,
+        **kwargs,
+    )

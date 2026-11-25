@@ -54,6 +54,7 @@ from psycopg.types.json import Jsonb
 from pydantic import RootModel
 
 from aegis import validation
+from aegis.common import platform as platform_set
 from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
 from aegis.contracts_gen.common.error_v2_schema import NextAction
 from aegis.m01_campaign.audit import record_audit
@@ -216,11 +217,21 @@ class PostgresJobService:
         registry: ManifestRegistry,
         key_ring: KeyRing,
         binder: TargetBinder | None = None,
+        platform_cidrs: Sequence[str] | None = None,
     ) -> None:
         self._connect = connect
         self._registry = registry
         self._key_ring = key_ring
         self._binder = binder
+        self._platform_cidrs: tuple[str, ...] = ()
+        self._platform_error: str = ""
+        if platform_cidrs is None:
+            try:
+                self._platform_cidrs = platform_set.platform_cidrs()
+            except platform_set.PlatformDenySetUnavailable as error:
+                self._platform_error = str(error)
+        else:
+            self._platform_cidrs = tuple(platform_cidrs)
 
     # --- submission ---------------------------------------------------------------------
     def submit(
@@ -401,6 +412,22 @@ class PostgresJobService:
         try:
             self._check_target_kinds(record, targets)
             check_declared_destinations(record, merged_input)
+            profile = network_profile(campaign.policy)
+            if profile == "internet":
+                authorization_value = campaign.policy.get("authorization")
+                if not isinstance(authorization_value, Mapping) or not authorization_value:
+                    raise M05Error.policy_denied(
+                        "authorization_missing",
+                        "an internet campaign needs a structured authorization in its RoE "
+                        "(owner, reference, date, authorized_suffixes)",
+                        field="/policy/authorization",
+                    )
+                if not self._platform_cidrs:
+                    raise M05Error.policy_denied(
+                        "platform_deny_set_unavailable",
+                        "the platform deny set cannot be read on this host; refusing to sign an "
+                        "internet task without it",
+                    )
             check_campaign_caps(
                 conn,
                 policy=campaign,
@@ -419,6 +446,8 @@ class PostgresJobService:
                 merged_input=merged_input,
                 targets=targets,
                 binder=self._binder or _MissingBinder(),
+                network_profile=network_profile(campaign.policy),
+                platform_cidrs=self._platform_cidrs,
             )
         except M05Error as error:
             return self._deny(

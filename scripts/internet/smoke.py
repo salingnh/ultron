@@ -62,8 +62,18 @@ DECLARED_HOSTS = {"crt.sh", "otx.alienvault.com"}
 
 #: Conservative RoE for a first run on a real domain: one job at a time, half a request per second
 #: per host, one open connection per host, at most two jobs in the campaign.
+#: The RoE's structured authorization: the owner's statement that the targets are theirs. It is
+#: required for an internet campaign and copied into every audit line.
+AUTHORIZATION_REFERENCE = "owner, item 61, 2026-11-25"
+
 SMOKE_POLICY: dict[str, Any] = {
     "network_profile": "internet",
+    "authorization": {
+        "owner": "owner",
+        "reference": AUTHORIZATION_REFERENCE,
+        "date": "2026-11-25",
+        "authorized_suffixes": list(AUTHORIZED),
+    },
     "max_parallel_jobs": 1,
     "max_duration_hours": 1,
     "rate_limits": {

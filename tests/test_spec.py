@@ -159,13 +159,14 @@ def _build(manifest: ProviderManifest, raw: bytes, **kwargs: Any) -> Any:
     denylist = kwargs.pop("target_denylist", ())
     kwargs.setdefault("per_host_rps", 5.0)
     kwargs.setdefault("per_host_max_connections", 2)
+    kwargs.setdefault("authorization", "owner | owner, item 61, 2026-11-25 | 2026-11-25 | x.test")
     return spec.build_spec(
         task,
         manifest,
         values,
         job_id="job-1",
         task_body=m06_support.body_of(task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
         broker_proxy="http://10.97.0.2:3128",
         platform_cidrs=platform,
         target_denylist=denylist,
@@ -244,7 +245,7 @@ def test_pin_mismatch_is_refused_before_anything_runs() -> None:
             _input(),
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=other_raw,
         )
@@ -261,7 +262,7 @@ def test_manifest_bytes_must_match_the_pin() -> None:
             _input(),
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=raw + b" ",
         )
@@ -286,7 +287,7 @@ def test_a_signed_binding_inside_the_deny_set_is_refused() -> None:
             _input(),
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
         )
 
 
@@ -315,7 +316,7 @@ def test_a_signed_binding_cannot_widen_the_declared_sources() -> None:
             _input(),
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
         )
 
 
@@ -331,7 +332,7 @@ def test_a_signed_binding_must_cover_every_declared_source() -> None:
             _input(),
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
         )
 
 
@@ -352,7 +353,7 @@ def test_the_signed_binding_is_the_source_of_truth_for_a_seed_target() -> None:
         {"targets": ["10.114.53.53"], "ports": [8080]},
         job_id="job-1",
         task_body=m06_support.body_of(task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
     )
     assert policy.mode == "egress"
     assert [str(net) for net in policy.target_ips] == ["10.114.53.53/32"]
@@ -378,7 +379,7 @@ def test_signed_binding_missing_an_ip_ref_address_is_refused() -> None:
             {"targets": ["ip:10.1.2.3"], "ports": [8080]},
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
         )
 
 
@@ -404,7 +405,7 @@ def test_target_bound_job_uses_the_signed_binding_ports() -> None:
         task_input,
         job_id="job-1",
         task_body=m06_support.body_of(task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
         broker_proxy="http://10.97.0.2:3128",
         manifest_bytes=raw,
     )
@@ -439,7 +440,7 @@ def test_target_in_the_deny_set_is_refused_before_the_spec_exists() -> None:
             },
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=raw,
         )
@@ -461,7 +462,7 @@ def test_target_binding_required_needs_ports() -> None:
             {"targets": ["ip:10.1.2.3"]},
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=raw,
         )
@@ -477,7 +478,7 @@ def test_policy_includes_platform_cidrs_and_campaign_denylist() -> None:
         _input(),
         job_id="job-1",
         task_body=m06_support.body_of(task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
         platform_cidrs=("10.88.0.0/16",),
         target_denylist=("10.50.0.0/16", "denied.example"),
     )
@@ -563,7 +564,7 @@ def test_build_spec_verifies_before_anything_else() -> None:
             _input(),
             job_id="job-1",
             task_body=document,
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=raw,
         )
@@ -597,7 +598,7 @@ def test_target_ports_from_input_are_bounded() -> None:
             },
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=raw,
         )
@@ -622,7 +623,9 @@ def test_the_internet_profile_needs_the_roe_safety_caps() -> None:
             _input(),
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
+            authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example",
+            platform_cidrs=("10.88.0.0/16",),
         )
     assert caught.value.code == "POLICY_DENIED"
 
@@ -636,7 +639,9 @@ def test_the_internet_profile_denies_private_ranges_except_signed_targets() -> N
         _input(),
         job_id="job-1",
         task_body=m06_support.body_of(task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
+        authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example",
+        platform_cidrs=("10.88.0.0/16",),
         per_host_rps=0.5,
         per_host_max_connections=1,
     )
@@ -670,7 +675,7 @@ def test_the_internet_profile_denies_private_ranges_except_signed_targets() -> N
         _input(),
         job_id="job-1",
         task_body=m06_support.body_of(lab_task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
         resolver=resolver,
     )
     assert lab_policy.private_cidrs == ()
@@ -720,9 +725,11 @@ def test_the_port_list_is_capped_by_the_pinned_input_schema() -> None:
             },
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=raw,
+            authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | 10.1.2.3",
+            platform_cidrs=("10.88.0.0/16",),
             per_host_rps=0.5,
             per_host_max_connections=1,
         )
@@ -787,7 +794,7 @@ def test_host_port_refuses_a_udp_service_target() -> None:
             {"targets": [key], "ports": [5353]},
             job_id="job-1",
             task_body=m06_support.body_of(task),
-            key_ring=m06_support.DEV_RING,
+            key_ring=m06_support.ANY_RING,
             manifest_bytes=raw,
         )
 
@@ -811,7 +818,7 @@ def test_a_service_target_binds_its_own_address() -> None:
         values,
         job_id="job-1",
         task_body=m06_support.body_of(task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
         manifest_bytes=raw,
     )
     assert built.network == "exec"
@@ -843,8 +850,10 @@ def test_a_non_proxy_aware_provider_rides_the_l3_channel() -> None:
         values,
         job_id="job-1",
         task_body=m06_support.body_of(task),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
         manifest_bytes=raw,
+        authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | 10.1.2.3",
+        platform_cidrs=("10.88.0.0/16",),
         per_host_rps=1.0,
         per_host_max_connections=1,
     )
