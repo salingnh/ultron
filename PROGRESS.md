@@ -78,3 +78,4 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 ## Tiếp theo
 
 Mở G1 theo TASKS: G1.1a trước, tám điều kiện review phải xong cùng task sở hữu; G1 mặc định chạy scripted policy; provider thật bật bằng `AEGIS_SESSION_LIVE_MODEL=1` (G1.6). Cập nhật sau mỗi lần merge hoặc deploy (update after every merge or deploy).
+- G1.6 slice E (PR #65): `deploy/vulnlab` (7 pinned origins, internal + lab networks, podman TTL auto-stop) và catalog `tests/vulnlab` + `make vulnlab-test`; lab lộ đúng 7/7, assertion CVE ứng viên đã định nghĩa cho slice A/B/C; tunnel internet chờ đăng nhập Cloudflare MCP.
