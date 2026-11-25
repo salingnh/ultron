@@ -49,6 +49,17 @@ SCHEMA_REF = re.compile(
 DOMAIN_TARGET = "aegis-domain-target"
 CANONICAL_KEY_PREFIXES = ("dns:", "ip:", "service:", "app:", "url:")
 
+#: Internet profile: the host's own private networks are not reachable unless the campaign names
+#: the address as a target (RFC 1918, CGNAT, IPv6 ULA). The always-deny set stays in `denyset.py`;
+#: this list is the *conditional* block: `private − signed targets`.
+PRIVATE_NETWORKS = (
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "100.64.0.0/10",
+    "fc00::/7",
+)
+
 
 class SpecError(RuntimeError):
     """The job cannot be turned into a sandbox spec; `code` is the contract error code."""
@@ -248,6 +259,15 @@ def project_target(value: str) -> str:
         if checker.conforms(candidate, "aegis-canonical-key"):
             return candidate
         raise SpecError("POLICY_DENIED", f"target {value!r} is not a valid canonical key")
+    # A bare address is an address target, not a domain: `aegis-domain-target` accepts
+    # `10.1.2.3` (it is a syntactically valid name), so the address check has to come first or a
+    # port-scan task would be compared as `dns:10.1.2.3` and never match its `ip:` ref.
+    try:
+        address = ipaddress.ip_address(candidate)
+    except ValueError:
+        address = None
+    if address is not None:
+        return f"ip:{address}"
     if not checker.conforms(candidate, DOMAIN_TARGET):
         raise SpecError(
             "POLICY_DENIED",
@@ -277,13 +297,13 @@ def recheck_targets(task: ApprovedTask, input_values: Mapping[str, Any]) -> None
     canonical, seeds = _canonical_refs(task)
     if len(projections) != len(task.targets):
         raise SpecError(
-            "TARGET_REFS_MISMATCH",
+            "POLICY_DENIED",
             f"input has {len(projections)} targets, task has {len(task.targets)} target refs",
         )
     unmatched = [projection for projection in projections if projection not in canonical]
     if len(unmatched) > seeds:
         raise SpecError(
-            "TARGET_REFS_MISMATCH",
+            "POLICY_DENIED",
             "input targets outside the task's canonical refs and not covered by a seed ref: "
             + ", ".join(sorted(unmatched)),
         )
@@ -370,7 +390,30 @@ def _target_addresses(
     return networks
 
 
-def _target_ports(manifest: ProviderManifest, input_values: Mapping[str, Any]) -> tuple[int, ...]:
+def _port_cap(schema: Mapping[str, Any] | None) -> int | None:
+    """`input.ports.maxItems` of the pinned input schema, when it states one.
+
+    The port list of a port scan is capped by the manifest the task was pinned to: the manifest
+    pins `inputSchemaRef` and its own bytes, so the schema's `maxItems` is the campaign-accepted
+    bound. A job cannot widen the scan by asking for more ports (G1.6 item 3).
+    """
+    if not isinstance(schema, Mapping):
+        return None
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return None
+    ports = properties.get("ports")
+    if not isinstance(ports, Mapping):
+        return None
+    max_items = ports.get("maxItems")
+    return None if not isinstance(max_items, int) else int(max_items)
+
+
+def _target_ports(
+    manifest: ProviderManifest,
+    input_values: Mapping[str, Any],
+    schema: Mapping[str, Any] | None = None,
+) -> tuple[int, ...]:
     permissions = manifest.spec.permissions
     if permissions.targetBinding != "required":
         return ()
@@ -384,6 +427,14 @@ def _target_ports(manifest: ProviderManifest, input_values: Mapping[str, Any]) -
     for port in ports:
         if not 1 <= port <= 65535:
             raise SpecError("POLICY_DENIED", f"target port {port!r} is out of range")
+    cap = _port_cap(
+        schema if schema is not None else load_input_schema(manifest.spec.inputSchemaRef)
+    )
+    if cap is not None and len(ports) > cap:
+        raise SpecError(
+            "POLICY_DENIED",
+            f"input.ports has {len(ports)} entries, the pinned input schema caps it at {cap}",
+        )
     return tuple(ports)
 
 
@@ -435,6 +486,10 @@ def build_policy(
     platform_cidrs: Sequence[str] = (),
     target_denylist: Sequence[str] = (),
     resolver: netpolicy.Resolver | None = None,
+    schema: Mapping[str, Any] | None = None,
+    authorization: str = "",
+    per_host_rps: float | None = None,
+    per_host_max_connections: int | None = None,
 ) -> netpolicy.JobEgressPolicy:
     """The policy document of the job, built from the **signed** binding (E-1).
 
@@ -443,8 +498,14 @@ def build_policy(
     never widens it. It still checks the signed value against what it can see itself (the manifest's
     sources, the pin, the task's `ip:` refs) and applies the deny set again as defence in depth; a
     disagreement is a `POLICY_DENIED` job rather than a silent rebuild.
+
+    `task.network_profile` (also signed) decides the internet rules: private ranges are denied
+    unless the campaign names the address as a target, and the RoE safety caps are required.
+    Without a rate cap and a per-host concurrency cap an internet job has no bound on what it does
+    to a third party, so the job is refused (fail closed) instead of running uncapped.
     """
     verify_task(task_body, key_ring)
+    profile = str(task.network_profile)
     permissions = manifest.spec.permissions
     binding = task.egress_binding
     declared_egress = permissions.networkAccess == "egress"
@@ -455,7 +516,13 @@ def build_policy(
                 "the signed binding has no egress but the pinned manifest declares "
                 "networkAccess=egress",
             )
-        return netpolicy.JobEgressPolicy(job_id=job_id, mode="none")
+        return netpolicy.JobEgressPolicy(
+            job_id=job_id,
+            mode="none",
+            profile=profile,
+            campaign_id=str(task.campaign_id),
+            authorization=authorization,
+        )
     if not declared_egress:
         raise SpecError(
             "POLICY_DENIED",
@@ -511,7 +578,7 @@ def build_policy(
     # 3. The signed target addresses must agree with the target refs M06 can resolve itself. Exact
     #    for `ip:` refs (no clock, no DNS); for `dns:` refs the signed set is used and only a
     #    disjoint answer is refused (a TTL change between M05 and M06 is not a forgery).
-    target_ports = _target_ports(manifest, input_values)
+    target_ports = _target_ports(manifest, input_values, schema)
     recomputed = {
         str(network.network_address)
         for network in _target_addresses(task, resolver or netpolicy.Resolver())
@@ -538,7 +605,7 @@ def build_policy(
             "targetBinding=required but the signed binding pins no target address",
         )
     if str(binding.target_binding) == "required":
-        target_ports = _target_ports(manifest, input_values)
+        target_ports = _target_ports(manifest, input_values, schema)
         if not target_ports:
             raise SpecError("POLICY_DENIED", "targetBinding=required needs input.ports")
         for address in target_addresses:
@@ -567,9 +634,22 @@ def build_policy(
         sources.append(
             netpolicy.SourceAllow(id=source_id, hosts=(denyset.host_key(host),), ports=(port,))
         )
+    if profile == "internet":
+        if per_host_rps is None or per_host_max_connections is None:
+            raise SpecError(
+                "POLICY_DENIED",
+                "the internet profile needs rate_limits.requests_per_second_per_host and "
+                "rate_limits.max_concurrent_connections_per_host from the campaign RoE",
+            )
+        private_cidrs = tuple(ipaddress.ip_network(entry) for entry in PRIVATE_NETWORKS)
+    else:
+        private_cidrs = ()
     return netpolicy.JobEgressPolicy(
         job_id=job_id,
         mode="egress",
+        profile=profile,
+        campaign_id=str(task.campaign_id),
+        authorization=authorization,
         target_ips=tuple(
             ipaddress.ip_network(f"{address}/{address.max_prefixlen}")
             for address in target_addresses
@@ -578,6 +658,9 @@ def build_policy(
         sources=tuple(sources),
         platform_cidrs=tuple(ipaddress.ip_network(entry) for entry in platform_cidrs),
         deny_cidrs=_denylist_networks(target_denylist),
+        private_cidrs=private_cidrs,
+        per_host_rps=per_host_rps,
+        per_host_max_connections=per_host_max_connections,
         resolver=resolver or netpolicy.Resolver(),
     )
 
@@ -623,14 +706,17 @@ def build_spec(
     target_denylist: Sequence[str] = (),
     manifest_bytes: bytes | None = None,
     resolver: netpolicy.Resolver | None = None,
-    lab_network: bool = False,
+    authorization: str = "",
+    per_host_rps: float | None = None,
+    per_host_max_connections: int | None = None,
 ) -> ContainerSpec:
     """Assemble the sandbox spec of one job, or raise `SpecError` before anything runs.
 
-    `lab_network` is the G1.5c deployment exception: the job runs on the authorized lab network
-    (`aegis-lab-lab`, internal, no gateway) instead of its own per-job network, so it needs no
-    broker proxy. The egress binding is still computed and checked (E-1); only where the container
-    is attached changes, and only an explicit lab profile in the runner can ask for it.
+    The signed `network_profile` decides where the container is attached: `lab` is the G1.5c
+    deployment exception (the authorized lab network, internal, no gateway) and needs no broker
+    proxy; `internet` gets its own per-job network whose only peer is the broker, so the proxy is
+    mandatory. The egress binding is computed and checked (E-1) either way; only where the container
+    is attached changes, and only the signed task can ask for it.
     """
     verify_task(task_body, key_ring)
     _check_pins(task, manifest, manifest_bytes)
@@ -660,8 +746,13 @@ def build_spec(
         platform_cidrs=platform_cidrs,
         target_denylist=target_denylist,
         resolver=resolver,
+        schema=schema,
+        authorization=authorization,
+        per_host_rps=per_host_rps,
+        per_host_max_connections=per_host_max_connections,
     )
-    if egress and broker_proxy is None and not lab_network:
+    profile = str(task.network_profile)
+    if egress and broker_proxy is None and profile != "lab":
         raise SpecError("POLICY_DENIED", "an egress job needs the broker proxy of its network")
     if permissions.targetBinding == "required" and not policy.target_ips:
         raise SpecError(
@@ -677,8 +768,9 @@ def build_spec(
         timeout_seconds=int(budget.timeoutSeconds),
         max_output_bytes=int(budget.maxOutputMb or DEFAULT_MAX_OUTPUT_MB) * MIB,
         network="exec" if egress else "none",
+        network_profile="lab" if profile == "lab" else "internet",
         egress_mode="broker" if egress else None,
         egress_binding=policy.binding_hosts,
-        egress_proxy=broker_proxy if egress and not lab_network else None,
+        egress_proxy=broker_proxy if egress and profile != "lab" else None,
         raw_socket=bool(permissions.rawSocket),
     )

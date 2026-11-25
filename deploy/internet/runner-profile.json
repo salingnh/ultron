@@ -1,0 +1,18 @@
+{
+  "network": "podman",
+  "jobs": [
+    {
+      "imageDigest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
+      "args": ["-sources", "crtsh,otx"],
+      "env": {
+        "HOME": "/tmp"
+      },
+      "mounts": [
+        {
+          "sourceEnv": "AEGIS_SUBFINDER_PROVIDER_CONFIG",
+          "target": "/tmp/.config/subfinder/provider-config.yaml"
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ and the ingestion endpoint is a thread in this process. The isolation tests use 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -42,7 +43,11 @@ SEAWEEDFS = (
     "docker.io/chrislusf/seaweedfs@sha256:"
     "7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9"
 )
-PROBE_IMAGE = "localhost/aegis-probe:g13a"
+# The tag is per test process: several workers build this image on one host, and a shared tag let a
+# concurrent suite's build (another worktree, older sources) become the image a broker container
+# ran - a real failure on 2026-11-25 (a stale netpolicy in the broker). The image id is what the
+# tests use; the tag only exists to name the build.
+PROBE_IMAGE = f"localhost/aegis-probe:{os.getpid()}"
 
 PODMAN = shutil.which("podman") or "podman"
 
@@ -182,8 +187,14 @@ def probe_manifest(
     timeout_seconds: int | None = None,
     args_template: list[str] | None = None,
     egress_sources: list[dict[str, Any]] | None = None,
+    target_bound: bool = False,
 ) -> tuple[ProviderManifest, bytes]:
-    """A manifest whose tool is the probe image; parser/args are test-only overrides."""
+    """A manifest whose tool is the probe image; parser/args are test-only overrides.
+
+    `target_bound` gives it the port-scan shape (Naabu's): `targetBinding: required`,
+    `targetPorts: from_input` and a manifest port cap, so an internet job reaches exactly the
+    addresses the campaign signed.
+    """
     payload = _fixture("manifest.subfinder.yaml")
     payload["metadata"]["name"] = "aegis-probe"
     payload["spec"]["capability"] = "dns.enumerate_subdomains"
@@ -201,12 +212,26 @@ def probe_manifest(
         payload["spec"]["budget"]["timeoutSeconds"] = timeout_seconds
     if egress_sources is not None:
         payload["spec"]["permissions"]["egressSources"] = egress_sources
+    if target_bound:
+        payload["spec"]["permissions"].update(
+            {
+                "egressSources": egress_sources or [],
+                "targetBinding": "required",
+                "targetPorts": "from_input",
+            }
+        )
     if not egress:
         # The contract forbids explicit nulls here (additionalProperties false + const rules):
         # omitting the egress fields is how `networkAccess: none` is expressed.
         permissions = payload["spec"]["permissions"]
         permissions["networkAccess"] = "none"
-        for key in ("egressMode", "proxyAware", "egressSources", "targetBinding", "targetPorts"):
+        for key in (
+            "egressMode",
+            "proxyAware",
+            "egressSources",
+            "targetBinding",
+            "targetPorts",
+        ):
             permissions.pop(key, None)
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
     value = ProviderManifest.model_validate(payload)

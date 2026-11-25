@@ -31,7 +31,7 @@ from typing import Any
 
 from aegis.common.ports import ContainerRunner, ContainerSpec, RunHandle, RunState
 from aegis.m06_runner import netpolicy
-from aegis.m06_runner.lab import LabJob, LabProfile
+from aegis.m06_runner.profile import DeploymentProfile, JobProfile
 
 PODMAN = os.environ.get("AEGIS_PODMAN") or shutil.which("podman") or "podman"
 ROLE_LABEL = "aegis.role"
@@ -131,10 +131,19 @@ class PodmanRunner(ContainerRunner):
     network_pool: str = "10.97.0.0/16"
     network_prefix: int = 24
     poll_seconds: float = 0.2
-    #: Deployment profile of the authorized lab (G1.5c); None means "never run on the lab".
-    lab: LabProfile | None = None
+    #: Deployment network profiles of this runner, keyed by kind (`lab`, `internet`). A profile is
+    #: off unless its file is configured, and a job only uses the profile its signed RoE names.
+    profiles: Mapping[str, DeploymentProfile] = field(default_factory=dict)
     _subnets: dict[str, str] = field(default_factory=dict, init=False)
     _images: dict[str, str] = field(default_factory=dict, init=False)
+
+    @property
+    def lab(self) -> DeploymentProfile | None:
+        return self.profiles.get("lab")
+
+    @property
+    def internet(self) -> DeploymentProfile | None:
+        return self.profiles.get("internet")
 
     # -- layout -----------------------------------------------------------------------------
 
@@ -175,11 +184,23 @@ class PodmanRunner(ContainerRunner):
             # Idempotent by job id: a restarted runner adopts the container instead of starting a
             # second one (a retry is a new attempt, not a second container for the same job).
             return RunHandle(job_id=spec.job_id, container_id=existing)
-        lab = self.lab_for(spec.image_digest)
-        network = self.lab.network if (lab is not None and self.lab is not None) else "none"
-        if lab is None and spec.network == "exec":
+        entry = self.profile_entry(spec.network_profile, spec.image_digest)
+        network = "none"
+        if spec.network_profile == "lab" and spec.network == "exec":
+            profile = self.lab
+            if entry is None or profile is None:
+                # Fail closed: a lab campaign never falls back to the broker/internet network.
+                raise RunnerError(
+                    f"campaign profile lab, but this runner has no lab profile entry for "
+                    f"{spec.image_digest}"
+                )
+            network = profile.network
+        elif spec.network == "exec":
             network = self._ensure_network(spec.job_id)
-        argv = self._run_argv(spec, layout, network, lab=lab)
+        if spec.network != "exec":
+            # No egress means no network at all; the profile contributes no endpoint data.
+            entry = None
+        argv = self._run_argv(spec, layout, network, entry=entry)
         try:
             started = _podman(*argv, timeout=120)
         except subprocess.CalledProcessError as failure:
@@ -192,9 +213,13 @@ class PodmanRunner(ContainerRunner):
         if not lines:
             raise RunnerError(f"podman run did not report a container id: {started.stderr.strip()}")
         container_id = lines[-1]
-        markers: dict[str, object] = {"job_id": spec.job_id, "spec": _spec_document(spec)}
-        if lab is not None and self.lab is not None:
-            markers["lab"] = {"network": self.lab.network, "args": list(lab.args)}
+        markers: dict[str, object] = {
+            "job_id": spec.job_id,
+            "network_profile": spec.network_profile,
+            "spec": _spec_document(spec),
+        }
+        if spec.network_profile == "lab" and entry is not None and self.lab is not None:
+            markers["lab"] = {"network": self.lab.network, "args": list(entry.args)}
         self._write_markers(spec.job_id, markers)
         return RunHandle(job_id=spec.job_id, container_id=container_id)
 
@@ -223,9 +248,15 @@ class PodmanRunner(ContainerRunner):
         self._images[image_digest] = image_digest
         return image_digest
 
-    def lab_for(self, image_digest: str) -> LabJob | None:
-        """The lab profile entry of a pinned image, or None (the runner then behaves as before)."""
-        return None if self.lab is None else self.lab.for_image(image_digest)
+    def profile_entry(self, kind: str, image_digest: str) -> JobProfile | None:
+        """The entry of the deployment profile `kind` for a pinned image, or None.
+
+        The kind comes from the campaign's signed `network_profile`; a job never picks a profile
+        from the environment, so an internet campaign cannot land on the lab network (or the other
+        way round) because of how one runner happens to be configured.
+        """
+        profile = self.profiles.get(kind)
+        return None if profile is None else profile.for_image(image_digest)
 
     def owned_jobs(self) -> tuple[str, ...]:
         """Job ids of this runner's containers (running, exited or created), sorted."""
@@ -404,6 +435,10 @@ class PodmanRunner(ContainerRunner):
             "/policy.json",
             "--audit",
             "/audit/egress.jsonl",
+            # Listen on the job network only: the broker also has a leg on the uplink, and a
+            # container on that (shared) network must not be able to use the job's proxy.
+            "--bind",
+            self.broker_ip(job_id),
         ]
         started = _podman(*argv, timeout=120)
         container_id = started.stdout.strip().splitlines()[-1]
@@ -517,7 +552,12 @@ class PodmanRunner(ContainerRunner):
     # -- internals --------------------------------------------------------------------------
 
     def _run_argv(
-        self, spec: ContainerSpec, layout: JobLayout, network: str, *, lab: LabJob | None = None
+        self,
+        spec: ContainerSpec,
+        layout: JobLayout,
+        network: str,
+        *,
+        entry: JobProfile | None = None,
     ) -> list[str]:
         argv = [
             "run",
@@ -559,11 +599,10 @@ class PodmanRunner(ContainerRunner):
             argv += ["--cap-add=NET_RAW"]
         # Never host network, never the Podman socket, never --privileged.
         argv += ["--network", network if network != "none" else "none"]
-        if lab is not None:
-            # The lab deployment profile: its network was passed in as `network`, and these are the
-            # endpoint data the lab needs (resolver flag, /etc/hosts, CA). Trusted deploy config,
-            # never a job input - see aegis.m06_runner.lab.
-            argv += lab.argv()
+        if entry is not None:
+            # The deployment profile of this job (lab endpoint data, or an internet provider
+            # config): trusted deploy config, never a job input - see aegis.m06_runner.profile.
+            argv += entry.argv()
         for key, value in self._egress_env(spec).items():
             argv += ["--env", f"{key}={value}"]
         argv += ["--mount", f"type=bind,src={layout.output},dst=/out,rw,Z"]
@@ -572,7 +611,7 @@ class PodmanRunner(ContainerRunner):
         argv += [
             self.image_reference(spec.image_digest),
             *spec.args,
-            *(lab.args if lab is not None else ()),
+            *(entry.args if entry is not None else ()),
         ]
         return argv
 

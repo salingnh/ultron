@@ -28,6 +28,23 @@ BEGIN
     RAISE EXCEPTION 'is_roe_policy_v2 rejected a policy without windows';
   END IF;
 
+  -- 1b. The network profile is a closed enum and the internet per-host connection cap is an int
+  --     in range; a snapshot that carries either in the wrong shape is not v2 configuration.
+  IF aegis.is_roe_policy_v2(plain || '{"network_profile":"internet"}'::jsonb) IS NOT TRUE
+     OR aegis.is_roe_policy_v2(plain || '{"network_profile":"lab"}'::jsonb) IS NOT TRUE THEN
+    RAISE EXCEPTION 'is_roe_policy_v2 rejected a valid network_profile';
+  END IF;
+  IF aegis.is_roe_policy_v2(plain || '{"network_profile":"dmz"}'::jsonb)
+     OR aegis.is_roe_policy_v2(plain || '{"network_profile":1}'::jsonb) THEN
+    RAISE EXCEPTION 'is_roe_policy_v2 accepted an unknown network_profile';
+  END IF;
+  IF aegis.is_roe_policy_v2(plain ||
+       '{"rate_limits":{"max_concurrent_connections_per_host":1}}'::jsonb) IS NOT TRUE
+     OR aegis.is_roe_policy_v2(plain ||
+       '{"rate_limits":{"max_concurrent_connections_per_host":0}}'::jsonb) THEN
+    RAISE EXCEPTION 'is_roe_policy_v2 mis-validated max_concurrent_connections_per_host';
+  END IF;
+
   INSERT INTO policy_snapshot VALUES ('roe-1200', camp, plain, repeat('e1',32),
                                       '{"kind":"operator","id":"shape-test"}');
   INSERT INTO scope_snapshot VALUES (scope, camp, '{"domains":["shape.example"]}');

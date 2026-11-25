@@ -1,0 +1,16 @@
+# Egress broker image of the internet profile (G1.6).
+#
+# It carries exactly the stdlib-only part of `aegis.m06_runner` the broker runs: the deny set, the
+# decision engine, the host caps and the broker itself. No contracts, no HTTP client, no package
+# index lookup: the same bytes the unit tests exercise.
+#
+# Build context is the repository root:
+#   podman build -f deploy/broker/Containerfile -t localhost/aegis-broker:g16 .
+#   make broker-image
+FROM docker.io/library/python@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+
+COPY src/aegis/__init__.py /app/aegis/__init__.py
+COPY src/aegis/m06_runner /app/aegis/m06_runner
+
+ENV PYTHONPATH=/app
+USER 65534:65534

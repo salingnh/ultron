@@ -69,6 +69,7 @@ def _plan(
     egress: bool = False,
     egress_sources: list[dict[str, Any]] | None = None,
     platform_cidrs: tuple[str, ...] = (),
+    target_bound_ip: str | None = None,
 ) -> JobPlan:
     manifest, raw = m06_support.probe_manifest(
         image,
@@ -76,30 +77,50 @@ def _plan(
         args_template=args_template,
         egress=egress,
         egress_sources=egress_sources,
+        target_bound=target_bound_ip is not None,
     )
-    values = input_values or {"targets": ["internal.example"], "max_results": 2}
-    if egress:
+    if target_bound_ip is not None:
+        values = input_values or {
+            "targets": [target_bound_ip],
+            "ports": [8080],
+            "max_results": 1,
+        }
         binding = {
             "mode": "broker",
-            "target_binding": "none",
-            "entries": [
-                f"{source['hosts'][0]}:{source['ports'][0]}" for source in egress_sources or []
-            ],
-            "target_addresses": [],
+            "target_binding": "required",
+            "entries": [f"{target_bound_ip}:8080"],
+            "target_addresses": [target_bound_ip],
         }
+        refs = [{"canonical_key": f"ip:{target_bound_ip}"}]
     else:
-        binding = {
-            "mode": "none",
-            "target_binding": "none",
-            "entries": [],
-            "target_addresses": [],
-        }
+        values = input_values or {"targets": ["internal.example"], "max_results": 2}
+        refs = [{"canonical_key": "dns:internal.example"}]
+        if egress:
+            binding = {
+                "mode": "broker",
+                "target_binding": "none",
+                "entries": [
+                    f"{source['hosts'][0]}:{source['ports'][0]}" for source in egress_sources or []
+                ],
+                "target_addresses": [],
+            }
+        else:
+            binding = {
+                "mode": "none",
+                "target_binding": "none",
+                "entries": [],
+                "target_addresses": [],
+            }
     task = m06_support.task_for_manifest(
         manifest,
         raw,
-        targets=[{"canonical_key": "dns:internal.example"}],
+        targets=refs,
         input=values,
         egress_binding=binding,
+        # An egress job on this test host runs on the internet profile (its own network plus the
+        # broker on the uplink); the lab profile is the G1.5c deployment and is covered by
+        # `tests/test_m06_profiles.py`.
+        network_profile="internet" if egress else "lab",
     )
     return JobPlan(
         job_id=job_id or envelopes.new_id(),
@@ -109,6 +130,8 @@ def _plan(
         manifest_bytes=raw,
         task_body=m06_support.body_of(task),
         platform_cidrs=platform_cidrs,
+        per_host_rps=5.0 if egress else None,
+        per_host_max_connections=2 if egress else None,
     )
 
 
@@ -453,9 +476,10 @@ def test_egress_job_reaches_only_its_broker(
             probe_image,
             job_id=job_id,
             egress=True,
-            egress_sources=[
-                {"id": "target", "hosts": [target_ip], "ports": [8080], "protocol": "http"}
-            ],
+            # The internet profile (G1.6): the broker egresses through the uplink and the job may
+            # reach exactly the address the campaign signed - a private lab-network address here,
+            # which is reachable because it is the task's target (`private - signed targets`).
+            target_bound_ip=target_ip,
             args_template=[
                 "python3",
                 "-m",
@@ -466,6 +490,8 @@ def test_egress_job_reaches_only_its_broker(
                 f"http://{target_ip}:8080/",
                 "--proxy-url",
                 "http://127.1/",
+                "--proxy-url",
+                "http://10.255.255.1:8080/",
             ],
         )
         job_runner = _job_runner(
@@ -480,8 +506,13 @@ def test_egress_job_reaches_only_its_broker(
         assert fetches[0]["status"] == 200
         assert fetches[1]["status"] == 403
         assert json.loads(fetches[1]["body"])["reason"] == "DENY_LOOPBACK"
-        reasons = {str(record["reason"]) for record in runner.audit_records(job_id)}
-        assert {"OK", "DENY_LOOPBACK"} <= reasons
+        # A private address the campaign did not sign is refused on the internet profile.
+        assert fetches[2]["status"] == 403
+        assert json.loads(fetches[2]["body"])["reason"] == "DENY_PRIVATE"
+        records = runner.audit_records(job_id)
+        reasons = {str(record["reason"]) for record in records}
+        assert {"OK", "DENY_LOOPBACK", "DENY_PRIVATE"} <= reasons
+        assert {str(record["network_profile"]) for record in records} == {"internet"}
         assert runner.list_jobs() == ()
         assert runner.layout(job_id).audit.joinpath("egress.jsonl").exists()
     finally:

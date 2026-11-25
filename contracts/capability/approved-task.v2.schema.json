@@ -10,6 +10,7 @@
     "campaign_id",
     "scope_id",
     "policy_version",
+    "network_profile",
     "capability",
     "provider",
     "provider_version",
@@ -45,6 +46,14 @@
     },
     "policy_version": {
       "$ref": "../common/ids.v2.schema.json#/$defs/PolicyVersion"
+    },
+    "network_profile": {
+      "description": "Profile mạng đã ký của job, lấy từ RoE của campaign lúc M05 duyệt: `lab` (mạng lab của deployment) hoặc `internet` (mạng riêng của job + broker L7 ra internet). M06 chỉ chạy job trên đúng profile này và từ chối khi deployment không cấu hình được profile đó; nhiệm vụ fail closed nên trường này bắt buộc, không suy diễn từ môi trường.",
+      "type": "string",
+      "enum": [
+        "lab",
+        "internet"
+      ]
     },
     "capability": {
       "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"

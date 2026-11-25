@@ -152,6 +152,7 @@ def create_campaign(
     )
 
     counts = _counts_by_array(seeds)
+    labels = body.get("labels") or {}
     record_audit(
         connection,
         actor=actor,
@@ -160,7 +161,16 @@ def create_campaign(
         campaign_id=campaign_id,
         policy_version=version,
         scope_id=scope_id,
-        details={"policy_version": version, "scope_id": scope_id, "targets": counts},
+        details={
+            "policy_version": version,
+            "scope_id": scope_id,
+            "targets": counts,
+            # The network profile is the campaign's declared scanning network (G1.6) and the
+            # authorization reference is the operator's statement that the targets are his; both
+            # belong to the immutable trail next to the RoE snapshot, not only to the row.
+            "network_profile": str((policy or {}).get("network_profile") or "internet"),
+            "authorization": str(labels.get("authorization", "")),
+        },
     )
     return CreatedCampaign(campaign_id, "CREATED", version, scope_id)
 

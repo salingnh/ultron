@@ -38,4 +38,15 @@ else
   log "lab: left as run-local found it (not started by it) - 'make lab-down' removes it"
 fi
 
+if [ -f "$STATE_DIR/uplink.started" ]; then
+  uplink=$(cat "$STATE_DIR/uplink.started")
+  if [ -n "$uplink" ] && podman network exists "$uplink" >/dev/null 2>&1; then
+    log "uplink: started by run-local - removing network $uplink"
+    podman network rm -f "$uplink" >/dev/null
+  fi
+  rm -f "$STATE_DIR/uplink.started"
+else
+  log "uplink: left as run-local found it (not created by it)"
+fi
+
 log "stop-local: done; tokens (.local/operator-token, .local/service-token) are kept (NEW_TOKEN=1 rotates)"

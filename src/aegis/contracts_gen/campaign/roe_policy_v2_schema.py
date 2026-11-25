@@ -3,9 +3,16 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field, RootModel, confloat, conint, constr
 
 from ..common import ids_v2_schema
+
+
+class NetworkProfile(StrEnum):
+    lab = "lab"
+    internet = "internet"
 
 
 class TargetDenylistItem(RootModel[constr(min_length=1)]):
@@ -17,6 +24,10 @@ class RateLimits(BaseModel):
         extra="forbid",
     )
     requests_per_second_per_host: confloat(le=1000.0, gt=0.0) | None = None
+    max_concurrent_connections_per_host: conint(ge=1, le=100) | None = Field(
+        None,
+        description="Trần số kết nối đồng thời broker giữ tới một host cho một job. Profile `internet` bắt buộc khai báo cùng `requests_per_second_per_host`; thiếu là POLICY_DENIED (không có trần thì không chạy ra internet).",
+    )
     packets_per_second: conint(ge=1, le=100000) | None = Field(
         None, description="Trần cho quét cổng (Naabu, Nmap)."
     )
@@ -40,6 +51,10 @@ class Budget(BaseModel):
 class RoePolicy(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+    )
+    network_profile: NetworkProfile | None = Field(
+        None,
+        description="Mạng job của chiến dịch chạy trên đó. `internet`: container của job chỉ tới được broker L7 của nó, broker ra internet và ép tập luôn chặn, tập địa chỉ đã ký và trần tốc độ/đồng thời theo host. `lab`: mạng lab nội bộ của deployment (không có đường ra internet). Chiến dịch của người vận hành mặc định `internet`; demo/CI đặt `lab` tường minh.",
     )
     target_denylist: list[TargetDenylistItem] | None = Field(
         None,

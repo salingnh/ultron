@@ -73,6 +73,12 @@ class Egress(unittest.TestCase):
         permissions = target_bound["spec"]["permissions"]
         self.assertEqual(permissions["targetBinding"], "required")
         self.assertEqual(permissions["targetPorts"], "from_input")
+        # G1.6 caps a port scan's list by the pinned input schema (`network/discover-services/v2`
+        # `ports.maxItems`), not by a second manifest field: the manifest already pins that schema.
+        discover = json.loads(
+            (ROOT / "capabilities/network/discover-services.v2.schema.json").read_text()
+        )
+        self.assertEqual(discover["properties"]["ports"]["maxItems"], 1000)
         # Target-bound without the from_input port rule: the broker would not know which ports to open.
         missing_ports = copy.deepcopy(target_bound)
         del missing_ports["spec"]["permissions"]["targetPorts"]

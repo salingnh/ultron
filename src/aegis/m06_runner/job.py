@@ -76,6 +76,14 @@ class JobPlan:
     task_body: Mapping[str, Any] | None = None
     target_denylist: tuple[str, ...] = ()
     platform_cidrs: tuple[str, ...] = ()
+    #: The campaign's RoE safety caps, read from the snapshot the task was signed against. The
+    #: internet profile refuses a job without both (see `specs.build_policy`); a lab job ignores
+    #: them because it never uses the broker.
+    per_host_rps: float | None = None
+    per_host_max_connections: int | None = None
+    #: The campaign's authorization reference for the targets (operator-owned text), carried into
+    #: every egress audit line of the job.
+    authorization: str = ""
     classification: Classification = Classification.INTERNAL
 
 
@@ -136,14 +144,27 @@ class JobRunner:
     def prepare(self, plan: JobPlan) -> tuple[Any, Any]:
         """The spec and egress policy of the job, before any container exists.
 
-        A job whose pinned image has a lab profile entry (G1.5c) runs on the authorized lab network
-        instead of its own per-job network, so it gets no broker proxy and no job network is
-        created; the egress policy is still built and checked (E-1) so the task's binding is
-        verified exactly as for any other job.
+        The signed `network_profile` decides the network: `lab` attaches the container to the
+        authorized lab network (the deployment must have an entry for the pinned image, else the job
+        is refused - it never falls back to the internet), `internet` gives it its own per-job
+        network whose only peer is the broker and needs a configured broker image plus an uplink.
+        The egress policy is built and checked (E-1) either way.
         """
         body = _task_body(plan)
-        lab = self.runner.lab_for(text(plan.task.image_digest))
-        if lab is None:
+        profile = str(plan.task.network_profile)
+        # A provider without networkAccess has no network at all: the profile contributes nothing.
+        egress = plan.manifest.spec.permissions.networkAccess == "egress"
+        entry = self.runner.profile_entry(profile, text(plan.task.image_digest)) if egress else None
+        if egress and profile == "lab" and entry is None:
+            raise specs.SpecError(
+                "POLICY_DENIED",
+                f"campaign profile lab, but this runner has no lab profile entry for "
+                f"{text(plan.task.image_digest)}",
+            )
+        if profile == "internet":
+            # A lab entry for this image is deliberately ignored: the campaign signed `internet`.
+            entry = None
+        if egress and entry is None:
             self.runner.ensure_network(plan.job_id)
         try:
             policy = specs.build_policy(
@@ -155,10 +176,26 @@ class JobRunner:
                 key_ring=self.key_ring,
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
+                authorization=plan.authorization,
+                per_host_rps=plan.per_host_rps,
+                per_host_max_connections=plan.per_host_max_connections,
             )
+            if policy.mode == "egress" and entry is None:
+                if not self.runner.broker_image:
+                    raise specs.SpecError(
+                        "DEPENDENCY_MISSING",
+                        "an internet job needs the pinned broker image "
+                        "(AEGIS_M06_BROKER_IMAGE) on this runner",
+                    )
+                if not self.runner.uplink_network:
+                    raise specs.SpecError(
+                        "DEPENDENCY_MISSING",
+                        "an internet job needs the broker's uplink network "
+                        "(the internet profile's `network`)",
+                    )
             proxy = (
                 self.runner.broker_proxy(plan.job_id)
-                if policy.mode == "egress" and lab is None
+                if policy.mode == "egress" and entry is None
                 else None
             )
             spec = specs.build_spec(
@@ -172,12 +209,50 @@ class JobRunner:
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
                 manifest_bytes=plan.manifest_bytes,
-                lab_network=lab is not None,
+                authorization=plan.authorization,
+                per_host_rps=plan.per_host_rps,
+                per_host_max_connections=plan.per_host_max_connections,
             )
         except Exception:
             self.runner.discard(plan.job_id)
             raise
         return spec, policy
+
+    def reject(self, job_id: str, code: str, detail: str) -> JobOutcome:
+        """Terminalize a job M06 refuses before a plan exists, with the contract's error code.
+
+        A job whose row cannot be planned (it never came through M05, its pinned manifest is not
+        registered, its signed policy snapshot is gone) is a definite refusal: claiming it and
+        recording the terminal result is the only honest outcome. Leaving it `VALIDATING` would
+        retry the same impossible plan on every tick (G1.6 review, proposal 5).
+        """
+        outcome = JobOutcome(
+            job_id=job_id,
+            status="failed",
+            errors=[
+                envelopes.error_object(
+                    code,
+                    detail,
+                    next_action="CHECK_PROVIDER" if code == "DEPENDENCY_MISSING" else "FIX_INPUT",
+                )
+            ],
+            error=f"{code}: {detail}",
+        )
+        if self.lifecycle is None:
+            return JobOutcome(
+                job_id=job_id,
+                status="skipped",
+                error=f"{code}: {detail} (no lifecycle attached; nothing recorded)",
+            )
+        claim = self.lifecycle.claim(job_id)
+        if claim is None:
+            return JobOutcome(
+                job_id=job_id,
+                status="skipped",
+                error=f"{code}: the job is no longer M06's to reject",
+            )
+        self._terminalize(claim, outcome)
+        return outcome
 
     def execute(self, plan: JobPlan, *, cancel: Callable[[], bool] | None = None) -> JobOutcome:
         body = _task_body(plan)
@@ -279,10 +354,7 @@ class JobRunner:
             layout = self.runner.layout(plan.job_id).create()
             self._write_inputs(layout.input, plan.input)
             try:
-                if (
-                    policy.mode == "egress"
-                    and self.runner.lab_for(text(plan.task.image_digest)) is None
-                ):
+                if policy.mode == "egress" and spec.network_profile == "internet":
                     self.runner.start_broker(plan.job_id, policy)
                 started_at = envelopes.now_timestamp()
                 handle = self.runner.run(spec)

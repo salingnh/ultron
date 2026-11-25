@@ -120,7 +120,7 @@ def test_input_targets_must_match_the_task_refs() -> None:
     spec.recheck_targets(task, {"targets": ["internal.example"]})
     with pytest.raises(SpecError) as caught:
         spec.recheck_targets(task, {"targets": ["internal.example", "other.example"]})
-    assert caught.value.code == "TARGET_REFS_MISMATCH"
+    assert caught.value.code == "POLICY_DENIED"
 
 
 def test_canonical_key_target_must_be_in_the_task_refs() -> None:
@@ -131,7 +131,7 @@ def test_canonical_key_target_must_be_in_the_task_refs() -> None:
     spec.recheck_targets(task, {"targets": ["internal.example"]})
     with pytest.raises(SpecError) as caught:
         spec.recheck_targets(task, {"targets": ["other.example"]})
-    assert caught.value.code == "TARGET_REFS_MISMATCH"
+    assert caught.value.code == "POLICY_DENIED"
 
 
 def test_duplicate_and_invalid_targets_are_refused() -> None:
@@ -150,10 +150,15 @@ def test_no_input_targets_means_nothing_to_recheck() -> None:
 
 
 def _build(manifest: ProviderManifest, raw: bytes, **kwargs: Any) -> Any:
-    task = m06_support.task_for_manifest(manifest, raw, **kwargs.pop("task", {}))
+    # The job-flow tests model an internet job (broker + uplink) unless a test says otherwise;
+    # the internet profile needs the RoE caps, so the helper supplies test caps.
+    task_overrides = {"network_profile": "internet", **kwargs.pop("task", {})}
+    task = m06_support.task_for_manifest(manifest, raw, **task_overrides)
     values = kwargs.pop("input", _input())
     platform = kwargs.pop("platform_cidrs", ("10.88.0.0/16",))
     denylist = kwargs.pop("target_denylist", ())
+    kwargs.setdefault("per_host_rps", 5.0)
+    kwargs.setdefault("per_host_max_connections", 2)
     return spec.build_spec(
         task,
         manifest,
@@ -583,3 +588,121 @@ def test_policy_contract_shape_stays_json() -> None:
     policy = netpolicy.JobEgressPolicy(job_id="job-1")
     document: Mapping[str, Any] = netpolicy.policy_document(policy)
     assert json.loads(json.dumps(document))["job_id"] == "job-1"
+
+
+# --- network profiles (G1.6) ------------------------------------------------------------------
+
+
+def test_the_internet_profile_needs_the_roe_safety_caps() -> None:
+    manifest, raw = _manifest()
+    task = m06_support.task_for_manifest(manifest, raw, network_profile="internet")
+    with pytest.raises(SpecError, match="rate_limits") as caught:
+        spec.build_policy(
+            task,
+            manifest,
+            _input(),
+            job_id="job-1",
+            task_body=m06_support.body_of(task),
+            key_ring=m06_support.DEV_RING,
+        )
+    assert caught.value.code == "POLICY_DENIED"
+
+
+def test_the_internet_profile_denies_private_ranges_except_signed_targets() -> None:
+    manifest, raw = _manifest()
+    task = m06_support.task_for_manifest(manifest, raw, network_profile="internet")
+    policy = spec.build_policy(
+        task,
+        manifest,
+        _input(),
+        job_id="job-1",
+        task_body=m06_support.body_of(task),
+        key_ring=m06_support.DEV_RING,
+        per_host_rps=0.5,
+        per_host_max_connections=1,
+    )
+    assert policy.profile == "internet"
+    assert ipaddress.ip_network("10.0.0.0/8") in policy.private_cidrs
+    assert policy.per_host_rps == 0.5
+    assert policy.per_host_max_connections == 1
+    # A declared source that resolves into the host's own private network is refused on the
+    # internet profile (no signed target covers it) and allowed on the lab profile.
+    resolver = _StubResolver({"crt.sh": ["10.0.0.9"]})
+    assert (
+        netpolicy.decide(policy, "crt.sh", 443, resolver=resolver).reason
+        is netpolicy.Reason.DENY_PRIVATE
+    )
+    lab_task = m06_support.task_for_manifest(manifest, raw, network_profile="lab")
+    lab_policy = spec.build_policy(
+        lab_task,
+        manifest,
+        _input(),
+        job_id="job-1",
+        task_body=m06_support.body_of(lab_task),
+        key_ring=m06_support.DEV_RING,
+        resolver=resolver,
+    )
+    assert lab_policy.private_cidrs == ()
+    assert netpolicy.decide(lab_policy, "crt.sh", 443, resolver=resolver).allowed
+
+
+def test_the_lab_profile_needs_no_caps_and_has_no_proxy() -> None:
+    manifest, raw = _manifest()
+    built = _build(manifest, raw, task={"network_profile": "lab"})
+    assert built.network_profile == "lab"
+    assert built.egress_proxy is None
+    assert built.network == "exec"
+
+
+def test_the_spec_carries_the_signed_profile() -> None:
+    manifest, raw = _manifest()
+    built = _build(manifest, raw)
+    assert built.network_profile == "internet"
+
+
+def test_the_port_list_is_capped_by_the_pinned_input_schema() -> None:
+    manifest, raw = m06_support.target_bound_manifest()
+    # `network/discover-services/v2` (pinned by the manifest's inputSchemaRef, and the manifest
+    # bytes by manifest_sha256) states maxItems 1000 for `ports`: a job cannot widen the scan.
+    discover = spec.load_input_schema("schema://network/discover-services/v2")
+    cap = discover["properties"]["ports"]["maxItems"]
+    ports = list(range(1, cap + 2))
+    task = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        capability="network.discover_services",
+        network_profile="internet",
+        targets=[{"canonical_key": "ip:10.1.2.3"}],
+        egress_binding=_binding(["10.1.2.3:80"], ["10.1.2.3"]),
+    )
+    with pytest.raises(SpecError, match=f"caps it at {cap}") as caught:
+        spec.build_spec(
+            task,
+            manifest,
+            # The pinned Naabu argv renders the scan rate too; the port cap is what this test is
+            # about, and it is checked before any binding/argv work can pass.
+            {"targets": ["ip:10.1.2.3"], "ports": ports, "packets_per_second": 100},
+            job_id="job-1",
+            task_body=m06_support.body_of(task),
+            key_ring=m06_support.DEV_RING,
+            broker_proxy="http://10.97.0.2:3128",
+            manifest_bytes=raw,
+            per_host_rps=0.5,
+            per_host_max_connections=1,
+        )
+    assert caught.value.code == "POLICY_DENIED"
+
+
+def _manifest_of(manifest: Any, edit: Any) -> tuple[Any, bytes]:
+    payload = json.loads(manifest.model_dump_json(exclude_none=True))
+    edit(payload)
+    raw = json.dumps(payload, sort_keys=True).encode("utf-8")
+    return ProviderManifest.model_validate(payload), raw
+
+
+class _StubResolver(netpolicy.Resolver):
+    def __init__(self, answers: dict[str, list[str]]) -> None:
+        self.answers = answers
+
+    def resolve(self, host: str) -> list[str]:
+        return list(self.answers.get(host, []))
