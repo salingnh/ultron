@@ -14,7 +14,8 @@ What it does, in the order an operator would:
 4. The running projector (M23) draws `(service)-[:AFFECTED_BY]->(:Vulnerability)` with the CVSS,
    KEV and EPSS values of the pinned intel; the demo waits for the edge instead of writing it.
 5. `GET /assets/{asset_id}/vulnerabilities` returns the same candidates to the operator, validated
-   against the contract.
+   against the contract. The service table carries CVE-2021-41773 (httpd 2.4.49) and CVE-2020-1938
+   (Tomcat 9.0.30, read from its error page body); the AJP port 8009 stays product-less.
 6. Every claim is checked against PostgreSQL and Neo4j and written to `.local/demo/`.
 
 The product/version/CPE row is the dedicated fingerprinter's (slice B): the port scan reports a
@@ -357,6 +358,24 @@ def _check(evidence: dict[str, Any], assets: dict[str, str]) -> None:
     support.require(
         "CVE-2021-41773" in service_candidates,
         "the Apache httpd 2.4.49 service (httpd.lab.aegis.test) has no CVE-2021-41773 candidate",
+    )
+    # Tomcat 9.0.30 prints `Apache Tomcat/9.0.30` in its 404 page body; web.probe_http reads that
+    # body and matches the versioned CPE against NVD's 9.0.0-<9.0.31 Ghostcat range. The AJP port
+    # 8009 has no product: no provider in the chain identifies AJP, so the candidate attaches to the
+    # HTTP service, not to the port (see the G1.6b report).
+    tomcat = {
+        item["vulnerability_id"]
+        for item in candidates
+        if item["canonical_key"] == "service:10.114.53.212:8080/tcp"
+    }
+    support.require(
+        "CVE-2020-1938" in tomcat,
+        "the Tomcat 9.0.30 HTTP service has no CVE-2020-1938 (Ghostcat) candidate; "
+        f"candidates for that service: {sorted(tomcat)}",
+    )
+    support.require(
+        any(item["kev"] for item in candidates if item["vulnerability_id"] == "CVE-2020-1938"),
+        "the CVE-2020-1938 candidate does not carry the KEV flag",
     )
     kev = [item for item in candidates if item["kev"]]
     support.require(kev, "no candidate carries a KEV flag")

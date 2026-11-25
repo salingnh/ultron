@@ -269,7 +269,7 @@
       "cves": [
         "CVE-2020-1938"
       ],
-      "note": "Tomcat: AJP 8009 is open as well; the discovery step only asks for the ports in input",
+      "note": "Tomcat: AJP 8009 is open as well; the discovery step only asks for the ports in input. The 404 page prints `Apache Tomcat/9.0.30` in its body, which web.probe_http reads; the AJP port has no provider that identifies it (fingerprintx v1.1.19 has no AJP plugin), so it stays a service with a port state and no product.",
       "fingerprint": {
         "protocols": {
           "8080": "http"
@@ -278,6 +278,14 @@
       },
       "http_status": {
         "8080": 404
+      },
+      "http_product": {
+        "8080": {
+          "status": 404,
+          "product": "tomcat",
+          "version": "9.0.30",
+          "cpe": "cpe:2.3:a:apache:tomcat:9.0.30:*:*:*:*:*:*:*"
+        }
       }
     },
     {
@@ -312,7 +320,7 @@
       "cves": [
         "CVE-2022-0543"
       ],
-      "note": "Redis: no auth on the internal network, RDB/AOF disabled",
+      "note": "Redis: no auth on the internal network, RDB/AOF disabled. The origin prints `redis_version:6.0.5` for an unauthenticated `INFO server`, but fingerprintx v1.1.19 sends PING only (no INFO, no version), so the chain records protocol `redis` and no product. CVE-2022-0543 is deliberately not expected from a generic redis version: it is a Debian/Ubuntu packaging flaw (Lua sandbox escape in the distro package), not an upstream-Redis version range; when a released fingerprintx extracts INFO, expect upstream-range CVEs instead (e.g. CVE-2021-32626 family).",
       "fingerprint": {
         "protocols": {
           "6379": "redis"

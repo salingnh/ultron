@@ -2,9 +2,9 @@
   "assets": [
     {
       "kind": "application",
-      "canonical_key": "app:http://10.114.53.211:80",
+      "canonical_key": "app:http://10.114.53.215:80",
       "discovered_from": [
-        "service:10.114.53.211:80/tcp"
+        "service:10.114.53.215:80/tcp"
       ],
       "confidence": 1.0,
       "evidence_refs": [
@@ -15,9 +15,9 @@
     },
     {
       "kind": "application",
-      "canonical_key": "app:http://10.114.53.215:80",
+      "canonical_key": "app:http://10.114.53.211:80",
       "discovered_from": [
-        "service:10.114.53.215:80/tcp"
+        "service:10.114.53.211:80/tcp"
       ],
       "confidence": 1.0,
       "evidence_refs": [
@@ -55,61 +55,6 @@
   ],
   "observations": [
     {
-      "subject": "app:http://10.114.53.211:80",
-      "predicate": "http.status",
-      "value": 200,
-      "confidence": 1.0,
-      "evidence_refs": [
-        {
-          "local_ref": "raw"
-        }
-      ]
-    },
-    {
-      "subject": "app:http://10.114.53.211:80",
-      "predicate": "http.headers",
-      "value": {
-        "content_length": "35",
-        "content_type": "text/plain",
-        "date": "Wed, 25 Nov 2026 02:39:03 GMT",
-        "server": "nginx/1.18.0"
-      },
-      "confidence": 1.0,
-      "evidence_refs": [
-        {
-          "local_ref": "raw"
-        }
-      ]
-    },
-    {
-      "subject": "app:http://10.114.53.211:80",
-      "predicate": "http.technology",
-      "value": [
-        "nginx:1.18.0"
-      ],
-      "confidence": 1.0,
-      "evidence_refs": [
-        {
-          "local_ref": "raw"
-        }
-      ]
-    },
-    {
-      "subject": "service:10.114.53.211:80/tcp",
-      "predicate": "service.product",
-      "value": {
-        "product": "nginx",
-        "version": "1.18.0",
-        "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
-      },
-      "confidence": 0.8,
-      "evidence_refs": [
-        {
-          "local_ref": "raw"
-        }
-      ]
-    },
-    {
       "subject": "app:http://10.114.53.215:80",
       "predicate": "http.status",
       "value": 200,
@@ -127,7 +72,7 @@
         "accept_ranges": "bytes",
         "content_length": "45",
         "content_type": "text/html",
-        "date": "Wed, 25 Nov 2026 02:39:03 GMT",
+        "date": "Wed, 25 Nov 2026 09:43:59 GMT",
         "etag": "\"2d-432a5e4a73a80\"",
         "last_modified": "Mon, 11 Jun 2007 18:53:14 GMT",
         "server": "Apache/2.4.49 (Unix)"
@@ -169,6 +114,61 @@
       ]
     },
     {
+      "subject": "app:http://10.114.53.211:80",
+      "predicate": "http.status",
+      "value": 200,
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "app:http://10.114.53.211:80",
+      "predicate": "http.headers",
+      "value": {
+        "content_length": "35",
+        "content_type": "text/plain",
+        "date": "Wed, 25 Nov 2026 09:43:59 GMT",
+        "server": "nginx/1.18.0"
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "app:http://10.114.53.211:80",
+      "predicate": "http.technology",
+      "value": [
+        "nginx:1.18.0"
+      ],
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:80/tcp",
+      "predicate": "service.product",
+      "value": {
+        "product": "nginx",
+        "version": "1.18.0",
+        "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+      },
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
       "subject": "app:https://10.114.53.211:443",
       "predicate": "http.status",
       "value": 200,
@@ -185,7 +185,7 @@
       "value": {
         "content_length": "34",
         "content_type": "text/plain",
-        "date": "Wed, 25 Nov 2026 02:39:03 GMT",
+        "date": "Wed, 25 Nov 2026 09:43:59 GMT",
         "server": "nginx/1.18.0"
       },
       "confidence": 1.0,
@@ -272,9 +272,24 @@
         "content_language": "en",
         "content_length": "713",
         "content_type": "text/html;charset=utf-8",
-        "date": "Wed, 25 Nov 2026 02:39:03 GMT"
+        "date": "Wed, 25 Nov 2026 09:43:59 GMT"
       },
       "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8080/tcp",
+      "predicate": "service.product",
+      "value": {
+        "product": "tomcat",
+        "version": "9.0.30",
+        "cpe": "cpe:2.3:a:apache:tomcat:9.0.30:*:*:*:*:*:*:*"
+      },
+      "confidence": 0.8,
       "evidence_refs": [
         {
           "local_ref": "raw"
@@ -285,8 +300,8 @@
   "relationships": [
     {
       "type": "SERVES",
-      "from": "service:10.114.53.211:80/tcp",
-      "to": "app:http://10.114.53.211:80",
+      "from": "service:10.114.53.215:80/tcp",
+      "to": "app:http://10.114.53.215:80",
       "confidence": 1.0,
       "evidence_refs": [
         {
@@ -296,8 +311,8 @@
     },
     {
       "type": "SERVES",
-      "from": "service:10.114.53.215:80/tcp",
-      "to": "app:http://10.114.53.215:80",
+      "from": "service:10.114.53.211:80/tcp",
+      "to": "app:http://10.114.53.211:80",
       "confidence": 1.0,
       "evidence_refs": [
         {

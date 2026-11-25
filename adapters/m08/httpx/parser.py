@@ -28,13 +28,15 @@ Mapping (the manifest's `emits` block):
     entries, each `<name>` or `<name>:<version>` with the name lowercased and the version
     normalised), `tls.certificate` (`{subject_cn, sans[], issuer, not_before, not_after, sha256}`)
     on the application;
-  * `service.product` (`{product, version, cpe}`) on the service, from two documented sources: a
-    CPE the tool produced *with a concrete version* (the HTTP server product fingerprintx may not
-    have identified), else a technology `-tech-detect` named with a version (`jenkins:2.138`) that
-    `TECHNOLOGY_CPES` maps to its NVD `(vendor, product)`, else a product the response itself prints
-    (the page title `Apache Tomcat/8.5.19`, the header `X-Jenkins: 2.138`). A versionless CPE, an
-    unmapped technology and an unrelated title are not evidence: then no product observation is
-    emitted.
+  * `service.product` (`{product, version, cpe}`) on the service, from the sources the response
+    actually gives, in this order: a CPE the tool produced *with a concrete version*; the tool's own
+    versionless CPE (`apache:tomcat:*`, from its fingerprint) filled with a version the response
+    prints (page body or title, `Apache Tomcat/9.0.30`, or the header `X-Jenkins: 2.138`); a
+    technology `-tech-detect` named with a version (`jenkins:2.138`) that `TECHNOLOGY_CPES` maps to
+    its NVD `(vendor, product)`; finally a `PRODUCT_SIGNALS` match with the reviewed vendor table. A
+    versionless CPE with no printed version, an unmapped technology and an unrelated title are not
+    evidence: then no product observation is emitted. `-irr` carries the response body so the body
+    can be read for exactly the markers listed in `PRODUCT_SIGNALS`.
 
 `service.protocol` is deliberately not emitted here: fingerprintx owns that claim for the chain,
 and two producers with different strings would turn one service into a contradiction.
@@ -88,6 +90,14 @@ PRODUCT_SIGNALS: tuple[tuple[str, re.Pattern[str], str, str], ...] = (
     ),
     (
         "title",
+        re.compile(r"Apache\s+Tomcat/(?P<version>[0-9][0-9A-Za-z._~-]*)", re.IGNORECASE),
+        "apache",
+        "tomcat",
+    ),
+    (
+        # Tomcat's error/status page ends with `<h3>Apache Tomcat/9.0.30</h3>`; the page body is
+        # only present with `-irr`, which this manifest passes.
+        "body",
         re.compile(r"Apache\s+Tomcat/(?P<version>[0-9][0-9A-Za-z._~-]*)", re.IGNORECASE),
         "apache",
         "tomcat",
@@ -377,7 +387,55 @@ def _product(record: dict[str, Any]) -> dict[str, Any] | None:
             "version": normalised,
             "cpe": ":".join(parts[:13]),
         }
+    printed = _printed_versions(record)
+    if raw:
+        for entry in raw if isinstance(raw, list) else []:
+            parts = str(entry.get("cpe") if isinstance(entry, dict) else "").strip().split(":")
+            if len(parts) < 13 or parts[0] != "cpe" or parts[1] != "2.3":
+                continue
+            vendor, product = parts[3], parts[4]
+            if not _CPE_PART.match(vendor) or not _CPE_PART.match(product):
+                continue
+            printed_version = printed.get(product)
+            if printed_version is None:
+                continue
+            return {
+                "product": product,
+                "version": printed_version,
+                "cpe": f"cpe:2.3:a:{vendor}:{product}:{printed_version}:*:*:*:*:*:*:*",
+            }
     return _product_from_technology(record)
+
+
+def _printed_versions(record: dict[str, Any]) -> dict[str, str]:
+    """Versions the response prints, keyed by the NVD product they belong to."""
+    found: dict[str, str] = {}
+    for _source, pattern, _vendor, product in PRODUCT_SIGNALS:
+        for text in _signal_texts(record, _source):
+            match = pattern.search(text)
+            if match is None:
+                continue
+            version = _normalise_version(match.group("version"))
+            if version is not None:
+                found.setdefault(product, version)
+    for entry in _technologies(record):
+        name, _, version = entry.partition(":")
+        mapped = TECHNOLOGY_CPES.get(name)
+        if version and mapped is not None:
+            found.setdefault(mapped[1], version)
+    return found
+
+
+def _signal_texts(record: dict[str, Any], source: str) -> list[str]:
+    if source in {"title", "body"}:
+        raw = record.get(source)
+    else:
+        headers = record.get("header")
+        raw = headers.get(source.split(":", 1)[1]) if isinstance(headers, dict) else None
+        if isinstance(headers, dict):
+            raw = {str(k).lower(): v for k, v in headers.items()}.get(source.split(":", 1)[1])
+    text = _join_header(raw)
+    return [text] if text else []
 
 
 def _product_from_technology(record: dict[str, Any]) -> dict[str, Any] | None:
@@ -405,7 +463,10 @@ def _product_from_response(record: dict[str, Any]) -> dict[str, Any] | None:
         else {}
     )
     for source, pattern, vendor, product in PRODUCT_SIGNALS:
-        raw = record.get("title") if source == "title" else header_map.get(source.split(":", 1)[1])
+        if source in {"title", "body"}:
+            raw = record.get(source)
+        else:
+            raw = header_map.get(source.split(":", 1)[1])
         text = _join_header(raw)
         if text is None:
             continue

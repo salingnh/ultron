@@ -4,7 +4,7 @@
   "tool_version": "v1.12.0",
   "adapter_version": "1.0.0",
   "image_digest": "sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc",
-  "lab_run": "make lab-httpx (deploy/lab/.run/runs/httpx-20261125T023900Z)",
+  "lab_run": "make lab-httpx (deploy/lab/.run/runs/httpx-20261125T094357Z)",
   "lab_run_at": "2026-11-25T02:38:00Z",
   "lab_network": "aegis-lab-lab",
   "command": "-l /in/targets.txt -json -silent -o /out/result.jsonl -tech-detect -cpe -tls-grab -irh -threads 4 -timeout 10 -no-color",
@@ -25,8 +25,8 @@
   },
   "raw": {
     "file": "result.jsonl",
-    "sha256": "c9699fd3e6f900ed0719cd45187de1664090795fd7c0597285646f4402716bad",
-    "size_bytes": 3161
+    "sha256": "893ac67c1e232c592bf91906a6182dc38b33620b022b8800717edd94b11a5793",
+    "size_bytes": 6103
   },
   "expected": "expected.json",
   "cross_check": {

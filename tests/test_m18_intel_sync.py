@@ -60,10 +60,10 @@ def test_a_sync_stores_the_bytes_once_and_writes_nothing_on_the_second_run(
     connection: psycopg.Connection[Any], dsn: str
 ) -> None:
     reports, store = fixtures.seed_intel(dsn)
-    assert reports["nvd"].records == 3
-    assert reports["nvd"].written == 3
-    assert reports["kev"].written == 2
-    assert reports["epss"].written == 3
+    assert reports["nvd"].records == 4  # the G1.6b slice adds CVE-2020-1938
+    assert reports["nvd"].written == 4
+    assert reports["kev"].written == 3
+    assert reports["epss"].written == 4
     assert all(report.event_published for report in reports.values())
     # Content-addressed key, the exact bytes, and the sha256 the row records.
     keys = sorted(store.objects)
@@ -73,7 +73,7 @@ def test_a_sync_stores_the_bytes_once_and_writes_nothing_on_the_second_run(
 
     again, _ = fixtures.seed_intel(dsn, store=store)
     assert [report.written for report in again.values()] == [0, 0, 0]
-    assert [report.unchanged for report in again.values()] == [3, 2, 3]
+    assert [report.unchanged for report in again.values()] == [4, 3, 4]
     assert not any(report.event_published for report in again.values())
     assert [row["feed"] for row in _snapshots(connection)] == ["epss", "kev", "nvd"]
     assert len(store.objects) == len(keys)
@@ -92,6 +92,7 @@ def test_an_event_carries_the_impacted_ids_and_the_change_kind(
     assert {event["producer"] for event in events} == {"M18"}
     nvd_payload = events[0]["payload"]
     assert sorted(nvd_payload["impacted_ids"]) == [
+        "CVE-2020-1938",
         "CVE-2021-23017",
         "CVE-2021-41773",
         "CVE-2022-22965",
@@ -136,7 +137,7 @@ def test_a_changed_record_is_a_new_revision_and_a_new_delta(
     )
     assert report.created_snapshot is True
     assert report.written == 1
-    assert report.unchanged == 2
+    assert report.unchanged == 3
     assert report.change_kinds == ("affected_range_changed",)
     event = fixtures.events(connection, "intel.revision.v2")[-1]
     assert event["payload"]["impacted_ids"] == ["CVE-2021-23017"]

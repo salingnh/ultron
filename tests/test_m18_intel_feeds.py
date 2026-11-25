@@ -22,6 +22,9 @@ def test_nvd_slice_parses_every_cve_with_cvss_and_cpe_ranges() -> None:
         "CVE-2021-41773",
         "CVE-2021-23017",
         "CVE-2022-22965",
+        # G1.6b detection-gap slice: the real CVE-2020-1938 (Ghostcat) record, needed because the
+        # lab's Tomcat 9.0.30 is now identified and must match NVD's 9.0.0-<9.0.31 range.
+        "CVE-2020-1938",
     ]
     apache = records[0]
     assert apache.cvss == {
@@ -69,6 +72,7 @@ def test_kev_slice_is_a_boolean_catalogue_with_due_dates() -> None:
     assert [record.vulnerability_id for record in records] == [
         "CVE-2021-41773",
         "CVE-2022-22965",
+        "CVE-2020-1938",
     ]
     log4j = records[0].kev
     assert log4j is not None
