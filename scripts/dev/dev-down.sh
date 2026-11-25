@@ -14,6 +14,10 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 load_env
 
+# Removing a stack is as destructive as starting one: only this checkout's own project is removed
+# (AEGIS_STACK_FORCE=1 for a stack known to be disposable, scripts/lib/stack.sh).
+require_dev_stack_ownership
+
 log "compose project $DEV_PROJECT: stopping and removing its containers and volumes"
 compose down --volumes --remove-orphans --timeout 30
 
@@ -27,4 +31,5 @@ if [ -n "$leftovers" ]; then
   die "compose project $DEV_PROJECT left resources behind (listed above)"
 fi
 
+rm -f "$STACK_IDENTITY"
 log "compose project $DEV_PROJECT: removed; nothing outside the project was touched"

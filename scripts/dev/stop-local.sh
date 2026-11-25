@@ -13,7 +13,6 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 require_cmd podman
-STATE_DIR="$REPO_ROOT/.local"
 
 stop_bg m06 "aegis.m06_runner"
 stop_bg m23 "aegis.m23_graph"
@@ -23,6 +22,12 @@ stop_bg mcp "aegis.m05_registry.mcp"
 "$DEV_DIR/stop-api.sh"
 
 if [ -f "$STATE_DIR/stack.started" ]; then
+  if [ "$(stack_verdict "$DEV_PROJECT" "$REPO_ROOT/deploy/dev" "$COMPOSE_FILE" \
+    "$(dev_stack_fingerprint)" "$STACK_IDENTITY")" != "ours" ]; then
+    log "dev stack: not this checkout's any more - left in place (dev-down refuses to remove it)"
+    rm -f "$STATE_DIR/stack.started"
+    return 0 2>/dev/null || exit 0
+  fi
   log "dev stack: started by run-local - removing compose project $DEV_PROJECT"
   make --no-print-directory -C "$REPO_ROOT" dev-down
   rm -f "$STATE_DIR/stack.started"
@@ -31,6 +36,15 @@ else
 fi
 
 if [ -f "$STATE_DIR/lab.started" ]; then
+  if [ "$(stack_verdict "$LAB_PROJECT" "$REPO_ROOT/deploy/lab" \
+    "$REPO_ROOT/deploy/lab/compose.yaml" \
+    "$(stack_config_fingerprint "$REPO_ROOT/deploy/lab/compose.yaml" \
+      "$REPO_ROOT/deploy/lab/images.env" "$REPO_ROOT/.env" AEGIS_LAB_PROJECT)" \
+    "$REPO_ROOT/deploy/lab/.run/identity")" != "ours" ]; then
+    log "lab: not this checkout's any more - left in place (lab-down refuses to remove it)"
+    rm -f "$STATE_DIR/lab.started"
+    return 0 2>/dev/null || exit 0
+  fi
   log "lab: started by run-local - removing compose project $LAB_PROJECT"
   make --no-print-directory -C "$REPO_ROOT" lab-down
   rm -f "$STATE_DIR/lab.started"

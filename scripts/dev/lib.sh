@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts/dev/*.sh. Source it; do not execute it directly.
 #
-# All dev scripts operate on the compose project `aegis-dev` (deploy/dev/compose.yaml) -
-# the only stack this repository owns. Nothing here inspects or removes containers,
-# volumes or databases outside that project.
+# All dev scripts operate on one compose project - `aegis-dev` by default, or the name in
+# `AEGIS_DEV_PROJECT` (.env) when a checkout runs its own isolated stack on a shared host
+# (deploy/dev/compose.yaml). Nothing here inspects or removes containers, volumes or databases
+# outside that project, and scripts/lib/stack.sh makes sure the project is this checkout's before
+# anything is started or removed.
 
 set -euo pipefail
 
@@ -20,17 +22,34 @@ ENV_EXAMPLE="$REPO_ROOT/.env.example"
 # shellcheck disable=SC2034 # used by sourcing scripts
 GRAPH_DIR="$REPO_ROOT/contracts/graph"
 
+# shellcheck source=scripts/lib/stack.sh
+. "$(cd "$DEV_DIR/../lib" && pwd)/stack.sh"
+
+# Compose project of this checkout and the container names it implies; `AEGIS_DEV_PROJECT` renames
+# it (see set_dev_names, called again after load_env because .env is where it is configured).
 DEV_PROJECT=aegis-dev
-PG_CONTAINER="$DEV_PROJECT-pg"
-NEO4J_CONTAINER="$DEV_PROJECT-neo4j"
+PG_CONTAINER=
+NEO4J_CONTAINER=
 # shellcheck disable=SC2034 # used by sourcing scripts
-SEAWEEDFS_CONTAINER="$DEV_PROJECT-seaweedfs"
+SEAWEEDFS_CONTAINER=
 # shellcheck disable=SC2034 # used by sourcing scripts
-TEMPORAL_CONTAINER="$DEV_PROJECT-temporal"
+TEMPORAL_CONTAINER=
 
 # The lab is its own compose project (scripts/lab, which owns these names); scripts/dev only needs
-# the project name to tell whether run-local started it.
+# the project name to tell whether run-local started it. Its network is `<project>-lab`.
 LAB_PROJECT=aegis-lab
+
+# The project name and the names it derives; called at source time and again after `load_env`.
+set_dev_names() {
+  DEV_PROJECT=${AEGIS_DEV_PROJECT:-aegis-dev}
+  PG_CONTAINER="$DEV_PROJECT-pg"
+  NEO4J_CONTAINER="$DEV_PROJECT-neo4j"
+  # shellcheck disable=SC2034 # used by sourcing scripts
+  SEAWEEDFS_CONTAINER="$DEV_PROJECT-seaweedfs"
+  # shellcheck disable=SC2034 # used by sourcing scripts
+  TEMPORAL_CONTAINER="$DEV_PROJECT-temporal"
+}
+set_dev_names
 
 log() { printf '[dev] %s\n' "$*"; }
 die() { printf '[dev] error: %s\n' "$*" >&2; exit 1; }
@@ -55,9 +74,31 @@ load_env() {
   : "${AEGIS_NEO4J_PASSWORD:?.env: AEGIS_NEO4J_PASSWORD missing}"
   : "${AEGIS_S3_PORT:?.env: AEGIS_S3_PORT missing}"
   : "${AEGIS_S3_BUCKET:?.env: AEGIS_S3_BUCKET missing}"
+  set_dev_names
 }
 
 compose() { podman-compose -p "$DEV_PROJECT" -f "$COMPOSE_FILE" "$@"; }
+
+# Everything one checkout writes for itself lives here (pids, logs, tokens, stack identity).
+STATE_DIR="${AEGIS_STATE_DIR:-$REPO_ROOT/.local}"
+# What this checkout started, and with which configuration (scripts/lib/stack.sh reads it back).
+STACK_IDENTITY="$STATE_DIR/stack.identity"
+
+# The configuration a stack is started from; a change makes dev-up recreate (scripts/lib/stack.sh).
+dev_stack_fingerprint() {
+  stack_config_fingerprint "$COMPOSE_FILE" "$IMAGES_FILE" "$ENV_FILE" AEGIS_DEV_PROJECT
+}
+
+# Refuses when the project exists and is not this checkout's (or not this configuration).
+require_dev_stack_ownership() {
+  require_stack_ownership dev "$DEV_PROJECT" "$REPO_ROOT/deploy/dev" "$COMPOSE_FILE" \
+    "$(dev_stack_fingerprint)" "$STACK_IDENTITY" AEGIS_DEV_PROJECT
+}
+
+record_dev_stack_identity() {
+  record_stack_identity "$STACK_IDENTITY" "$DEV_PROJECT" "$REPO_ROOT/deploy/dev" \
+    "$(dev_stack_fingerprint)"
+}
 
 container_exists() { podman container exists "$1" 2>/dev/null; }
 
