@@ -17,77 +17,100 @@ SHELL := /bin/bash
 	run-local stop-local seed-demo llm-smoke broker-image internet-smoke \
 	llm-gateway-up llm-gateway-down llm-gateway-status llm-gateway-reload llm-gateway-test
 
+# The help text is data, not shell: one entry per .PHONY target, printed with `$(info)` so an
+# apostrophe or any other shell metacharacter in a description cannot break the recipe. It was a
+# chain of single-quoted printf arguments before, and `checkout\'s` in one of them ended the
+# quote early: `make help` died in the shell with a syntax error before printing a line.
+# tests/test_makefile_help.py fails when a .PHONY target has no entry here.
+define HELP
+make help            this list
+make dev-up          start PostgreSQL 16, Neo4j 5.26, SeaweedFS (S3) and Temporal;
+                     apply migrations, graph constraints and the raw bucket
+make dev-down        remove only this checkout's dev compose project (containers + volumes);
+                     AEGIS_DEV_PROJECT in .env names it when several checkouts share a host
+make dev-reset       dev-down then dev-up: a database from the replaced migration chain is
+                     reset (the contract schema has one baseline migration)
+make dev-status      health and endpoints of the dev stack (non-zero if not healthy)
+make dev-logs        follow the dev stack logs
+make lab-up          start the authorized lab (or use the one already running on this host):
+                     lab zone DNS + local passive-source stub on an internal network
+make lab-down        remove only this checkout's lab project and the throwaway lab CA
+make lab-status      lab health and boundary (non-zero if not healthy)
+make lab-check       inventory consistency + Subfinder, DNSx, Naabu, fingerprintx and
+                     httpx runs compared to fixtures
+make lab-dnsx        only the DNSx run and its fixture comparison
+make lab-subfinder   only the Subfinder run and its fixture comparison
+make lab-naabu       only the Naabu CONNECT run on the lab service containers
+make lab-fingerprintx     only the fingerprintx run (service fingerprint) and comparison
+make lab-httpx       only the httpx run (web.probe_http) and comparison
+make lab-httpx-proxy     httpx through a SOCKS5 allow-list proxy (the proxyAware evidence)
+make lab-build-fingerprintx  build the pinned fingerprintx image (no upstream image)
+make vulnlab-up      start the CVE test lab (deploy/vulnlab): known-vulnerable HTTP
+                     origins on their own internal network + the lab network; auto-stops
+                     after VULNLAB_TTL_MINUTES (default 120). Publishing is explicit:
+                     VULNLAB_TUNNEL=1 (default lab-only). One stack per host; name this
+                     checkout with AEGIS_VULNLAB_PROJECT in deploy/vulnlab/.env
+make vulnlab-down    remove only the aegis-vulnlab project (containers + its two networks)
+make vulnlab-status  boundary, tunnel state and remaining TTL (non-zero if not healthy)
+make vulnlab-check   PROFILE=lab|internet: every origin (lab) or public hostname (internet)
+                     serves the page its catalog entry documents (read-only; works on
+                     another checkout's running stack too)
+make vulnlab-test    PROFILE=lab|internet: one campaign per catalog case, assert the
+                     detections and CVE candidates (needs make run-local)
+make contracts-gate  README contract gate: validator, tests, PostgreSQL 16 chains
+make graph-check     Neo4j Cypher smoke (CI: neo4j step)
+make ci-local        contracts-gate + graph-check
+make deps            create/refresh the locked Python 3.12 environment (uv sync --frozen)
+make lint            ruff check + ruff format --check + mypy over src/tests/adapters
+make test            pytest (database tests run when AEGIS_TEST_PG_DSN is set)
+make codegen         regenerate src/aegis/contracts_gen from contracts/
+make codegen-check   fail if the committed DTOs differ from a fresh generation
+make migrate         apply contracts/db/postgres in contracts/README.md order
+                     (needs $$AEGIS_PG_DSN; recovery after an interrupted run:
+                     python -m aegis.migrations mark-applied VERSION --sha256 SHA)
+make temporal-live   M02 workflow gate on a real Temporal + throwaway PostgreSQL;
+                     refreshes the replay fixture the CI test uses
+make demo-g15a       G1.5a evidence: the flow document and the event stream over HTTP
+                     (needs AEGIS_TEST_PG_DSN)
+make ci-python       the python workflow: deps + lint + test + codegen-check
+make run-local       the whole local stack of this checkout: dev stack, contract schema,
+                     API + MCP, M02 worker/dispatcher, M23 projector, M06 runner
+                     (LAB=0 no lab, WORKERS=0 API only, SEED=1 demo campaign)
+make stop-local      stop exactly what make run-local started (its pids, and the stack/lab
+                     only when run-local started them)
+make seed-demo       POST the demo campaign and targets to a running API;
+                     needs AEGIS_DEV_TOKEN from make run-local
+make demo-g1         end-to-end G1 gate on the lab: campaign -> agent/MCP -> Subfinder ->
+                     DNSx -> raw + metadata + graph + events, with the evidence printed
+make demo-discovery  G1.6a: the same chain plus Naabu, so IP -> Service and EXPOSES edges
+                     are in PostgreSQL and Neo4j
+make demo-g16b       G1.6b gate: Naabu port -> fingerprintx service/CPE -> httpx
+                     application, checked in PostgreSQL, Neo4j and the flow read model
+make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS intel ->
+                     candidate AFFECTED_BY in PostgreSQL and Neo4j + the candidate read API
+make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate
+make broker-image    build the internet-profile egress broker image (stdlib-only)
+make internet-smoke  passive Subfinder on an authorized domain over the internet profile;
+                     needs make run-local up, usage: make internet-smoke DOMAIN=<domain>
+make soak-start      start the shortened 24 h soak (SOAK_HOURS=... to change) in .local/soak/
+make soak-stop       stop the soak; its report stays in .local/soak/report.txt
+make llm-smoke       ONE real provider call with the key from .env (never in CI);
+                     prints the provider answer, tokens and cost - see .env.example
+make llm-gateway-up  start the owner LLM gateway (LiteLLM proxy, pinned image) on
+                     127.0.0.1 only; its config and keys live in ~/.config/ultron/llm-gateway
+                     and are validated before a container exists
+make llm-gateway-status   container, readiness, model groups, and per endpoint
+                     healthy/cooling-down with its cooldown count
+make llm-gateway-reload   apply an edited owner config: recreate only the gateway
+                     container, then prove the router serves the file groups/endpoints
+make llm-gateway-down     remove only this checkout gateway project
+make llm-gateway-test     two fake upstreams (one 429, one OK) behind the pinned gateway:
+                     rotation, cooldown skip, all-exhausted -> RATE_LIMITED, both standards
+endef
+
 help:
-	@printf '%s\n' \
-	  'make dev-up          start PostgreSQL 16, Neo4j 5.26, SeaweedFS (S3) and Temporal;' \
-	  '                     apply migrations, graph constraints and the raw bucket' \
-	  'make dev-down        remove only this checkout\'s dev compose project (containers + volumes);' \
-	  '                     AEGIS_DEV_PROJECT in .env names it when several checkouts share a host' \
-	  'make dev-reset       dev-down then dev-up: a database from the replaced migration chain is' \
-	  '                     reset (the contract schema has one baseline migration)' \
-	  'make dev-status      health and endpoints of the dev stack (non-zero if not healthy)' \
-	  'make dev-logs        follow the dev stack logs' \
-	  'make lab-up          start the authorized lab (or use the one already running on this host):' \
-	  '                     lab zone DNS + local passive-source stub on an internal network' \
-	  'make lab-down        remove only this checkout\'s lab project and the throwaway lab CA' \
-	  'make lab-status      lab health and boundary (non-zero if not healthy)' \
-	  'make lab-check       inventory consistency + Subfinder, DNSx, Naabu, fingerprintx and' \
-	  '                     httpx runs compared to fixtures' \
-	  'make lab-dnsx        only the DNSx run and its fixture comparison' \
-	  'make lab-subfinder   only the Subfinder run and its fixture comparison' \
-	  'make lab-naabu       only the Naabu CONNECT run on the lab service containers' \
-	  'make lab-fingerprintx only the fingerprintx run (service fingerprint) and comparison' \
-	  'make lab-httpx       only the httpx run (web.probe_http) and comparison' \
-	  'make lab-httpx-proxy httpx through a SOCKS5 allow-list proxy (the proxyAware evidence)' \
-	  'make lab-build-fingerprintx  build the pinned fingerprintx image (no upstream image)' \
-	  'make vulnlab-up      start the CVE test lab (deploy/vulnlab): known-vulnerable HTTP' \
-	  '                     origins on their own internal network + the lab network; auto-stops' \
-	  '                     after VULNLAB_TTL_MINUTES (default 120). Publishing is explicit:' \
-	  '                     VULNLAB_TUNNEL=1 (default lab-only). One stack per host; name this' \
-	  '                     checkout with AEGIS_VULNLAB_PROJECT in deploy/vulnlab/.env' \
-	  'make vulnlab-down    remove only the aegis-vulnlab project (containers + its two networks)' \
-	  'make vulnlab-status  boundary, tunnel state and remaining TTL (non-zero if not healthy)' \
-	  'make vulnlab-check   PROFILE=lab|internet: every origin (lab) or public hostname (internet)' \
-	  '                     serves the page its catalog entry documents (read-only; works on' \
-	  '                     another checkout\'s running stack too)' \
-	  'make vulnlab-test    PROFILE=lab|internet: one campaign per catalog case, assert the' \
-	  '                     detections and CVE candidates (needs make run-local)' \
-	  'make contracts-gate  README contract gate: validator, tests, PostgreSQL 16 chains' \
-	  'make graph-check     Neo4j Cypher smoke (CI: neo4j step)' \
-	  'make ci-local        contracts-gate + graph-check' \
-	  'make deps            create/refresh the locked Python 3.12 environment (uv sync --frozen)' \
-	  'make lint            ruff check + ruff format --check + mypy over src/tests/adapters' \
-	  'make test            pytest (database tests run when AEGIS_TEST_PG_DSN is set)' \
-	  'make codegen         regenerate src/aegis/contracts_gen from contracts/' \
-	  'make codegen-check   fail if the committed DTOs differ from a fresh generation' \
-	  'make migrate         apply contracts/db/postgres in contracts/README.md order' \
-	  '                     (needs $$AEGIS_PG_DSN; recovery after an interrupted run:' \
-	  '                     python -m aegis.migrations mark-applied VERSION --sha256 SHA)' \
-	  'make ci-python       the python workflow: deps + lint + test + codegen-check' \
-	  'make demo-g1         end-to-end G1 gate on the lab: campaign -> agent/MCP -> Subfinder ->' \
-	  '                     DNSx -> raw + metadata + graph + events, with the evidence printed' \
-	  'make demo-discovery  G1.6a: the same chain plus Naabu, so IP -> Service and EXPOSES edges' \
-	  '                     are in PostgreSQL and Neo4j' \
-	  'make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS intel ->' \
-	  '                     candidate AFFECTED_BY in PostgreSQL and Neo4j + the candidate read API' \
-	  'make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate' \
-	  'make broker-image    build the internet-profile egress broker image (stdlib-only)' \
-	  'make internet-smoke  passive Subfinder on an authorized domain over the internet profile;' \
-	  '                     needs make run-local up, usage: make internet-smoke DOMAIN=<domain>' \
-	  'make soak-start      start the shortened 24 h soak (SOAK_HOURS=... to change) in .local/soak/' \
-	  'make soak-stop       stop the soak; its report stays in .local/soak/report.txt' \
-	  'make llm-smoke       ONE real provider call with the key from .env (never in CI);' \
-	  '                     prints the provider answer, tokens and cost - see .env.example' \
-	  'make llm-gateway-up  start the owner LLM gateway (LiteLLM proxy, pinned image) on' \
-	  '                     127.0.0.1 only; its config and keys live in ~/.config/ultron/llm-gateway' \
-	  '                     and are validated before a container exists' \
-	  'make llm-gateway-status   container, readiness, model groups, and per endpoint' \
-	  '                     healthy/cooling-down with its cooldown count' \
-	  'make llm-gateway-reload   apply an edited owner config: recreate only the gateway' \
-	  '                     container, then prove the router serves the file groups/endpoints' \
-	  'make llm-gateway-down     remove only this checkout gateway project' \
-	  'make llm-gateway-test     two fake upstreams (one 429, one OK) behind the pinned gateway:' \
-	  '                     rotation, cooldown skip, all-exhausted -> RATE_LIMITED, both standards'
+	$(info $(HELP))
+	@:
 
 dev-up:
 	@scripts/dev/dev-up.sh
