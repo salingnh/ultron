@@ -1,0 +1,185 @@
+{
+  "assets": [],
+  "observations": [
+    {
+      "subject": "service:10.114.53.211:80/tcp",
+      "predicate": "service.protocol",
+      "value": "http",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:80/tcp",
+      "predicate": "service.banner",
+      "value": "nginx/1.18.0",
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:80/tcp",
+      "predicate": "service.product",
+      "value": {
+        "product": "nginx",
+        "version": "1.18.0",
+        "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+      },
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:443/tcp",
+      "predicate": "service.protocol",
+      "value": "https",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:443/tcp",
+      "predicate": "service.banner",
+      "value": "nginx/1.18.0",
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.211:443/tcp",
+      "predicate": "service.product",
+      "value": {
+        "product": "nginx",
+        "version": "1.18.0",
+        "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+      },
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.212:8080/tcp",
+      "predicate": "service.protocol",
+      "value": "http",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.213:2222/tcp",
+      "predicate": "service.protocol",
+      "value": "ssh",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.213:2222/tcp",
+      "predicate": "service.banner",
+      "value": "SSH-2.0-OpenSSH_9.9",
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.213:2222/tcp",
+      "predicate": "service.product",
+      "value": {
+        "product": "openssh",
+        "version": "9.9",
+        "cpe": "cpe:2.3:a:openbsd:openssh:9.9:*:*:*:*:*:*:*"
+      },
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.214:6379/tcp",
+      "predicate": "service.protocol",
+      "value": "redis",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.215:80/tcp",
+      "predicate": "service.protocol",
+      "value": "http",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.215:80/tcp",
+      "predicate": "service.banner",
+      "value": "Apache/2.4.49 (Unix)",
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "service:10.114.53.215:80/tcp",
+      "predicate": "service.product",
+      "value": {
+        "product": "http_server",
+        "version": "2.4.49",
+        "cpe": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*"
+      },
+      "confidence": 0.8,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    }
+  ],
+  "relationships": [],
+  "findings": [],
+  "coverage_subjects": [
+    "service:10.114.53.211:443/tcp",
+    "service:10.114.53.211:80/tcp",
+    "service:10.114.53.212:8080/tcp",
+    "service:10.114.53.213:2222/tcp",
+    "service:10.114.53.214:6379/tcp",
+    "service:10.114.53.215:80/tcp"
+  ]
+}

@@ -3,7 +3,12 @@
   "jobs": [
     {
       "imageDigest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
-      "args": ["-sources", "crtsh", "-timeout", "10"],
+      "args": [
+        "-sources",
+        "crtsh",
+        "-timeout",
+        "10"
+      ],
       "env": {
         "HOME": "/tmp",
         "SSL_CERT_FILE": "/lab-tls/ca.crt"
@@ -20,7 +25,28 @@
     },
     {
       "imageDigest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec",
-      "args": ["-r", "10.114.53.53"],
+      "args": [
+        "-r",
+        "10.114.53.53"
+      ],
+      "env": {
+        "HOME": "/tmp"
+      },
+      "hosts": {},
+      "mounts": []
+    },
+    {
+      "imageDigest": "sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+      "args": [],
+      "env": {
+        "HOME": "/tmp"
+      },
+      "hosts": {},
+      "mounts": []
+    },
+    {
+      "imageDigest": "sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc",
+      "args": [],
       "env": {
         "HOME": "/tmp"
       },

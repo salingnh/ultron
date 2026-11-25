@@ -62,8 +62,20 @@ GRAPH_TOOLS = (
     "graph.summarize_campaign_delta",
 )
 
-MANIFESTS = ("manifest.subfinder.yaml", "manifest.dnsx.yaml", "manifest.naabu.yaml")
-PROVIDERS = {ENUMERATE: "subfinder", RESOLVE: "dnsx", DISCOVER: "naabu"}
+MANIFESTS = (
+    "manifest.subfinder.yaml",
+    "manifest.dnsx.yaml",
+    "manifest.naabu.yaml",
+    "manifest.fingerprintx.yaml",
+    "manifest.httpx.yaml",
+)
+PROVIDERS = {
+    ENUMERATE: "subfinder",
+    RESOLVE: "dnsx",
+    DISCOVER: "naabu",
+    "service.fingerprint": "fingerprintx",
+    "web.probe_http": "httpx",
+}
 
 
 def manifest_bytes() -> list[bytes]:

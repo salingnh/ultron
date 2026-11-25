@@ -87,32 +87,130 @@
       "released": "2021-09-15",
       "license": "Apache-2.0",
       "role": "lab service on httpd.lab.aegis.test: Apache httpd 80, the exact CPE/version CVE-2021-41773 matches (G1.6a/G1.6c)"
+    },
+    "fingerprintx": {
+      "ref": "localhost/aegis/fingerprintx:v1.1.19@sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+      "version": "v1.1.19",
+      "released": "2026-01-01",
+      "license": "Apache-2.0",
+      "role": "G1.6b service.fingerprint adapter image, built by make lab-build-fingerprintx (upstream publishes no image)"
+    },
+    "httpx": {
+      "ref": "docker.io/projectdiscovery/httpx:v1.12.0@sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc",
+      "version": "v1.12.0",
+      "released": "2026-09-08",
+      "license": "MIT",
+      "role": "G1.6b web.probe_http adapter image"
     }
   },
   "records": [
-    {"name": "lab.aegis.test.", "type": "NS", "value": "ns1.lab.aegis.test."},
-    {"name": "ns1.lab.aegis.test.", "type": "A", "value": "203.0.113.53"},
-    {"name": "www.lab.aegis.test.", "type": "A", "value": "203.0.113.10"},
-    {"name": "www.lab.aegis.test.", "type": "AAAA", "value": "2001:db8::10"},
-    {"name": "api.lab.aegis.test.", "type": "A", "value": "203.0.113.30"},
-    {"name": "mail.lab.aegis.test.", "type": "A", "value": "203.0.113.20"},
-    {"name": "mail.lab.aegis.test.", "type": "MX", "value": "10 mx1.lab.aegis.test."},
-    {"name": "mx1.lab.aegis.test.", "type": "A", "value": "203.0.113.25"},
-    {"name": "vpn.lab.aegis.test.", "type": "CNAME", "value": "www.lab.aegis.test."},
-    {"name": "txt.lab.aegis.test.", "type": "TXT", "value": "aegis lab zone; not a real domain"},
-    {"name": "web.lab.aegis.test.", "type": "A", "value": "10.114.53.211"},
-    {"name": "app.lab.aegis.test.", "type": "A", "value": "10.114.53.212"},
-    {"name": "ssh.lab.aegis.test.", "type": "A", "value": "10.114.53.213"},
-    {"name": "cache.lab.aegis.test.", "type": "A", "value": "10.114.53.214"},
-    {"name": "httpd.lab.aegis.test.", "type": "A", "value": "10.114.53.215"}
+    {
+      "name": "lab.aegis.test.",
+      "type": "NS",
+      "value": "ns1.lab.aegis.test."
+    },
+    {
+      "name": "ns1.lab.aegis.test.",
+      "type": "A",
+      "value": "203.0.113.53"
+    },
+    {
+      "name": "www.lab.aegis.test.",
+      "type": "A",
+      "value": "203.0.113.10"
+    },
+    {
+      "name": "www.lab.aegis.test.",
+      "type": "AAAA",
+      "value": "2001:db8::10"
+    },
+    {
+      "name": "api.lab.aegis.test.",
+      "type": "A",
+      "value": "203.0.113.30"
+    },
+    {
+      "name": "mail.lab.aegis.test.",
+      "type": "A",
+      "value": "203.0.113.20"
+    },
+    {
+      "name": "mail.lab.aegis.test.",
+      "type": "MX",
+      "value": "10 mx1.lab.aegis.test."
+    },
+    {
+      "name": "mx1.lab.aegis.test.",
+      "type": "A",
+      "value": "203.0.113.25"
+    },
+    {
+      "name": "vpn.lab.aegis.test.",
+      "type": "CNAME",
+      "value": "www.lab.aegis.test."
+    },
+    {
+      "name": "txt.lab.aegis.test.",
+      "type": "TXT",
+      "value": "aegis lab zone; not a real domain"
+    },
+    {
+      "name": "web.lab.aegis.test.",
+      "type": "A",
+      "value": "10.114.53.211"
+    },
+    {
+      "name": "app.lab.aegis.test.",
+      "type": "A",
+      "value": "10.114.53.212"
+    },
+    {
+      "name": "ssh.lab.aegis.test.",
+      "type": "A",
+      "value": "10.114.53.213"
+    },
+    {
+      "name": "cache.lab.aegis.test.",
+      "type": "A",
+      "value": "10.114.53.214"
+    },
+    {
+      "name": "httpd.lab.aegis.test.",
+      "type": "A",
+      "value": "10.114.53.215"
+    }
   ],
   "probes": [
-    {"host": "www.lab.aegis.test", "status": "NOERROR", "why": "A and AAAA records"},
-    {"host": "api.lab.aegis.test", "status": "NOERROR", "why": "A record"},
-    {"host": "mail.lab.aegis.test", "status": "NOERROR", "why": "A record (MX is not queried by this run)"},
-    {"host": "vpn.lab.aegis.test", "status": "NOERROR", "why": "CNAME to www, resolved in the same answer"},
-    {"host": "ghost.lab.aegis.test", "status": "NXDOMAIN", "why": "name absent from the zone"},
-    {"host": "example.com", "status": "REFUSED", "why": "outside the lab zone: the resolver is not a forwarder"}
+    {
+      "host": "www.lab.aegis.test",
+      "status": "NOERROR",
+      "why": "A and AAAA records"
+    },
+    {
+      "host": "api.lab.aegis.test",
+      "status": "NOERROR",
+      "why": "A record"
+    },
+    {
+      "host": "mail.lab.aegis.test",
+      "status": "NOERROR",
+      "why": "A record (MX is not queried by this run)"
+    },
+    {
+      "host": "vpn.lab.aegis.test",
+      "status": "NOERROR",
+      "why": "CNAME to www, resolved in the same answer"
+    },
+    {
+      "host": "ghost.lab.aegis.test",
+      "status": "NXDOMAIN",
+      "why": "name absent from the zone"
+    },
+    {
+      "host": "example.com",
+      "status": "REFUSED",
+      "why": "outside the lab zone: the resolver is not a forwarder"
+    }
   ],
   "passive": {
     "source": "crtsh",
@@ -131,10 +229,124 @@
     "note": "The stub only answers the exact authorized query for the lab zone; it is reached through /etc/hosts inside the run container and a lab-only CA (generated by make lab-up, never committed)."
   },
   "services": [
-    {"host": "web.lab.aegis.test", "address": "10.114.53.211", "image": "web-legacy", "ports": [80, 443], "cves": ["CVE-2021-23017"], "note": "nginx: HTTPS answers with a certificate from the throwaway lab CA"},
-    {"host": "app.lab.aegis.test", "address": "10.114.53.212", "image": "app", "ports": [8080, 8009], "cves": ["CVE-2020-1938"], "note": "Tomcat: AJP 8009 is open as well; the discovery step only asks for the ports in input"},
-    {"host": "ssh.lab.aegis.test", "address": "10.114.53.213", "image": "ssh", "ports": [2222], "cves": [], "note": "sshd: no credential and no authorized key, banner only"},
-    {"host": "cache.lab.aegis.test", "address": "10.114.53.214", "image": "cache", "ports": [6379], "cves": ["CVE-2022-0543"], "note": "Redis: no auth on the internal network, RDB/AOF disabled"},
-    {"host": "httpd.lab.aegis.test", "address": "10.114.53.215", "image": "httpd", "ports": [80], "cves": ["CVE-2021-41773", "CVE-2021-42013"], "note": "Apache 2.4.49: the origin whose product/version the CVE slice matches exactly"}
+    {
+      "host": "web.lab.aegis.test",
+      "address": "10.114.53.211",
+      "image": "web-legacy",
+      "ports": [
+        80,
+        443
+      ],
+      "cves": [
+        "CVE-2021-23017"
+      ],
+      "note": "nginx: HTTPS answers with a certificate from the throwaway lab CA",
+      "fingerprint": {
+        "protocols": {
+          "80": "http",
+          "443": "https"
+        },
+        "token": "nginx",
+        "version_text": "1.18.0",
+        "product": "nginx",
+        "version": "1.18.0",
+        "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*",
+        "why": "nginx 1.18.0 answers `Server: nginx/1.18.0`; fingerprintx reports the f5 vendor in its CPE, so the parser fills the version into the tool's own vendor/product"
+      },
+      "http_status": {
+        "80": 200,
+        "443": 200
+      }
+    },
+    {
+      "host": "app.lab.aegis.test",
+      "address": "10.114.53.212",
+      "image": "app",
+      "ports": [
+        8080,
+        8009
+      ],
+      "cves": [
+        "CVE-2020-1938"
+      ],
+      "note": "Tomcat: AJP 8009 is open as well; the discovery step only asks for the ports in input",
+      "fingerprint": {
+        "protocols": {
+          "8080": "http"
+        },
+        "why": "Tomcat's Server header (`Apache-Coyote/1.1`) carries no product/version the fingerprinter can pin; AJP 8009 has no fingerprintx plugin"
+      },
+      "http_status": {
+        "8080": 404
+      }
+    },
+    {
+      "host": "ssh.lab.aegis.test",
+      "address": "10.114.53.213",
+      "image": "ssh",
+      "ports": [
+        2222
+      ],
+      "cves": [],
+      "note": "sshd: no credential and no authorized key, banner only",
+      "fingerprint": {
+        "protocols": {
+          "2222": "ssh"
+        },
+        "token": "OpenSSH",
+        "version_text": "9.9",
+        "product": "openssh",
+        "version": "9.9",
+        "cpe": "cpe:2.3:a:openbsd:openssh:9.9:*:*:*:*:*:*:*",
+        "why": "banner `SSH-2.0-OpenSSH_9.9`; the SSH identification prefix is not part of the product"
+      },
+      "http_status": {}
+    },
+    {
+      "host": "cache.lab.aegis.test",
+      "address": "10.114.53.214",
+      "image": "cache",
+      "ports": [
+        6379
+      ],
+      "cves": [
+        "CVE-2022-0543"
+      ],
+      "note": "Redis: no auth on the internal network, RDB/AOF disabled",
+      "fingerprint": {
+        "protocols": {
+          "6379": "redis"
+        },
+        "why": "the redis plugin identifies the protocol only; the image's version is not exposed"
+      },
+      "http_status": {}
+    },
+    {
+      "host": "httpd.lab.aegis.test",
+      "address": "10.114.53.215",
+      "image": "httpd",
+      "ports": [
+        80
+      ],
+      "cves": [
+        "CVE-2021-41773",
+        "CVE-2021-42013"
+      ],
+      "note": "Apache 2.4.49: the origin whose product/version the CVE slice matches exactly",
+      "fingerprint": {
+        "protocols": {
+          "80": "http"
+        },
+        "token": "Apache",
+        "version_text": "2.4.49",
+        "product": "http_server",
+        "version": "2.4.49",
+        "cpe": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*",
+        "why": "Apache/2.4.49 (Unix); the tool's CPE is apache:http_server with a `*` version, so the parser keeps its vendor/product and fills the version it read"
+      },
+      "http_status": {
+        "80": 200
+      }
+    }
   ]
 }

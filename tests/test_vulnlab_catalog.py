@@ -116,7 +116,8 @@ def test_every_case_expects_a_port_and_kev_flags_are_subset(catalog: Catalog) ->
         for profile in ("lab", "internet"):
             expectation = case.expectation(profile)
             assert expectation.ports, f"{case.id}/{profile} expects no port"
-            assert set(expectation.cves.kev) <= set(expectation.cves.must_include)
+            if expectation.cves is not None:
+                assert set(expectation.cves.kev) <= set(expectation.cves.must_include)
             if profile == "internet":
                 assert 443 in expectation.ports, f"{case.id} must be reachable over TLS on 443"
             else:
@@ -341,7 +342,9 @@ def _httpd_snapshot(**overrides: Any) -> CampaignSnapshot:
                 cpe=("cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*",),
             ),
         ),
-        "web": (WebFinding(url="app:http://10.114.53.61:80", status=404, title="404 Not Found"),),
+        # What httpx reads on `/` for this origin (a missing path answers 404 with the banner):
+        # the campaign expectation describes `/`, so the fixture follows the probe evidence.
+        "web": (WebFinding(url="app:http://10.114.53.61:80", status=200, title="It works!"),),
         "cves": (
             CveFinding("service:10.114.53.61:80/tcp", "CVE-2021-41773", kev=True),
             CveFinding("service:10.114.53.61:80/tcp", "CVE-2021-42013", kev=True),

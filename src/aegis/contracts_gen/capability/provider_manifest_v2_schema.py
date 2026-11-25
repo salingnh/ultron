@@ -39,6 +39,11 @@ class Type(StrEnum):
     container = "container"
 
 
+class TargetsFormat(StrEnum):
+    canonical = "canonical"
+    host_port = "host_port"
+
+
 class Runtime(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -57,6 +62,10 @@ class Runtime(BaseModel):
     )
     outputPath: str | None = Field(
         "/out", description="Thư mục kết quả trong container."
+    )
+    targetsFormat: TargetsFormat | None = Field(
+        "canonical",
+        description="Dạng giá trị M06 ghi vào file target cho tool đọc (`/in/targets.txt`). `canonical` (mặc định): bỏ tiền tố khóa chuẩn, giữ nguyên phần còn lại - dạng của Subfinder/DNSx. `host_port`: thêm bỏ hậu tố transport của khóa service để tool nhận `host:port` (fingerprintx, httpx); target /udp bị từ chối trước khi chạy vì file không biểu diễn được transport. Registry kiểm luật này và M06 render đúng một lần, không đoán theo tool.",
     )
 
 
@@ -190,7 +199,7 @@ class Permissions(BaseModel):
     )
     proxyAware: bool | None = Field(
         None,
-        description="Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` trường này không bắt buộc và có thể false: công cụ không cần biết proxy, kênh ra do gateway lọc theo IP:port đã ký.",
+        description="Khai báo trung thực công cụ có đi ra được qua proxy hay không. Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` không bắt buộc và có thể false: kênh ra do gateway lọc theo IP:port đã ký (G1.6b: fingerprintx khai false; M06 từ chối nó trên đường broker trước khi tạo container, fail closed).",
     )
     egressSources: list[EgressSource] | None = Field(
         None,

@@ -117,9 +117,94 @@ def compare_naabu(expected: dict, actual: list[dict]) -> list[str]:
     return problems
 
 
+def _service_key(ip: str, port: int, transport: str = "tcp") -> str:
+    return f"service:{ip}:{port}/{transport}"
+
+
+def compare_fingerprintx(expected: dict, actual: list[dict]) -> list[str]:
+    """Compare the run with the inventory's service list (G1.6b).
+
+    The expected list says what each lab endpoint *is* (its pinned image and the ports it answers
+    on); the actual JSONL says what fingerprintx reported. `protocol` must match exactly, and when
+    the expectation names a product `token`/`version` those strings must appear in the version or
+    banner the tool collected -- the inventory pins an image tag, not the exact string a plugin
+    will print, so the comparison is a claim check, not a string equality.
+    """
+    problems: list[str] = []
+    wanted = {entry["key"]: entry for entry in expected["services"]}
+    seen: dict[str, dict] = {}
+    for record in actual:
+        key = _service_key(
+            str(record.get("ip")), int(record.get("port") or 0), str(record.get("transport") or "")
+        )
+        if key in seen:
+            problems.append(f"{key}: more than one result line")
+        seen[key] = record
+    for key, entry in wanted.items():
+        record = seen.get(key)
+        if record is None:
+            problems.append(f"{key}: missing from fingerprintx output")
+            continue
+        protocol = record.get("protocol")
+        if protocol != entry["protocol"]:
+            problems.append(f"{key}: protocol {protocol!r}, expected {entry['protocol']!r}")
+        text = " ".join(
+            str(part)
+            for part in (record.get("version"), (record.get("metadata") or {}).get("banner"))
+            if part
+        )
+        for field in ("token", "version"):
+            if entry.get(field) and entry[field] not in text:
+                problems.append(f"{key}: {field} {entry[field]!r} not in {text!r}")
+        print(f"  {key}: {protocol} {text}".rstrip())
+    for key in sorted(seen):
+        if key not in wanted:
+            problems.append(f"{key}: not in the expected service list")
+    if not actual:
+        problems.append("fingerprintx produced no output")
+    return problems
+
+
+def compare_httpx(expected: dict, actual: list[dict]) -> list[str]:
+    """Compare the run with the inventory's web origins and the status each one answers."""
+    problems: list[str] = []
+    # The inventory names the application canonical key (`app:<scheme>://host:port`); httpx reports
+    # the URL, which is the same origin without the contract prefix.
+    wanted = {entry["key"].removeprefix("app:"): entry for entry in expected["applications"]}
+    seen: dict[str, dict] = {}
+    for record in actual:
+        url = str(record.get("url") or "")
+        if url not in seen:
+            seen[url] = record
+    for url, entry in wanted.items():
+        key = entry["key"]
+        record = seen.get(url)
+        if record is None:
+            problems.append(f"{key}: missing from httpx output")
+            continue
+        status = record.get("status_code")
+        if status != entry["status"]:
+            problems.append(f"{key}: status {status!r}, expected {entry['status']!r}")
+        if entry.get("title") and record.get("title") != entry["title"]:
+            problems.append(f"{key}: title {record.get('title')!r}, expected {entry['title']!r}")
+        technologies = {str(item).lower() for item in record.get("tech") or []}
+        missing = sorted({item.lower() for item in entry.get("technology") or []} - technologies)
+        if missing:
+            problems.append(f"{key}: technologies missing {missing} (got {sorted(technologies)})")
+        print(f"  {key}: {status} tech={sorted(technologies)}")
+    for url in sorted(seen):
+        if url not in wanted:
+            problems.append(f"{url}: not in the expected application list")
+    if not actual:
+        problems.append("httpx produced no output")
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kind", choices=["dnsx", "subfinder", "naabu"])
+    parser.add_argument(
+        "kind", choices=["dnsx", "subfinder", "naabu", "fingerprintx", "httpx"]
+    )
     parser.add_argument("--expected", type=Path, required=True)
     parser.add_argument("--actual", type=Path, required=True)
     args = parser.parse_args()
@@ -128,20 +213,28 @@ def main() -> int:
         raise SystemExit(f"actual output is missing: {args.actual}")
     expected = json.loads(args.expected.read_text(encoding="utf-8"))
     actual = load_jsonl(args.actual)
-    if args.kind == "dnsx":
-        problems = compare_dnsx(expected, actual)
-    elif args.kind == "subfinder":
-        problems = compare_subfinder(expected, actual)
-    else:
-        problems = compare_naabu(expected, actual)
+    comparisons = {
+        "dnsx": compare_dnsx,
+        "subfinder": compare_subfinder,
+        "naabu": compare_naabu,
+        "fingerprintx": compare_fingerprintx,
+        "httpx": compare_httpx,
+    }
+    problems = comparisons[args.kind](expected, actual)
     if problems:
         print(f"{args.kind}: FAIL ({len(problems)} problem(s))", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1
-    checked = {"dnsx": lambda: len(expected["probes"]), "subfinder": lambda: len(expected["hosts"]),
-               "naabu": lambda: len(expected["open"])}[args.kind]()
-    print(f"{args.kind}: PASS ({checked} expected entries match {args.actual})")
+    entries = (
+        expected.get("probes")
+        or expected.get("hosts")
+        or expected.get("open")
+        or expected.get("services")
+        or expected.get("applications")
+        or []
+    )
+    print(f"{args.kind}: PASS ({len(entries)} expected entries match {args.actual})")
     return 0
 
 

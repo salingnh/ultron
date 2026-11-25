@@ -1,0 +1,265 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-0000000000e3",
+  "dedup_key": "job:01934f6a-0000-7000-8000-0000000000d3:envelope",
+  "job_id": "01934f6a-0000-7000-8000-0000000000d3",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "capability": "service.fingerprint",
+  "provider": {
+    "name": "fingerprintx",
+    "version": "v1.1.19",
+    "adapter_version": "1.1.0",
+    "image_digest": "sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1"
+  },
+  "policy_version": "roe-1",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": [
+      "service:10.114.53.211:443/tcp",
+      "service:10.114.53.211:80/tcp",
+      "service:10.114.53.212:8080/tcp",
+      "service:10.114.53.213:2222/tcp",
+      "service:10.114.53.214:6379/tcp",
+      "service:10.114.53.215:80/tcp"
+    ],
+    "complete": true
+  },
+  "results": {
+    "assets": [],
+    "observations": [
+      {
+        "subject": "service:10.114.53.211:80/tcp",
+        "predicate": "service.protocol",
+        "value": "http",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.211:80/tcp",
+        "predicate": "service.banner",
+        "value": "nginx/1.18.0",
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.211:80/tcp",
+        "predicate": "service.product",
+        "value": {
+          "product": "nginx",
+          "version": "1.18.0",
+          "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+        },
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.211:443/tcp",
+        "predicate": "service.protocol",
+        "value": "https",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.211:443/tcp",
+        "predicate": "service.banner",
+        "value": "nginx/1.18.0",
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.211:443/tcp",
+        "predicate": "service.product",
+        "value": {
+          "product": "nginx",
+          "version": "1.18.0",
+          "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+        },
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.212:8080/tcp",
+        "predicate": "service.protocol",
+        "value": "http",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.213:2222/tcp",
+        "predicate": "service.protocol",
+        "value": "ssh",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.213:2222/tcp",
+        "predicate": "service.banner",
+        "value": "SSH-2.0-OpenSSH_9.9",
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.213:2222/tcp",
+        "predicate": "service.product",
+        "value": {
+          "product": "openssh",
+          "version": "9.9",
+          "cpe": "cpe:2.3:a:openbsd:openssh:9.9:*:*:*:*:*:*:*"
+        },
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.214:6379/tcp",
+        "predicate": "service.protocol",
+        "value": "redis",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.215:80/tcp",
+        "predicate": "service.protocol",
+        "value": "http",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.215:80/tcp",
+        "predicate": "service.banner",
+        "value": "Apache/2.4.49 (Unix)",
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.215:80/tcp",
+        "predicate": "service.product",
+        "value": {
+          "product": "http_server",
+          "version": "2.4.49",
+          "cpe": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*"
+        },
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      }
+    ],
+    "relationships": [],
+    "findings": []
+  },
+  "evidence": [
+    {
+      "local_ref": "raw",
+      "sha256": "6df96167e34a007f75cccdea51a1c6b1630f6e26652e99c8d49a208d3f0cdf4d",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-0000000000d3/6df96167e34a007f75cccdea51a1c6b1630f6e26652e99c8d49a208d3f0cdf4d",
+      "size_bytes": 3501,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
+  ],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "bbfd31ce409f38b886df3e805309df0a2bcf750a57437896d45576c31c51b75b",
+    "started_at": "2026-11-25T00:29:50Z",
+    "finished_at": "2026-11-25T00:30:00Z",
+    "seed_targets": [
+      {
+        "canonical_key": "service:10.114.53.211:80/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.211:443/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.212:8080/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.213:2222/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.214:6379/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.215:80/tcp"
+      }
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-0000000000d3",
+    "capability_id": "service.fingerprint",
+    "provider_version": "v1.1.19",
+    "policy_version": "roe-1"
+  }
+}

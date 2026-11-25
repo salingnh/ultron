@@ -20,6 +20,7 @@ from aegis.common.repo import contract_path
 
 __all__ = [
     "PREDICATE_ENUM_MISMATCH",
+    "graph_predicate",
     "PREDICATE_SUBJECT_MISMATCH",
     "PREDICATE_TYPE_MISMATCH",
     "Predicate",
@@ -36,12 +37,13 @@ PREDICATE_ENUM_MISMATCH = "predicate_value_outside_enum"
 
 @dataclass(frozen=True, slots=True)
 class Predicate:
-    """One registry row: the value type, the allowed subject kinds and an optional enum."""
+    """One registry row: the value type, the allowed subject kinds, an optional enum, graph flag."""
 
     name: str
     value_type: str
     subject_kinds: frozenset[str]
     enum: tuple[object, ...] | None = None
+    graph: bool = False
 
 
 @cache
@@ -64,17 +66,27 @@ def predicates() -> dict[str, Predicate]:
         enum = row.get("enum")
         if enum is not None and not isinstance(enum, list):
             raise RuntimeError(f"predicate {name}: enum must be a list")
+        graph = row.get("graph", False)
+        if not isinstance(graph, bool):
+            raise RuntimeError(f"predicate {name}: graph must be a boolean")
         rows[name] = Predicate(
             name=name,
             value_type=value_type,
             subject_kinds=frozenset(kinds),
             enum=tuple(enum) if enum is not None else None,
+            graph=graph,
         )
     return rows
 
 
 def predicate(name: str) -> Predicate | None:
     return predicates().get(name)
+
+
+def graph_predicate(name: str) -> bool:
+    """True when the registry marks this predicate for the `:Observation` graph projection (M23)."""
+    rule = predicate(name)
+    return bool(rule is not None and rule.graph)
 
 
 def _matches_type(value: object, value_type: str) -> bool:

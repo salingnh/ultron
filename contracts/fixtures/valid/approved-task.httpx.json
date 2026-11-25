@@ -1,0 +1,77 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c4",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000c1",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "capability": "web.probe_http",
+  "provider": "httpx",
+  "provider_version": "v1.12.0",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "ba8e25da73c16258500e9c0f2750c2ac7203f8c25a51041cc54b63d1a5793c2e",
+  "image_digest": "sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
+  "input": {
+    "targets": [
+      "service:10.114.53.211:80/tcp",
+      "service:10.114.53.211:443/tcp",
+      "service:10.114.53.212:8080/tcp",
+      "service:10.114.53.215:80/tcp"
+    ],
+    "ports": [
+      80,
+      443,
+      8080
+    ],
+    "concurrency": 4,
+    "timeout_seconds": 10
+  },
+  "targets": [
+    {
+      "canonical_key": "service:10.114.53.211:80/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.211:443/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.212:8080/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.215:80/tcp"
+    }
+  ],
+  "idempotency_key": "fixture:httpx-conformance",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: web.probe_http over the lab HTTP/HTTPS services; no execution",
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "signature": "hmac-sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "required",
+    "entries": [
+      "10.114.53.211:443",
+      "10.114.53.211:80",
+      "10.114.53.211:8080",
+      "10.114.53.212:443",
+      "10.114.53.212:80",
+      "10.114.53.212:8080",
+      "10.114.53.215:443",
+      "10.114.53.215:80",
+      "10.114.53.215:8080"
+    ],
+    "target_addresses": [
+      "10.114.53.211",
+      "10.114.53.212",
+      "10.114.53.215"
+    ]
+  },
+  "priority": 50,
+  "depends_on": [],
+  "network_profile": "lab"
+}

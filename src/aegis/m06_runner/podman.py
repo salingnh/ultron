@@ -212,7 +212,12 @@ class PodmanRunner(ContainerRunner):
         if spec.network != "exec":
             # No egress means no network at all; the profile contributes no endpoint data.
             entry = None
-        hooks_dir = self._write_l3_hook(spec) if spec.egress_mode == "l3" else None
+        # The L3 route hook is the internet deployment's way of giving a job its only route (to
+        # the gateway). A lab-profile job already has its route: the internal lab network it joins.
+        needs_l3_hook = (
+            spec.egress_mode == "l3" and spec.network_profile != "lab" and spec.network == "exec"
+        )
+        hooks_dir = self._write_l3_hook(spec) if needs_l3_hook else None
         argv = self._run_argv(spec, layout, network, entry=entry, hooks_dir=hooks_dir)
         try:
             started = _podman(*argv, timeout=120)
@@ -633,10 +638,14 @@ class PodmanRunner(ContainerRunner):
         argv += ["--network", network if network != "none" else "none"]
         if hooks_dir is not None:
             argv += ["--hooks-dir", str(hooks_dir)]
-        if spec.egress_mode:
-            # The job has no resolver of its own: /etc/resolv.conf names the broker, which answers
-            # every query with the signed-binding checks and audit (G1.6 item 4). Same for both
-            # channels; the L3 gateway also carries the DNS queries to the broker's own listener.
+        if spec.egress_mode and entry is None:
+            # A job on its own network has no resolver of its own: /etc/resolv.conf names the
+            # broker, which answers every query with the signed-binding checks and audit (G1.6
+            # item 4). Same for both channels; the L3 gateway also carries the DNS queries to the
+            # broker's own listener. A deployment-profile job (the authorized lab) has no job
+            # network - it joins the lab network and resolves through the deployment's own
+            # resolver (the profile's `-r`, the lab's `/etc/hosts`), so it must not ask for
+            # `broker_ip` of a network that was never created.
             argv += ["--dns", self.broker_ip(spec.job_id)]
         if entry is not None:
             # The deployment profile of this job (lab endpoint data, or an internet provider

@@ -42,6 +42,8 @@ ENV_NAMES = {
     "ssh": "AEGIS_LAB_SSH_IMAGE",
     "cache": "AEGIS_LAB_CACHE_IMAGE",
     "httpd": "AEGIS_LAB_HTTPD_IMAGE",
+    "fingerprintx": "AEGIS_LAB_FINGERPRINTX_IMAGE",
+    "httpx": "AEGIS_LAB_HTTPX_IMAGE",
 }
 
 

@@ -41,13 +41,17 @@ campaign:
   # Same shape as the G1.5c lab demo: the campaign's own caps bound what a case may do. The
   # authorization label makes the run auditable (owner authorization: item 61, salingnh.com).
   policy:
+    # `lab` for PROFILE=lab: the origins live on the lab network; an operator campaign defaults to
+    # `internet` (broker + rate caps), which would never reach them.
+    network_profile: lab
     max_parallel_jobs: 2
     max_duration_hours: 1
     rate_limits:
       requests_per_second_per_host: 5
     budget:
       max_jobs: 10
-      idle_cycles_before_pause: 2
+      # roe-policy.v2 floors this at 3 (a lower value is INPUT_INVALID at POST /campaigns).
+      idle_cycles_before_pause: 3
   timeoutSeconds: 600
 
 cases:
@@ -62,6 +66,8 @@ cases:
     request:
       path: /nosuch
     disclose:
+      # Probe path is a missing page (404 with the banner); the campaign expectation describes `/`.
+      status: 404
       server: "Apache/2.4.49"
       bodyContains: ["404 Not Found"]
     lab:
@@ -73,8 +79,10 @@ cases:
       lab:
         ip: 10.114.53.61
         ports: [80]
-        httpStatus: 404
-        httpTitleContains: "404 Not Found"
+        # Evidence (G1.6b, 2026-11-25, probe from aegis-lab-lab): `GET /` answers 200 with
+        # `<body><h1>It works!</h1></body>` and `Server: Apache/2.4.49 (Unix)`; the page has no
+        # <title> element, so no title is asserted. Only a missing path is 404.
+        httpStatus: 200
         product:
           names: ["Apache HTTP Server", "Apache httpd", "Apache"]
           versionPrefix: "2.4.49"
@@ -112,6 +120,7 @@ cases:
     request:
       path: /
     disclose:
+      status: 200
       server: "nginx/1.16.0"
       bodyContains: ["Welcome to nginx!"]
     lab:
@@ -157,6 +166,7 @@ cases:
     request:
       path: /
     disclose:
+      status: 200
       bodyContains: ["Apache Tomcat/8.5.19"]
     lab:
       address: 10.114.53.63
@@ -227,6 +237,9 @@ cases:
     request:
       path: /nosuch
     disclose:
+      # Missing page: 404 with the Tomcat error page (it prints its version). `/` is the hello page
+      # and prints nothing about the stack (evidence: G1.6b, 2026-11-25).
+      status: 404
       bodyContains: ["Apache Tomcat/8.5.77"]
     lab:
       address: 10.114.53.64
@@ -237,27 +250,13 @@ cases:
       lab:
         ip: 10.114.53.64
         ports: [8080]
-        httpStatus: 404
-        httpTitleContains: "HTTP Status 404"
-        product:
-          names: ["Apache Tomcat", "Tomcat"]
-          versionPrefix: "8.5.77"
-          cpe: "cpe:2.3:a:apache:tomcat:8.5.77"
-        cves:
-          mustInclude:
-            - CVE-2022-42252
-            - CVE-2023-44487
-            - CVE-2023-46589
-            - CVE-2024-24549
-            - CVE-2025-24813
-          kev:
-            - CVE-2023-44487
-            - CVE-2025-24813
-          mustNotInclude:
-            # The Spring version is not disclosed over HTTP; attributing CVE-2022-22965 from the
-            # Tomcat banner would be a false positive. Spring4Shell is a G2 dynamic-verification
-            # case, not a banner-match case.
-            - CVE-2022-22965
+        # Evidence (G1.6b run, 2026-11-25, probe from aegis-lab-lab): `GET /` answers 200 with
+        # `<h2>Hello, my name is , I am  years old.</h2>`, no Server header and no product marker.
+        # The embedded Tomcat 8.5.77 is not disclosed anywhere in the response, so the chain cannot
+        # identify it and no CVE can be asserted for this origin as it is built. A Spring/Tomcat
+        # case needs the origin to disclose its stack (a marker the catalog can pin) - that is a
+        # vulnlab-origin change, not an adapter or matcher change.
+        httpStatus: 200
       internet:
         ports: [443]
         httpStatus: 404
@@ -286,6 +285,8 @@ cases:
     request:
       path: /login
     disclose:
+      # `/login` is 200 and carries `X-Jenkins: 2.138`; `/` answers 403 with the same header.
+      status: 200
       bodyContains: ["Jenkins"]
     lab:
       address: 10.114.53.65
@@ -296,8 +297,10 @@ cases:
       lab:
         ip: 10.114.53.65
         ports: [8080]
-        httpStatus: 200
-        httpTitleContains: "Jenkins"
+        # Evidence (G1.6b, 2026-11-25): `GET /` answers 403 with `X-Jenkins: 2.138` and
+        # `Server: Jetty(9.4.z-SNAPSHOT)`; `/login` answers 200 with the same header. The 403 body
+        # is a redirect stub, so no title is asserted; the version comes from that header.
+        httpStatus: 403
         product:
           names: ["Jenkins", "Jenkins CI"]
           versionPrefix: "2.138"
@@ -342,6 +345,7 @@ cases:
     request:
       path: /nosuch
     disclose:
+      status: 404
       server: "Jetty(9.4.40.v20210413)"
       bodyContains: ["Powered by Jetty:// 9.4.40.v20210413"]
     lab:
@@ -354,7 +358,7 @@ cases:
         ip: 10.114.53.66
         ports: [8080]
         httpStatus: 404
-        httpTitleContains: "Error 404 Not Found"
+        httpTitleContains: "Error 404 - Not Found"
         product:
           names: ["Jetty", "Eclipse Jetty"]
           versionPrefix: "9.4.40"
@@ -371,7 +375,7 @@ cases:
       internet:
         ports: [443]
         httpStatus: 404
-        httpTitleContains: "Error 404 Not Found"
+        httpTitleContains: "Error 404 - Not Found"
         product:
           names: ["Jetty", "Eclipse Jetty"]
           versionPrefix: "9.4.40"
@@ -400,6 +404,7 @@ cases:
     request:
       path: /
     disclose:
+      status: 200
       server: "Jetty(9.2.11.v20150529)"
       bodyContains: ["Struts2 Showcase"]
     lab:

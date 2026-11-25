@@ -26,7 +26,6 @@ spec:
     scopeRequired: false
     networkAccess: egress
     egressMode: broker
-    proxyAware: false
     egressSources:
     - id: public-resolver
       hosts:

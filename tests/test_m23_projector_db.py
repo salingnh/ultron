@@ -14,6 +14,7 @@ throwaway (see `tests/m23_support.py`). What these tests pin, in the order the c
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections.abc import Iterator
@@ -46,6 +47,7 @@ from tests.m23_support import (
     two_campaign_subdomains,
     wipe_graph,
 )
+from tests.support_ingestion import observation
 
 pytestmark = requires_pipeline
 
@@ -168,6 +170,67 @@ def test_projection_end_to_end(database: tuple[str, list[str]]) -> None:
         # The runtime validates deltas with the generated DTO; this is the contract-bundle check
         # (semantic aegis-* formats included) on what the projector really emitted.
         assert assert_deltas_satisfy_contract(dsn) >= 1
+
+
+def test_a_graph_predicate_is_projected_as_an_observation_node(
+    database: tuple[str, list[str]],
+) -> None:
+    """G1.6b: `service.product`/`http.technology` get a :Observation node, port state does not.
+
+    The graph is the product view: `contracts/ingestion/predicates.v2.yaml` marks the predicates
+    worth projecting (`graph: true`) and every other observation stays a PostgreSQL row. The node
+    carries the subject's canonical key and the same `value_summary` the MCP read model publishes,
+    read from PostgreSQL at apply time - not from the event payload.
+    """
+    dsn, jobs = database
+    key = "service:203.0.113.10:8080/tcp"
+    product = {
+        "product": "nginx",
+        "version": "1.29.8",
+        "cpe": "cpe:2.3:a:f5:nginx:1.29.8:*:*:*:*:*:*:*",
+    }
+    with graph_driver() as driver:
+        receipt = ingest(
+            dsn,
+            jobs[2],
+            assets=[
+                {"kind": "service", "canonical_key": key},
+                {"kind": "application", "canonical_key": "app:http://203.0.113.10:8080"},
+            ],
+            observations=[
+                {**observation(key, "service.product", product), "confidence": 0.9},
+                observation(key, "net.port_state", "open"),
+                observation("app:http://203.0.113.10:8080", "http.technology", ["nginx:1.29.8"]),
+            ],
+            relationships=[
+                {
+                    "type": "SERVES",
+                    "from": key,
+                    "to": "app:http://203.0.113.10:8080",
+                    "confidence": 1.0,
+                    "observed_at": "2026-11-24T10:00:00Z",
+                }
+            ],
+        )
+        assert receipt.accepted and not receipt.quarantined, receipt.quarantined
+        project_all(dsn, driver)
+
+        nodes = graph.snapshot(driver)["nodes"]
+        projected = {k: v for k, v in nodes.items() if "Observation" in v["labels"]}
+        assert len(projected) == 2, sorted(projected)
+        predicates = {node["properties"]["predicate"] for node in projected.values()}
+        assert predicates == {"service.product", "http.technology"}
+        node = next(
+            n for n in projected.values() if n["properties"]["predicate"] == "service.product"
+        )
+        assert node["properties"]["subject"] == key
+        assert "nginx" in node["properties"]["value_summary"]
+        assert node["properties"]["value_summary"] == json.dumps(product, sort_keys=True)
+        assert node["properties"]["confidence"] == pytest.approx(0.9)
+        assert node["properties"]["pg_revision"] >= 1
+        # The SERVES edge is the traversal path Service -> Application, the observation node is
+        # the value hanging off the asset's canonical key (G1.6b keeps the model's labels/edges).
+        assert "SERVES" in {edge["type"] for edge in graph.snapshot(driver)["edges"].values()}
 
 
 def test_per_key_order_survives_partitioning(database: tuple[str, list[str]]) -> None:

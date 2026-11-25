@@ -43,6 +43,7 @@ __all__ = [
     "cypher_statements",
     "evidence_upsert",
     "finding_upsert",
+    "observation_upsert",
     "relationship_upsert",
     "templates",
     "vulnerability_upsert",
@@ -133,13 +134,14 @@ def cypher_statements(text: str) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class Templates:
-    """The five statement groups of `projector-upserts.cypher`, in file order."""
+    """The six statement groups of `projector-upserts.cypher`, in file order."""
 
     asset: str
     relationship: str
     finding: str
     evidence: str
     vulnerability: str
+    observation: str
 
 
 def _only_one(statements: list[str], marker: str, name: str) -> str:
@@ -174,6 +176,7 @@ def templates() -> Templates:
         finding=_only_one(statements, "MERGE (fd:Finding", "finding"),
         evidence=_only_one(statements, "MERGE (e:Evidence", "evidence"),
         vulnerability=_only_one(statements, "MERGE (v:Vulnerability", "vulnerability"),
+        observation=_only_one(statements, "MERGE (o:Observation", "observation"),
     )
 
 
@@ -210,7 +213,7 @@ def evidence_upsert() -> str:
 
 
 def vulnerability_upsert() -> str:
-    """Statement 5: the `:Vulnerability` node and the candidate `AFFECTED_BY` edge."""
+    """Statement 4: the `:Vulnerability` node and the candidate `AFFECTED_BY` edge."""
     return templates().vulnerability
 
 
@@ -227,6 +230,11 @@ def affected_by_source(kind: str) -> str:
             f"{', '.join(AFFECTED_BY_SOURCE_KINDS)}"
         )
     return kind
+
+
+def observation_upsert() -> str:
+    """Statement 5: one `:Observation` node for a `graph: true` predicate (G1.6b)."""
+    return templates().observation
 
 
 @lru_cache(maxsize=1)

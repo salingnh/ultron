@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capabilities/service/fingerprint.v2.schema.json",
+  "title": "service.fingerprint v2",
+  "description": "Input của fingerprintx (G1.6b): nhận diện giao thức, sản phẩm và phiên bản của dịch vụ trên cổng đã biết mở. targets là khóa service:<ip>:<port>/tcp của asset đã biết (M05 phân giải thành TargetRef); job không mở cổng mới và không nhận UDP (fingerprintx bật plugin UDP bằng cờ của cả job, không mức target). ports là tập cổng của chính các target đó: targetBinding=required dựng binding egress từ input.ports, nên một cổng nằm trong khóa mà thiếu ở đây sẽ không được broker mở.",
+  "type": "object",
+  "required": [
+    "targets",
+    "ports"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "targets": {
+      "description": "Khóa chuẩn của dịch vụ đã biết, dạng service:<ip>:<port>/tcp. Mỗi phần tử phải là asset của campaign (M05 trả INPUT_INVALID cho khóa lạ); /udp bị từ chối vì cờ UDP của fingerprintx là mức job.",
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "../../common/ids.v2.schema.json#/$defs/CanonicalKey"
+          },
+          {
+            "pattern": "^service:(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}|\\[(?=[0-9a-f:]*:)[0-9a-f:]+\\]):(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])/tcp$"
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true
+    },
+    "ports": {
+      "description": "Tập cổng của targets, dùng dựng binding egress (targetPorts: from_input). Trùng với cổng trong khóa service; mảng rỗng hoặc cổng ngoài 1..65535 là INPUT_INVALID.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true
+    },
+    "timeout_ms": {
+      "description": "Thời gian chờ mỗi lần kết nối (fingerprintx -w, mili giây). Ngân sách cả job vẫn do budget.timeoutSeconds của manifest đã pin quyết định.",
+      "type": "integer",
+      "minimum": 200,
+      "maximum": 10000,
+      "default": 2000
+    }
+  }
+}

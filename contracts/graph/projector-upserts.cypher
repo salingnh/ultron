@@ -46,3 +46,11 @@ ON CREATE SET r.valid_from = datetime($observed_at)
 SET r.observed_at = datetime($observed_at), r.match_method = $match_method,
     r.affected_range = $affected_range, r.confidence = $confidence,
     r.snapshot_id = $snapshot_id, r.match_id = $match_id, r.campaign_id = $campaign_id;
+
+// 5. Observation: chỉ predicate có `graph: true` trong contracts/ingestion/predicates.v2.yaml (M23
+// lọc theo registry, không đưa mọi observation vào đồ thị). `subject` là canonical_key của tài sản
+// bị quan sát; giá trị đầy đủ ở PostgreSQL, ở đây là value_summary để đồ thị không phình.
+MERGE (o:Observation {observation_id: $observation_id})
+SET o.predicate = $predicate, o.value_summary = $value_summary, o.polarity = $polarity,
+    o.subject = $subject, o.observed_at = datetime($observed_at),
+    o.confidence = $confidence, o.pg_revision = $revision;

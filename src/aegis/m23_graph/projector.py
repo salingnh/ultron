@@ -298,6 +298,11 @@ class Projector:
                 if event.type == FINDING_EVENT and event.payload.get("evidence_ref")
             ],
         )
+        # G1.6b: the `:Observation` node of a `graph: true` predicate reads its value and
+        # confidence from PostgreSQL at apply time, like every other node property.
+        observations = pg.prefetch_observations(
+            self._conn, pg.event_ids(batch, OBSERVATION_EVENT, "observation_id")
+        )
         planned = plan_round(
             batch,
             seen=seen,
@@ -306,6 +311,7 @@ class Projector:
             incoming=incoming,
             findings=findings,
             evidence=evidence,
+            observations=observations,
             partitions=max(self.config.partitions, 1),
             vulnerabilities=vulnerabilities,
             matches=matches,

@@ -13,10 +13,18 @@ from pathlib import Path
 from typing import Any
 
 from aegis.m06_runner.job import JobRunner
+from tests import m06_support
 
 
-def _write(directory: Path, input_values: dict[str, Any]) -> None:
-    JobRunner._write_inputs(directory, input_values)  # noqa: SLF001 - the seam under test
+def _write(
+    directory: Path, input_values: dict[str, Any], manifest_name: str = "manifest.naabu.yaml"
+) -> None:
+    # The pinned manifest decides the target rendering (`runtime.targetsFormat`); the default here
+    # is the port scanner's, whose `canonical` format is the one this suite checks.
+    manifest, _ = m06_support.manifest(manifest_name)
+    JobRunner._write_inputs(  # noqa: SLF001 - the seam under test
+        directory, input_values, manifest
+    )
 
 
 def test_targets_are_written_without_the_canonical_key_prefix(tmp_path: Path) -> None:

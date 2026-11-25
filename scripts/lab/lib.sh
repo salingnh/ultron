@@ -79,6 +79,8 @@ load_images() {
   : "${AEGIS_LAB_PASSIVE_IMAGE:?deploy/lab/images.env: AEGIS_LAB_PASSIVE_IMAGE missing}"
   : "${AEGIS_LAB_DNSX_IMAGE:?deploy/lab/images.env: AEGIS_LAB_DNSX_IMAGE missing}"
   : "${AEGIS_LAB_SUBFINDER_IMAGE:?deploy/lab/images.env: AEGIS_LAB_SUBFINDER_IMAGE missing}"
+  : "${AEGIS_LAB_FINGERPRINTX_IMAGE:?deploy/lab/images.env: AEGIS_LAB_FINGERPRINTX_IMAGE missing}"
+  : "${AEGIS_LAB_HTTPX_IMAGE:?deploy/lab/images.env: AEGIS_LAB_HTTPX_IMAGE missing}"
 }
 
 compose() { podman-compose -p "$LAB_PROJECT" -f "$COMPOSE_FILE" "$@"; }

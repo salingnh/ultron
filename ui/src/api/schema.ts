@@ -1050,8 +1050,8 @@ export interface components {
             subject: components["schemas"]["CanonicalKey"];
             /** @description Phải có trong contracts/ingestion/predicates.v2.yaml (cổng G4). */
             predicate: string;
-            /** @description Giá trị theo value_type của predicate. */
-            value: string | number | boolean | Record<string, never> | unknown[] | null;
+            /** @description Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu. */
+            value: number | string | boolean | Record<string, never> | unknown[] | null;
             /**
              * @description present = thấy; absent = không thấy tại thời điểm quan sát; negated = có bằng chứng phủ định rõ ràng.
              * @default present
@@ -1194,8 +1194,8 @@ export interface components {
                     subject: components["schemas"]["CanonicalKey"];
                     /** @description Phải có trong contracts/ingestion/predicates.v2.yaml (cổng G4). */
                     predicate: string;
-                    /** @description Giá trị theo value_type của predicate. */
-                    value: string | number | boolean | Record<string, never> | unknown[] | null;
+                    /** @description Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu. */
+                    value: number | string | boolean | Record<string, never> | unknown[] | null;
                     /**
                      * @description present = thấy; absent = không thấy tại thời điểm quan sát; negated = có bằng chứng phủ định rõ ràng.
                      * @default present

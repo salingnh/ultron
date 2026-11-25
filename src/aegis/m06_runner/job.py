@@ -36,7 +36,6 @@ from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import collector, parser_host
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner import spec as specs
-from aegis.m06_runner import values as texts
 from aegis.m06_runner.collector import CollectionError, CollectionResult
 from aegis.m06_runner.lifecycle import (
     TERMINAL_DB_STATUSES,
@@ -352,7 +351,7 @@ class JobRunner:
                 outcome.error = str(error)
                 return outcome
             layout = self.runner.layout(plan.job_id).create()
-            self._write_inputs(layout.input, plan.input)
+            self._write_inputs(layout.input, plan.input, plan.manifest)
             try:
                 if policy.mode == "egress" and spec.network_profile == "internet":
                     self.runner.start_broker(plan.job_id, policy)
@@ -487,15 +486,21 @@ class JobRunner:
     # -- steps ------------------------------------------------------------------------------
 
     @staticmethod
-    def _write_inputs(input_dir: Path, input_values: Mapping[str, Any]) -> None:
+    def _write_inputs(
+        input_dir: Path, input_values: Mapping[str, Any], manifest: ProviderManifest
+    ) -> None:
         """Write the tool's input files; a target is written as the tool's value, not as a key.
 
         `input.targets` carries the contract's `DomainTarget`/`CanonicalKey` form, where the
-        `dns:`/`ip:`/`url:`/... prefix is optional platform notation. A tool reading
-        `/in/targets.txt` (the pinned `argsTemplate` of both DNS adapters) understands names and
-        addresses, never our prefixes: writing `dns:lab.aegis.test` into the file makes Subfinder
-        enumerate nothing at all, silently. So the known canonical prefixes are stripped here, once,
-        and the parser keeps working on the keys it is handed.
+        `dns:`/`ip:`/`service:`/... prefix is optional platform notation. A tool reading
+        `/in/targets.txt` understands its own values, never our prefixes: writing
+        `dns:lab.aegis.test` into the file makes Subfinder enumerate nothing at all, silently.
+
+        The pinned manifest says how its tool reads a target (`runtime.targetsFormat`, G1.6b):
+        `canonical` strips the prefix and keeps the rest (Subfinder/DNSx/naabu); `host_port` also
+        drops the `/tcp` suffix of a service key so fingerprintx/httpx read `host:port`. The rule
+        lives in `spec.tool_target` and `build_spec` already refused a `/udp` target for that
+        format, so this method cannot widen what the job may scan.
 
         An integer-array `ports` input is staged the same way, as `/in/ports.txt` one port per
         line. The OI-12 rendering rule forbids joining a list into one argv element (an array
@@ -506,7 +511,8 @@ class JobRunner:
         """
         targets = input_values.get("targets")
         if isinstance(targets, list) and all(isinstance(item, str) for item in targets):
-            values = [texts.TARGET_PREFIXES.sub("", item, count=1) for item in targets]
+            name = specs.targets_format(manifest)
+            values = [specs.tool_target(item, name) for item in targets]
             (input_dir / "targets.txt").write_text("\n".join(values) + "\n", encoding="utf-8")
         ports = input_values.get("ports")
         if (

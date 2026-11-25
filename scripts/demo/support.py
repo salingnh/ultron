@@ -44,6 +44,8 @@ TERMINAL_CAMPAIGN = {"COMPLETED", "FAILED", "CANCELLED"}
 
 #: The campaign the demo creates: the lab zone only, the lab-only policy, a fake model.
 DEMO_POLICY: dict[str, Any] = {
+    # Demos run on the authorized lab network; an operator campaign defaults to `internet`.
+    "network_profile": "lab",
     "max_parallel_jobs": 2,
     "max_duration_hours": 1,
     "rate_limits": {"requests_per_second_per_host": 5},
@@ -79,12 +81,19 @@ def now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def campaign_body(name: str, objective: str | None = None) -> dict[str, Any]:
-    """The demo campaign: one lab seed domain and the lab-only execution settings.
+def campaign_body(
+    name: str,
+    objective: str | None = None,
+    *,
+    targets: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, Any]:
+    """A demo campaign: the lab seeds and the lab-only execution settings.
 
     `objective` is what the session reads (it reaches M03 verbatim in the context bundle), so it is
     how a demo says how far the scripted policy should go: `make demo-g1` stops after the DNS
-    chain, `make demo-discovery` asks for the services on the resolved addresses.
+    chain, `make demo-discovery`/`make demo-g16c` ask for the services on the resolved addresses,
+    `make demo-g16b` asks for the services and the product behind them. `targets` overrides the seed
+    object (a demo that seeds addresses instead of the zone).
     """
     return {
         "name": name,
@@ -93,7 +102,7 @@ def campaign_body(name: str, objective: str | None = None) -> dict[str, Any]:
             "Enumerate the subdomains of the authorized lab zone, then resolve the names the "
             "enumeration found"
         ),
-        "targets": {"domains": [LAB_ZONE]},
+        "targets": dict(targets) if targets else {"domains": [LAB_ZONE]},
         "policy": dict(DEMO_POLICY),
     }
 

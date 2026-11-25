@@ -56,6 +56,7 @@ CAMPAIGN = str(uuid.uuid4())
 JOB = str(uuid.uuid4())
 FINDING = str(uuid.uuid4())
 EVIDENCE = str(uuid.uuid4())
+OBSERVATION = str(uuid.uuid4())
 ROOT_CANONICAL = f"dns:app.{SUFFIX}"
 ROOT_ASSET = str(uuid.uuid4())
 # Namespaced per run like the domain above: a fixed key would collide with an earlier run's
@@ -149,8 +150,8 @@ def apply_file(path: Path) -> int:
 
 
 def apply_projector(relationship_id: str | None, valid_to: str | None) -> None:
-    """Runs the five projector upserts from the committed template, in file order."""
-    asset, edge, finding, evidence, vulnerability = statements(PROJECTOR)
+    """Runs the projector upserts from the committed template, in file order."""
+    asset, edge, finding, evidence, vulnerability, observation = statements(PROJECTOR)
     run(asset, {
         "canonical_key": ROOT_CANONICAL, "asset_id": ROOT_ASSET, "kind": "domain",
         "first_seen": OBSERVED, "last_seen": OBSERVED,
@@ -191,6 +192,11 @@ def apply_projector(relationship_id: str | None, valid_to: str | None) -> None:
         "affected_range": ">= 2.0.0, < 2.15.0", "confidence": 0.6,
         "observed_at": OBSERVED, "match_id": MATCH, "campaign_id": CAMPAIGN,
     })
+    run(observation, {
+        "observation_id": OBSERVATION, "predicate": "service.product",
+        "value_summary": '{"product": "nginx", "version": "1.29.8"}', "polarity": "present",
+        "subject": SUB_CANONICAL, "observed_at": OBSERVED, "confidence": 0.8, "revision": 1,
+    })
 
 
 def constraint_runs() -> str:
@@ -214,6 +220,8 @@ def projector_twice() -> str:
                             {"sha256": SHA256})[0],
         "edges": scalars("MATCH ()-[r]->() WHERE r.source_job_id = $job RETURN count(r)",
                          {"job": JOB})[0],
+        "observations": scalars("MATCH (o:Observation {observation_id: $id}) RETURN count(o)",
+                                {"id": OBSERVATION})[0],
     }
     for query, key, value in (
         ("MATCH (:Vulnerability {vulnerability_id: $cve}) RETURN count(*)",
@@ -225,7 +233,7 @@ def projector_twice() -> str:
         count = scalars(query, params)[0]
         if count != 1:
             raise AssertionError(f"{key}={value!r}: expected 1 node/edge, found {count}")
-    expected = {"assets": 3, "findings": 1, "evidence": 1, "edges": 3}
+    expected = {"assets": 3, "findings": 1, "evidence": 1, "edges": 3, "observations": 1}
     if counts != expected:
         raise AssertionError(f"{counts} != {expected}")
     return str(counts)

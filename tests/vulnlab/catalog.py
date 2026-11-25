@@ -56,7 +56,11 @@ CATALOG_PATH = Path(__file__).with_name("cases.yaml")
 CASE_PROFILES = ("lab", "internet")
 
 FEED_KEYS = ("nvd", "kev")
-PROFILE_REQUIRED = ("ports", "product", "cves")
+#: Fields every profile expectation must carry. `product`/`cves` are optional on purpose: an
+#: origin that publishes no product marker (no Server header, no title, no X- header) has nothing
+#: the chain could identity, and `product: null` together with an empty `cves` is the honest
+#: expectation - the evidence (the probe transcript) belongs in a comment next to it.
+PROFILE_REQUIRED = ("ports",)
 CVE_ID = re.compile(r"^CVE-\d{4}-\d{4,}$")
 IMAGE_REF = re.compile(
     r"^(?P<repo>[a-z0-9][a-z0-9._/-]*):(?P<tag>[A-Za-z0-9._-]+)@sha256:(?P<digest>[0-9a-f]{64})$"
@@ -130,7 +134,7 @@ class Expectation:
 
     ports: tuple[int, ...]
     product: ProductExpectation | None
-    cves: CveExpectation
+    cves: CveExpectation | None
     http_status: int | None = None
     http_title_contains: str | None = None
     ip: str | None = None
@@ -153,6 +157,7 @@ class Case:
     lab_address: str
     host_env: str | None
     expectations: Mapping[str, Expectation]
+    disclose_status: int | None = None
     read_only_rootfs: bool = True
     read_only_reason: str | None = None
 
@@ -328,6 +333,11 @@ def _case(raw: Any, index: int) -> Case:
     body = disclose.get("bodyContains", [])
     if not isinstance(body, list) or not all(isinstance(item, str) and item for item in body):
         raise CatalogError(f"{where}.disclose.bodyContains must be a list of strings")
+    disclose_status = disclose.get("status")
+    if disclose_status is not None and (
+        not isinstance(disclose_status, int) or not 100 <= disclose_status <= 599
+    ):
+        raise CatalogError(f"{where}.disclose.status must be an HTTP status")
 
     lab = raw.get("lab")
     if not isinstance(lab, Mapping):
@@ -380,6 +390,7 @@ def _case(raw: Any, index: int) -> Case:
         request_path=path if path.startswith("/") else "/" + path,
         disclose_server=server,
         disclose_body=tuple(body),
+        disclose_status=disclose_status,
         lab_address=address,
         host_env=host_env,
         expectations=expectations,
@@ -423,19 +434,24 @@ def _expectation(raw: Any, where: str, profile: str) -> Expectation:
         )
 
     cves_raw = raw.get("cves")
-    if not isinstance(cves_raw, Mapping):
-        raise CatalogError(f"{where}.cves must be a mapping")
-    cves = CveExpectation(
-        must_include=_cve_list(cves_raw, "mustInclude", where),
-        kev=_cve_list(cves_raw, "kev", where),
-        must_not_include=_cve_list(cves_raw, "mustNotInclude", where),
-    )
-    overlap = set(cves.must_include) & set(cves.must_not_include)
-    if overlap:
-        raise CatalogError(f"{where}.cves: ids both expected and forbidden: {sorted(overlap)}")
-    outside = set(cves.kev) - set(cves.must_include)
-    if outside:
-        raise CatalogError(f"{where}.cves.kev must be a subset of mustInclude: {sorted(outside)}")
+    cves: CveExpectation | None = None
+    if cves_raw is not None:
+        if not isinstance(cves_raw, Mapping):
+            raise CatalogError(f"{where}.cves must be a mapping or null")
+        cves = CveExpectation(
+            must_include=_cve_list(cves_raw, "mustInclude", where),
+            kev=_cve_list(cves_raw, "kev", where),
+            must_not_include=_cve_list(cves_raw, "mustNotInclude", where),
+        )
+    if cves is not None:
+        overlap = set(cves.must_include) & set(cves.must_not_include)
+        if overlap:
+            raise CatalogError(f"{where}.cves: ids both expected and forbidden: {sorted(overlap)}")
+        outside = set(cves.kev) - set(cves.must_include)
+        if outside:
+            raise CatalogError(
+                f"{where}.cves.kev must be a subset of mustInclude: {sorted(outside)}"
+            )
 
     status = raw.get("httpStatus")
     if status is not None and (not isinstance(status, int) or not 100 <= status <= 599):
@@ -576,6 +592,8 @@ class CampaignSnapshot:
     services: tuple[ServiceFinding, ...] = ()
     web: tuple[WebFinding, ...] = ()
     cves: tuple[CveFinding, ...] = ()
+    #: Vulnerability ids the loaded intel snapshot knows (empty = no filtering, for unit fixtures).
+    known_vulnerabilities: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
 
     @property
@@ -676,7 +694,8 @@ def compare(case: Case, profile: str, snapshot: CampaignSnapshot) -> CaseVerdict
     if expectation.http_status is not None or expectation.http_title_contains is not None:
         checks.append(_http_check(expectation, snapshot.web))
 
-    checks.extend(_cve_checks(expectation.cves, snapshot.cves))
+    if expectation.cves is not None:
+        checks.extend(_cve_checks(expectation.cves, snapshot.cves, snapshot.known_vulnerabilities))
 
     ok = all(check.ok for check in checks)
     return CaseVerdict(
@@ -868,10 +887,25 @@ def _http_check(expectation: Expectation, web: Sequence[WebFinding]) -> Check:
     return Check("http", False, "; ".join(failures))
 
 
-def _cve_checks(expectation: CveExpectation, cves: Sequence[CveFinding]) -> list[Check]:
+def _cve_checks(
+    expectation: CveExpectation,
+    cves: Sequence[CveFinding],
+    known: Sequence[str] = (),
+) -> list[Check]:
+    """Candidates the catalog expects *and the pinned intel snapshot can produce*.
+
+    The catalog lists the public CVE set of a version; the intel store the demo loads is the
+    committed slice (`tests/fixtures/intel`), which covers a subset. Asserting a CVE the snapshot
+    never loaded would fail on missing data rather than on the chain, so the expectation is
+    intersected with the snapshot's vulnerability ids; ids outside it are reported as one
+    informational check instead of pretending they passed.
+    """
     seen = {cve.cve_id for cve in cves}
+    known_set = set(known)
+    required = [cve for cve in expectation.must_include if not known_set or cve in known_set]
+    uncovered = [cve for cve in expectation.must_include if known_set and cve not in known_set]
     checks: list[Check] = []
-    missing = [cve for cve in expectation.must_include if cve not in seen]
+    missing = [cve for cve in required if cve not in seen]
     if expectation.must_include:
         checks.append(
             Check(
@@ -879,10 +913,13 @@ def _cve_checks(expectation: CveExpectation, cves: Sequence[CveFinding]) -> list
                 not missing,
                 f"missing candidates {missing} (saw {sorted(seen)})"
                 if missing
-                else f"{len(expectation.must_include)} expected candidate(s) present",
+                else f"{len(required)} expected candidate(s) present"
+                + (f" ({len(uncovered)} not in the intel slice: {uncovered})" if uncovered else ""),
             )
         )
     for cve in expectation.kev:
+        if known_set and cve not in known_set:
+            continue
         flagged = [item for item in cves if item.cve_id == cve and item.kev is True]
         checks.append(
             Check(

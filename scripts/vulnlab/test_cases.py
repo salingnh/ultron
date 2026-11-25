@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""`make vulnlab-test PROFILE=lab|internet` - assert the discovery chain against the CVE lab catalog.
+"""`make vulnlab-test PROFILE=lab|internet` - assert the chain against the CVE lab catalog.
 
 For every case in `tests/vulnlab/cases.yaml` this creates one campaign against the case's target
 (the origin address on the lab network for `lab`, the public tunnel hostname for `internet`), waits
-for it to finish, reads what the campaign recorded (PostgreSQL observations and assets, the Neo4j
-`AFFECTED_BY` candidates) and prints a verdict per case:
+for it to finish, loads the committed intel slices through M18 when the store is empty,
+runs the M20 matcher for the campaign, then reads what the campaign recorded (PostgreSQL
+observations and assets, the Neo4j `AFFECTED_BY` candidates) and prints a verdict per case:
 
     PASS     every catalog assertion held
     FAIL     the chain ran and produced the wrong or missing detection
@@ -26,6 +27,7 @@ import dataclasses
 import json
 import os
 import sys
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -176,25 +178,32 @@ def _observations(connection: Any, campaign_id: str) -> list[dict[str, Any]]:
 
 
 def _cves(campaign_id: str) -> tuple[CveFinding, ...]:
-    rows = support.neo4j_query(
-        """
-        MATCH (n:Asset)
-        WHERE $cid IN n.campaign_ids
-        MATCH (n)-[:AFFECTED_BY]->(v:Vulnerability)
-        RETURN coalesce(n.canonical_key, '') AS asset,
-               coalesce(v.vulnerability_id, v.cve_id, '') AS cve,
-               coalesce(v.kev, false) AS kev
-        """,
-        cid=campaign_id,
+    """The campaign's candidate edges, read from Neo4j.
+
+    `support.neo4j_query` reads `cypher-shell --format plain`, which joins columns with `|`, so each
+    attribute is its own single-column query and the three lists are zipped in the same order.
+    """
+    scope = (
+        "MATCH (n:Asset) WHERE $cid IN n.campaign_ids"
+        " MATCH (n)-[:AFFECTED_BY]->(v:Vulnerability)"
+        " RETURN {field} AS entry"
+        " ORDER BY n.canonical_key, v.vulnerability_id"
     )
+
+    def column(field: str) -> list[str]:
+        return [
+            str(row["entry"])
+            for row in support.neo4j_query(scope.format(field=field), cid=campaign_id)
+        ]
+
+    assets = column("coalesce(n.canonical_key, '')")
+    cves = column("coalesce(v.vulnerability_id, '')")
+    flags = column("toString(coalesce(v.kev, false))")
     found: list[CveFinding] = []
-    for row in rows:
-        cve_id = str(row.get("cve") or "").strip()
+    for asset, cve_id, flag in zip(assets, cves, flags, strict=True):
         if not cve_id.startswith("CVE-"):
             continue
-        kev = row.get("kev")
-        flag = kev if isinstance(kev, bool) else str(kev).strip().lower() == "true"
-        found.append(CveFinding(asset=str(row.get("asset") or ""), cve_id=cve_id, kev=flag))
+        found.append(CveFinding(asset=asset, cve_id=cve_id, kev=flag.strip().lower() == "true"))
     return tuple(found)
 
 
@@ -237,7 +246,9 @@ def snapshot(connection: Any, campaign_id: str, status: str) -> CampaignSnapshot
     jobs = tuple(
         str(row["capability"])
         for row in support.rows(
-            connection, "SELECT capability FROM aegis.scan_job WHERE campaign_id = %s", [campaign_id]
+            connection,
+            "SELECT capability FROM aegis.scan_job WHERE campaign_id = %s",
+            [campaign_id],
         )
     )
     errors = ()
@@ -245,6 +256,13 @@ def snapshot(connection: Any, campaign_id: str, status: str) -> CampaignSnapshot
         errors = (f"campaign {campaign_id} ended {status}, not COMPLETED",)
     elif status == "FAILED":
         errors = (f"campaign {campaign_id} FAILED (see .local/m02-worker.log / m06.log)",)
+    known = tuple(
+        str(row["vulnerability_id"])
+        for row in support.rows(
+            connection,
+            "SELECT vulnerability_id FROM aegis.vulnerability_current ORDER BY vulnerability_id",
+        )
+    )
     return CampaignSnapshot(
         campaign_id=campaign_id,
         status=status,
@@ -252,6 +270,7 @@ def snapshot(connection: Any, campaign_id: str, status: str) -> CampaignSnapshot
         services=tuple(services.values()),
         web=web_findings,
         cves=_cves(campaign_id),
+        known_vulnerabilities=known,
         errors=errors,
     )
 
@@ -290,6 +309,58 @@ def _list(raw: Any) -> list[str]:
     return []
 
 
+INTEL_FIXTURES = REPO / "tests/fixtures/intel"
+INTEL_VERSION = "2026-11-24"
+
+
+def _ensure_intel(connection: Any) -> None:
+    """Load the committed feed slices when the intel store is empty (idempotent when it is not)."""
+    from aegis.m18_intel.sync import FeedSync
+
+    present = support.count(connection, "SELECT count(*) FROM intel_snapshot")
+    if present:
+        return
+    sync = FeedSync.from_env()
+    for feed, path in (
+        ("nvd", INTEL_FIXTURES / "nvd-slice.json"),
+        ("kev", INTEL_FIXTURES / "kev-slice.json"),
+        ("epss", INTEL_FIXTURES / "epss-slice.csv"),
+    ):
+        report = sync.sync(
+            feed,
+            INTEL_VERSION,
+            path.read_bytes(),
+            source_uri=path.name,
+            snapshot_at=datetime(2026, 11, 24, 6, 0, tzinfo=UTC),
+        )
+        print(
+            f"  intel {feed}: records={report.records} written={report.written}"
+            f" sha256={report.content_sha256[:12]}"
+        )
+
+
+def _wait_for_candidates(campaign_id: str, expected: int, timeout_seconds: float = 90.0) -> None:
+    """Wait until the projector published the matcher's candidates as AFFECTED_BY edges."""
+    if expected <= 0:
+        return
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        rows = support.neo4j_query(
+            "MATCH (n:Asset) WHERE $cid IN n.campaign_ids"
+            " MATCH (n)-[:AFFECTED_BY]->(:Vulnerability)"
+            " RETURN count(*) AS edges",
+            cid=campaign_id,
+        )
+        edges = int(rows[0]["edges"]) if rows else 0
+        if edges >= expected:
+            return
+        time.sleep(1)
+    print(
+        f"  projection: only {edges} AFFECTED_BY edge(s) after {timeout_seconds:.0f}s "
+        f"(matcher wrote {expected}); reading what the graph has"
+    )
+
+
 def run_case(
     case: Case, profile: str, catalog: Catalog, timeout_seconds: float, verbose: bool
 ) -> tuple[dict[str, Any], int]:
@@ -304,6 +375,18 @@ def run_case(
     status = str(finished.get("status"))
     connection = support.pg()
     try:
+        # The campaign records product/version/CPE; the CVE candidates need the intel store and the
+        # matcher. Loading the three committed slices is idempotent (M18 skips unchanged bytes), and
+        # the matcher is per campaign, so this is the smallest step that makes a case assertable -
+        # the harness used to assume a demo had left both behind.
+        _ensure_intel(connection)
+        from aegis.m20_vuln.matching import Matcher
+
+        report = Matcher(connection).run(campaign_id=campaign_id)
+        print(f"  matcher: {json.dumps(report.as_dict(), sort_keys=True)[:200]}")
+        # The candidates live in Neo4j, which the projector fills asynchronously: wait for the
+        # campaign's AFFECTED_BY edges before reading them, or a fast run asserts on an empty graph.
+        _wait_for_candidates(campaign_id, report.new_matches)
         recorded = snapshot(connection, campaign_id, status)
     finally:
         connection.close()
@@ -313,7 +396,9 @@ def run_case(
     if verbose:
         for check in verdict.checks:
             print(f"    {'ok  ' if check.ok else 'FAIL'} {check.name}: {check.detail}")
-        print(f"    observed: services={list(recorded.services)} web={[w.url for w in recorded.web]}")
+        print(
+            f"    observed: services={list(recorded.services)} web={[w.url for w in recorded.web]}"
+        )
         print(f"    candidates: {list(recorded.cve_ids())}")
     report = {
         "case": case.id,
@@ -322,7 +407,9 @@ def run_case(
         "campaign_status": status,
         "verdict": verdict.status,
         "reason": verdict.reason,
-        "checks": [{"name": check.name, "ok": check.ok, "detail": check.detail} for check in verdict.checks],
+        "checks": [
+            {"name": check.name, "ok": check.ok, "detail": check.detail} for check in verdict.checks
+        ],
         "jobs": list(recorded.capabilities),
         "services": [dataclasses.asdict(service) for service in recorded.services],
         "web": [dataclasses.asdict(web) for web in recorded.web],
@@ -333,7 +420,9 @@ def run_case(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("lab", "internet"), default=os.environ.get("PROFILE", "lab"))
+    parser.add_argument(
+        "--profile", choices=("lab", "internet"), default=os.environ.get("PROFILE", "lab")
+    )
     parser.add_argument("--case", action="append", default=[], help="only these case ids")
     parser.add_argument("--timeout", type=float, default=None, help="per-campaign timeout seconds")
     parser.add_argument("--plan", action="store_true", help="print campaigns, create nothing")
@@ -377,8 +466,9 @@ def main(argv: list[str] | None = None) -> int:
         ]
         if placeholder and not arguments.allow_placeholder_hostnames:
             print(
-                f"[vulnlab] placeholder hostnames for {placeholder}: set the real public names in "
-                "deploy/vulnlab/.env first (or pass --allow-placeholder-hostnames to see the failure)",
+                f"[vulnlab] placeholder hostnames for {placeholder}: set the real public names "
+                "in deploy/vulnlab/.env first (or pass --allow-placeholder-hostnames to see the "
+                "failure)",
                 file=sys.stderr,
             )
             return 2
@@ -401,7 +491,9 @@ def main(argv: list[str] | None = None) -> int:
     reports: list[dict[str, Any]] = []
     for case in cases:
         try:
-            report, code = run_case(case, arguments.profile, catalog, timeout_seconds, arguments.verbose)
+            report, _code = run_case(
+                case, arguments.profile, catalog, timeout_seconds, arguments.verbose
+            )
         except (RunnerError, support.DemoError) as error:
             print(f"  FAIL {case.id}: {error}", file=sys.stderr)
             report = {
@@ -410,7 +502,6 @@ def main(argv: list[str] | None = None) -> int:
                 "verdict": "fail",
                 "reason": str(error),
             }
-            code = 1
         reports.append(report)
 
     stamp = _stamp()
@@ -434,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
     passed = sum(1 for report in reports if report["verdict"] == "pass")
     failed_count = sum(1 for report in reports if report["verdict"] == "fail")
     blocked_count = sum(1 for report in reports if report["verdict"] == "blocked")
-    print(f"\n== result " + "=" * 60)
+    print("\n== result " + "=" * 60)
     print(f"  {passed} passed, {failed_count} failed, {blocked_count} blocked")
     print(f"  report {directory / 'report.txt'}")
     if failed_count:
