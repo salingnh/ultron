@@ -312,9 +312,10 @@ def _score(value: object) -> float:
 def parse_epss(data: bytes | str, *, score_date: str | None = None) -> list[VulnRecord]:
     """FIRST EPSS `epss_scores-<date>.csv` (or the equivalent JSON export).
 
-    The CSV is `cve,epss,percentile` with a header line. The JSON form is either a list of
-    `{cve, epss, percentile}` objects or `{"data": [...]}`. `score_date` is the date the scores
-    were computed for (the resource name carries it), never "now": a stored revision must not
+    The CSV is `cve,epss,percentile` with a header line; FIRST's published file also starts with a
+    `#model_version:...` comment line, which is not data and is skipped. The JSON form is either a
+    list of `{cve, epss, percentile}` objects or `{"data": [...]}`. `score_date` is the date the
+    scores were computed for (the resource name carries it), never "now": a stored revision must not
     change just because it was fetched on another day.
     """
     text = data.decode("utf-8") if isinstance(data, bytes) else data
@@ -329,10 +330,15 @@ def parse_epss(data: bytes | str, *, score_date: str | None = None) -> list[Vuln
     else:
         reader = csv.reader(io.StringIO(text))
         rows = []
+        header_seen = False
         for index, row in enumerate(reader):
             if not row:
                 continue
-            if index == 0 and row[0].strip().lower() == "cve":
+            if row[0].lstrip().startswith("#"):
+                # The published file's metadata line (`#model_version:v...`), not a score.
+                continue
+            if not header_seen and row[0].strip().lower() == "cve":
+                header_seen = True
                 continue
             if len(row) < 2:
                 raise FeedError(f"EPSS row {index + 1} has {len(row)} columns, expected 3")

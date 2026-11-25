@@ -2,7 +2,7 @@ apiVersion: aegis.io/v2
 kind: CapabilityProvider
 metadata:
   name: subfinder
-  version: 1.0.1
+  version: 1.0.2
   module: M08
   license: MIT
   upstream: https://github.com/projectdiscovery/subfinder
@@ -44,13 +44,41 @@ spec:
       - 443
       protocol: https
       purpose: passive certificate transparency
-    - id: otx
+    - id: alienvault
       hosts:
       - otx.alienvault.com
       ports:
       - 443
       protocol: https
-      purpose: passive DNS
+      purpose: passive DNS (AlienVault OTX; the source id is the tool's source name)
+    - id: hackertarget
+      hosts:
+      - api.hackertarget.com
+      ports:
+      - 443
+      protocol: https
+      purpose: passive host search
+    - id: rapiddns
+      hosts:
+      - rapiddns.io
+      ports:
+      - 443
+      protocol: https
+      purpose: passive DNS records
+    - id: waybackarchive
+      hosts:
+      - web.archive.org
+      ports:
+      - 443
+      protocol: https
+      purpose: passive URL/domain archive
+    - id: commoncrawl
+      hosts:
+      - index.commoncrawl.org
+      ports:
+      - 443
+      protocol: https
+      purpose: passive crawl index
     targetBinding: none
     rawSocket: false
   budget:

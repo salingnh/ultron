@@ -9,6 +9,27 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "concurrency": {
+      "description": "Số kết nối quét song song (`-c`). Đặt bằng trần `rate_limits.max_concurrent_connections_per_host` của RoE; trần cứng là `budget.maxConcurrency` của manifest đã pin. Broker vẫn xếp hàng/quá hạn theo trần RoE khi công cụ vượt.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "packets_per_second": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "maxItems": 1000,
+      "uniqueItems": true
+    },
     "targets": {
       "description": "Khóa service:<ip>:<port>/<transport> hoặc ip:<ip> kèm ports.",
       "type": "array",
@@ -25,26 +46,11 @@
       "minItems": 1,
       "maxItems": 4096
     },
-    "ports": {
-      "type": "array",
-      "items": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 65535
-      },
-      "maxItems": 1000,
-      "uniqueItems": true
-    },
     "version_intensity": {
       "type": "integer",
       "minimum": 0,
       "maximum": 7,
       "default": 5
-    },
-    "packets_per_second": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 10000
     }
   },
   "allOf": [

@@ -274,7 +274,7 @@ def test_a_private_address_the_campaign_did_not_target_is_refused(
     assert upstream.dialled == []
 
 
-def test_the_per_host_rate_cap_refuses_quickly_instead_of_stalling(
+def test_the_per_host_rate_cap_paces_and_times_out_after_a_bounded_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     upstream = FakeUpstream()
@@ -284,7 +284,10 @@ def test_the_per_host_rate_cap_refuses_quickly_instead_of_stalling(
         return clock[0]
 
     policy = _policy(resolver=Stub({"crt.sh": ["93.184.216.34"]}), rps=1.0)
-    limiter = broker_mod.HostLimiter(rate_per_second=1.0, max_connections=None, now=now)
+    # A short bounded wait keeps the test fast; the production wait is 10 s.
+    limiter = broker_mod.HostLimiter(
+        rate_per_second=1.0, max_connections=None, now=now, max_wait_seconds=0.1
+    )
     try:
         with running_broker(policy, tmp_path, upstream, monkeypatch, limiter=limiter) as (
             port,
@@ -318,8 +321,12 @@ def test_the_per_host_connection_cap_counts_open_tunnels(
 ) -> None:
     upstream = FakeUpstream()
     policy = _policy(resolver=Stub({"crt.sh": ["93.184.216.34"]}), rps=None, max_connections=1)
+    limiter = broker_mod.HostLimiter(rate_per_second=None, max_connections=1, max_wait_seconds=0.2)
     try:
-        with running_broker(policy, tmp_path, upstream, monkeypatch) as (port, _audit):
+        with running_broker(policy, tmp_path, upstream, monkeypatch, limiter=limiter) as (
+            port,
+            _audit,
+        ):
             first, head = _connect(port, "crt.sh:443")
             assert head.startswith(ACCEPTED), head
             second, head = _connect(port, "crt.sh:443")
@@ -361,7 +368,10 @@ def test_socks5_uses_the_same_decisions(tmp_path: Path, monkeypatch: pytest.Monk
 def test_the_limiter_is_per_host_and_refills() -> None:
     clock = [0.0]
     limiter = broker_mod.HostLimiter(
-        rate_per_second=2.0, max_connections=None, now=lambda: clock[0]
+        rate_per_second=2.0,
+        max_connections=None,
+        now=lambda: clock[0],
+        max_wait_seconds=0.01,
     )
     assert limiter.admit("a.example") is None
     assert limiter.admit("a.example") is None
@@ -370,9 +380,67 @@ def test_the_limiter_is_per_host_and_refills() -> None:
     clock[0] += 0.5  # 2/s refills one token
     assert limiter.admit("a.example") is None
     # The slot counter is released by the connection that took it, and it is per host too.
-    slots = broker_mod.HostLimiter(rate_per_second=None, max_connections=1, now=lambda: clock[0])
+    slots = broker_mod.HostLimiter(
+        rate_per_second=None,
+        max_connections=1,
+        now=lambda: clock[0],
+        max_wait_seconds=0.01,
+    )
     assert slots.admit("a.example") is None
     assert slots.admit("a.example") == "CONCURRENCY_LIMITED"
     assert slots.admit("b.example") is None
     slots.release("a.example")
     assert slots.admit("a.example") is None
+
+
+def test_the_rate_cap_waits_instead_of_refusing() -> None:
+    """A scanner reads a refused CONNECT as 'closed': the cap must pace, not fail."""
+    clock = [0.0]
+
+    def now() -> float:
+        return clock[0]
+
+    limiter = broker_mod.HostLimiter(
+        rate_per_second=2.0, max_connections=None, max_wait_seconds=1.0, now=now
+    )
+    assert limiter.admit("a.example") is None
+    assert limiter.admit("a.example") is None
+    # The bucket is empty; the next admit waits for a token. Advance the clock in a thread that the
+    # condition wait can observe.
+    import threading
+
+    def advance() -> None:
+        clock[0] += 0.6
+        with limiter._changed:
+            limiter._changed.notify_all()
+
+    thread = threading.Thread(target=advance)
+    thread.start()
+    assert limiter.admit("a.example") is None
+    thread.join()
+
+
+def test_the_concurrency_cap_waits_for_a_released_tunnel() -> None:
+    limiter = broker_mod.HostLimiter(rate_per_second=None, max_connections=1, max_wait_seconds=1.0)
+    assert limiter.admit("a.example") is None
+    import threading
+
+    released = threading.Event()
+
+    def release_after_delay() -> None:
+        released.wait(0.15)
+        limiter.release("a.example")
+
+    thread = threading.Thread(target=release_after_delay)
+    thread.start()
+    # This call blocks until the tunnel is released; a deny here would be a false 'closed'.
+    assert limiter.admit("a.example") is None
+    thread.join()
+
+
+def test_a_cap_that_never_frees_is_a_timeout_deny() -> None:
+    limiter = broker_mod.HostLimiter(rate_per_second=None, max_connections=1, max_wait_seconds=0.1)
+    assert limiter.admit("a.example") is None
+    assert limiter.admit("a.example") == "CONCURRENCY_LIMITED"
+    limiter.release("a.example")
+    assert limiter.admit("a.example") is None

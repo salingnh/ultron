@@ -1153,6 +1153,12 @@ export interface components {
                 rule_set?: string;
                 /** @description false nếu job dừng giữa chừng; khi đó không ghi seen=false. */
                 complete?: boolean;
+                /** @description Những giới hạn khiến coverage không đầy đủ: job dừng giữa chừng, egress bị chặn hoặc quá hạn chờ do trần RoE. Mỗi phần tử nêu mã ổn định và chi tiết; `complete` phải là false khi mảng này không rỗng. Cổng scan không được coi một cổng bị chặn/quá hạn là 'đóng'. */
+                limitations?: {
+                    code: string;
+                    message: string;
+                    subjects?: components["schemas"]["CanonicalKey"][];
+                }[];
             };
             results: {
                 assets: components["schemas"]["$defs-Asset"][];

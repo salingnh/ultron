@@ -12,6 +12,7 @@ import json
 import time
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -512,6 +513,12 @@ def test_egress_job_reaches_only_its_broker(
         records = runner.audit_records(job_id)
         reasons = {str(record["reason"]) for record in records}
         assert {"OK", "DENY_LOOPBACK", "DENY_PRIVATE"} <= reasons
+        # A refused connection is not a result: the envelope says the coverage is incomplete.
+        assert outcome.envelope is not None
+        coverage = outcome.envelope.coverage
+        assert coverage.complete is False
+        codes = {str(limit.code) for limit in coverage.limitations or []}
+        assert "EGRESS_DENIED" in codes
         assert {str(record["network_profile"]) for record in records} == {"internet"}
         assert runner.list_jobs() == ()
         assert runner.layout(job_id).audit.joinpath("egress.jsonl").exists()
@@ -532,4 +539,104 @@ def _spec(image: str, job_id: str) -> ContainerSpec:
         timeout_seconds=60,
         max_output_bytes=4 * MIB,
         network="none",
+    )
+
+
+def test_prepare_keeps_the_internet_profile_entry_and_checks_its_proxy_flag(
+    tmp_path: Path,
+) -> None:
+    """Regression: the internet profile entry is the source of the proxy flag (G1.6).
+
+    `prepare` used to drop the profile entry for internet jobs, so every manifest with a
+    `proxyFlag` was refused before a container existed; the entry must survive and be checked.
+    """
+
+    from aegis.m06_runner.profile import DeploymentProfile
+
+    manifest, raw = m06_support.manifest("manifest.subfinder.yaml")
+    task = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        network_profile="internet",
+        egress_binding={
+            "mode": "broker",
+            "target_binding": "none",
+            "entries": [
+                f"{source['hosts'][0]}:{source['ports'][0]}" for source in _sources_of(manifest)
+            ],
+            "target_addresses": [],
+        },
+    )
+    plan = JobPlan(
+        job_id=m06_support.unique("proxyflag"),
+        task=task,
+        manifest=manifest,
+        input={"targets": ["internal.example"], "concurrency": 1, "rate_limit": 1},
+        manifest_bytes=raw,
+        task_body=m06_support.body_of(task),
+        per_host_rps=2.0,
+        per_host_max_connections=2,
+    )
+
+    def runner(profile: DeploymentProfile) -> PodmanRunner:
+        instance = PodmanRunner(
+            base_dir=tmp_path / "runner",
+            broker_image="probe",
+            uplink_network="uplink",
+            profiles={"internet": profile},
+        )
+        instance.ensure_network = lambda job_id: "net"  # type: ignore[method-assign]
+        instance.broker_ip = lambda job_id: "10.0.0.2"  # type: ignore[method-assign]
+        instance.broker_proxy = lambda job_id: "http://10.0.0.2:3128"  # type: ignore[method-assign]
+        return instance
+
+    good = DeploymentProfile.from_document(
+        {
+            "network": "uplink",
+            "jobs": [
+                {
+                    "imageDigest": text(manifest.spec.runtime.imageDigest),
+                    "args": ["-proxy", "${broker_http}"],
+                }
+            ],
+        },
+        kind="internet",
+    )
+    job_runner = _job_runner_for(runner(good))
+    spec, policy = job_runner.prepare(plan)
+    assert spec.network_profile == "internet"
+    assert spec.egress_proxy == "http://10.0.0.2:3128"
+    assert policy.egress_mode == "broker"
+
+    missing = DeploymentProfile.from_document(
+        {
+            "network": "uplink",
+            "jobs": [{"imageDigest": text(manifest.spec.runtime.imageDigest), "args": []}],
+        },
+        kind="internet",
+    )
+    from aegis.m06_runner.spec import SpecError
+
+    with pytest.raises(SpecError, match="needs its proxy"):
+        _job_runner_for(runner(missing)).prepare(plan)
+
+
+def _sources_of(manifest: Any) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for source in manifest.spec.permissions.egressSources or []:
+        sources.append(
+            {
+                "hosts": [text(host) for host in source.hosts],
+                "ports": [int(text(port)) for port in source.ports],
+            }
+        )
+    return sources
+
+
+def _job_runner_for(runner: PodmanRunner) -> JobRunner:
+    return JobRunner(
+        runner,
+        FakeEvidenceStore(),
+        key_ring=m06_support.DEV_RING,
+        extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
     )

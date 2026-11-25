@@ -140,7 +140,14 @@ def test_acceptance_writes_decision_job_dependencies_and_a_verifiable_task() -> 
         assert stored_task["signature_key_id"] == "g1-dev-1"
         binding = stored_task["egress_binding"]
         assert binding["mode"] == "broker" and binding["target_binding"] == "none"
-        assert binding["entries"] == ["crt.sh:443", "otx.alienvault.com:443"]
+        assert binding["entries"] == [
+            "api.hackertarget.com:443",
+            "crt.sh:443",
+            "index.commoncrawl.org:443",
+            "otx.alienvault.com:443",
+            "rapiddns.io:443",
+            "web.archive.org:443",
+        ]
         assert binding["target_addresses"] == []
         assert stored_task["trace"]["campaign_id"] == campaign.campaign_id
         # X-1: the fingerprint is the contract's, over refs/input/pins and never the projection.

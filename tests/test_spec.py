@@ -200,7 +200,14 @@ def test_egress_spec_carries_manifest_budget_and_source_binding() -> None:
     assert built.egress_mode == "broker"
     assert built.egress_proxy == "http://10.97.0.2:3128"
     assert built.raw_socket is False
-    assert set(built.egress_binding) == {"crt.sh:443", "otx.alienvault.com:443"}
+    assert set(built.egress_binding) == {
+        "crt.sh:443",
+        "otx.alienvault.com:443",
+        "api.hackertarget.com:443",
+        "rapiddns.io:443",
+        "web.archive.org:443",
+        "index.commoncrawl.org:443",
+    }
     assert built.args[-4:] == ["-t", "2", "-rl", "1"]
 
 
@@ -289,7 +296,16 @@ def test_a_signed_binding_cannot_widen_the_declared_sources() -> None:
         manifest,
         raw,
         egress_binding=_binding(
-            ["crt.sh:443", "otx.alienvault.com:443", "evil.example:443"], target_binding="none"
+            [
+                "crt.sh:443",
+                "otx.alienvault.com:443",
+                "api.hackertarget.com:443",
+                "rapiddns.io:443",
+                "web.archive.org:443",
+                "index.commoncrawl.org:443",
+                "evil.example:443",
+            ],
+            target_binding="none",
         ),
     )
     with pytest.raises(SpecError, match="neither a declared source nor a target address"):
@@ -372,6 +388,7 @@ def test_target_bound_job_uses_the_signed_binding_ports() -> None:
         "targets": ["ip:10.1.2.3"],
         "ports": [8080, 8443],
         "packets_per_second": 100,
+        "concurrency": 1,
         "version_intensity": 0,
     }
     task = m06_support.task_for_manifest(
@@ -417,6 +434,7 @@ def test_target_in_the_deny_set_is_refused_before_the_spec_exists() -> None:
                 "targets": ["ip:169.254.169.254"],
                 "ports": [80],
                 "packets_per_second": 100,
+                "concurrency": 1,
                 "version_intensity": 0,
             },
             job_id="job-1",
@@ -574,6 +592,7 @@ def test_target_ports_from_input_are_bounded() -> None:
                 "targets": ["ip:10.1.2.3"],
                 "ports": [70000],
                 "packets_per_second": 100,
+                "concurrency": 1,
                 "version_intensity": 0,
             },
             job_id="job-1",
@@ -627,7 +646,15 @@ def test_the_internet_profile_denies_private_ranges_except_signed_targets() -> N
     assert policy.per_host_max_connections == 1
     # DNS-over-broker: the target name and the declared sources are the only resolvable names.
     assert policy.dns_target_names == ("internal.example",)
-    assert policy.dns_names == ("crt.sh", "internal.example", "otx.alienvault.com")
+    assert policy.dns_names == (
+        "api.hackertarget.com",
+        "crt.sh",
+        "index.commoncrawl.org",
+        "internal.example",
+        "otx.alienvault.com",
+        "rapiddns.io",
+        "web.archive.org",
+    )
     assert policy.dns_ttl == 30
     # A declared source that resolves into the host's own private network is refused on the
     # internet profile (no signed target covers it) and allowed on the lab profile.
@@ -685,7 +712,12 @@ def test_the_port_list_is_capped_by_the_pinned_input_schema() -> None:
             manifest,
             # The pinned Naabu argv renders the scan rate too; the port cap is what this test is
             # about, and it is checked before any binding/argv work can pass.
-            {"targets": ["ip:10.1.2.3"], "ports": ports, "packets_per_second": 100},
+            {
+                "targets": ["ip:10.1.2.3"],
+                "ports": ports,
+                "packets_per_second": 100,
+                "concurrency": 1,
+            },
             job_id="job-1",
             task_body=m06_support.body_of(task),
             key_ring=m06_support.DEV_RING,
