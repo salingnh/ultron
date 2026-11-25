@@ -15,6 +15,7 @@ require_cmd python3
 load_images
 load_env
 load_ttl
+resolve_tunnel_token
 require_rootless
 require_lab_network
 
@@ -33,11 +34,12 @@ if ((${#drifted[@]} > 0)); then
 fi
 
 if tunnel_enabled; then
-  python3 "$VULNLAB_SCRIPTS/render_cloudflared.py" --env-file "$ENV_FILE" ||
-    die "cannot render the tunnel ingress from $ENV_FILE"
-  log "compose project $VULNLAB_PROJECT: starting with the Cloudflare Tunnel"
+  # Remote-managed tunnel: the ingress lives in the Cloudflare dashboard, so there is nothing to
+  # render or mount locally. deploy/vulnlab/cloudflared/config.yml.template is the documented
+  # mirror of the dashboard rules; `make vulnlab-check PROFILE=internet` proves it serves.
+  log "compose project $VULNLAB_PROJECT: starting with the Cloudflare Tunnel (ingress managed in the dashboard)"
 else
-  log "compose project $VULNLAB_PROJECT: starting lab-only (AEGIS_VULNLAB_TUNNEL_TOKEN is empty)"
+  log "compose project $VULNLAB_PROJECT: starting lab-only (no tunnel token file)"
 fi
 log "auto-stop armed: every container stops after ${VULNLAB_TTL_MINUTES} min (podman --timeout ${VULNLAB_TTL_SECONDS}s)"
 
@@ -45,9 +47,17 @@ compose up -d
 
 mkdir -p "$RUN_DIR"
 log "waiting for every origin to serve its documented page (probe on $LAB_NETWORK)"
-if ! python3 "$VULNLAB_SCRIPTS/check_live.py" --wait 300 --json "$RUN_DIR/readiness.json"; then
+if ! python3 "$VULNLAB_SCRIPTS/check_live.py" --profile lab --wait 300 --json "$RUN_DIR/readiness.json"; then
   podman ps --filter "label=io.podman.compose.project=$VULNLAB_PROJECT" --format '  {{.Names}}  {{.Status}}' >&2
   die "the origins did not become ready; see the failures above and: make vulnlab-status"
+fi
+
+if tunnel_enabled; then
+  log "waiting for the tunnel to serve the public hostnames (https from this machine)"
+  if ! python3 "$VULNLAB_SCRIPTS/check_live.py" --profile internet --wait 180 \
+    --json "$RUN_DIR/tunnel-readiness.json"; then
+    die "the tunnel did not serve the public hostnames; see the failures above and: make vulnlab-status"
+  fi
 fi
 
 "$VULNLAB_SCRIPTS/vulnlab-status.sh"

@@ -2,9 +2,9 @@
 # Boundary and auto-stop status of the CVE test lab (G1.6 slice E). Non-zero when any check fails,
 # so `make vulnlab-up` and the checks can gate on it.
 #
-# It reads the containers, not their environment: the tunnel token is never printed. "TTL armed"
-# means podman's own `--timeout` is set on the container and has not expired - the stack stops itself
-# even if nobody runs `make vulnlab-down`.
+# It reads the containers, not their environment: the tunnel token is never printed, only where it
+# came from. "TTL armed" means podman's own `--timeout` is set on the container and has not expired -
+# the stack stops itself even if nobody runs `make vulnlab-down`.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -13,6 +13,7 @@ require_cmd python3
 load_images
 load_env
 load_ttl
+resolve_tunnel_token
 
 status=0
 
@@ -130,6 +131,10 @@ if tunnel_enabled; then
       log "cloudflared: registered connection present in its log"
     else
       log "cloudflared: no 'Registered tunnel connection' in its log yet"
+      status=1
+    fi
+    if [ -n "$(podman inspect --format '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' aegis-vulnlab-cloudflared)" ]; then
+      log "cloudflared: unexpected local mount (a remote-managed tunnel needs no ingress file)"
       status=1
     fi
   else
