@@ -28,13 +28,14 @@ PASSIVE_IP=10.114.53.80
 RUN_LABEL=aegis.lab=aegis-lab-run
 
 # The G1.6a service containers: the hosts and ports a scanner should see open.
-SERVICE_CONTAINERS=(aegis-lab-web-legacy aegis-lab-app aegis-lab-ssh aegis-lab-cache)
+SERVICE_CONTAINERS=(aegis-lab-web-legacy aegis-lab-app aegis-lab-ssh aegis-lab-cache aegis-lab-httpd)
 SERVICE_ENDPOINTS=(
   "web.lab.aegis.test:80"
   "web.lab.aegis.test:443"
   "app.lab.aegis.test:8080"
   "ssh.lab.aegis.test:2222"
   "cache.lab.aegis.test:6379"
+  "httpd.lab.aegis.test:80"
 )
 
 log() { printf '[lab] %s\n' "$*"; }

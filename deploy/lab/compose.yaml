@@ -148,6 +148,26 @@ services:
       lab:
         ipv4_address: 10.114.53.213
 
+  # Apache httpd 2.4.49: path traversal / RCE (CVE-2021-41773, CVE-2021-42013). It is the one lab
+  # service whose product, version and CPE the CVE catalogue slice (G1.6c) matches exactly, so the
+  # real discovery chain can show a candidate without a fixture standing in for the scanner.
+  legacy-httpd:
+    image: ${AEGIS_LAB_HTTPD_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: aegis-lab-httpd
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    # Binding 80 inside the container is the only capability this service needs.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /usr/local/apache2/logs:size=8m
+      - /usr/local/apache2/conf/extra:size=1m
+    networks:
+      lab:
+        ipv4_address: 10.114.53.215
+
   cache:
     image: ${AEGIS_LAB_CACHE_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
     container_name: aegis-lab-cache

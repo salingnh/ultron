@@ -41,6 +41,7 @@ ENV_NAMES = {
     "app": "AEGIS_LAB_APP_IMAGE",
     "ssh": "AEGIS_LAB_SSH_IMAGE",
     "cache": "AEGIS_LAB_CACHE_IMAGE",
+    "httpd": "AEGIS_LAB_HTTPD_IMAGE",
 }
 
 

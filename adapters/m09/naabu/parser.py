@@ -25,9 +25,11 @@ Mapping (the manifest's `emits` block: service / `asset.seen`, `net.port_state`,
   * `net.port_state: "open"` and `service.protocol: "<tcp|udp>"` observations on the service.
 
 What this parser deliberately does not do: it does not invent a `:Application` node or a `SERVES`
-edge. A port that answers is a *service* by address and transport; whether an HTTP server, a
-database or an SSH daemon is behind it is the next capability's result (`web.probe`,
-`service.banner`), not something a port scan may guess.
+edge, and it does not report a product or version. A port that answers is a *service* by address and
+transport; what runs behind it is the dedicated fingerprinter's result (slice B). The tool's own
+`-sV` pass is not enabled and its fields are ignored here: it gives one host's probe answer to every
+host on the same port (repro in the G1.6a report), which would put a false `service.product` in the
+graph and a false CVE candidate behind it.
 
 Canonical keys follow `aegis-norm/1`: addresses go through `ipaddress` (so `2001:DB8::10` and
 `::ffff:203.0.113.10` become `2001:db8::10` and `203.0.113.10`, the IPv4-mapped form M27 also

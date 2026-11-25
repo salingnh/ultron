@@ -80,6 +80,13 @@
       "released": "2020-04-21",
       "license": "BSD-2-Clause",
       "role": "lab service on web.lab.aegis.test: HTTP 80, HTTPS 443 with a certificate from the throwaway lab CA (G1.6a)"
+    },
+    "httpd": {
+      "ref": "docker.io/library/httpd:2.4.49@sha256:4b5cb7697fea2aa6d398504c381b693a54ae9ad5e6317fcdbb7a2d9b8c3b1364",
+      "version": "2.4.49",
+      "released": "2021-09-15",
+      "license": "Apache-2.0",
+      "role": "lab service on httpd.lab.aegis.test: Apache httpd 80, the exact CPE/version CVE-2021-41773 matches (G1.6a/G1.6c)"
     }
   },
   "records": [
@@ -96,7 +103,8 @@
     {"name": "web.lab.aegis.test.", "type": "A", "value": "10.114.53.211"},
     {"name": "app.lab.aegis.test.", "type": "A", "value": "10.114.53.212"},
     {"name": "ssh.lab.aegis.test.", "type": "A", "value": "10.114.53.213"},
-    {"name": "cache.lab.aegis.test.", "type": "A", "value": "10.114.53.214"}
+    {"name": "cache.lab.aegis.test.", "type": "A", "value": "10.114.53.214"},
+    {"name": "httpd.lab.aegis.test.", "type": "A", "value": "10.114.53.215"}
   ],
   "probes": [
     {"host": "www.lab.aegis.test", "status": "NOERROR", "why": "A and AAAA records"},
@@ -114,6 +122,7 @@
       "api.lab.aegis.test",
       "app.lab.aegis.test",
       "cache.lab.aegis.test",
+      "httpd.lab.aegis.test",
       "ssh.lab.aegis.test",
       "vpn.lab.aegis.test",
       "web.lab.aegis.test",
@@ -125,6 +134,7 @@
     {"host": "web.lab.aegis.test", "address": "10.114.53.211", "image": "web-legacy", "ports": [80, 443], "cves": ["CVE-2021-23017"], "note": "nginx: HTTPS answers with a certificate from the throwaway lab CA"},
     {"host": "app.lab.aegis.test", "address": "10.114.53.212", "image": "app", "ports": [8080, 8009], "cves": ["CVE-2020-1938"], "note": "Tomcat: AJP 8009 is open as well; the discovery step only asks for the ports in input"},
     {"host": "ssh.lab.aegis.test", "address": "10.114.53.213", "image": "ssh", "ports": [2222], "cves": [], "note": "sshd: no credential and no authorized key, banner only"},
-    {"host": "cache.lab.aegis.test", "address": "10.114.53.214", "image": "cache", "ports": [6379], "cves": ["CVE-2022-0543"], "note": "Redis: no auth on the internal network, RDB/AOF disabled"}
+    {"host": "cache.lab.aegis.test", "address": "10.114.53.214", "image": "cache", "ports": [6379], "cves": ["CVE-2022-0543"], "note": "Redis: no auth on the internal network, RDB/AOF disabled"},
+    {"host": "httpd.lab.aegis.test", "address": "10.114.53.215", "image": "httpd", "ports": [80], "cves": ["CVE-2021-41773", "CVE-2021-42013"], "note": "Apache 2.4.49: the origin whose product/version the CVE slice matches exactly"}
   ]
 }

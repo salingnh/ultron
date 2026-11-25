@@ -5,3 +5,4 @@
 {"host":"app.lab.aegis.test","input":"lab.aegis.test","source":"crtsh"}
 {"host":"ssh.lab.aegis.test","input":"lab.aegis.test","source":"crtsh"}
 {"host":"cache.lab.aegis.test","input":"lab.aegis.test","source":"crtsh"}
+{"host":"httpd.lab.aegis.test","input":"lab.aegis.test","source":"crtsh"}

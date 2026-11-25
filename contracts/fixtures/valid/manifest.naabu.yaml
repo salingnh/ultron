@@ -9,9 +9,11 @@ metadata:
   licenseNotes: >-
     Image pin v2.7.0 is the published image of the pinned upstream release; naabu's CONNECT scan is
     the only scan type this manifest enables (SYN needs NET_RAW, which a rootless sandbox does not
-    grant, so rawSocket stays false). Service *version* detection (-sV) is not rendered: this
-    adapter answers network.discover_services at the port/service level, and input.version_intensity
-    is fixed at 0 by inputDefaults.
+    grant, so rawSocket stays false). Version detection is deliberately NOT enabled: the image's
+    `-sV` pass gives one host's probe answer to every host on the same port (repro in the G1.6a
+    report), so a product/version from it would be a false statement in the graph; `service.product`
+    belongs to the dedicated fingerprinter (slice B). input.version_intensity is therefore fixed at 0
+    and the capability answers at the port/service level only.
 spec:
   capability: network.discover_services
   providerVersion: v2.7.0

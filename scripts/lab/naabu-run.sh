@@ -6,7 +6,8 @@
 #
 # The raw JSONL and the comparison stay in deploy/lab/.run/runs/ as evidence; the adapter package
 # commits the same run as `adapters/m09/naabu/fixtures/lab/` (the file is copied, never regenerated
-# by a different command).
+# by a different command). The flags mirror the pinned manifest exactly; version detection (`-sV`) is
+# deliberately not used - see the adapter manifest's licenseNotes and the G1.6a report.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 

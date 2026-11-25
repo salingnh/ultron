@@ -8,7 +8,7 @@
   "provider": "naabu",
   "provider_version": "v2.7.0",
   "adapter_version": "1.0.0",
-  "manifest_sha256": "0f51e68a50098faadaff5aa8db150812a6117c9f648ad42f28a8bd708ad29c53",
+  "manifest_sha256": "ee4a26953e8dbf256124873bff47ad2fb340bf6af8dbe54b22b3a00ef049f210",
   "image_digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
   "input": {
