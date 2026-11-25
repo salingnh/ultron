@@ -1,0 +1,229 @@
+# CVE test lab for AEGIS-Vanguard (G1.6 slice E): known-vulnerable HTTP services, plus an optional
+# outbound-only Cloudflare Tunnel, on networks with no host exposure.
+#
+# Run it through `make vulnlab-up` / `vulnlab-down` / `vulnlab-status` (scripts/vulnlab/*.sh):
+# they load images.env and deploy/vulnlab/.env, arm the podman `--timeout` that auto-stops the whole
+# project (VULNLAB_TTL_MINUTES), wait until every origin actually serves its documented page and
+# verify the boundary. Direct `podman-compose up` runs skip all three.
+#
+# Isolation, in one place:
+#   * project name `aegis-vulnlab` is the only stack these scripts create or remove;
+#   * every origin is on two internal networks and nothing else: `aegis-vulnlab-net` (internal,
+#     whose only other peer is cloudflared) and the authorized lab `aegis-lab-lab` (external);
+#   * no `ports:` anywhere - a published host port would defeat the lab;
+#   * no host mounts: origins only get tmpfs for the directories their server writes to;
+#   * rootless podman, cap_drop ALL, no-new-privileges, read-only rootfs except the two images that
+#     must write their own install directory at start (reasons in tests/vulnlab/cases.yaml),
+#     memory/CPU/PID caps on every service.
+#
+# Cloudflared is a compose profile (`--profile tunnel`), started only when AEGIS_VULNLAB_TUNNEL_TOKEN
+# is set. It is the only service with a second network that has a route off the host, because a
+# tunnel is outbound-only; an origin never joins it. The ingress config is generated from .env by
+# scripts/vulnlab/render_cloudflared.py into deploy/vulnlab/.run/cloudflared/ and mounted read-only;
+# the token reaches the container through its environment and is never written to a file or logged.
+name: aegis-vulnlab
+
+x-vulnlab-origin: &vulnlab-origin
+  restart: "no"
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  httpd:
+    <<: *vulnlab-origin
+    image: ${AEGIS_VULNLAB_HTTPD_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-httpd
+    read_only: true
+    # Binds 80 inside the container and drops to www-data; the event MPM starts dozens of threads,
+    # so the PID cap must cover them (podman counts threads as PIDs).
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 256
+    volumes:
+      # Apache writes logs/httpd.pid; the image's access/error logs are stdout symlinks that a
+      # tmpfs hides, so container logs show startup only. Evidence comes from the probe, not logs.
+      - type: tmpfs
+        target: /usr/local/apache2/logs
+        tmpfs: {size: 8m}
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.11
+      lab:
+        ipv4_address: 10.114.53.61
+
+  nginx:
+    <<: *vulnlab-origin
+    image: ${AEGIS_VULNLAB_NGINX_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-nginx
+    read_only: true
+    # Bind 80, drop workers to the nginx user, and chown the tmpfs cache directory.
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, CHOWN]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    volumes:
+      # nginx writes its pid and temp files here; access/error logs stay on stdout.
+      - type: tmpfs
+        target: /var/cache/nginx
+        tmpfs: {size: 16m}
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.12
+      lab:
+        ipv4_address: 10.114.53.62
+
+  tomcat:
+    <<: *vulnlab-origin
+    image: ${AEGIS_VULNLAB_TOMCAT_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-tomcat
+    read_only: true
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 256
+    volumes:
+      - type: tmpfs
+        target: /usr/local/tomcat/logs
+        tmpfs: {size: 16m}
+      - type: tmpfs
+        target: /usr/local/tomcat/temp
+        tmpfs: {size: 32m}
+      - type: tmpfs
+        target: /usr/local/tomcat/work
+        tmpfs: {size: 32m}
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.13
+      lab:
+        ipv4_address: 10.114.53.63
+
+  spring:
+    <<: *vulnlab-origin
+    image: ${AEGIS_VULNLAB_SPRING_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-spring
+    # Tomcat unpacks ROOT.war into webapps/ (a tmpfs would hide the war): this one origin keeps its
+    # writable layer. It still has no host mount, no capabilities and the same caps.
+    read_only: false
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 256
+    volumes:
+      - type: tmpfs
+        target: /usr/local/tomcat/temp
+        tmpfs: {size: 32m}
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.14
+      lab:
+        ipv4_address: 10.114.53.64
+
+  jenkins:
+    <<: *vulnlab-origin
+    image: ${AEGIS_VULNLAB_JENKINS_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-jenkins
+    read_only: true
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 512
+    volumes:
+      # Jenkins keeps its home on tmpfs: every start is a fresh instance, nothing survives the TTL.
+      - type: tmpfs
+        target: /var/jenkins_home
+        tmpfs: {size: 512m, mode: 1777}
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.15
+      lab:
+        ipv4_address: 10.114.53.65
+
+  jetty:
+    <<: *vulnlab-origin
+    image: ${AEGIS_VULNLAB_JETTY_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-jetty
+    # The official entrypoint writes /var/lib/jetty/jetty.start next to the webapps it serves; a
+    # tmpfs would hide them. No host mount, all capabilities dropped, same caps.
+    read_only: false
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 256
+    volumes:
+      - type: tmpfs
+        target: /tmp
+        tmpfs: {size: 16m}
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.16
+      lab:
+        ipv4_address: 10.114.53.66
+
+  struts2:
+    <<: *vulnlab-origin
+    image: ${AEGIS_VULNLAB_STRUTS2_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-struts2
+    # `mvn jetty:run` compiles into /usr/src/target at every start, so this rootfs is writable. The
+    # Maven+Jetty pair needs more than a bare app server: bound the JVM and give the container
+    # enough headroom for the compile, then Jetty drops to ~200 MiB once it is up.
+    read_only: false
+    environment:
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=128m"
+    mem_limit: 768m
+    cpus: 0.5
+    pids_limit: 256
+    volumes:
+      # mvn writes scratch files under /tmp while jetty:run keeps the built webapp in /usr/src.
+      - type: tmpfs
+        target: /tmp
+        tmpfs: {size: 32m}
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.17
+      lab:
+        ipv4_address: 10.114.53.67
+
+  cloudflared:
+    # Opt-in: `up --profile tunnel` only. Without a token the lab is lab-only and nothing is public.
+    profiles: ["tunnel"]
+    image: ${AEGIS_VULNLAB_CLOUDFLARED_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
+    container_name: aegis-vulnlab-cloudflared
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    # The distroless image runs as uid 65532; nothing needs to be written.
+    environment:
+      # Read by cloudflared in place of `--token`; never written to a file, never printed by the
+      # scripts (status inspects the container, not its environment). Compose interpolates every
+      # service even when its profile is off, so this must not be `:?` - `make vulnlab-up` enables
+      # the profile only after the renderer proved the token is present, and cloudflared itself
+      # refuses an empty token.
+      TUNNEL_TOKEN: ${AEGIS_VULNLAB_TUNNEL_TOKEN:-}
+    command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      # The only mount in the stack: the ingress rendered from .env, read-only, generated state.
+      - ./.run/cloudflared:/etc/cloudflared:ro,z
+    networks:
+      vulnlab:
+        ipv4_address: 10.114.54.2
+      # This network is the tunnel's outbound route to Cloudflare. No origin joins it.
+      egress: {}
+
+networks:
+  vulnlab:
+    name: aegis-vulnlab-net
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.114.54.0/24
+  lab:
+    # The authorized lab network already exists (deploy/lab); joining it is what makes the same
+    # services reachable by a job container using the G1.5c lab runner profile. `make vulnlab-up`
+    # fails with "run make lab-up first" instead of creating a second lab.
+    name: aegis-lab-lab
+    external: true
+  egress:
+    name: aegis-vulnlab-egress
