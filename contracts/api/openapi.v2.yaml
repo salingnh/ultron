@@ -830,6 +830,45 @@ paths:
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
+  /assets/{asset_id}/vulnerabilities:
+    parameters:
+    - $ref: '#/components/parameters/AssetId'
+    get:
+      tags:
+      - graph
+      operationId: listAssetVulnerabilities
+      summary: Ứng viên CVE của một tài sản (cạnh AFFECTED_BY), kèm KEV/EPSS
+      description: Chỉ là ứng viên so khớp CPE từ bản intel đã nạp (package_vuln_match), không
+        phải finding đã xác minh. Sắp theo vulnerability_id tăng dần; con trỏ là mã CVE cuối trang.
+      security:
+      - operatorToken: []
+      parameters:
+      - name: campaign_id
+        in: query
+        description: Chỉ lấy ứng viên sinh từ observation của chiến dịch này
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      - name: kev_only
+        in: query
+        description: Chỉ lấy ứng viên có trong CISA KEV
+        schema:
+          type: boolean
+          default: false
+      - $ref: '#/components/parameters/Cursor'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../vulnerability/asset-vulnerabilities.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /findings:
     get:
       tags:

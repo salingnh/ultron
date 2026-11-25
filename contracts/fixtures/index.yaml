@@ -6,6 +6,8 @@ valid:
   valid/result-envelope.seed-provenance.json: ingestion/result-envelope.v2.schema.json
   valid/event.finding-changed.json: events/event-envelope.v2.schema.json
   valid/event.intel-revision.json: events/event-envelope.v2.schema.json
+  valid/event.vulnerability-matched.json: events/event-envelope.v2.schema.json
+  valid/asset-vulnerabilities.json: vulnerability/asset-vulnerabilities.v2.schema.json
   valid/manifest.subfinder.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.dnsx.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.target-bound.yaml: capability/provider-manifest.v2.schema.json
@@ -55,4 +57,5 @@ invalid:
   invalid/capability-input.resolve-unknown-record.json: capabilities/dns/resolve.v2.schema.json
   invalid/capability-input.enumerate-target-cidr.json: capabilities/dns/enumerate-subdomains.v2.schema.json
   invalid/graph-query.asset-neighbors-no-limits.json: mcp/graph-queries.v2.schema.json#/$defs/get_asset_neighbors/properties/output
+  invalid/asset-vulnerabilities.verified.json: vulnerability/asset-vulnerabilities.v2.schema.json
   invalid/roe-policy.legacy-v1.json: campaign/roe-policy.v2.schema.json

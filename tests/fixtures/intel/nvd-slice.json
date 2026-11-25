@@ -1,0 +1,162 @@
+{
+  "resultsPerPage": 3,
+  "startIndex": 0,
+  "totalResults": 3,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "timestamp": "2026-11-24T06:00:00.000Z",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2021-41773",
+        "sourceIdentifier": "security@apache.org",
+        "published": "2021-10-05T14:15:10.050",
+        "lastModified": "2026-11-20T12:00:00.000",
+        "vulnStatus": "Analyzed",
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                "baseScore": 9.8,
+                "baseSeverity": "CRITICAL"
+              }
+            }
+          ]
+        },
+        "configurations": [
+          {
+            "nodes": [
+              {
+                "operator": "OR",
+                "negate": false,
+                "cpeMatch": [
+                  {
+                    "vulnerable": true,
+                    "criteria": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*",
+                    "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000001"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "references": [
+          {
+            "url": "https://httpd.apache.org/security/vulnerabilities_24.html",
+            "source": "security@apache.org",
+            "tags": ["Vendor Advisory"]
+          }
+        ]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2021-23017",
+        "sourceIdentifier": "security@nginx.com",
+        "published": "2021-06-01T13:15:07.607",
+        "lastModified": "2026-11-18T09:30:00.000",
+        "vulnStatus": "Analyzed",
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                "baseScore": 7.7,
+                "baseSeverity": "HIGH"
+              }
+            }
+          ]
+        },
+        "configurations": [
+          {
+            "nodes": [
+              {
+                "operator": "OR",
+                "negate": false,
+                "cpeMatch": [
+                  {
+                    "vulnerable": true,
+                    "criteria": "cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*",
+                    "versionStartIncluding": "0.6.18",
+                    "versionEndExcluding": "1.20.1",
+                    "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000002"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "references": [
+          {
+            "url": "https://nginx.org/en/security_advisories.html",
+            "source": "security@nginx.com",
+            "tags": ["Vendor Advisory"]
+          }
+        ]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2022-22965",
+        "sourceIdentifier": "security@vmware.com",
+        "published": "2022-04-01T21:15:07.797",
+        "lastModified": "2026-11-19T11:00:00.000",
+        "vulnStatus": "Analyzed",
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                "baseScore": 9.8,
+                "baseSeverity": "CRITICAL"
+              }
+            }
+          ]
+        },
+        "configurations": [
+          {
+            "nodes": [
+              {
+                "operator": "OR",
+                "negate": false,
+                "cpeMatch": [
+                  {
+                    "vulnerable": true,
+                    "criteria": "cpe:2.3:a:vmware:spring_framework:*:*:*:*:*:*:*:*",
+                    "versionStartIncluding": "5.3.0",
+                    "versionEndExcluding": "5.3.18",
+                    "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000003"
+                  },
+                  {
+                    "vulnerable": true,
+                    "criteria": "cpe:2.3:a:vmware:spring_framework:*:*:*:*:*:*:*:*",
+                    "versionStartIncluding": "2.5.0",
+                    "versionEndExcluding": "2.6.6",
+                    "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000004"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "references": [
+          {
+            "url": "https://spring.io/security/cve-2022-22965",
+            "source": "security@vmware.com",
+            "tags": ["Vendor Advisory"]
+          }
+        ]
+      }
+    }
+  ]
+}
