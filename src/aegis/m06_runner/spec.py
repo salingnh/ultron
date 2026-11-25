@@ -578,6 +578,25 @@ def _denylist_networks(denylist: Sequence[str]) -> tuple[Any, ...]:
     return tuple(networks)
 
 
+def check_proxy_wiring(manifest: ProviderManifest, entry_args: Sequence[str] | None) -> None:
+    """Refuse a broker job whose tool needs its own proxy flag and whose profile omits it.
+
+    `permissions.proxyFlag` is the tool's truthful statement that it does not read the proxy
+    environment; the deployment profile is the only place the flag can come from (the manifest argv
+    is signed and the runner must not invent arguments). A missing flag would let the tool bypass
+    the broker silently, so it is a refusal, not a warning.
+    """
+    flag = manifest.spec.permissions.proxyFlag
+    if flag is None:
+        return
+    if not entry_args or str(flag) not in entry_args:
+        raise SpecError(
+            "POLICY_DENIED",
+            f"the pinned manifest needs its proxy as {flag!r}, but the internet profile entry of "
+            "this image does not pass it",
+        )
+
+
 def build_policy(
     task: ApprovedTask,
     manifest: ProviderManifest,

@@ -192,6 +192,13 @@ class JobRunner:
                         "an internet job needs the broker's uplink network "
                         "(the internet profile's `network`)",
                     )
+            if (
+                egress
+                and profile == "internet"
+                and policy.mode == "egress"
+                and policy.egress_mode == "broker"
+            ):
+                specs.check_proxy_wiring(plan.manifest, None if entry is None else list(entry.args))
             proxy = (
                 self.runner.broker_proxy(plan.job_id)
                 if policy.mode == "egress" and policy.egress_mode == "broker" and entry is None

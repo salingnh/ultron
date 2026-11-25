@@ -9,7 +9,7 @@
   "provider": {
     "name": "httpx",
     "version": "v1.12.0",
-    "adapter_version": "1.0.0",
+    "adapter_version": "1.0.1",
     "image_digest": "sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc"
   },
   "policy_version": "roe-1",
@@ -296,7 +296,7 @@
       {
         "subject": "app:http://10.114.53.212:8080",
         "predicate": "http.title",
-        "value": "HTTP Status 404 \u2013 Not Found",
+        "value": "HTTP Status 404 – Not Found",
         "confidence": 1.0,
         "evidence_refs": [
           {

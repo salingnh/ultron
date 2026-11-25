@@ -25,7 +25,15 @@ VALIDATION = runpy.run_path(str(ROOT / "validation.py"))
 FORMAT_CHECKER = VALIDATION["format_checker"]()
 DENIED_EGRESS_HOST = VALIDATION["denied_egress_host"]
 DOCS_ROOT = ROOT.parent / "docs/living/dac-ta-ky-thuat"
-EGRESS_FIELDS = {"egressMode", "proxyAware", "egressSources", "targetBinding", "targetPorts"}
+EGRESS_FIELDS = {
+    "egressMode",
+    "proxyAware",
+    "proxyFlag",
+    "proxyFlagFormat",
+    "egressSources",
+    "targetBinding",
+    "targetPorts",
+}
 INITIATOR = {"kind": "operator", "id": "soc-1"}
 PROPOSER = {"kind": "agent", "id": "01934f6a-0000-7000-8000-0000000000c1"}
 
@@ -166,6 +174,8 @@ class Egress(unittest.TestCase):
         truthful = manifest()
         truthful["spec"]["permissions"]["proxyAware"] = False
         truthful["spec"]["permissions"]["egressMode"] = "l3"
+        # An L3 job has no L7 proxy, so it declares no proxy flag.
+        truthful["spec"]["permissions"].pop("proxyFlag", None)
         self.assertTrue(v.is_valid(truthful))
         on_broker = manifest()
         on_broker["spec"]["permissions"]["proxyAware"] = False
@@ -212,13 +222,38 @@ class Egress(unittest.TestCase):
             with self.subTest(deny_set=fragment):
                 self.assertIn(fragment, sandbox)
 
+    def test_a_tool_that_ignores_the_proxy_environment_declares_its_flag(self):
+        """`proxyFlag` is the truthful declaration; it only makes sense on the broker channel."""
+        v = manifest_validator()
+        subfinder = load("fixtures/valid/manifest.subfinder.yaml")
+        permissions = subfinder["spec"]["permissions"]
+        self.assertEqual(permissions["proxyFlag"], "-proxy")
+        self.assertTrue(permissions["proxyAware"])
+        naabu = load("fixtures/valid/manifest.naabu.yaml")
+        self.assertEqual(naabu["spec"]["permissions"]["proxyFlag"], "-proxy")
+        self.assertEqual(naabu["spec"]["permissions"]["proxyFlagFormat"], "host_port")
+        # l3 has no L7 proxy: a flag there is a contradiction.
+        l3_with_flag = copy.deepcopy(load("fixtures/valid/manifest.fingerprintx.yaml"))
+        l3_with_flag["spec"]["permissions"]["proxyFlag"] = "-proxy"
+        self.assertFalse(v.is_valid(l3_with_flag))
+        # A flag without proxyAware is a contradiction too.
+        broker_without_aware = copy.deepcopy(load("fixtures/valid/manifest.subfinder.yaml"))
+        del broker_without_aware["spec"]["permissions"]["proxyAware"]
+        self.assertFalse(v.is_valid(broker_without_aware))
+        # A free-form value is not a flag.
+        prefixed = copy.deepcopy(load("fixtures/valid/manifest.subfinder.yaml"))
+        prefixed["spec"]["permissions"]["proxyFlag"] = "--proxy=http://x"
+        self.assertFalse(v.is_valid(prefixed))
+
     def test_l3_is_the_channel_for_a_non_proxy_aware_tool(self):
         """G1.6 item 5: `egressMode: l3` is for tools that cannot use the L7 broker."""
         v = manifest_validator()
-        doc = load("fixtures/valid/manifest.naabu.yaml")
-        doc["spec"]["permissions"]["egressMode"] = "l3"
-        doc["spec"]["permissions"]["proxyAware"] = False
+        # fingerprintx is the real l3 provider: it dials directly and declares no proxy flag.
+        doc = load("fixtures/valid/manifest.fingerprintx.yaml")
         self.assertEqual(list(v.iter_errors(doc)), [])
+        l3_with_proxy_flag = load("fixtures/valid/manifest.naabu.yaml")
+        l3_with_proxy_flag["spec"]["permissions"]["egressMode"] = "l3"
+        self.assertFalse(v.is_valid(l3_with_proxy_flag))
         # A tool that says it cannot speak to a proxy cannot run on the L7 channel.
         broker_without_proxy = copy.deepcopy(doc)
         broker_without_proxy["spec"]["permissions"]["egressMode"] = "broker"

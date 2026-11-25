@@ -5,7 +5,9 @@
       "imageDigest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
       "args": [
         "-sources",
-        "crtsh,otx"
+        "crtsh,otx",
+        "-proxy",
+        "${broker_http}"
       ],
       "env": {
         "HOME": "/tmp"
@@ -31,7 +33,9 @@
       "imageDigest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
       "args": [
         "-r",
-        "${broker_dns}"
+        "${broker_dns}",
+        "-proxy",
+        "${broker_socks}"
       ],
       "env": {
         "HOME": "/tmp"

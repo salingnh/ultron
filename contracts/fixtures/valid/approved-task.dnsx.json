@@ -8,8 +8,8 @@
   "capability": "dns.resolve",
   "provider": "dnsx",
   "provider_version": "v1.2.2",
-  "adapter_version": "1.0.0",
-  "manifest_sha256": "f8559770df07e25b6277aec5038c6e624b4e3ca613c6be3802c896a444136ea1",
+  "adapter_version": "1.0.1",
+  "manifest_sha256": "b128bbbd9bb416b0efc34a31536812b7f96fffc9094413daaceef2427320028f",
   "image_digest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
   "input": {

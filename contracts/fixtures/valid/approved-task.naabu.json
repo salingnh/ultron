@@ -8,8 +8,8 @@
   "capability": "network.discover_services",
   "provider": "naabu",
   "provider_version": "v2.7.0",
-  "adapter_version": "1.0.0",
-  "manifest_sha256": "ee4a26953e8dbf256124873bff47ad2fb340bf6af8dbe54b22b3a00ef049f210",
+  "adapter_version": "1.0.1",
+  "manifest_sha256": "8354d40e508a497eaaddf368b120f654a462352643561ff1f8f4456fd673ca80",
   "image_digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
   "input": {
