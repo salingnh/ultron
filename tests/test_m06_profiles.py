@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from aegis.common.ports import ContainerSpec
 from aegis.m06_runner.podman import PodmanRunner
 from aegis.m06_runner.profile import DeploymentProfile, ProfileError
 
@@ -295,3 +296,72 @@ def test_the_broker_placeholders_are_resolved_from_the_job(tmp_path: Path) -> No
     with pytest.raises(RunnerError, match="no such broker endpoint"):
         runner._profile_args(job, broker_dns=None, broker_http=None, broker_socks=None)
     assert runner._profile_args(None, broker_dns=None, broker_http=None, broker_socks=None) == []
+
+
+def _run_spec(job_id: str, *, profile: str, egress: str | None) -> ContainerSpec:
+    return ContainerSpec(
+        job_id=job_id,
+        image_digest=SUBFINDER,
+        args=["-d", "lab.aegis.test"],
+        cpu=0.5,
+        memory_mb=128,
+        timeout_seconds=60,
+        max_output_bytes=1024 * 1024,
+        network="exec",
+        network_profile=profile,  # type: ignore[arg-type]
+        egress_mode=egress,  # type: ignore[arg-type]
+    )
+
+
+def test_a_lab_profile_job_never_asks_for_a_job_network_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lab-profile job joins the lab network: it has no per-job network to name.
+
+    Regression (integration branch, 2026-11-25): `_run_argv` resolved the broker endpoints of every
+    job, so a lab-profile job called `broker_ip` for a network that `run()` never creates and every
+    subfinder/dnsx/naabu job failed before a container started with "job network ... does not exist
+    on this host". A manifest's `egressMode: broker` does not mean a lab job has a broker: its
+    endpoint data is the deployment profile's own argv.
+    """
+    lab = DeploymentProfile.from_document(_document(tmp_path), kind="lab", base_dir=tmp_path)
+    runner = PodmanRunner(base_dir=tmp_path, profiles={"lab": lab})
+    # The argv is what this test is about: no podman call to map a digest to a local reference.
+    monkeypatch.setattr(runner, "image_reference", lambda digest: digest)
+    spec = _run_spec("01a21340-0000-7000-8000-000000000001", profile="lab", egress="broker")
+    layout = runner.layout(spec.job_id).create()
+    entry = runner.profile_entry("lab", spec.image_digest)
+    assert entry is not None
+
+    argv = runner._run_argv(spec, layout, lab.network, entry=entry)
+
+    assert argv[argv.index("--network") + 1] == "aegis-lab-lab"
+    assert "--dns" not in argv
+    assert runner.network_name(spec.job_id) not in argv
+    # The profile's own argv is still there (the crtsh source, the stub's host, the CA env).
+    assert "-sources" in argv and "crtsh" in argv
+    assert "crt.sh:10.114.53.80" in argv
+    assert "SSL_CERT_FILE=/lab-tls/ca.crt" in argv
+    # No placeholder survives as a literal token.
+    assert not any("${broker_" in value for value in argv)
+
+
+def test_an_internet_profile_job_keeps_its_broker_endpoints(tmp_path: Path) -> None:
+    """The guard is the job network, not the profile: an internet job still resolves `${broker_*}`.
+
+    Its `run()` creates the per-job network before the argv is built, so the profile's placeholders
+    are what G1.6's proxy wiring relies on.
+    """
+    from aegis.m06_runner.profile import BROKER_DNS, JobProfile
+
+    runner = PodmanRunner(base_dir=tmp_path)
+    runner._images[SUBFINDER] = SUBFINDER  # no podman call; only the argv matters here
+    spec = _run_spec("01a21340-0000-7000-8000-000000000002", profile="internet", egress="broker")
+    runner._subnets[spec.job_id] = "10.97.0.0/24"
+    layout = runner.layout(spec.job_id).create()
+    entry = JobProfile(image_digest=spec.image_digest, args=("-r", BROKER_DNS))
+
+    argv = runner._run_argv(spec, layout, runner.network_name(spec.job_id), entry=entry)
+
+    assert argv[argv.index("-r") + 1] == "10.97.0.2:53"
+    assert not any("${broker_" in value for value in argv)

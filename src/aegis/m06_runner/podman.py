@@ -662,10 +662,20 @@ class PodmanRunner(ContainerRunner):
         argv += ["--mount", f"type=bind,src={layout.output},dst=/out,rw,Z"]
         if any(layout.input.iterdir()):
             argv += ["--mount", f"type=bind,src={layout.input},dst=/in,ro,Z"]
+        # A deployment-profile job joins the profile's own network (`run`: the lab) and never
+        # creates a job network, so there is no broker address to resolve for it: asking would call
+        # `broker_ip` for a network that does not exist and every lab job would fail before a
+        # container started. An internet-profile job keeps its per-job network, so its profile may
+        # still carry the `${broker_*}` placeholders.
+        endpoints = (
+            self._broker_endpoints(spec)
+            if spec.network == "exec" and spec.network_profile != "lab"
+            else {}
+        )
         argv += [
             self.image_reference(spec.image_digest),
             *spec.args,
-            *self._profile_args(entry, **self._broker_endpoints(spec)),
+            *self._profile_args(entry, **endpoints),
         ]
         return argv
 
@@ -719,7 +729,7 @@ class PodmanRunner(ContainerRunner):
         literal token.
         """
         if not spec.egress_mode:
-            return {"broker_dns": None, "broker_http": None, "broker_socks": None}
+            return {}
         ip = self.broker_ip(spec.job_id)
         if spec.egress_mode == "l3":
             return {"broker_dns": f"{ip}:53", "broker_http": None, "broker_socks": None}
@@ -733,9 +743,9 @@ class PodmanRunner(ContainerRunner):
         self,
         entry: JobProfile | None,
         *,
-        broker_dns: str | None,
-        broker_http: str | None,
-        broker_socks: str | None,
+        broker_dns: str | None = None,
+        broker_http: str | None = None,
+        broker_socks: str | None = None,
     ) -> list[str]:
         """The deployment profile's extra argv, with the broker placeholders resolved."""
         if entry is None:
