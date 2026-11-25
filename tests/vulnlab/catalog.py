@@ -64,6 +64,8 @@ IMAGE_REF = re.compile(
 HOSTNAME = re.compile(r"^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.(?!-)[a-z0-9-]{1,63}(?<!-))+$")
 ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 CASE_ID = re.compile(r"^[a-z0-9][a-z0-9.-]{1,63}$")
+#: Compose service key; the container is `<project>-<service>` (see compose.yaml).
+SERVICE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 #: CPE 2.3 formatted string: cpe:2.3:<part>:<vendor>:<product>:<version>:<update>:...
 CPE_PREFIX = "cpe:2.3:"
 
@@ -145,7 +147,7 @@ class Case:
     image_version: str
     version: str
     license: str
-    container: str
+    service: str
     image_port: int
     request_path: str
     disclose_server: str | None
@@ -305,9 +307,11 @@ def _case(raw: Any, index: int) -> Case:
     image_env = _text(raw, "imageEnv", where)
     if not ENV_NAME.match(image_env):
         raise CatalogError(f"{where}: imageEnv must be an env var name, got {image_env!r}")
-    container = _text(raw, "container", where)
-    if not container.startswith("aegis-vulnlab-"):
-        raise CatalogError(f"{where}: container must be aegis-vulnlab-*, got {container!r}")
+    service = _text(raw, "service", where)
+    if not SERVICE.match(service):
+        raise CatalogError(
+            f"{where}: service must be a compose service name ({SERVICE.pattern}), got {service!r}"
+        )
     image_version = _text(raw, "imageVersion", where)
     version = _text(raw, "version", where)
     license_name = _text(raw, "license", where)
@@ -375,7 +379,7 @@ def _case(raw: Any, index: int) -> Case:
         image_version=image_version,
         version=version,
         license=license_name,
-        container=container,
+        service=service,
         image_port=image_port,
         request_path=path if path.startswith("/") else "/" + path,
         disclose_server=server,
@@ -480,7 +484,7 @@ def _cve_list(raw: Mapping[str, Any], key: str, where: str) -> tuple[str, ...]:
 def _unique(cases: Sequence[Case]) -> None:
     for label, values in (
         ("id", [case.id for case in cases]),
-        ("container", [case.container for case in cases]),
+        ("service", [case.service for case in cases]),
         ("imageEnv", [case.image_env for case in cases]),
         ("lab.address", [case.lab_address for case in cases]),
         ("internet.hostEnv", [case.host_env for case in cases if case.host_env]),

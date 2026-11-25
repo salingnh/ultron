@@ -79,14 +79,18 @@ def _env_example() -> dict[str, str]:
 
 def _service_for(catalog: Catalog, compose: dict[str, Any], case: Case) -> dict[str, Any]:
     services: dict[str, dict[str, Any]] = compose["services"]
-    for service in services.values():
-        if service.get("container_name") == case.container:
-            return service
-    raise AssertionError(f"compose has no service with container_name {case.container}")
+    service = services.get(case.service)
+    if service is None:
+        raise AssertionError(f"compose has no service {case.service!r} (case {case.id})")
+    expected = f"{{AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}}-{case.service}"
+    assert service.get("container_name") == "$" + expected, (
+        f"{case.service}: container_name must derive from AEGIS_VULNLAB_PROJECT"
+    )
+    return service
 
 
 def _origin_services(catalog: Catalog, compose: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {case.container: _service_for(catalog, compose, case) for case in catalog.cases}
+    return {case.service: _service_for(catalog, compose, case) for case in catalog.cases}
 
 
 # --- catalog ----------------------------------------------------------------------------------
@@ -170,21 +174,24 @@ def test_images_env_pins_the_tunnel_and_probe(catalog: Catalog) -> None:
 def test_compose_has_only_the_catalog_services_and_the_tunnel(
     catalog: Catalog, compose: dict[str, Any]
 ) -> None:
+    expected_services = {case.service for case in catalog.cases} | {"cloudflared"}
+    assert set(compose["services"]) == expected_services
+    assert compose.get("name") == "${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}", (
+        "the compose project name must derive from AEGIS_VULNLAB_PROJECT"
+    )
     wanted = {case.image_env for case in catalog.cases}
     seen = {
         str(service.get("image", "")).split(":", 1)[0].strip("${")
         for service in compose["services"].values()
     }
     assert wanted <= seen, f"compose does not use these image env vars: {sorted(wanted - seen)}"
-    containers = {service.get("container_name") for service in compose["services"].values()}
-    assert containers == {case.container for case in catalog.cases} | {"aegis-vulnlab-cloudflared"}
-    assert compose.get("name") == "aegis-vulnlab"
 
 
 def test_origins_publish_nothing_and_mount_nothing(
     catalog: Catalog, compose: dict[str, Any]
 ) -> None:
-    for container, service in _origin_services(catalog, compose).items():
+    for service_name, service in _origin_services(catalog, compose).items():
+        container = service_name
         assert "ports" not in service, f"{container} publishes a host port"
         for volume in service.get("volumes") or []:
             assert isinstance(volume, dict) and volume.get("type") == "tmpfs", (
@@ -192,7 +199,7 @@ def test_origins_publish_nothing_and_mount_nothing(
             )
             assert "source" not in volume, f"{container} mounts the host: {volume}"
         assert service.get("restart") == "no", f"{container} would outlive the TTL restart policy"
-        case = next(item for item in catalog.cases if item.container == container)
+        case = next(item for item in catalog.cases if item.service == container)
         assert service.get("read_only", False) is case.read_only_rootfs, (
             f"{container}: compose and catalog disagree about the rootfs"
         )
@@ -210,7 +217,7 @@ def test_origins_sit_on_the_internal_network_and_on_the_lab(
     lab = ipaddress.ip_network(catalog.networks["labSubnet"])
     for case in catalog.cases:
         networks = _service_for(catalog, compose, case)["networks"]
-        assert set(networks) == {"vulnlab", "lab"}, case.container
+        assert set(networks) == {"vulnlab", "lab"}, case.service
         assert ipaddress.ip_address(networks["vulnlab"]["ipv4_address"]) in internal
         assert networks["lab"]["ipv4_address"] == case.lab_address
         assert ipaddress.ip_address(networks["lab"]["ipv4_address"]) in lab
@@ -219,11 +226,7 @@ def test_origins_sit_on_the_internal_network_and_on_the_lab(
 def test_tunnel_is_opt_in_and_cannot_expose_an_origin_directly(
     catalog: Catalog, compose: dict[str, Any]
 ) -> None:
-    tunnel = next(
-        service
-        for service in compose["services"].values()
-        if service.get("container_name") == "aegis-vulnlab-cloudflared"
-    )
+    tunnel = compose["services"]["cloudflared"]
     assert tunnel.get("profiles") == ["tunnel"], "the tunnel must not start without a token"
     assert "ports" not in tunnel
     assert set(tunnel["networks"]) == {"vulnlab", "egress"}
@@ -239,12 +242,12 @@ def test_networks_are_declared_internal_or_external_as_promised(
     catalog: Catalog, compose: dict[str, Any]
 ) -> None:
     networks = compose["networks"]
-    assert networks["vulnlab"]["name"] == catalog.networks["internal"]
+    assert networks["vulnlab"]["name"] == "${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-net"
     assert networks["vulnlab"]["internal"] is True
     assert networks["vulnlab"]["ipam"]["config"][0]["subnet"] == catalog.networks["subnet"]
     assert networks["lab"]["name"] == catalog.networks["lab"]
     assert networks["lab"]["external"] is True
-    assert networks["egress"]["name"] == catalog.networks["egress"]
+    assert networks["egress"]["name"] == "${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-egress"
     assert networks["egress"].get("internal") is not True, "the tunnel needs a route to Cloudflare"
 
 
@@ -265,6 +268,10 @@ def test_env_example_declares_names_not_secrets(catalog: Catalog) -> None:
     assert values.get("AEGIS_VULNLAB_TUNNEL_TOKEN_FILE") == "", (
         "the example must name the token-file variable with no path baked in"
     )
+    assert values.get("AEGIS_VULNLAB_PROJECT") == "", (
+        "the example must default to the default project, not bake a checkout name"
+    )
+    assert values.get("VULNLAB_TUNNEL") == "0", "publishing must be off by default"
     assert values.get("VULNLAB_TTL_MINUTES", "").isdigit()
     for case in catalog.cases:
         assert case.host_env, f"{case.id} has no public hostname variable"
@@ -513,3 +520,28 @@ def test_check_live_loads_hostnames_from_the_env_file(
 
     assert os.environ["AEGIS_VULNLAB_HOST_HTTPD"] == "vl-httpd.example.test"
     assert os.environ["AEGIS_VULNLAB_HOST_NGINX"] == "from-environment.example.test"
+
+
+def test_every_service_carries_the_project_and_role_labels(
+    catalog: Catalog, compose: dict[str, Any]
+) -> None:
+    # The host-wide checks find a vulnlab stack and its tunnel by these labels; legacy stacks are
+    # caught by their container names.
+    for name, service in compose["services"].items():
+        labels = service.get("labels") or {}
+        assert labels.get("aegis.vulnlab.project") == ("${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}"), (
+            name
+        )
+        assert labels.get("aegis.vulnlab.role") in {"origin", "cloudflared"}, name
+    assert compose["services"]["cloudflared"]["labels"]["aegis.vulnlab.role"] == "cloudflared"
+
+
+def test_no_container_or_network_name_is_hardcoded(compose: dict[str, Any]) -> None:
+    for name, service in compose["services"].items():
+        container = str(service.get("container_name", ""))
+        assert container.startswith("${AEGIS_VULNLAB_PROJECT"), f"{name}: {container}"
+    for network, description in compose["networks"].items():
+        if network == "lab":
+            assert description["name"] == "aegis-lab-lab"  # shared, not ours
+            continue
+        assert description["name"].startswith("${AEGIS_VULNLAB_PROJECT"), network

@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# One command for the CVE test lab (G1.6 slice E): the known-vulnerable origins on
-# `aegis-vulnlab-net` and on the authorized lab network, plus the optional Cloudflare Tunnel.
+# One command for the CVE test lab (G1.6 slice E): the known-vulnerable origins on this project's
+# internal network and on the authorized lab network, plus the Cloudflare Tunnel only when asked.
 #
-# Idempotent. It arms the podman `--timeout` on every container (VULNLAB_TTL_MINUTES, default 120),
-# recreates the project if an existing container was created with a different TTL, and waits until
-# every origin answers with the page the catalog documents - a container that is merely "up" is not
-# ready (Jenkins takes tens of seconds).
+# Idempotent. Publishing is explicit: the tunnel starts only with VULNLAB_TUNNEL=1 (or
+# PROFILE=internet); a token file that merely exists never publishes the origins, and a requested
+# tunnel without a token is an error rather than a silent lab-only run.
+#
+# The stack belongs to the checkout that created it (scripts/lib/stack.sh), and only one vulnlab
+# stack may exist per host because the origins use fixed addresses on the shared lab network.
+# It arms the podman `--timeout` on every container (VULNLAB_TTL_MINUTES, default 120), recreates the
+# project if an existing container was created with a different TTL, and waits until every origin
+# answers with the page the catalog documents - a container that is merely "up" is not ready.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -15,9 +20,25 @@ require_cmd python3
 load_images
 load_env
 load_ttl
-resolve_tunnel_token
+resolve_tunnel_request
+set_vulnlab_names
 require_rootless
 require_lab_network
+
+# Ownership before any mutation: never recreate or remove another checkout's project.
+require_vulnlab_stack_ownership
+if tunnel_requested; then
+  require_tunnel_slot
+fi
+require_no_other_vulnlab_stack
+
+if tunnel_requested; then
+  # Explicit intent must not downgrade silently: no/empty/loose token file is an error here.
+  resolve_tunnel_token
+  if ! tunnel_enabled; then
+    die "publishing was requested but no token is usable: $(tunnel_state)"
+  fi
+fi
 
 # The compose file cannot express --timeout (it is a podman run flag), so the compose hash does not
 # change when the TTL does: rebuild explicitly instead of leaving a container with a stale/no TTL.
@@ -33,17 +54,22 @@ if ((${#drifted[@]} > 0)); then
   compose down --remove-orphans --timeout 20
 fi
 
-if tunnel_enabled; then
-  # Remote-managed tunnel: the ingress lives in the Cloudflare dashboard, so there is nothing to
-  # render or mount locally. deploy/vulnlab/cloudflared/config.yml.template is the documented
-  # mirror of the dashboard rules; `make vulnlab-check PROFILE=internet` proves it serves.
-  log "compose project $VULNLAB_PROJECT: starting with the Cloudflare Tunnel (ingress managed in the dashboard)"
-else
-  log "compose project $VULNLAB_PROJECT: starting lab-only (no tunnel token file)"
+# Turning publishing off must actually unpublish: a cloudflared container left over from an earlier
+# tunnel-enabled start is not part of a lab-only `compose up` and would keep forwarding traffic.
+if ! tunnel_enabled && container_exists "$VULNLAB_TUNNEL_CONTAINER"; then
+  log "tunnel: OFF - removing this project's cloudflared container so nothing stays published"
+  podman rm -f "$VULNLAB_TUNNEL_CONTAINER" >/dev/null
 fi
+
+log "compose project $VULNLAB_PROJECT: starting $(tunnel_enabled && printf 'with the Cloudflare Tunnel' || printf 'lab-only')"
+# Remote-managed tunnel: ingress lives in the Cloudflare dashboard, so nothing is rendered or
+# mounted. `deploy/vulnlab/cloudflared/config.yml.template` is the documented mirror of the
+# dashboard rules; the readiness check below proves it serves.
+log "tunnel: $(tunnel_state)"
 log "auto-stop armed: every container stops after ${VULNLAB_TTL_MINUTES} min (podman --timeout ${VULNLAB_TTL_SECONDS}s)"
 
 compose up -d
+record_vulnlab_stack_identity
 
 mkdir -p "$RUN_DIR"
 log "waiting for every origin to serve its documented page (probe on $LAB_NETWORK)"

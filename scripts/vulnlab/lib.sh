@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts/vulnlab/*.sh. Source it; do not execute it directly.
 #
-# Everything here operates on compose project `aegis-vulnlab` (deploy/vulnlab/compose.yaml), its
-# networks `aegis-vulnlab-net` / `aegis-vulnlab-egress`, the external lab network `aegis-lab-lab`
-# and one-shot probe containers labelled `aegis.vulnlab=aegis-vulnlab-run`. Nothing outside that is
-# inspected, started or removed.
+# Everything here operates on this checkout's vulnlab compose project (`aegis-vulnlab` by default,
+# or `AEGIS_VULNLAB_PROJECT` from .env/environment), its networks `<project>-net` / `<project>-egress`,
+# the external lab network `aegis-lab-lab` and one-shot probe containers labelled
+# `aegis.vulnlab=<project>-run`. Nothing outside that is inspected, started or removed.
+#
+# Two rules this file exists for (both learned on a shared host):
+#   * a stack belongs to the checkout that created it (scripts/lib/stack.sh); this checkout only
+#     starts/removes its own project, and one vulnlab stack exists per host because the origins use
+#     fixed addresses on the shared lab network;
+#   * publishing the vulnerable origins is an explicit opt-in: the Cloudflare Tunnel starts only
+#     with VULNLAB_TUNNEL=1 (or PROFILE=internet), never just because a token file exists, and at
+#     most one vulnlab stack on the host may hold the tunnel.
 #
 # The auto-stop is armed here: every `podman run` podman-compose issues for this project carries
 # `--timeout <VULNLAB_TTL_MINUTES * 60>`, so podman (not a shell, not a cron, not somebody's
@@ -27,9 +35,17 @@ CATALOG_FILE="$REPO_ROOT/tests/vulnlab/cases.yaml"
 # AEGIS_VULNLAB_TUNNEL_TOKEN_FILE pointing at one. The default is used only when it exists.
 DEFAULT_TUNNEL_TOKEN_FILE=${AEGIS_VULNLAB_TUNNEL_TOKEN_FILE_DEFAULT:-/home/admin/.config/ultron/vulnlab-tunnel.token}
 TUNNEL_TOKEN_SOURCE=none
-
+VULNLAB_TUNNEL_REQUESTED=no
+# Set by set_vulnlab_names(); declared here so `set -u` is happy on a partial source.
 VULNLAB_PROJECT=aegis-vulnlab
+VULNLAB_NETWORK=aegis-vulnlab-net
+VULNLAB_EGRESS=aegis-vulnlab-egress
 VULNLAB_LABEL=aegis.vulnlab=aegis-vulnlab-run
+VULNLAB_TUNNEL_CONTAINER=aegis-vulnlab-cloudflared
+VULNLAB_IDENTITY="$RUN_DIR/identity"
+
+# shellcheck source=scripts/lib/stack.sh
+. "$VULNLAB_SCRIPTS/../lib/stack.sh"
 LAB_NETWORK=aegis-lab-lab
 
 log() { printf '[vulnlab] %s\n' "$*"; }
@@ -60,8 +76,12 @@ load_images() {
   : "${AEGIS_VULNLAB_PROBE_IMAGE:?images.env: AEGIS_VULNLAB_PROBE_IMAGE missing}"
 }
 
-# The operator's copy of the variables (hostnames, TTL). It never holds the token: that lives in a
-# 0600 file outside the repo (see resolve_tunnel_token). Created from the example on first use.
+# The operator's copy of the variables (hostnames, project name, TTL, the publishing switch). It
+# never holds the token: that lives in a 0600 file outside the repo (see resolve_tunnel_token).
+# Created from the example on first use.
+#
+# An explicit environment value wins over the file: `VULNLAB_TUNNEL=1 make vulnlab-up` must publish
+# even when .env says 0, which is not how a bare `set -a; . .env` behaves.
 load_env() {
   if [ ! -f "$ENV_FILE" ]; then
     cp "$ENV_EXAMPLE" "$ENV_FILE"
@@ -69,10 +89,23 @@ load_env() {
     log "created $ENV_FILE from .env.example (mode 600) - replace the example hostnames; the"
     log "tunnel token belongs in a 0600 file (AEGIS_VULNLAB_TUNNEL_TOKEN_FILE), not in .env"
   fi
+  local raw name
+  local -a names=()
+  local -A saved=()
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    case $raw in '' | \#*) continue ;; esac
+    name=${raw%%=*}
+    case $name in '' | *[!A-Za-z0-9_]*) continue ;; esac
+    names+=("$name")
+    if [ -n "${!name+x}" ]; then saved[$name]=${!name}; fi
+  done <"$ENV_FILE"
   set -a
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   set +a
+  for name in "${!saved[@]}"; do
+    export "$name=${saved[$name]}"
+  done
 }
 
 # The TTL is the stack's own stop condition: an integer number of minutes, bounded so a typo cannot
@@ -127,15 +160,160 @@ resolve_tunnel_token() {
   export AEGIS_VULNLAB_TUNNEL_TOKEN
 }
 
-tunnel_enabled() {
-  [ "${TUNNEL_TOKEN_SOURCE:-none}" != "none" ]
+# --- this checkout's stack --------------------------------------------------------------------
+# The project name and everything derived from it. `AEGIS_VULNLAB_PROJECT` comes from .env (loaded
+# by load_env) or the environment. The prefix is required: the host-wide scans below recognise a
+# vulnlab stack by its compose project label whatever checkout named it.
+set_vulnlab_names() {
+  local project=${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}
+  case $project in
+  aegis-vulnlab | aegis-vulnlab-?*) ;;
+  *) die "AEGIS_VULNLAB_PROJECT must start with aegis-vulnlab (got '$project')" ;;
+  esac
+  VULNLAB_PROJECT=$project
+  export AEGIS_VULNLAB_PROJECT=$VULNLAB_PROJECT
+  VULNLAB_NETWORK="$VULNLAB_PROJECT-net"
+  VULNLAB_EGRESS="$VULNLAB_PROJECT-egress"
+  VULNLAB_LABEL="aegis.vulnlab=$VULNLAB_PROJECT-run"
+  VULNLAB_TUNNEL_CONTAINER="$VULNLAB_PROJECT-cloudflared"
+  VULNLAB_IDENTITY="$RUN_DIR/identity"
+}
+
+vulnlab_stack_fingerprint() {
+  # The files that define the stack plus the project name. Operational values (public hostnames,
+  # TTL, the tunnel toggle) are handled explicitly below, so turning the tunnel on or off is not a
+  # "configuration changed, recreate with AEGIS_STACK_RECREATE=1" event.
+  stack_config_fingerprint "$COMPOSE_FILE" "$IMAGES_FILE" "$RUN_DIR/.no-env-file" \
+    AEGIS_VULNLAB_PROJECT
+}
+
+vulnlab_stack_verdict() {
+  stack_verdict "$VULNLAB_PROJECT" "$VULNLAB_DIR" "$COMPOSE_FILE" \
+    "$(vulnlab_stack_fingerprint)" "$VULNLAB_IDENTITY"
+}
+
+record_vulnlab_stack_identity() {
+  record_stack_identity "$VULNLAB_IDENTITY" "$VULNLAB_PROJECT" "$VULNLAB_DIR" \
+    "$(vulnlab_stack_fingerprint)"
+}
+
+# A stack belongs to the checkout that created it. Start/remove only our own project; another
+# checkout's project may be inspected but never recreated or removed (scripts/lib/stack.sh).
+require_vulnlab_stack_ownership() {
+  [ -n "$(stack_containers "$VULNLAB_PROJECT" | head -n 1 || true)" ] || return 0
+  local verdict
+  verdict=$(vulnlab_stack_verdict)
+  case $verdict in
+  ours | absent) return 0 ;;
+  config:*)
+    if [ "${AEGIS_STACK_RECREATE:-0}" = 1 ]; then
+      log "stack: configuration changed since this stack started - recreating its containers"
+      return 0
+    fi
+    die "compose project $VULNLAB_PROJECT exists with a different configuration (${verdict#config:}).
+  This stack was started from the same checkout but other files. Recreate it with:
+    AEGIS_STACK_RECREATE=1 make vulnlab-up"
+    ;;
+  other:*)
+    if [ "${AEGIS_STACK_FORCE:-0}" = 1 ]; then
+      log "stack: belongs to ${verdict#other:} - AEGIS_STACK_FORCE=1, touching it anyway"
+      return 0
+    fi
+    die "compose project $VULNLAB_PROJECT belongs to another checkout: ${verdict#other:}
+  A vulnlab stack belongs to the checkout that created it. Use it read-only (make vulnlab-check) or
+  ask its owner to stop it (make vulnlab-down in that checkout). AEGIS_STACK_FORCE=1 overrides this
+  only for a stack you know is disposable."
+    ;;
+  unknown:*)
+    if [ "${AEGIS_STACK_FORCE:-0}" = 1 ]; then
+      return 0
+    fi
+    die "compose project $VULNLAB_PROJECT exists but its owner cannot be proven (${verdict#unknown:}).
+  Refusing to touch it; AEGIS_STACK_FORCE=1 overrides."
+    ;;
+  esac
+}
+
+# One vulnlab stack per host: every origin joins `aegis-lab-lab` with fixed addresses from the
+# catalog (10.114.53.61-.67), so a second stack cannot start even with another project name.
+vulnlab_projects_on_host() {
+  podman ps -a --format '{{.Label "io.podman.compose.project"}}' |
+    grep -E '^aegis-vulnlab(-[a-z0-9-]+)?$' | sort -u
+}
+
+require_no_other_vulnlab_stack() {
+  local project
+  while IFS= read -r project; do
+    [ -n "$project" ] || continue
+    [ "$project" = "$VULNLAB_PROJECT" ] && continue
+    die "another vulnlab stack exists on this host (project $project).
+  The origins use fixed addresses on the shared lab network, so only one vulnlab stack may exist
+  per host. Use the running one (make vulnlab-status / vulnlab-check) or ask its owner to stop it
+  (make vulnlab-down in that checkout)."
+  done < <(vulnlab_projects_on_host)
+}
+
+# At most one tunnel-enabled stack per host: the Cloudflare Tunnel is a host-wide resource (the
+# public hostnames point at one origin set), so refuse to start a second cloudflared.
+tunnel_containers_on_host() {
+  {
+    podman ps --filter status=running --filter label=aegis.vulnlab.role=cloudflared \
+      --format '{{.Names}}'
+    # Stacks created before the role label existed: the name is still enough to recognise them.
+    podman ps --filter status=running --format '{{.Names}}' |
+      grep -E '^aegis-vulnlab(-[a-z0-9-]+)?-cloudflared$' || true
+  } | sort -u
+}
+
+require_tunnel_slot() {
+  local name
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    [ "$name" = "$VULNLAB_TUNNEL_CONTAINER" ] && continue
+    die "another vulnlab stack already has the Cloudflare Tunnel up ($name).
+  Only one tunnel-enabled vulnlab stack may run per host. Stop it there (make vulnlab-down) before
+  enabling VULNLAB_TUNNEL here."
+  done < <(tunnel_containers_on_host)
+}
+
+# --- publishing is explicit -------------------------------------------------------------------
+# The tunnel starts only when asked for (VULNLAB_TUNNEL=1, or PROFILE=internet for the campaign
+# runner); a token file that merely exists must never publish the origins by itself.
+resolve_tunnel_request() {
+  local requested=no
+  if [ "${PROFILE:-}" = internet ]; then requested=yes; fi
+  case ${VULNLAB_TUNNEL:-0} in
+  0 | false | no | off | '') ;;
+  1 | true | yes | on) requested=yes ;;
+  *) die "VULNLAB_TUNNEL must be 1/true/yes/on or 0/false/no/off (got '${VULNLAB_TUNNEL}')" ;;
+  esac
+  VULNLAB_TUNNEL_REQUESTED=$requested
+}
+
+tunnel_requested() { [ "$VULNLAB_TUNNEL_REQUESTED" = yes ]; }
+
+tunnel_enabled() { tunnel_requested && [ "${TUNNEL_TOKEN_SOURCE:-none}" != "none" ]; }
+
+tunnel_token_file_hint() {
+  local file=${AEGIS_VULNLAB_TUNNEL_TOKEN_FILE:-}
+  [ -n "$file" ] || file=$DEFAULT_TUNNEL_TOKEN_FILE
+  if [ -f "$file" ]; then
+    printf 'token file present at %s' "$file"
+  else
+    printf 'no token file at %s' "$file"
+  fi
 }
 
 tunnel_state() {
-  if tunnel_enabled; then
-    printf 'enabled (token from %s)' "$TUNNEL_TOKEN_SOURCE"
+  if tunnel_requested; then
+    if tunnel_enabled; then
+      printf 'ON (project %s; token from %s)' "$VULNLAB_PROJECT" "$TUNNEL_TOKEN_SOURCE"
+    else
+      printf 'requested but NO TOKEN (%s)' "$(tunnel_token_file_hint)"
+    fi
   else
-    printf 'disabled (no token file and AEGIS_VULNLAB_TUNNEL_TOKEN is empty)'
+    printf 'OFF (VULNLAB_TUNNEL is not set; %s - set VULNLAB_TUNNEL=1 to publish)' \
+      "$(tunnel_token_file_hint)"
   fi
 }
 
@@ -146,7 +324,7 @@ compose() {
   if tunnel_enabled; then
     args+=(--profile tunnel)
   fi
-  podman-compose "${args[@]}" "$@"
+  AEGIS_VULNLAB_PROJECT="$VULNLAB_PROJECT" podman-compose "${args[@]}" "$@"
 }
 
 container_exists() { podman container exists "$1" 2>/dev/null; }
