@@ -174,6 +174,8 @@ class Egress(unittest.TestCase):
         truthful = manifest()
         truthful["spec"]["permissions"]["proxyAware"] = False
         truthful["spec"]["permissions"]["egressMode"] = "l3"
+        # An L3 job has no L7 proxy, so it declares no proxy flag.
+        truthful["spec"]["permissions"].pop("proxyFlag", None)
         self.assertTrue(v.is_valid(truthful))
         on_broker = manifest()
         on_broker["spec"]["permissions"]["proxyAware"] = False

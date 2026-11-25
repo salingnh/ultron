@@ -208,6 +208,10 @@ def probe_manifest(
         "${input.max_results}",
     ]
     payload["spec"]["parser"]["entrypoint"] = "adapters.probe.parser:parse"
+    # The probe tool reads the proxy environment; it must not inherit Subfinder's proxyFlag (which
+    # would demand a deployment profile entry the test runner does not have).
+    payload["spec"]["permissions"].pop("proxyFlag", None)
+    payload["spec"]["permissions"].pop("proxyFlagFormat", None)
     if timeout_seconds is not None:
         payload["spec"]["budget"]["timeoutSeconds"] = timeout_seconds
     if egress_sources is not None:
