@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Layers,
 } from 'lucide-react';
-import { apiClient, ApiError } from '../api/client';
+import { apiClient, toUiError } from '../api/client';
 import type {
   Campaign,
   Asset,
@@ -27,7 +27,7 @@ import type {
   ServiceRowData,
   SelectedVulnerabilityState,
   ProvenanceDetail,
-  AppError,
+  UiError,
 } from '../api/types';
 import { TruncatedBanner } from '../components/TruncatedBanner';
 import { ProvenancePanel } from '../components/ProvenancePanel';
@@ -130,7 +130,8 @@ export const AssetGraphScreen: React.FC = () => {
   >({});
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AppError | Error | string | null>(null);
+  const [assetsError, setAssetsError] = useState<UiError | null>(null);
+  const [graphError, setGraphError] = useState<UiError | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [kindFilter, setKindFilter] = useState('ALL');
@@ -213,7 +214,8 @@ export const AssetGraphScreen: React.FC = () => {
     }
     try {
       setLoading(true);
-      setError(null);
+      setAssetsError(null);
+      setGraphError(null);
       setEventsTruncated(false);
 
       // 1. Fetch campaign assets: try GET /assets (works in mock or if implemented),
@@ -225,8 +227,8 @@ export const AssetGraphScreen: React.FC = () => {
           limit: 200,
         });
         loadedAssets = assetsRes.items || [];
-      } catch {
-        // GET /assets is deferred in contract
+      } catch (err) {
+        setAssetsError(toUiError(err, `/assets?campaign_id=${effectiveCampaignId}`));
       }
 
       if (loadedAssets.length === 0) {
@@ -254,8 +256,11 @@ export const AssetGraphScreen: React.FC = () => {
             }
           }
           loadedAssets = Array.from(byId.values());
+          setAssetsError(null);
         } catch (err) {
-          console.warn('Không thể nạp asset.discovered.v2:', err);
+          setAssetsError(
+            toUiError(err, `/campaigns/${effectiveCampaignId}/events?types=asset.discovered.v2`)
+          );
         }
       }
 
@@ -314,78 +319,70 @@ export const AssetGraphScreen: React.FC = () => {
       }
       setResolvedFocalAssetId(focalAssetId);
 
-      // 4. Load graph around focal asset
+      // 4. Load graph around focal asset (isolated error scope so service/asset tables stay clean)
       if (focalAssetId) {
-        const graphRes = await apiClient.getAssetGraph(focalAssetId, {
-          campaign_id: effectiveCampaignId,
-          max_hops: maxHops,
-          as_of: asOf.trim() || undefined,
-          limit: 100,
-        });
-        setGraphData(graphRes);
+        const graphPath = `/assets/${encodeURIComponent(focalAssetId)}/graph?campaign_id=${encodeURIComponent(effectiveCampaignId)}&max_hops=${maxHops}&limit=100`;
+        try {
+          const graphRes = await apiClient.getAssetGraph(focalAssetId, {
+            campaign_id: effectiveCampaignId,
+            max_hops: maxHops,
+            as_of: asOf.trim() || undefined,
+            limit: 100,
+          });
+          setGraphData(graphRes);
 
-        // Also ensure any service/application node present in graphRes has enrichment & vulns loaded
-        const missingGraphAssets = graphRes.nodes.filter(
-          (n) =>
-            (n.kind === 'service' || n.kind === 'application') &&
-            (!enrichmentMap[n.asset_id] || !vulnMap[n.asset_id])
-        );
-        if (missingGraphAssets.length > 0) {
-          await Promise.all(
-            missingGraphAssets.map(async (node) => {
-              const [historyResult, vulnResult] = await Promise.allSettled([
-                apiClient.getAssetHistory(node.asset_id, { limit: 50 }),
-                apiClient.listAssetVulnerabilities(node.asset_id, {
-                  campaign_id: effectiveCampaignId,
-                  limit: 200,
-                }),
-              ]);
-              if (historyResult.status === 'fulfilled') {
-                enrichmentMap[node.asset_id] = extractEnrichment(historyResult.value.items || []);
-              }
-              if (vulnResult.status === 'fulfilled') {
-                vulnMap[node.asset_id] = {
-                  items: vulnResult.value.items || [],
-                  truncated: Boolean(vulnResult.value.next_cursor),
-                };
-              }
-            })
+          // Also ensure any service/application node present in graphRes has enrichment & vulns loaded
+          const missingGraphAssets = graphRes.nodes.filter(
+            (n) =>
+              (n.kind === 'service' || n.kind === 'application') &&
+              (!enrichmentMap[n.asset_id] || !vulnMap[n.asset_id])
           );
-          setEnrichments({ ...enrichmentMap });
-          setVulnerabilitiesByAsset({ ...vulnMap });
-        }
+          if (missingGraphAssets.length > 0) {
+            await Promise.all(
+              missingGraphAssets.map(async (node) => {
+                const [historyResult, vulnResult] = await Promise.allSettled([
+                  apiClient.getAssetHistory(node.asset_id, { limit: 50 }),
+                  apiClient.listAssetVulnerabilities(node.asset_id, {
+                    campaign_id: effectiveCampaignId,
+                    limit: 200,
+                  }),
+                ]);
+                if (historyResult.status === 'fulfilled') {
+                  enrichmentMap[node.asset_id] = extractEnrichment(historyResult.value.items || []);
+                }
+                if (vulnResult.status === 'fulfilled') {
+                  vulnMap[node.asset_id] = {
+                    items: vulnResult.value.items || [],
+                    truncated: Boolean(vulnResult.value.next_cursor),
+                  };
+                }
+              })
+            );
+            setEnrichments({ ...enrichmentMap });
+            setVulnerabilitiesByAsset({ ...vulnMap });
+          }
 
-        if (loadedAssets.length === 0 && graphRes.nodes.length > 0) {
-          loadedAssets = graphRes.nodes.map((n) => ({
-            asset_id: n.asset_id,
-            canonical_key: n.canonical_key,
-            kind: n.kind,
-            first_seen: n.first_seen || new Date().toISOString(),
-            last_seen: n.last_seen || new Date().toISOString(),
-          }));
-          setAssets(loadedAssets);
-        }
+          if (loadedAssets.length === 0 && graphRes.nodes.length > 0) {
+            loadedAssets = graphRes.nodes.map((n) => ({
+              asset_id: n.asset_id,
+              canonical_key: n.canonical_key,
+              kind: n.kind,
+              first_seen: n.first_seen || new Date().toISOString(),
+              last_seen: n.last_seen || new Date().toISOString(),
+            }));
+            setAssets(loadedAssets);
+          }
 
-        if (graphRes.nodes.length > 0 && !initialSelectedRef.current) {
-          initialSelectedRef.current = true;
-          handleSelectNode(graphRes.nodes[0]);
+          if (graphRes.nodes.length > 0 && !initialSelectedRef.current) {
+            initialSelectedRef.current = true;
+            handleSelectNode(graphRes.nodes[0]);
+          }
+        } catch (err: unknown) {
+          setGraphData(null);
+          setGraphError(toUiError(err, graphPath));
         }
       } else {
         setGraphData(null);
-      }
-    } catch (err: unknown) {
-      if (err instanceof ApiError && err.appError) {
-        setError(err.appError);
-      } else if (err instanceof ApiError) {
-        setError({
-          code: err.status === 404 ? 'INPUT_INVALID' : err.status === 401 ? 'POLICY_DENIED' : 'INTERNAL_ERROR',
-          message: err.message,
-          technical_cause: `HTTP ${err.status} from backend endpoint`,
-          next_action: 'CHECK_PROVIDER',
-          next_action_detail: 'Kiểm tra trạng thái graph driver hoặc cấu hình Neo4j của backend API.',
-        });
-      } else {
-        setError(err instanceof Error ? err : 'Không thể tải đồ thị tài sản');
       }
     } finally {
       setLoading(false);
@@ -819,13 +816,13 @@ export const AssetGraphScreen: React.FC = () => {
         </div>
       </div>
 
-      {error && <ErrorDisplay error={error} onRetry={loadData} />}
+      {assetsError && <ErrorDisplay error={assetsError} onRetry={loadData} />}
 
       {/* Truncated banner when graph query or campaign event list is truncated */}
-      {(graphData?.truncated || eventsTruncated) && (
+      {(viewMode === 'graph' ? graphData?.truncated || eventsTruncated : eventsTruncated) && (
         <TruncatedBanner
-          truncated={Boolean(graphData?.truncated || eventsTruncated)}
-          limitsApplied={graphData?.limits_applied}
+          truncated={Boolean(viewMode === 'graph' ? graphData?.truncated || eventsTruncated : eventsTruncated)}
+          limitsApplied={viewMode === 'graph' ? graphData?.limits_applied : undefined}
           customMessage={
             eventsTruncated
               ? 'Danh sách tài sản của chiến dịch đã chạm trần phân trang 200 bản ghi; đồ thị vùng lân cận cũng áp dụng giới hạn bước nhảy và đỉnh.'
@@ -986,18 +983,34 @@ export const AssetGraphScreen: React.FC = () => {
           )}
         </div>
       ) : !graphData || graphData.nodes.length === 0 ? (
-        /* Empty state when no graph data is available */
-        <div className="state-box" style={{ marginTop: 32, padding: '48px 24px' }}>
-          <Network size={44} style={{ color: 'var(--muted)', marginBottom: 14 }} />
-          <div className="state-title" style={{ fontSize: 'var(--text-lg)', marginBottom: 6 }}>
-            Chưa có dữ liệu đồ thị tài sản cho chiến dịch này
-          </div>
-          <div className="state-desc" style={{ maxWidth: 540, margin: '0 auto', lineHeight: 1.6 }}>
-            Đồ thị tri thức M23 được cập nhật tự động khi các tác vụ trinh sát (Subfinder, DNSx, Naabu, Fingerprintx, HTTPx) hoàn tất
-            và dữ liệu quan sát được chuyển thành các đỉnh/cạnh quan hệ.
+        /* Graph view error or empty state */
+        <div>
+          {graphError && (
+            <div style={{ marginBottom: 16 }}>
+              <ErrorDisplay error={graphError} onRetry={loadData} />
+            </div>
+          )}
+          <div className="state-box" style={{ marginTop: graphError ? 0 : 32, padding: '48px 24px' }}>
+            <Network size={44} style={{ color: 'var(--muted)', marginBottom: 14 }} />
+            <div className="state-title" style={{ fontSize: 'var(--text-lg)', marginBottom: 6 }}>
+              {graphError
+                ? 'Không thể tải đồ thị tài sản cho chiến dịch này'
+                : 'Chưa có dữ liệu đồ thị tài sản cho chiến dịch này'}
+            </div>
+            <div className="state-desc" style={{ maxWidth: 540, margin: '0 auto', lineHeight: 1.6 }}>
+              {graphError
+                ? 'Bạn vẫn có thể xem Bảng Dịch vụ và Bảng Tài sản ở các tab phía trên trong khi đồ thị đang lỗi.'
+                : 'Đồ thị tri thức M23 được cập nhật tự động khi các tác vụ trinh sát (Subfinder, DNSx, Naabu, Fingerprintx, HTTPx) hoàn tất và dữ liệu quan sát được chuyển thành các đỉnh/cạnh quan hệ.'}
+            </div>
           </div>
         </div>
       ) : (
+        <div>
+          {graphError && (
+            <div style={{ marginBottom: 16 }}>
+              <ErrorDisplay error={graphError} onRetry={loadData} />
+            </div>
+          )}
         /* Main Layout: Graph/Table on left, ProvenancePanel or VulnerabilityPanel on right */
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1571,6 +1584,7 @@ export const AssetGraphScreen: React.FC = () => {
           {provenanceData && !selectedVulnerability && (
             <ProvenancePanel data={provenanceData} onClose={() => setProvenanceData(null)} />
           )}
+        </div>
         </div>
       )}
     </div>

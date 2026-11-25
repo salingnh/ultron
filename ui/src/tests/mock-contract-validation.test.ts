@@ -365,4 +365,21 @@ describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
     expect(policyResSchema(res)).toBe(true);
     expect(policyResSchema.errors).toBeNull();
   });
+
+  it('validates mockHandlers.getCampaignActivity() matches /campaigns/{id}/activity 200 schema', async () => {
+    const activitySchema = ajv.compile(
+      openApiDoc.paths['/campaigns/{campaign_id}/activity']?.get?.responses['200']?.content[
+        'application/json'
+      ]?.schema
+    );
+
+    const res = await mockHandlers.getCampaignActivity(mockCampaigns[0].campaign_id, { limit: 50 });
+    expect(activitySchema(res)).toBe(true);
+    expect(activitySchema.errors).toBeNull();
+
+    const page1 = await mockHandlers.getCampaignActivity(mockCampaigns[0].campaign_id, { limit: 3 });
+    expect(activitySchema(page1)).toBe(true);
+    expect(page1.truncated).toBe(true);
+    expect(page1.next_cursor).toBeTruthy();
+  });
 });

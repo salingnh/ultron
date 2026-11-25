@@ -80,6 +80,32 @@ export type CapabilityItem = CapabilitiesResponse['items'][number];
 export type CapabilityProvider = CapabilityItem['providers'][number];
 export type ProviderHealth = CapabilityProvider['health'];
 
+// Agent Activity types (PR #85: GET /campaigns/{id}/activity)
+export type CampaignActivityResponse = Omit<
+  operations['getCampaignActivity']['responses'][200]['content']['application/json'],
+  '$defs'
+>;
+export type ActivityEntry = components['schemas']['Entry'];
+export type ActivitySessionStarted = components['schemas']['SessionStarted'];
+export type ActivitySessionFinished = components['schemas']['SessionFinished'];
+export type ActivityDecision = components['schemas']['Decision'];
+export type ActivityIdleCycle = components['schemas']['IdleCycle'];
+export type ActivityBlocker = components['schemas']['Blocker'];
+export type ActivityBudget = components['schemas']['Budget'];
+
+export interface UiError {
+  status?: number;
+  code: string;
+  path?: string;
+  message: string;
+  next_action?: string;
+  next_action_detail?: string;
+  technical_cause?: string;
+  field?: string;
+  trace_id?: string;
+  isNetworkError?: boolean;
+}
+
 // Common types
 export type Actor = components['schemas']['Actor'];
 export type TargetRef = components['schemas']['TargetRef'];

@@ -1,16 +1,15 @@
 import React from 'react';
 import { AlertCircle, HelpCircle, ArrowRight } from 'lucide-react';
-import type { AppError } from '../api/types';
+import type { AppError, UiError } from '../api/types';
+import { toUiError } from '../api/client';
 
 interface ErrorDisplayProps {
-  error: AppError | Error | string;
+  error: UiError | AppError | Error | string;
   onRetry?: () => void;
 }
 
 export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) => {
-  const isAppError = typeof error === 'object' && error !== null && 'code' in error;
-  const appError = isAppError ? (error as AppError) : null;
-  const message = typeof error === 'string' ? error : error.message;
+  const uiError = toUiError(error);
 
   return (
     <div
@@ -27,32 +26,46 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) =>
       }}
       role="alert"
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--danger)', fontWeight: 600 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--danger)', fontWeight: 600, flexWrap: 'wrap' }}>
         <AlertCircle size={18} />
-        <span>Mã lỗi: {appError ? appError.code : 'ERROR'}</span>
+        <span>Mã lỗi: {uiError.code}</span>
+        {uiError.status !== undefined && (
+          <span
+            className="brand-badge"
+            style={{ color: 'var(--danger)', borderColor: 'var(--danger)', backgroundColor: 'var(--surface)' }}
+          >
+            HTTP {uiError.status}
+          </span>
+        )}
       </div>
 
-      <div style={{ color: 'var(--ink)' }}>{message}</div>
+      <div style={{ color: 'var(--ink)' }}>{uiError.message}</div>
 
-      {appError?.field && (
+      {uiError.path && (
+        <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--muted)', wordBreak: 'break-all' }}>
+          Đường dẫn (path): {uiError.path}
+        </div>
+      )}
+
+      {uiError.field && (
         <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--danger)' }}>
-          Trường lỗi (field): {appError.field}
+          Trường lỗi (field): {uiError.field}
         </div>
       )}
 
-      {appError?.technical_cause && (
-        <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>
-          Nguyên nhân kỹ thuật: {appError.technical_cause}
+      {uiError.technical_cause && (
+        <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--muted)', wordBreak: 'break-word' }}>
+          Nguyên nhân kỹ thuật: {uiError.technical_cause}
         </div>
       )}
 
-      {appError?.trace_id && (
+      {uiError.trace_id && (
         <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>
-          Trace ID: {appError.trace_id}
+          Trace ID: {uiError.trace_id}
         </div>
       )}
 
-      {appError?.next_action && (
+      {(uiError.next_action || onRetry) && (
         <div
           style={{
             marginTop: 4,
@@ -63,15 +76,21 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) =>
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: 8,
+            flexWrap: 'wrap',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-xs)' }}>
-            <HelpCircle size={14} style={{ color: 'var(--accent)' }} />
-            <span>
-              <strong>Bước tiếp theo (next_action):</strong> {appError.next_action}
-              {appError.next_action_detail && ` - ${appError.next_action_detail}`}
-            </span>
-          </div>
+          {uiError.next_action ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-xs)' }}>
+              <HelpCircle size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              <span>
+                <strong>Bước tiếp theo (next_action):</strong> {uiError.next_action}
+                {uiError.next_action_detail && ` - ${uiError.next_action_detail}`}
+              </span>
+            </div>
+          ) : (
+            <span />
+          )}
           {onRetry && (
             <button type="button" onClick={onRetry} className="btn btn-sm btn-primary">
               Thực hiện lại <ArrowRight size={12} />

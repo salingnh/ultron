@@ -14,6 +14,7 @@ import { Layout } from '../components/Layout';
 import { CampaignListScreen } from '../screens/CampaignListScreen';
 import { CampaignCreateScreen } from '../screens/CampaignCreateScreen';
 import { CampaignDetailScreen } from '../screens/CampaignDetailScreen';
+import { ActivityScreen } from '../screens/ActivityScreen';
 import { ApiError, apiClient, getOperatorToken, setOperatorToken } from '../api/client';
 import { resetMockData } from '../mock/handlers';
 
@@ -434,5 +435,152 @@ describe('Ultron UI Reusable Components', () => {
       await screen.findByText(/Chiến dịch đã kết thúc \(COMPLETED\) — API chỉ cho phép tạo bản chụp RoE mới/)
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Tạo bản chụp RoE mới/ })).not.toBeInTheDocument();
+  });
+
+  it('scopes AssetGraphScreen graph error to Graph view only and renders HTTP status + path (F1)', async () => {
+    resetMockData();
+    const graphSpy = vi.spyOn(apiClient, 'getAssetGraph').mockRejectedValueOnce(
+      new ApiError(
+        500,
+        {
+          code: 'INTERNAL_ERROR',
+          message: 'the app has no graph driver',
+          next_action: 'CHECK_PROVIDER',
+        },
+        'the app has no graph driver',
+        '/assets/01934f6a-0000-7000-8000-0000000000f3/graph?campaign_id=01934f6a-0000-7000-8000-000000000001'
+      )
+    );
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/assets?campaign_id=01934f6a-0000-7000-8000-000000000001']}>
+          <Routes>
+            <Route path="/assets" element={<AssetGraphScreen />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText('HTTP 500')).toBeInTheDocument();
+      expect(screen.getByText(/Mã lỗi: INTERNAL_ERROR/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Đường dẫn \(path\): \/assets\/01934f6a-0000-7000-8000-0000000000f3\/graph/)
+      ).toBeInTheDocument();
+
+      // Switch to Bảng Dịch vụ -> graph error banner must NOT appear above service table
+      fireEvent.click(screen.getByRole('button', { name: /Bảng Dịch vụ/ }));
+      expect(await screen.findByRole('table', { name: 'Bảng dịch vụ theo chiến dịch' })).toBeInTheDocument();
+      expect(screen.queryByText(/Mã lỗi: INTERNAL_ERROR/)).not.toBeInTheDocument();
+
+      // Switch to Bảng Tài sản -> graph error banner must NOT appear above asset table
+      fireEvent.click(screen.getByRole('button', { name: 'Bảng Tài sản' }));
+      expect(await screen.findByRole('table', { name: 'Bảng tài sản số' })).toBeInTheDocument();
+      expect(screen.queryByText(/Mã lỗi: INTERNAL_ERROR/)).not.toBeInTheDocument();
+    } finally {
+      graphSpy.mockRestore();
+    }
+  });
+
+  it('opens CVE panel when clicking ServiceTable row or candidate/KEV badges (F5)', () => {
+    const onSelect = vi.fn();
+    render(
+      <ServiceTable
+        rows={[
+          {
+            asset: {
+              asset_id: '01934f6a-0000-7000-8000-0000000000f6',
+              canonical_key: 'service:10.114.53.215:80/tcp',
+              kind: 'service',
+              first_seen: '2026-11-25T08:00:00Z',
+              last_seen: '2026-11-25T08:05:00Z',
+            },
+            host: '10.114.53.215',
+            port: '80',
+            transport: 'tcp',
+            protocol: 'http (tcp)',
+            product: 'http_server',
+            version: '2.4.49',
+            cpe: 'cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*',
+            candidates: [
+              {
+                vulnerability_id: 'CVE-2021-41773',
+                cvss_base: 9.8,
+                kev: true,
+                epss: 0.97431,
+                match_method: 'cpe_range',
+                confidence: 0.7,
+                candidate_since: '2026-11-25T08:06:00Z',
+              },
+            ],
+            candidateCount: 1,
+            kevCount: 1,
+            truncatedCandidates: false,
+          },
+        ]}
+        onSelectVulnerability={onSelect}
+        onFocusInGraph={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '1 ứng viên' }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '1 KEV' }));
+    expect(onSelect).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByText('http_server'));
+    expect(onSelect).toHaveBeenCalledTimes(3);
+  });
+
+  it('closes TokenConfigModal on Escape and focuses first input with focus trap (F6)', async () => {
+    const onClose = vi.fn();
+    render(<TokenConfigModal isOpen={true} onClose={onClose} />);
+
+    const input = screen.getByLabelText('Nhập Operator Token');
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(input);
+    });
+
+    // Tab backwards from first focusable element wraps to last button (Lưu Token)
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Lưu Token' }));
+
+    // Tab forward from last wraps back to first input
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(input);
+
+    // Escape closes modal
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders ActivityScreen with decisions, reasons, linked jobs, sessions, budget, and filters', async () => {
+    resetMockData();
+    render(
+      <MemoryRouter initialEntries={['/activity?campaign_id=01934f6a-0000-7000-8000-000000000001']}>
+        <Routes>
+          <Route path="/activity" element={<ActivityScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Nhật ký Hoạt động Agent (Activity)')).toBeInTheDocument();
+    expect(await screen.findByText('network.discover_services')).toBeInTheDocument();
+    expect(screen.getByText(/Lý do từ chối: OUT_OF_SCOPE/)).toBeInTheDocument();
+    expect(screen.getByText(/Luật: target_denied/)).toBeInTheDocument();
+    expect(screen.getByText('dns.resolve')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Xem Job/ })).toHaveAttribute(
+      'href',
+      '/jobs?campaign_id=01934f6a-0000-7000-8000-000000000001&job_id=01934f6a-0000-7000-8000-00000000d002'
+    );
+    expect(screen.getByText(/Bị chặn \(Blocker\): DEPENDENCY_MISSING/)).toBeInTheDocument();
+    expect(screen.getByText(/4,250 tokens/)).toBeInTheDocument();
+
+    // Filter to denied only
+    fireEvent.change(screen.getByLabelText('Lọc trạng thái quyết định'), {
+      target: { value: 'denied' },
+    });
+    expect(screen.getByText('network.discover_services')).toBeInTheDocument();
+    expect(screen.queryByText('dns.resolve')).not.toBeInTheDocument();
   });
 });
