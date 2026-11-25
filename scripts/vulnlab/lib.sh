@@ -22,8 +22,11 @@ IMAGES_FILE="$VULNLAB_DIR/images.env"
 ENV_EXAMPLE="$VULNLAB_DIR/.env.example"
 ENV_FILE="${AEGIS_VULNLAB_ENV:-$VULNLAB_DIR/.env}"
 RUN_DIR="$VULNLAB_DIR/.run"
-TUNNEL_DIR="$RUN_DIR/cloudflared"
 CATALOG_FILE="$REPO_ROOT/tests/vulnlab/cases.yaml"
+# The tunnel token is deployment state, not repository state: a 0600 file outside the checkout, or
+# AEGIS_VULNLAB_TUNNEL_TOKEN_FILE pointing at one. The default is used only when it exists.
+DEFAULT_TUNNEL_TOKEN_FILE=${AEGIS_VULNLAB_TUNNEL_TOKEN_FILE_DEFAULT:-/home/admin/.config/ultron/vulnlab-tunnel.token}
+TUNNEL_TOKEN_SOURCE=none
 
 VULNLAB_PROJECT=aegis-vulnlab
 VULNLAB_LABEL=aegis.vulnlab=aegis-vulnlab-run
@@ -57,14 +60,14 @@ load_images() {
   : "${AEGIS_VULNLAB_PROBE_IMAGE:?images.env: AEGIS_VULNLAB_PROBE_IMAGE missing}"
 }
 
-# The operator's copy of the variables. Created from the example on first use (mode 600: it will
-# hold the tunnel token) and exported for compose interpolation and the python helpers.
+# The operator's copy of the variables (hostnames, TTL). It never holds the token: that lives in a
+# 0600 file outside the repo (see resolve_tunnel_token). Created from the example on first use.
 load_env() {
   if [ ! -f "$ENV_FILE" ]; then
     cp "$ENV_EXAMPLE" "$ENV_FILE"
     chmod 600 "$ENV_FILE"
-    log "created $ENV_FILE from .env.example (mode 600) - replace the example hostnames and add"
-    log "AEGIS_VULNLAB_TUNNEL_TOKEN only if the tunnel was created by the owner"
+    log "created $ENV_FILE from .env.example (mode 600) - replace the example hostnames; the"
+    log "tunnel token belongs in a 0600 file (AEGIS_VULNLAB_TUNNEL_TOKEN_FILE), not in .env"
   fi
   set -a
   # shellcheck disable=SC1090
@@ -86,12 +89,54 @@ load_ttl() {
   VULNLAB_TTL_SECONDS=$((minutes * 60))
 }
 
+# Resolves the token once, checking the file contract before reading a byte. An explicit path that
+# is missing, unreadable, not owned by this user or accessible by group/other is an error - never a
+# silent fallback to the environment. Precedence: explicit file > default file (when present) >
+# AEGIS_VULNLAB_TUNNEL_TOKEN in the environment (kept for compatibility, discouraged). The value is
+# exported for compose interpolation and is never printed by any script here.
+resolve_tunnel_token() {
+  local file=${AEGIS_VULNLAB_TUNNEL_TOKEN_FILE:-}
+  if [ -z "$file" ] && [ -f "$DEFAULT_TUNNEL_TOKEN_FILE" ]; then
+    file=$DEFAULT_TUNNEL_TOKEN_FILE
+  fi
+  if [ -n "$file" ]; then
+    [ -f "$file" ] ||
+      die "tunnel token file $file does not exist: set AEGIS_VULNLAB_TUNNEL_TOKEN_FILE to a 0600 file"
+    [ -r "$file" ] || die "tunnel token file $file is not readable by $(id -un)"
+    local mode owner
+    mode=$(stat -Lc '%a' "$file")
+    if (( (8#$mode & 8#077) != 0 )); then
+      die "refusing tunnel token file $file: mode $mode is group/world-readable; chmod 600 $file"
+    fi
+    owner=$(stat -Lc '%u' "$file")
+    if [ "$owner" != "$(id -u)" ]; then
+      die "refusing tunnel token file $file: owned by uid $owner, not $(id -u)"
+    fi
+    AEGIS_VULNLAB_TUNNEL_TOKEN=$(tr -d '\r\n' <"$file")
+    TUNNEL_TOKEN_SOURCE="file $file"
+  elif [ -n "${AEGIS_VULNLAB_TUNNEL_TOKEN:-}" ]; then
+    TUNNEL_TOKEN_SOURCE="environment"
+  else
+    TUNNEL_TOKEN_SOURCE=none
+    return 0
+  fi
+  case ${AEGIS_VULNLAB_TUNNEL_TOKEN:-} in
+  '') die "tunnel token from $TUNNEL_TOKEN_SOURCE is empty" ;;
+  *[[:space:]]*) die "tunnel token from $TUNNEL_TOKEN_SOURCE contains whitespace: save it as one line" ;;
+  esac
+  export AEGIS_VULNLAB_TUNNEL_TOKEN
+}
+
 tunnel_enabled() {
-  [ -n "${AEGIS_VULNLAB_TUNNEL_TOKEN:-}" ]
+  [ "${TUNNEL_TOKEN_SOURCE:-none}" != "none" ]
 }
 
 tunnel_state() {
-  if tunnel_enabled; then printf 'enabled'; else printf 'disabled (AEGIS_VULNLAB_TUNNEL_TOKEN is empty)'; fi
+  if tunnel_enabled; then
+    printf 'enabled (token from %s)' "$TUNNEL_TOKEN_SOURCE"
+  else
+    printf 'disabled (no token file and AEGIS_VULNLAB_TUNNEL_TOKEN is empty)'
+  fi
 }
 
 # podman-compose with the auto-stop armed. `--podman-run-args` is applied to every `podman run` the

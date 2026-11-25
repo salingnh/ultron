@@ -16,11 +16,13 @@
 #     must write their own install directory at start (reasons in tests/vulnlab/cases.yaml),
 #     memory/CPU/PID caps on every service.
 #
-# Cloudflared is a compose profile (`--profile tunnel`), started only when AEGIS_VULNLAB_TUNNEL_TOKEN
-# is set. It is the only service with a second network that has a route off the host, because a
-# tunnel is outbound-only; an origin never joins it. The ingress config is generated from .env by
-# scripts/vulnlab/render_cloudflared.py into deploy/vulnlab/.run/cloudflared/ and mounted read-only;
-# the token reaches the container through its environment and is never written to a file or logged.
+# Cloudflared is a compose profile (`--profile tunnel`), started only when the owner's 0600 token
+# file exists (or AEGIS_VULNLAB_TUNNEL_TOKEN is set). It is the only service with a second network
+# that has a route off the host, because a tunnel is outbound-only; an origin never joins it. The
+# tunnel is remotely managed: ingress lives in the Cloudflare dashboard, so nothing is rendered or
+# mounted here, and `deploy/vulnlab/cloudflared/config.yml.template` is only the documented mirror
+# of the dashboard rules. The token reaches the container through its environment (read from the
+# 0600 file by scripts/vulnlab/lib.sh) and is never written into the checkout or logged.
 name: aegis-vulnlab
 
 x-vulnlab-origin: &vulnlab-origin
@@ -196,16 +198,14 @@ services:
     pids_limit: 64
     # The distroless image runs as uid 65532; nothing needs to be written.
     environment:
-      # Read by cloudflared in place of `--token`; never written to a file, never printed by the
-      # scripts (status inspects the container, not its environment). Compose interpolates every
+      # Read by cloudflared in place of `--token`; never written to the checkout, never printed by
+      # the scripts (status inspects the container, not its environment). Compose interpolates every
       # service even when its profile is off, so this must not be `:?` - `make vulnlab-up` enables
-      # the profile only after the renderer proved the token is present, and cloudflared itself
-      # refuses an empty token.
+      # the profile only after it resolved a token, and cloudflared refuses an empty token.
       TUNNEL_TOKEN: ${AEGIS_VULNLAB_TUNNEL_TOKEN:-}
-    command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
-    volumes:
-      # The only mount in the stack: the ingress rendered from .env, read-only, generated state.
-      - ./.run/cloudflared:/etc/cloudflared:ro,z
+    # No `--config`: a remotely managed tunnel takes its ingress from Cloudflare. The template in
+    # cloudflared/ is the mirror to compare the dashboard rules against, not a runtime input.
+    command: ["tunnel", "run"]
     networks:
       vulnlab:
         ipv4_address: 10.114.54.2

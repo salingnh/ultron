@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Check that every vulnlab origin serves the page the catalog documents (G1.6 slice E).
 
-Each probe is a one-shot container on the authorized lab network, run as the current uid:gid with
-all capabilities dropped, a read-only rootfs and its own TTL: the same path a scanner takes, not a
-`curl` from the host (the origins publish no host port, so a host curl could not reach them anyway).
+Two profiles:
 
-Used by `make vulnlab-up` (readiness, `--wait`) and `make vulnlab-check` (the disclosure gate). The
-check is deliberately about what the *service* reveals (status, `Server`, title, body markers);
-whether a detector parses it into product/version/CPE is `make vulnlab-test` (campaign level).
+* `lab` (the default) runs one probe container per origin on the authorized lab network, as the
+  current uid:gid with all capabilities dropped, a read-only rootfs and its own TTL: the same path a
+  scanner takes, not a `curl` from the host (the origins publish no host port).
+* `internet` requests each public hostname from **this machine** over HTTPS, through the Cloudflare
+  Tunnel and its Access policy. Cloudflare terminates TLS and normalizes `Server`, so only the
+  status, title and body markers of the catalog's `internet` block are asserted.
+
+Used by `make vulnlab-up` (readiness, `--wait`; plus tunnel readiness when a token is configured)
+and `make vulnlab-check`. The check is deliberately about what the *service* reveals; whether a
+detector parses it into product/version/CPE is `make vulnlab-test` (campaign level).
 """
 
 from __future__ import annotations
@@ -19,6 +24,8 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,13 +33,14 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from tests.vulnlab.catalog import CATALOG_PATH, Case, load_catalog  # noqa: E402
+from tests.vulnlab.catalog import CATALOG_PATH, HOSTNAME, Case, load_catalog  # noqa: E402
 
-REPO_ROOT = REPO
 IMAGES_FILE = REPO / "deploy" / "vulnlab" / "images.env"
 LAB_NETWORK = "aegis-lab-lab"
 RUN_LABEL = "aegis.vulnlab=aegis-vulnlab-run"
 PROBE_TIMEOUT_SECONDS = 20
+TUNNEL_TIMEOUT_SECONDS = 20
+TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 
 PROBE_SCRIPT = r"""
 import json
@@ -69,7 +77,7 @@ print(json.dumps({
 
 
 class ProbeError(RuntimeError):
-    """The probe container could not run; the message says why."""
+    """The probe could not run; the message says why."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +108,19 @@ def probe_image() -> str:
     raise ProbeError(f"{IMAGES_FILE} has no AEGIS_VULNLAB_PROBE_IMAGE")
 
 
+def _decode(status: int | None, server: str | None, body: str, error: str | None) -> Probe:
+    title = TITLE.search(body)
+    return Probe(
+        status=status,
+        server=server,
+        title=title.group(1).strip() if title else None,
+        body=body,
+        error=error,
+    )
+
+
 def probe(url: str) -> Probe:
+    """One-shot probe container on the lab network (no host port is ever published)."""
     command = [
         "podman",
         "run",
@@ -155,27 +175,62 @@ def probe(url: str) -> Probe:
         payload = json.loads(completed.stdout.strip().splitlines()[-1])
     except (json.JSONDecodeError, IndexError) as error:
         raise ProbeError(f"probe of {url} printed no JSON: {completed.stdout[:200]!r}") from error
-    return Probe(
-        status=payload.get("status"),
-        server=payload.get("server"),
-        title=payload.get("title"),
-        body=str(payload.get("body") or ""),
-        error=payload.get("error"),
+    return _decode(
+        payload.get("status"),
+        payload.get("server"),
+        str(payload.get("body") or ""),
+        payload.get("error"),
     )
+
+
+def host_probe(url: str) -> Probe:
+    """One HTTPS request from this machine (through Cloudflare and its Access policy)."""
+    request = urllib.request.Request(url, headers={"User-Agent": "aegis-vulnlab-tunnel-check/1"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=TUNNEL_TIMEOUT_SECONDS) as response:
+            status = response.status
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            body = response.read(131072).decode("utf-8", "replace")
+        error = None
+    except urllib.error.HTTPError as failure:
+        status = failure.code
+        headers = {key.lower(): value for key, value in failure.headers.items()}
+        body = failure.read(131072).decode("utf-8", "replace")
+        error = None
+    except Exception as failure:  # noqa: BLE001 - a tunnel failure is data, not a crash
+        status, headers, body, error = None, {}, "", f"{type(failure).__name__}: {failure}"
+    return _decode(status, headers.get("server"), body, error)
 
 
 def lab_url(case: Case) -> str:
     return f"http://{case.lab_address}:{case.image_port}{case.request_path}"
 
 
-def check(case: Case, observed: Probe) -> LiveResult:
-    expectation = case.expectation("lab")
+def internet_url(case: Case) -> str:
+    if case.host_env is None:
+        raise ProbeError(f"case {case.id} has no public hostname")
+    hostname = (os.environ.get(case.host_env) or "").strip().lower()
+    if not hostname:
+        raise ProbeError(f"{case.host_env} is empty: set the public hostname in deploy/vulnlab/.env")
+    if not HOSTNAME.match(hostname):
+        raise ProbeError(f"{case.host_env} is not a lowercase FQDN: {hostname!r}")
+    return f"https://{hostname}{case.request_path}"
+
+
+def check(case: Case, profile: str, observed: Probe) -> LiveResult:
+    """Compare one observation with the case's expectations for that profile."""
+    expectation = case.expectation(profile)
+    url = internet_url(case) if profile == "internet" else lab_url(case)
     if observed.error:
-        return LiveResult(case.id, False, f"probe error: {observed.error}", observed)
+        return LiveResult(case.id, False, f"{url}: {observed.error}", observed)
     problems: list[str] = []
     if expectation.http_status is not None and observed.status != expectation.http_status:
         problems.append(f"status {observed.status} != {expectation.http_status}")
-    if case.disclose_server and case.disclose_server not in (observed.server or ""):
+    if profile == "lab" and case.disclose_server and case.disclose_server not in (
+        observed.server or ""
+    ):
+        # Cloudflare normalizes Server, so the origin banner is a lab-only assertion.
         problems.append(f"Server {observed.server!r} does not contain {case.disclose_server!r}")
     for marker in case.disclose_body:
         if marker not in observed.body:
@@ -188,37 +243,40 @@ def check(case: Case, observed: Probe) -> LiveResult:
             f"title {observed.title!r} does not contain {expectation.http_title_contains!r}"
         )
     if problems:
-        return LiveResult(case.id, False, "; ".join(problems), observed)
+        return LiveResult(case.id, False, f"{url}: " + "; ".join(problems), observed)
     detail = (
-        f"{lab_url(case)} status {observed.status}"
+        f"{url} status {observed.status}"
         + (f" Server {observed.server!r}" if observed.server else "")
         + (f" title {observed.title!r}" if observed.title else "")
     )
     return LiveResult(case.id, True, detail, observed)
 
 
-def run_once(case: Case) -> LiveResult:
+def run_once(case: Case, profile: str) -> LiveResult:
     try:
-        return check(case, probe(lab_url(case)))
+        observed = probe(lab_url(case)) if profile == "lab" else host_probe(internet_url(case))
+        return check(case, profile, observed)
     except ProbeError as error:
         return LiveResult(case.id, False, str(error), None)
 
 
-def wait_ready(cases: list[Case], timeout_seconds: int, tick_seconds: float = 3.0) -> list[LiveResult]:
-    """Poll until every origin serves its documented page, or the deadline passes."""
+def wait_ready(
+    cases: list[Case], profile: str, timeout_seconds: int, tick_seconds: float = 3.0
+) -> list[LiveResult]:
+    """Poll until every origin (or public hostname) serves its documented page, or the deadline."""
     deadline = time.monotonic() + timeout_seconds
     results: dict[str, LiveResult] = {}
     pending = {case.id: case for case in cases}
     while pending and time.monotonic() < deadline:
         for case_id in list(pending):
-            result = run_once(pending[case_id])
+            result = run_once(pending[case_id], profile)
             results[case_id] = result
             if result.ok:
                 pending.pop(case_id)
         if pending:
             time.sleep(tick_seconds)
     for case_id, case in pending.items():
-        results[case_id] = run_once(case)
+        results[case_id] = run_once(case, profile)
     return [results[case.id] for case in cases]
 
 
@@ -235,9 +293,15 @@ def print_results(results: list[LiveResult]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", choices=("lab", "internet"), default="lab")
     parser.add_argument("--wait", type=int, metavar="SECONDS", help="poll until ready or timeout")
     parser.add_argument("--case", action="append", default=[], help="only these case ids")
     parser.add_argument("--json", type=Path, help="write the observations as JSON here")
+    parser.add_argument(
+        "--allow-placeholder-hostnames",
+        action="store_true",
+        help="accept the .env.example example.com names (the tunnel run will fail, by design)",
+    )
     arguments = parser.parse_args(argv)
 
     catalog = load_catalog(CATALOG_PATH)
@@ -250,10 +314,24 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         cases = tuple(case for case in cases if case.id in wanted)
 
+    if arguments.profile == "internet":
+        placeholders = [
+            case.id
+            for case in cases
+            if case.host_env and ".example." in (os.environ.get(case.host_env) or "")
+        ]
+        if placeholders and not arguments.allow_placeholder_hostnames:
+            print(
+                f"[vulnlab] placeholder hostnames for {placeholders}: set the real public names "
+                "in deploy/vulnlab/.env first",
+                file=sys.stderr,
+            )
+            return 2
+
     if arguments.wait is not None:
-        results = wait_ready(list(cases), arguments.wait)
+        results = wait_ready(list(cases), arguments.profile, arguments.wait)
     else:
-        results = [run_once(case) for case in cases]
+        results = [run_once(case, arguments.profile) for case in cases]
 
     if arguments.json:
         arguments.json.parent.mkdir(parents=True, exist_ok=True)
@@ -262,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
                 [
                     {
                         "case": result.case_id,
+                        "profile": arguments.profile,
                         "ok": result.ok,
                         "detail": result.detail,
                         "status": result.probe.status if result.probe else None,
@@ -279,9 +358,12 @@ def main(argv: list[str] | None = None) -> int:
 
     failed = print_results(results)
     if failed:
-        print(f"[vulnlab] {failed}/{len(results)} origin(s) did not serve the documented page")
+        print(
+            f"[vulnlab] {failed}/{len(results)} {arguments.profile} endpoint(s) did not serve "
+            "the documented page"
+        )
         return 1
-    print(f"[vulnlab] {len(results)}/{len(results)} origin(s) serve the documented page")
+    print(f"[vulnlab] {len(results)}/{len(results)} {arguments.profile} endpoint(s) serve the documented page")
     return 0
 
 

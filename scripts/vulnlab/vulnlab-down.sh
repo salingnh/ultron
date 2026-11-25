@@ -38,5 +38,5 @@ if [ -n "$leftovers" ]; then
   die "compose project $VULNLAB_PROJECT left resources behind (listed above)"
 fi
 
-rm -rf "$TUNNEL_DIR" "$RUN_DIR/readiness.json"
+rm -rf "$RUN_DIR/readiness.json" "$RUN_DIR/tunnel-readiness.json"
 log "compose project $VULNLAB_PROJECT: removed; the lab network and nothing else was touched"

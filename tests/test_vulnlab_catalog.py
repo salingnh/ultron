@@ -225,11 +225,11 @@ def test_tunnel_is_opt_in_and_cannot_expose_an_origin_directly(
     assert "ports" not in tunnel
     assert set(tunnel["networks"]) == {"vulnlab", "egress"}
     assert "ipv4_address" not in (tunnel["networks"]["egress"] or {})
-    mounts = tunnel.get("volumes") or []
-    assert mounts, "the rendered ingress config is the tunnel's only input"
-    for mount in mounts:
-        assert mount.endswith(":ro,z"), f"tunnel mount must be read-only: {mount}"
-        assert ".run" in mount, f"tunnel mount must be generated state, not a repo source: {mount}"
+    # A remotely managed tunnel takes its ingress from Cloudflare: no local file is mounted, and
+    # `--config` would make cloudflared read a file the dashboard does not use.
+    assert "volumes" not in tunnel, "a remote-managed tunnel must not mount an ingress file"
+    assert tunnel.get("command") == ["tunnel", "run"], tunnel.get("command")
+    assert "--config" not in " ".join(tunnel.get("command") or [])
 
 
 def test_networks_are_declared_internal_or_external_as_promised(
@@ -256,7 +256,12 @@ def test_no_service_publishes_a_port_anywhere(compose: dict[str, Any]) -> None:
 
 def test_env_example_declares_names_not_secrets(catalog: Catalog) -> None:
     values = _env_example()
-    assert values.get("AEGIS_VULNLAB_TUNNEL_TOKEN") == "", "the example must not carry a token"
+    assert values.get("AEGIS_VULNLAB_TUNNEL_TOKEN") in {None, ""}, (
+        "the example must not carry a token; keep it in a 0600 file"
+    )
+    assert values.get("AEGIS_VULNLAB_TUNNEL_TOKEN_FILE") == "", (
+        "the example must name the token-file variable with no path baked in"
+    )
     assert values.get("VULNLAB_TTL_MINUTES", "").isdigit()
     for case in catalog.cases:
         assert case.host_env, f"{case.id} has no public hostname variable"
@@ -276,6 +281,19 @@ def test_env_example_hostnames_are_unique(catalog: Catalog) -> None:
     values = _env_example()
     hostnames = [values[case.host_env] for case in catalog.cases if case.host_env]
     assert len(hostnames) == len(set(hostnames))
+
+
+def test_ingress_template_is_the_documented_mirror(catalog: Catalog) -> None:
+    # The dashboard owns the live ingress; the template is the mirror a reviewer compares it with.
+    template = (REPO / "deploy" / "vulnlab" / "cloudflared" / "config.yml.template").read_text(
+        encoding="utf-8"
+    )
+    for case in catalog.cases:
+        assert case.host_env is not None
+        assert f"@{case.host_env}@" in template, f"template has no placeholder for {case.id}"
+        assert "http://" in template
+    assert "http_status:404" in template, "the mirror must close everything else"
+    assert "salingnh.com" not in template, "owner-specific hostnames must not be committed"
 
 
 # --- campaign target -------------------------------------------------------------------------

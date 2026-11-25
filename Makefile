@@ -40,7 +40,8 @@ help:
 	  '                     when AEGIS_VULNLAB_TUNNEL_TOKEN is set in deploy/vulnlab/.env' \
 	  'make vulnlab-down    remove only the aegis-vulnlab project (containers + its two networks)' \
 	  'make vulnlab-status  boundary, tunnel state and remaining TTL (non-zero if not healthy)' \
-	  'make vulnlab-check   every origin serves the page its catalog entry documents' \
+	  'make vulnlab-check   PROFILE=lab|internet: every origin (lab) or public hostname (internet)' \
+	  '                     serves the page its catalog entry documents' \
 	  'make vulnlab-test    PROFILE=lab|internet: one campaign per catalog case, assert the' \
 	  '                     detections and CVE candidates (needs make run-local)' \
 	  'make contracts-gate  README contract gate: validator, tests, PostgreSQL 16 chains' \
@@ -127,7 +128,7 @@ vulnlab-status:
 	@scripts/vulnlab/vulnlab-status.sh
 
 vulnlab-check:
-	@python3 scripts/vulnlab/check_live.py
+	@python3 scripts/vulnlab/check_live.py --profile "$${PROFILE:-lab}"
 
 vulnlab-test:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
