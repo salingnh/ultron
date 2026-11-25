@@ -67,6 +67,7 @@ class NetworkAccess(StrEnum):
 
 class EgressMode(StrEnum):
     broker = "broker"
+    l3 = "l3"
 
 
 class TargetBinding(StrEnum):
@@ -185,11 +186,11 @@ class Permissions(BaseModel):
     networkAccess: NetworkAccess
     egressMode: EgressMode | None = Field(
         "broker",
-        description="Chế độ egress: GĐ1 chỉ có `broker` — container chỉ tới được broker của job; broker phân giải ở control plane, kiểm toàn bộ địa chỉ A/AAAA, pin đích đã kiểm và từ chối với mã lý do ổn định. Chế độ khác (vd L3 router cho raw socket) phải có nghiệm thu cưỡng chế trước khi thêm vào enum.",
+        description="Kênh egress đã nghiệm thu. `broker`: container chỉ tới được broker L7 của job; broker phân giải ở control plane, kiểm toàn bộ địa chỉ A/AAAA, pin đích đã kiểm và từ chối với mã lý do ổn định. `l3`: broker là gateway của mạng job, forward L3 chỉ tới tập IP:port đã ký (kèm deny set mặc định chặn), ghi audit theo flow; dùng cho công cụ không tôn trọng proxy, container job vẫn không có capability. Chế độ khác phải có nghiệm thu cưỡng chế trước khi thêm vào enum.",
     )
-    proxyAware: Literal[True] = Field(
-        True,
-        description="Bắt buộc true khi egress: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng. Broker là đường ra duy nhất nên công cụ không tôn trọng proxy sẽ không kết nối được gì; M05 từ chối đăng ký provider như vậy.",
+    proxyAware: bool | None = Field(
+        None,
+        description="Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` trường này không bắt buộc và có thể false: công cụ không cần biết proxy, kênh ra do gateway lọc theo IP:port đã ký.",
     )
     egressSources: list[EgressSource] | None = Field(
         None,

@@ -101,6 +101,8 @@ class JobEgressPolicy:
 
     job_id: str
     mode: str = "egress"  # "egress" | "none"
+    #: The enforced channel of an egress job: `broker` (L7) or `l3` (the broker is the gateway).
+    egress_mode: str = "broker"
     profile: str = "lab"  # "lab" | "internet"
     campaign_id: str = ""
     authorization: str = ""
@@ -300,11 +302,15 @@ def load_policy(raw: dict[str, object]) -> JobEgressPolicy:
         raise ValueError(f"unknown network profile {profile!r} in the egress policy")
     raw_rps = raw.get("per_host_rps")
     raw_max = raw.get("per_host_max_connections")
+    egress_mode = str(raw.get("egress_mode", "broker"))
+    if egress_mode not in {"broker", "l3"}:
+        raise ValueError(f"unknown egress mode {egress_mode!r} in the egress policy")
     per_host_rps = None if raw_rps is None else float(str(raw_rps))
     per_host_max = None if raw_max is None else int(str(raw_max))
     return JobEgressPolicy(
         job_id=str(raw["job_id"]),
         mode=str(raw.get("mode", "egress")),
+        egress_mode=egress_mode,
         profile=profile,
         campaign_id=str(raw.get("campaign_id", "")),
         authorization=str(raw.get("authorization", "")),
@@ -332,6 +338,7 @@ def policy_document(policy: JobEgressPolicy) -> dict[str, object]:
     return {
         "job_id": policy.job_id,
         "mode": policy.mode,
+        "egress_mode": policy.egress_mode,
         "profile": policy.profile,
         "campaign_id": policy.campaign_id,
         "authorization": policy.authorization,

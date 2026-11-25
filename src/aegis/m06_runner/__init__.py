@@ -5,6 +5,8 @@ Modules:
     denyset     platform egress deny set + inet_aton literal normalization (R-5)
     netpolicy   the allow/deny decision engine of one job (stdlib only)
     broker      the per-job egress broker container entrypoint (stdlib only)
+    dns         the broker's DNS front end: bound names only, filtered answers, audit (stdlib only)
+    l3          the broker's L3 gateway mode: nftables allow-only rules and rule audit (stdlib only)
     podman      rootless PodmanRunner: hardened run, per-job network, reconcile
     collector   hostile-output collection with caps and SHA-256
     parser_host isolated parser subprocess (+ parser_child, the child side)
@@ -12,6 +14,6 @@ Modules:
     envelope    ResultEnvelope assembly and the ingestion POST (dedup_key job:<id>:envelope)
     job         the flow that ties the steps together
 
-`denyset`, `netpolicy` and `broker` are standard-library only on purpose: the broker runs as a
-container built from those three files, so they must not import the contract DTOs.
+`denyset`, `netpolicy`, `broker`, `dns` and `l3` are standard-library only on purpose: the broker
+runs as a container built from those files, so they must not import the contract DTOs.
 """

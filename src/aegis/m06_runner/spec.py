@@ -526,8 +526,16 @@ def build_policy(
     if not declared_egress:
         raise SpecError(
             "POLICY_DENIED",
-            "the signed binding opens the broker but the pinned manifest declares "
+            "the signed binding opens an egress channel but the pinned manifest declares "
             "networkAccess=none",
+        )
+    if str(binding.mode) != str(permissions.egressMode):
+        # The channel is signed: a task approved for the L7 broker must not run as an L3 gateway
+        # job (or the other way round), whatever the manifest says now.
+        raise SpecError(
+            "POLICY_DENIED",
+            f"signed egress mode {binding.mode!r} does not match the pinned manifest "
+            f"({permissions.egressMode!r})",
         )
     if permissions.targetBinding is None or str(binding.target_binding) != str(
         permissions.targetBinding
@@ -648,6 +656,7 @@ def build_policy(
     return netpolicy.JobEgressPolicy(
         job_id=job_id,
         mode="egress",
+        egress_mode=str(permissions.egressMode),
         profile=profile,
         campaign_id=str(task.campaign_id),
         authorization=authorization,
@@ -770,10 +779,10 @@ def build_spec(
     budget = manifest.spec.budget
     permissions = manifest.spec.permissions
     egress = permissions.networkAccess == "egress"
-    if egress and str(permissions.egressMode) != "broker":
+    if egress and str(permissions.egressMode) not in {"broker", "l3"}:
         raise SpecError(
             "POLICY_DENIED",
-            f"G1 only enforces egressMode=broker, manifest declares {permissions.egressMode!r}",
+            f"unknown egressMode {permissions.egressMode!r} in the pinned manifest",
         )
     policy = build_policy(
         task,
@@ -791,8 +800,9 @@ def build_spec(
         per_host_max_connections=per_host_max_connections,
     )
     profile = str(task.network_profile)
-    if egress and broker_proxy is None and profile != "lab":
-        raise SpecError("POLICY_DENIED", "an egress job needs the broker proxy of its network")
+    channel = str(permissions.egressMode) if egress else None
+    if egress and channel == "broker" and broker_proxy is None and profile != "lab":
+        raise SpecError("POLICY_DENIED", "a broker job needs the proxy of its job network")
     if permissions.targetBinding == "required" and not policy.target_ips:
         raise SpecError(
             "POLICY_DENIED",
@@ -808,8 +818,10 @@ def build_spec(
         max_output_bytes=int(budget.maxOutputMb or DEFAULT_MAX_OUTPUT_MB) * MIB,
         network="exec" if egress else "none",
         network_profile="lab" if profile == "lab" else "internet",
-        egress_mode="broker" if egress else None,
+        egress_mode=("broker" if channel == "broker" else "l3") if channel else None,
         egress_binding=policy.binding_hosts,
-        egress_proxy=broker_proxy if egress and profile != "lab" else None,
+        egress_proxy=(
+            broker_proxy if egress and channel == "broker" and profile != "lab" else None
+        ),
         raw_socket=bool(permissions.rawSocket),
     )

@@ -201,7 +201,9 @@ def build_egress_binding(
             "empty broker binding is a configuration error, not 'everything allowed'",
         )
     return EgressBinding(
-        mode="broker",
+        # The channel is the pinned manifest's `egressMode` (broker L7 or the l3 gateway); it is
+        # signed into the task and M06 refuses a task whose mode disagrees with the manifest.
+        mode=str(permissions.get("egressMode") or "broker"),
         target_binding=target_binding,
         entries=tuple(sorted(entries)),
         target_addresses=tuple(sorted(set(addresses))),

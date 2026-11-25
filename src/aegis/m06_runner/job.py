@@ -195,7 +195,7 @@ class JobRunner:
                     )
             proxy = (
                 self.runner.broker_proxy(plan.job_id)
-                if policy.mode == "egress" and entry is None
+                if policy.mode == "egress" and policy.egress_mode == "broker" and entry is None
                 else None
             )
             spec = specs.build_spec(

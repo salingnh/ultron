@@ -18,6 +18,7 @@ class NetworkProfile(StrEnum):
 
 class Mode(StrEnum):
     broker = "broker"
+    l3 = "l3"
     none = "none"
 
 
@@ -47,7 +48,7 @@ class EgressBinding(BaseModel):
     )
     mode: Mode = Field(
         ...,
-        description="`broker` khi manifest đã pin có networkAccess=egress; `none` khi không có mạng ra (khi đó mọi mảng rỗng).",
+        description="Kênh egress của task, bằng `egressMode` của manifest đã pin: `broker` (L7) hoặc `l3` (gateway lọc theo IP:port đã ký); `none` khi không có mạng ra (khi đó mọi mảng rỗng). M06 từ chối task có mode khác manifest.",
     )
     target_binding: TargetBinding = Field(
         ..., description="Giá trị targetBinding của manifest đã pin."
