@@ -151,19 +151,17 @@ class JobRunner:
         """
         body = _task_body(plan)
         profile = str(plan.task.network_profile)
+        lab = profile == "lab"
         # A provider without networkAccess has no network at all: the profile contributes nothing.
         egress = plan.manifest.spec.permissions.networkAccess == "egress"
         entry = self.runner.profile_entry(profile, text(plan.task.image_digest)) if egress else None
-        if egress and profile == "lab" and entry is None:
+        if egress and lab and entry is None:
             raise specs.SpecError(
                 "POLICY_DENIED",
                 f"campaign profile lab, but this runner has no lab profile entry for "
                 f"{text(plan.task.image_digest)}",
             )
-        if profile == "internet":
-            # A lab entry for this image is deliberately ignored: the campaign signed `internet`.
-            entry = None
-        if egress and entry is None:
+        if egress and not lab:
             self.runner.ensure_network(plan.job_id)
         try:
             policy = specs.build_policy(
@@ -179,7 +177,7 @@ class JobRunner:
                 per_host_rps=plan.per_host_rps,
                 per_host_max_connections=plan.per_host_max_connections,
             )
-            if policy.mode == "egress" and entry is None:
+            if policy.mode == "egress" and not lab:
                 if not self.runner.broker_image:
                     raise specs.SpecError(
                         "DEPENDENCY_MISSING",
@@ -192,16 +190,11 @@ class JobRunner:
                         "an internet job needs the broker's uplink network "
                         "(the internet profile's `network`)",
                     )
-            if (
-                egress
-                and profile == "internet"
-                and policy.mode == "egress"
-                and policy.egress_mode == "broker"
-            ):
+            if egress and not lab and policy.mode == "egress" and policy.egress_mode == "broker":
                 specs.check_proxy_wiring(plan.manifest, None if entry is None else list(entry.args))
             proxy = (
                 self.runner.broker_proxy(plan.job_id)
-                if policy.mode == "egress" and policy.egress_mode == "broker" and entry is None
+                if policy.mode == "egress" and policy.egress_mode == "broker" and not lab
                 else None
             )
             spec = specs.build_spec(
