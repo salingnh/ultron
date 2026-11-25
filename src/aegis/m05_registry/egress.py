@@ -21,12 +21,14 @@ before the binding is built - the manifest's `egressSources` is the only allowed
 from __future__ import annotations
 
 import ipaddress
+import secrets
 import socket
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from aegis import validation
+from aegis.common import dns_cname
 from aegis.contracts_gen.common.error_v2_schema import NextAction
 from aegis.m05_registry.errors import M05Error
 from aegis.m05_registry.manifest import ManifestRecord
@@ -180,6 +182,7 @@ def build_egress_binding(
     binder: TargetBinder,
     network_profile: str = "internet",
     platform_cidrs: Sequence[str] = (),
+    authorized_suffixes: Sequence[str] = (),
 ) -> EgressBinding:
     """Compute the signed allow-set; refuse a binding that would be empty or unbounded.
 
@@ -200,6 +203,7 @@ def build_egress_binding(
             for port in source.get("ports") or []:
                 entries.add(f"{_format_host(str(host))}:{int(port)}")
 
+    wildcard_checked = False
     target_binding = str(permissions.get("targetBinding") or "none")
     addresses: list[str] = []
     if target_binding == "required":
@@ -211,6 +215,11 @@ def build_egress_binding(
                 field="/input/ports",
             )
         for ref, kind, raw in zip(targets.refs, targets.kinds, targets.raw, strict=True):
+            if network_profile == "internet" and _is_host_name(raw):
+                _refuse_a_foreign_cname(raw, authorized_suffixes=authorized_suffixes)
+            if network_profile == "internet" and not wildcard_checked and _is_host_name(raw):
+                _refuse_a_wildcard(raw, authorized_suffixes=authorized_suffixes, binder=binder)
+                wildcard_checked = True
             resolved = _target_addresses(ref=ref, kind=kind, raw=raw, binder=binder)
             for address in resolved:
                 if _denied(address):
@@ -257,6 +266,89 @@ def build_egress_binding(
         entries=tuple(sorted(entries)),
         target_addresses=tuple(sorted(set(addresses))),
     )
+
+
+def _is_host_name(raw: str) -> bool:
+    value = raw.strip().lower()
+    return not value.startswith(("ip:", "cidr:", "service:", "seed:")) and not _is_address(value)
+
+
+def _is_address(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+def _under_suffix(name: str, suffixes: Sequence[str]) -> bool:
+    host = name.strip(".").lower()
+    return any(host == zone or host.endswith("." + zone) for zone in suffixes if zone)
+
+
+def _refuse_a_foreign_cname(host: str, *, authorized_suffixes: Sequence[str]) -> None:
+    """F3 guardrail 2: a name that CNAMEs out of the authorized suffixes stays passive-only.
+
+    The chain is what turns an owner name into a third-party address (a CDN, a SaaS endpoint, a
+    re-registered dangling target). An unknown chain (resolver down) is not a refusal; the target
+    addresses are still checked against the platform and deny sets.
+    """
+    if not authorized_suffixes:
+        return
+    try:
+        chain = dns_cname.cname_chain(host)
+    except (OSError, ValueError):
+        return
+    foreign = [name for name in chain if not _under_suffix(name, authorized_suffixes)]
+    if foreign:
+        raise M05Error.policy_denied(
+            "target_cname_outside_authorization",
+            f"{host} resolves through {foreign[0]}, outside the authorized suffixes "
+            f"{sorted(authorized_suffixes)}; the target stays passive-only",
+            next_action=NextAction.FIX_INPUT,
+        )
+
+
+def _wildcard_parents(host: str, suffixes: Sequence[str]) -> list[str]:
+    """The zones a wildcard record for this name could live at, limited to authorized suffixes."""
+    labels = [label for label in host.strip(".").lower().split(".") if label]
+    parents: set[str] = set()
+    for suffix in suffixes:
+        zone = suffix.strip(".").lower()
+        if host == zone or host.endswith("." + zone):
+            parents.add(zone)
+    for index in range(1, len(labels) - 1):
+        candidate = ".".join(labels[index:])
+        if any(candidate == zone or candidate.endswith("." + zone) for zone in parents):
+            parents.add(candidate)
+    # The deepest parent says nothing extra about a wildcard at a shallower zone, and every probe
+    # is a real DNS query: keep the authorized zone and the immediate parent.
+    immediate = ".".join(labels[1:])
+    keep = {zone for zone in parents if zone == immediate or zone in suffixes}
+    return sorted(keep)
+
+
+def _refuse_a_wildcard(
+    host: str, *, authorized_suffixes: Sequence[str], binder: TargetBinder
+) -> None:
+    """F3 guardrail 4: a wildcard under the target's zone makes every label resolve.
+
+    A wildcard turns a single discovered name into an unbounded address set, so active signing is
+    refused and the campaign stays passive; the operator can narrow the target.
+    """
+    for parent in _wildcard_parents(host, authorized_suffixes)[:2]:
+        probe = f"aegis-wildcard-{secrets.token_hex(4)}.{parent}"
+        try:
+            answers = binder.addresses(probe)
+        except M05Error:
+            continue
+        if answers:
+            raise M05Error.policy_denied(
+                "wildcard_dns",
+                f"{parent} answers a random label ({probe} -> {sorted(answers)[0]}); active "
+                "scanning of a wildcard zone is refused",
+                next_action=NextAction.FIX_INPUT,
+            )
 
 
 def _target_addresses(

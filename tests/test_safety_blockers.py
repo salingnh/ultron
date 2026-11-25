@@ -10,6 +10,7 @@ from __future__ import annotations
 import ipaddress
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -281,3 +282,121 @@ def test_the_l3_plan_refuses_a_platform_address() -> None:
 
     policy = _source_policy(platform=("203.0.113.0/24",))
     assert _address_allowed(policy, "203.0.113.10") is False
+
+
+# --- F3 guardrail 4: a wildcard zone is refused, never scanned ----------------------------
+
+
+def test_a_wildcard_zone_refuses_active_signing() -> None:
+    from aegis.m05_registry.egress import build_egress_binding
+
+    record = m06_support.record("manifest.naabu.yaml")
+    binder = m06_support.StaticBinder({"10.0.0.5": ["93.184.216.34"]})
+
+    # Every name under the zone resolves: the binder is a wildcard.
+    class Wildcard(m06_support.StaticBinder):
+        def addresses(self, value: str) -> tuple[str, ...]:
+            if value.startswith("aegis-wildcard-"):
+                return ("93.184.216.34",)
+            return super().addresses(value)
+
+    wildcard = Wildcard({"www.icomm.vn": ["93.184.216.34"]})
+    targets = m06_support.resolved_targets(record, ["ip:10.0.0.5"])
+    binding = build_egress_binding(
+        record,
+        merged_input={"ports": [443]},
+        targets=targets,
+        binder=binder,
+        authorized_suffixes=("icomm.vn",),
+    )
+    assert binding.target_addresses == ("10.0.0.5",)
+    with pytest.raises(M05Error) as error:
+        build_egress_binding(
+            record,
+            merged_input={"ports": [443]},
+            targets=m06_support.resolved_targets(record, ["dns:www.icomm.vn"]),
+            binder=wildcard,
+            authorized_suffixes=("icomm.vn",),
+        )
+    assert error.value.refusal.rule == "wildcard_dns"
+
+
+# --- F3 guardrail 3: the campaign address budget pauses the campaign ----------------------
+
+
+def test_exceeding_the_campaign_address_budget_pauses_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aegis.m05_registry import caps
+
+    paused: list[dict[str, object]] = []
+
+    def fake_pause(connection: object, **kwargs: object) -> None:
+        paused.append(kwargs)
+
+    class FakeConnection:
+        def __init__(self, known: list[str]) -> None:
+            self.known = known
+
+        def execute(self, sql: str, params: object = None) -> Any:
+            if "jsonb_array_elements_text" in sql:
+                return self
+
+            raise AssertionError(sql)
+
+        def fetchall(self) -> list[tuple[str]]:
+            return [(value,) for value in self.known]
+
+    monkeypatch.setattr("aegis.m01_campaign.status.change_status", fake_pause)
+    known = [f"93.184.216.{index}" for index in range(1, caps.MAX_CAMPAIGN_TARGET_ADDRESSES + 1)]
+    with pytest.raises(M05Error) as error:
+        caps.check_campaign_address_budget(
+            cast(Any, FakeConnection(known)),
+            campaign_id="campaign-1",
+            addresses=["93.184.216.99"],
+            actor={"kind": "module", "id": "M05"},
+            trace_id="trace-1",
+        )
+    assert error.value.refusal.rule == "campaign_address_budget"
+    assert paused and paused[0]["action"] == "pause"
+    # The same address again, or a smaller set, does not trip the budget.
+    caps.check_campaign_address_budget(
+        cast(Any, FakeConnection(known[:10])),
+        campaign_id="campaign-1",
+        addresses=["93.184.216.99", "93.184.216.11"],
+        actor={"kind": "module", "id": "M05"},
+        trace_id="trace-1",
+    )
+    assert len(paused) == 1
+
+
+# --- F3 guardrail 2: a CNAME outside the authorized suffixes stays passive-only ------------
+
+
+def test_a_foreign_cname_refuses_active_signing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aegis.common import dns_cname
+    from aegis.m05_registry import egress
+
+    record = m06_support.record("manifest.naabu.yaml")
+    targets = m06_support.resolved_targets(record, ["dns:www.icomm.vn"])
+    binder = m06_support.StaticBinder({"www.icomm.vn": ["93.184.216.34"]})
+    monkeypatch.setattr(dns_cname, "cname_chain", lambda host: ("edge.cloudflare.net",))
+    with pytest.raises(M05Error) as error:
+        egress.build_egress_binding(
+            record,
+            merged_input={"ports": [443]},
+            targets=targets,
+            binder=binder,
+            authorized_suffixes=("icomm.vn",),
+        )
+    assert error.value.refusal.rule == "target_cname_outside_authorization"
+    # A chain that stays inside the suffixes signs normally.
+    monkeypatch.setattr(dns_cname, "cname_chain", lambda host: ("edge.icomm.vn",))
+    binding = egress.build_egress_binding(
+        record,
+        merged_input={"ports": [443]},
+        targets=targets,
+        binder=binder,
+        authorized_suffixes=("icomm.vn",),
+    )
+    assert binding.target_addresses == ("93.184.216.34",)

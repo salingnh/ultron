@@ -36,9 +36,13 @@ def _policy(
     targets: tuple[str, ...] = (TARGET,),
     ports: tuple[int, ...] = (8080,),
     sources: tuple[SourceAllow, ...] = (),
+    rps: float | None = None,
+    max_connections: int | None = None,
 ) -> JobEgressPolicy:
     return JobEgressPolicy(
         job_id="job-1",
+        per_host_rps=rps,
+        per_host_max_connections=max_connections,
         profile="internet",
         egress_mode="l3",
         target_ips=tuple(
@@ -278,3 +282,28 @@ def test_an_l3_job_is_refused_without_a_deployment_hook(tmp_path: Path) -> None:
     runner.l3_hook = hook
     with pytest.raises(RunnerError, match="missing or not executable"):
         runner._write_l3_hook(spec)
+
+
+def test_the_l3_ruleset_carries_the_roe_caps_per_destination() -> None:
+    """F2: the L3 channel had no limiter; 200/200 connections succeeded with rps=1, max=2."""
+    policy = _policy(
+        sources=(SourceAllow(id="crtsh", hosts=("93.184.216.34",), ports=(443,)),),
+        rps=1.0,
+        max_connections=2,
+    )
+    script = l3.nft_script(
+        l3.allow_rules(policy),
+        uplink="eth1",
+        rate_per_second=policy.per_host_rps,
+        max_connections=policy.per_host_max_connections,
+    )
+    pair = "ip daddr 93.184.216.34 tcp dport 443"
+    assert f"{pair} ct state new limit rate over 60/minute counter drop" in script
+    assert f"{pair} ct count over 2 counter drop" in script
+    # The drop rules precede the accept of the same pair.
+    assert script.index(f"{pair} ct count over 2") < script.index(
+        f"{pair} ct state new counter accept"
+    )
+    assert l3.per_minute_cap(0.5) == 30
+    assert l3.per_minute_cap(2.5) == 150
+    assert l3.per_minute_cap(None) is None

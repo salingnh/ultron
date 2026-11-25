@@ -444,3 +444,95 @@ def test_a_cap_that_never_frees_is_a_timeout_deny() -> None:
     assert limiter.admit("a.example") == "CONCURRENCY_LIMITED"
     limiter.release("a.example")
     assert limiter.admit("a.example") is None
+
+
+def test_the_caps_are_keyed_by_the_address_not_the_requested_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F2: 20 names on one address used to open 20 tunnels under a cap of 1."""
+    upstream = FakeUpstream()
+    resolver = Stub({"a.test": ["93.184.216.34"], "b.test": ["93.184.216.34"]})
+    policy = _policy(
+        sources=(SourceAllow(id="s1", hosts=("a.test", "b.test"), ports=(443,)),),
+        resolver=resolver,
+        rps=None,
+        max_connections=1,
+    )
+    limiter = broker_mod.HostLimiter(rate_per_second=None, max_connections=1, max_wait_seconds=0.2)
+    try:
+        with running_broker(policy, tmp_path, upstream, monkeypatch, limiter=limiter) as (
+            port,
+            _audit,
+        ):
+            first, head = _connect(port, "a.test:443")
+            assert head.startswith(ACCEPTED)
+            second, other = _connect(port, "b.test:443")
+            try:
+                assert _reason(other) == netpolicy.Reason.CONCURRENCY_LIMITED.value
+            finally:
+                second.close()
+                first.close()
+        assert upstream.dialled == [("93.184.216.34", 443)]
+    finally:
+        upstream.close()
+
+
+def test_a_plain_http_body_is_forwarded_verbatim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N1: bytes after the blank line are the body, not headers of the same request."""
+    upstream = FakeUpstream()
+    policy = _policy(
+        sources=(SourceAllow(id="s1", hosts=("crtsh",), ports=(80,)),),
+        resolver=Stub({"crtsh": ["93.184.216.34"]}),
+    )
+    try:
+        with running_broker(policy, tmp_path, upstream, monkeypatch) as (port, _audit):
+            client = socket.create_connection(("127.0.0.1", port), timeout=5.0)
+            client.sendall(
+                b"POST http://crtsh/ HTTP/1.1\r\nHost: crtsh\r\nContent-Length: 9\r\n\r\n"
+                b"X-Inj: body"
+            )
+            received = b""
+            client.settimeout(2.0)
+            while b"X-Inj: body" not in received:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                received += chunk
+            client.close()
+        forwarded = received.partition(b"REACHED\n")[2]
+        head, _, body = forwarded.partition(b"\r\n\r\n")
+        assert b"X-Inj: body" not in head
+        assert body == b"X-Inj: body"
+    finally:
+        upstream.close()
+
+
+def _socks5_domain(port: int, host: str, target_port: int) -> bytes:
+    client = socket.create_connection(("127.0.0.1", port), timeout=5.0)
+    client.sendall(b"\x05\x01\x00")
+    assert client.recv(2) == b"\x05\x00"
+    encoded = host.encode("idna")
+    client.sendall(
+        b"\x05\x01\x00\x03" + bytes([len(encoded)]) + encoded + target_port.to_bytes(2, "big")
+    )
+    return client.recv(10)
+
+
+def test_socks5_accepts_a_domain_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """N3: ATYP 3 used to raise UnicodeError and the client got no reply at all."""
+    upstream = FakeUpstream()
+    policy = _policy(
+        sources=(SourceAllow(id="target", hosts=("crtsh.test",), ports=(443,)),),
+        resolver=Stub({"crtsh.test": ["93.184.216.34"]}),
+    )
+    try:
+        with running_broker(policy, tmp_path, upstream, monkeypatch) as (port, _audit):
+            accepted = _socks5_domain(port, "crtsh.test", 443)
+            assert accepted[:2] == b"\x05\x00", accepted
+            refused = _socks5_domain(port, "other.test", 443)
+            assert refused[:2] == b"\x05\x02", refused
+    finally:
+        upstream.close()
+    assert upstream.dialled == [("93.184.216.34", 443)]

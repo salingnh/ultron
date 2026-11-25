@@ -8,10 +8,15 @@ rules and the forwarding live.
 
 Rules (all in the broker's namespace):
 
-* **forward**: `policy drop`, established/related accepted, then one `ip daddr <target> tcp dport
-  <port>` rule per **signed** destination pair. A target address is the address M05 pinned into the
-  signed `egress_binding.target_addresses`; a source is the pinned manifest's declared source host,
-  resolved now in the control plane and pinned into a rule, so no name is resolved at packet time.
+* **forward**: `policy drop`, established/related accepted, then, per **signed** destination pair,
+  a rate drop (`ct state new limit rate over <cap>/minute`), a concurrency drop
+  (`ct count over <max>`), and the accept. The cap is the RoE's new-connections-per-second per
+  destination **address**, expressed per minute because nft has no sub-second bucket and a
+  fractional value (0.5/s) is exact there; the pair granularity means one bucket per address and
+  port, which is never wider than the signed binding. A target address is the address M05 pinned
+  into the signed `egress_binding.target_addresses`; a source is the pinned manifest's declared
+  source host, resolved now in the control plane and pinned into a rule, so no name is resolved at
+  packet time.
 * **postrouting**: masquerade on the uplink interface (the job's addresses are private to the job
   network).
 * **input**: default drop, established accepted, and the broker's DNS listener (UDP/TCP 53) - the
@@ -176,13 +181,23 @@ def uplink_interface(
     return candidates[0]
 
 
+def per_minute_cap(rps: float | None) -> int | None:
+    """The RoE's per-address cap as nft's per-minute rate (F2: L3 had no limiter at all)."""
+    if rps is None:
+        return None
+    return max(1, int(-(-rps * 60 // 1)))
+
+
 def nft_script(
     rules: Iterable[Rule],
     *,
     uplink: str,
     dns_port: int = 53,
+    rate_per_second: float | None = None,
+    max_connections: int | None = None,
 ) -> str:
     """The whole ruleset, applied atomically in one `nft -f` call."""
+    rate = per_minute_cap(rate_per_second)
     lines = [
         f"table ip {TABLE} {{",
         "  chain input {",
@@ -196,7 +211,14 @@ def nft_script(
         "    type filter hook forward priority filter; policy drop;",
         "    ct state established,related accept",
     ]
-    lines += [rule.nft() for rule in rules]
+    for rule in rules:
+        family = "ip6" if ipaddress.ip_address(rule.address).version == 6 else "ip"
+        pair = f"{family} daddr {rule.address} {rule.protocol} dport {rule.port}"
+        if rate is not None:
+            lines.append(f"        {pair} ct state new limit rate over {rate}/minute counter drop")
+        if max_connections is not None:
+            lines.append(f"        {pair} ct count over {int(max_connections)} counter drop")
+        lines.append(rule.nft())
     lines += [
         "        counter drop",
         "  }",
@@ -268,7 +290,12 @@ class L3Gateway:
     def install(self) -> None:
         self.rules = allow_rules(self.policy)
         self.uplink = uplink_interface(self.bind)
-        script = nft_script(self.rules, uplink=self.uplink)
+        script = nft_script(
+            self.rules,
+            uplink=self.uplink,
+            rate_per_second=self.policy.per_host_rps,
+            max_connections=self.policy.per_host_max_connections,
+        )
         applied = subprocess.run(  # noqa: S603 - fixed binary from the broker image
             [self._nft, "-f", "-"],
             input=script,

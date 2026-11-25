@@ -61,6 +61,7 @@ from aegis.m01_campaign.audit import record_audit
 from aegis.m05_registry.canonical import job_fingerprint, sha256_hex
 from aegis.m05_registry.caps import (
     CampaignPolicy,
+    check_campaign_address_budget,
     check_campaign_caps,
     merge_input,
     network_profile,
@@ -448,7 +449,16 @@ class PostgresJobService:
                 binder=self._binder or _MissingBinder(),
                 network_profile=network_profile(campaign.policy),
                 platform_cidrs=self._platform_cidrs,
+                authorized_suffixes=_authorized_suffixes(campaign.policy),
             )
+            if binding.target_addresses:
+                check_campaign_address_budget(
+                    conn,
+                    campaign_id=campaign.campaign_id,
+                    addresses=binding.target_addresses,
+                    actor={"kind": "module", "id": "M05"},
+                    trace_id=trace_id,
+                )
         except M05Error as error:
             return self._deny(
                 conn,
@@ -1222,3 +1232,14 @@ def _decode_cursor(cursor: str) -> tuple[str, str]:
         return str(document["created_at"]), str(document["job_id"])
     except (ValueError, KeyError, TypeError) as error:
         raise M05Error.input_invalid("cursor is not a job cursor", field="/cursor") from error
+
+
+def _authorized_suffixes(policy: Mapping[str, Any]) -> tuple[str, ...]:
+    """The RoE's authorized suffixes, for the wildcard probe (F3 guardrail 4)."""
+    authorization = policy.get("authorization")
+    if not isinstance(authorization, Mapping):
+        return ()
+    suffixes = authorization.get("authorized_suffixes")
+    if not isinstance(suffixes, list):
+        return ()
+    return tuple(str(value).strip(".").lower() for value in suffixes)

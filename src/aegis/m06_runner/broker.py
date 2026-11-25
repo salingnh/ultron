@@ -268,8 +268,12 @@ def _deny_response(decision: netpolicy.Decision) -> bytes:
     return head + body
 
 
-def _read_head(conn: socket.socket) -> bytes | None:
-    """Read up to and including the blank line; None on EOF/oversize."""
+def _read_head(conn: socket.socket) -> tuple[bytes, bytes] | None:
+    """The header block (up to and including CRLFCRLF) and the bytes already read after it.
+
+    The remainder is body/pipelined data, not headers: the plain-HTTP front end must forward it
+    verbatim (N1: a POST body used to be folded into the headers it was sent with).
+    """
     buffer = bytearray()
     while b"\r\n\r\n" not in buffer:
         if len(buffer) > MAX_HEADER_BYTES:
@@ -278,7 +282,8 @@ def _read_head(conn: socket.socket) -> bytes | None:
         if not chunk:
             return None
         buffer.extend(chunk)
-    return bytes(buffer)
+    head, _, rest = buffer.partition(b"\r\n\r\n")
+    return bytes(head + b"\r\n\r\n"), bytes(rest)
 
 
 def _relay(left: socket.socket, right: socket.socket) -> None:
@@ -374,7 +379,7 @@ class EgressBroker:
         """Decide one connection, apply the host caps and write exactly one audit line."""
         decision = netpolicy.decide(self.policy, host, port)
         if decision.allowed:
-            refused = self.limiter.admit(host)
+            refused = self.limiter.admit(self._cap_key(decision))
             if refused is not None:
                 decision = replace(
                     decision, allowed=False, reason=netpolicy.Reason(refused), pinned=None
@@ -384,7 +389,16 @@ class EgressBroker:
 
     def release(self, decision: netpolicy.Decision) -> None:
         if decision.allowed:
-            self.limiter.release(decision.host)
+            self.limiter.release(self._cap_key(decision))
+
+    @staticmethod
+    def _cap_key(decision: netpolicy.Decision) -> str:
+        """The bucket is the address the connection is dialled to (F2).
+
+        Keying by the requested name let 20 names that share one address open 20 tunnels to it
+        under a cap of 1. `pinned` is the checked, dialled address; a literal host is its own.
+        """
+        return decision.pinned or denyset.host_key(decision.host)
 
     def dial(self, decision: netpolicy.Decision) -> socket.socket | None:
         if decision.pinned is None:
@@ -495,9 +509,10 @@ class _Handler(socketserver.BaseRequestHandler):
 
 
 def _http(conn: socket.socket, broker: EgressBroker) -> None:
-    head = _read_head(conn)
-    if head is None:
+    read = _read_head(conn)
+    if read is None:
         return
+    head, rest = read
     lines = head.split(b"\r\n")
     try:
         method_b, target_b, version_b = lines[0].split(b" ")
@@ -544,7 +559,7 @@ def _http(conn: socket.socket, broker: EgressBroker) -> None:
                 + b"\r\n".join(headers)
                 + b"\r\n\r\n"
             )
-            upstream.sendall(request)
+            upstream.sendall(request + rest)
             conn.settimeout(None)
             upstream.settimeout(None)
             _relay(conn, upstream)
@@ -586,8 +601,9 @@ def _socks5(conn: socket.socket, broker: EgressBroker) -> None:
             return
         with upstream:
             bind_host, bind_port = upstream.getsockname()[:2]
-            reply = b"\x05\x00\x00\x01" + ipaddress.IPv4Address(str(bind_host)).packed
-            conn.sendall(reply + int(bind_port).to_bytes(2, "big"))
+            bind = ipaddress.ip_address(str(bind_host))
+            family = b"\x01" if isinstance(bind, ipaddress.IPv4Address) else b"\x04"
+            conn.sendall(b"\x05\x00\x00" + family + bind.packed + int(bind_port).to_bytes(2, "big"))
             conn.settimeout(None)
             upstream.settimeout(None)
             _relay(conn, upstream)
@@ -607,7 +623,11 @@ def _read_socks_address(conn: socket.socket, address_type: int) -> str | None:
         if len(length) != 1:
             return None
         raw = conn.recv(length[0])
-        return raw.decode("idna", "replace") if len(raw) == length[0] else None
+        if len(raw) != length[0]:
+            return None
+        # ATYP 3 is a UTF-8/IDNA host name; `idna` on the whole name raises UnicodeError on the
+        # dots and the client got no reply at all (N3). The decision checks the decoded name.
+        return raw.decode("utf-8", "replace")
     return None
 
 

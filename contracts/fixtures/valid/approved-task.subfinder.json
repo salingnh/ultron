@@ -8,8 +8,8 @@
   "capability": "dns.enumerate_subdomains",
   "provider": "subfinder",
   "provider_version": "v2.17.0",
-  "adapter_version": "1.0.2",
-  "manifest_sha256": "b6ca5588454ff101d675b2760592c1ce08fd7a74a884c9c1fffc035a3c0190b2",
+  "adapter_version": "1.0.3",
+  "manifest_sha256": "968d578ac530cdf58e67e9e36d94b06de1447bb1f1d49d6eee7d10deb12e7fab",
   "image_digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000001",
   "input": {
