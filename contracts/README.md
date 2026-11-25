@@ -46,6 +46,7 @@ Một schema chỉ được coi là đã phát hành khi biết ai phát và ai 
 | [events/job.completed.v2](events/job.completed.v2.schema.json) | M06 | M02, M26 | |
 | [events/policy.denied.v2](events/policy.denied.v2.schema.json) | M05 | M26 (UI/SSE), M03 (phiên bị từ chối) | |
 | [events/asset.discovered.v2](events/asset.discovered.v2.schema.json) | M27; M01 cho seed của campaign (`revision` 0, không `causal_job_id`, `dedup_key` `<asset_id>:0:<campaign_id>`, cùng giao dịch tạo campaign) | M23 (projector; revision 0 chiếu node, không phát `knowledge.delta.v2`), M26 | |
+| [events/vulnerability.matched.v2](events/vulnerability.matched.v2.schema.json) | M20 | M23 (projector), M26 (UI) | |
 | [events/observation.changed.v2](events/observation.changed.v2.schema.json) | M27 | M23, M26 | |
 | [events/knowledge.delta.v2](events/knowledge.delta.v2.schema.json) | M23 | M02 (context bundle), M03 | |
 | [events/intel.revision.v2](events/intel.revision.v2.schema.json) | M18 | M20, M21 (đánh giá lại) | |
@@ -62,7 +63,7 @@ ApprovedTask bắt buộc ghim adapter_version/manifest_sha256 theo [quy tắc r
 
 ## Dữ liệu và migration
 
-Schema chỉ có một migration, [`0001_baseline.sql`](db/postgres/0001_baseline.sql), tạo thẳng cấu trúc cuối. Ngày 2026-11-24 chủ sản phẩm quyết định gộp chuỗi 0001–0017 thành baseline và bỏ toàn bộ cơ chế xử lý dữ liệu cũ (chuyển cấu hình v1/S1.6, các lý do giữ `LEGACY_*`, luật chỉ-áp-cho-INSERT để chừa lịch sử, fixture và test nâng cấp) vì chưa có DB nào chứa dữ liệu thật. DB dev/CI tạo theo chuỗi cũ phải reset (`make dev-reset`); migration runner từ chối chuỗi cũ và in đúng lệnh này. Migration mới từ đây đánh số tăng dần sau baseline; migration đã áp không sửa lại.
+Schema chỉ có một migration, [`0001_baseline.sql`](db/postgres/0001_baseline.sql), tạo thẳng cấu trúc cuối. Ngày 2026-11-24 chủ sản phẩm quyết định gộp chuỗi 0001–0017 thành baseline và bỏ toàn bộ cơ chế xử lý dữ liệu cũ (chuyển cấu hình v1/S1.6, các lý do giữ `LEGACY_*`, luật chỉ-áp-cho-INSERT để chừa lịch sử, fixture và test nâng cấp) vì chưa có DB nào chứa dữ liệu thật. DB dev/CI tạo theo chuỗi cũ phải reset (`make dev-reset`); migration runner từ chối chuỗi cũ và in đúng lệnh này. Từ 2026-11-25 baseline bất biến; migration mới đánh số tăng dần sau baseline; migration đã áp không sửa lại.
 
 Các luật chính của baseline:
 
@@ -101,10 +102,10 @@ AEGIS_TEST_PG_DSN=postgresql://<user>:<pw>@127.0.0.1:<port>/<db> python3 -I cont
 # DSN chỉ cần một server PostgreSQL 16, không cần schema đã migrate.
 AEGIS_TEST_PG_DSN=postgresql://<user>:<pw>@127.0.0.1:<port>/<db> python3 -I contracts/tests/test_ingestion_concurrency.py
 AEGIS_TEST_PG_DSN=postgresql://<user>:<pw>@127.0.0.1:<port>/<db> python3 -I contracts/tests/test_job_lifecycle_race.py
-psql -v ON_ERROR_STOP=1 -f contracts/db/postgres/0001_baseline.sql -f contracts/db/postgres/tests/smoke.sql -f contracts/db/postgres/tests/tool_orchestration.sql -f contracts/db/postgres/tests/usage_nonnegative.sql -f contracts/db/postgres/tests/job_target_refs.sql -f contracts/db/postgres/tests/ingestion_hash_receipt.sql -f contracts/db/postgres/tests/job_lifecycle.sql -f contracts/db/postgres/tests/outbox_ordering.sql -f contracts/db/postgres/tests/job_actor.sql -f contracts/db/postgres/tests/search_path_pinning.sql -f contracts/db/postgres/tests/decision_binding.sql -f contracts/db/postgres/tests/asset_normalization_version.sql -f contracts/db/postgres/tests/roe_policy_shape.sql
+psql -v ON_ERROR_STOP=1 -f contracts/db/postgres/0001_baseline.sql -f contracts/db/postgres/0004_cve_matching.sql -f contracts/db/postgres/tests/smoke.sql -f contracts/db/postgres/tests/tool_orchestration.sql -f contracts/db/postgres/tests/usage_nonnegative.sql -f contracts/db/postgres/tests/job_target_refs.sql -f contracts/db/postgres/tests/ingestion_hash_receipt.sql -f contracts/db/postgres/tests/job_lifecycle.sql -f contracts/db/postgres/tests/outbox_ordering.sql -f contracts/db/postgres/tests/job_actor.sql -f contracts/db/postgres/tests/search_path_pinning.sql -f contracts/db/postgres/tests/decision_binding.sql -f contracts/db/postgres/tests/asset_normalization_version.sql -f contracts/db/postgres/tests/roe_policy_shape.sql
 ```
 
-Python 3.12, dependency kiểm contract được khóa tại [requirements](tests/requirements.txt); có đủ format validators. PostgreSQL 16. Các fixture này chỉ là dữ liệu test. Không chạy smoke hiện hành trước migration. Chain hiện hành chỉ có một migration, `0001_baseline.sql`, tạo thẳng schema cuối; không còn chuỗi nâng cấp. Hàm mới trong schema `aegis` phải ghim `search_path` trong chính `CREATE FUNCTION`: [tests/search_path_pinning.sql](db/postgres/tests/search_path_pinning.sql) tự fail khi catalog còn hàm chưa ghim, nên lỗi này không lọt qua cổng.
+Python 3.12, dependency kiểm contract được khóa tại [requirements](tests/requirements.txt); có đủ format validators. PostgreSQL 16. Các fixture này chỉ là dữ liệu test. Không chạy smoke hiện hành trước migration. Chain hiện hành là baseline `0001_baseline.sql` cộng các migration đánh số tăng dần (G1.6: `0004_cve_matching.sql` cho M18/M20 — feed CVE/KEV/EPSS và ứng viên khớp CPE); không còn chuỗi nâng cấp từ 0001–0017. Hàm mới trong schema `aegis` phải ghim `search_path` trong chính `CREATE FUNCTION`: [tests/search_path_pinning.sql](db/postgres/tests/search_path_pinning.sql) tự fail khi catalog còn hàm chưa ghim, nên lỗi này không lọt qua cổng.
 
 [test_outbox_ordering.py](tests/test_outbox_ordering.py) là harness nhiều connection cho C04 (dispatcher prototype): nó tự tạo và xóa database riêng và cần `pip install -r contracts/tests/requirements-db.txt`. Chỉ trỏ vào PostgreSQL 16 dùng một lần, không bao giờ vào DB chung. Không đặt `AEGIS_TEST_PG_DSN` thì test **skip** (không phải pass): lần chạy cổng nghiệm thu phải đặt biến này, còn `tests/outbox_ordering.sql` chạy bằng psql như các test SQL khác và không cần Python.
 
