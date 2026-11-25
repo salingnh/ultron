@@ -39,6 +39,7 @@ mkdir -p "$STATE_DIR"
 TOKENS_FILE="$STATE_DIR/operators.json"
 TOKEN_FILE="$STATE_DIR/operator-token"
 SERVICE_TOKEN_FILE="$STATE_DIR/service-token"
+SIGNING_KEY_FILE="$STATE_DIR/task-signing-key"
 STACK_MARKER="$STATE_DIR/stack.started"
 LAB_MARKER="$STATE_DIR/lab.started"
 LAB_PROFILE="$REPO_ROOT/deploy/lab/runner-profile.json"
@@ -160,7 +161,10 @@ if [ "${INTERNET:-1}" = 1 ] && [ -f "$INTERNET_PROFILE" ]; then
   if podman network exists "$UPLINK_NETWORK" >/dev/null 2>&1; then
     log "uplink: reusing network $UPLINK_NETWORK"
   else
-    podman network create --label aegis.uplink=run-local "$UPLINK_NETWORK" >/dev/null
+    # `isolate=strict` keeps this bridge unreachable from other podman networks of the same
+    # rootless user (netavark 1.17), so the broker's uplink cannot route into the dev stack.
+    podman network create --opt isolate=strict --label aegis.uplink=run-local \
+      "$UPLINK_NETWORK" >/dev/null
     printf '%s' "$UPLINK_NETWORK" >"$UPLINK_MARKER"
     log "uplink: created network $UPLINK_NETWORK (stop-local will remove it)"
   fi
@@ -194,7 +198,17 @@ if [ ! -s "$SERVICE_TOKEN_FILE" ]; then
   log "service token: generated for the ingestion endpoint (.local/service-token)"
 fi
 AEGIS_SERVICE_TOKEN=$(cat "$SERVICE_TOKEN_FILE")
-export AEGIS_SERVICE_TOKEN AEGIS_ALLOW_DEV_SIGNING_KEY=1
+export AEGIS_SERVICE_TOKEN
+# A per-install task-signing key, generated once in .local/ (0600). Internet tasks signed with
+# the published development key are refused by M06 (safety review F7), so a deployment that runs
+# internet campaigns must sign with its own key; lab-only use may still opt into the dev key.
+if [ ! -s "$SIGNING_KEY_FILE" ]; then
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$SIGNING_KEY_FILE"
+  chmod 600 "$SIGNING_KEY_FILE"
+  log "task signing key: generated for this install (.local/task-signing-key)"
+fi
+export AEGIS_TASK_SIGNING_KEYS="g16-local-1:$(cat "$SIGNING_KEY_FILE")"
+export AEGIS_TASK_SIGNING_ACTIVE_KEY="g16-local-1"
 export AEGIS_OPERATOR_TOKENS_FILE="$TOKENS_FILE"
 
 cors_origins=${AEGIS_CORS_ORIGINS:-"http://127.0.0.1:5173,http://localhost:5173"}
@@ -288,7 +302,8 @@ export AEGIS_NEO4J_PASSWORD="$AEGIS_NEO4J_PASSWORD"
 export AEGIS_S3_ENDPOINT="$AEGIS_S3_ENDPOINT"
 export AEGIS_S3_BUCKET="$AEGIS_S3_BUCKET"
 export AEGIS_SERVICE_TOKEN="$AEGIS_SERVICE_TOKEN"
-export AEGIS_ALLOW_DEV_SIGNING_KEY=1
+export AEGIS_TASK_SIGNING_KEYS="$AEGIS_TASK_SIGNING_KEYS"
+export AEGIS_TASK_SIGNING_ACTIVE_KEY="$AEGIS_TASK_SIGNING_ACTIVE_KEY"
 export AEGIS_OPERATOR_TOKEN="$(cat "$TOKEN_FILE")"
 export AEGIS_OPERATOR_TOKENS_FILE="$TOKENS_FILE"
 export AEGIS_M06_LAB_PROFILE="${AEGIS_M06_LAB_PROFILE:-}"

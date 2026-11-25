@@ -33,7 +33,7 @@ END $$;
 
 -- 2. Fixture: a campaign with one real seed and one valid job of its own (used for the history probe).
 INSERT INTO aegis.policy_snapshot VALUES
-  ('roe-191', '01900000-0000-7000-8000-000000005f10', '{"max_parallel_jobs":10,"max_duration_hours":168}',
+  ('roe-191', '01900000-0000-7000-8000-000000005f10', '{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',
    repeat('f',64), '{"kind":"operator","id":"soc-1"}');
 INSERT INTO aegis.scope_snapshot VALUES
   ('01900000-0000-7000-8000-000000005f11', '01900000-0000-7000-8000-000000005f10', '{"domains":["pin.example"]}');

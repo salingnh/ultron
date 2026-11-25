@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import date as date_aliased
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, confloat, conint, constr
@@ -48,6 +49,18 @@ class Budget(BaseModel):
     )
 
 
+class Authorization(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    owner: constr(min_length=1, max_length=200)
+    reference: constr(min_length=3, max_length=300)
+    date: date_aliased
+    authorized_suffixes: list[ids_v2_schema.DomainTarget] = Field(
+        ..., max_length=100, min_length=1
+    )
+
+
 class RoePolicy(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -67,4 +80,8 @@ class RoePolicy(BaseModel):
     budget: Budget | None = None
     capability_denylist: list[ids_v2_schema.CapabilityId] | None = Field(
         None, description="Tùy chọn: capability không được dùng trong chiến dịch này."
+    )
+    authorization: Authorization | None = Field(
+        None,
+        description="Chủ sở hữu hợp pháp của mục tiêu internet: ai cho phép (owner), tham chiếu bằng chứng (reference, vD quyết định/ticket), ngày và các hậu tố tên miền được phép. Bắt buộc khi `network_profile=internet` (kể cả khi bỏ trống trường profile, vì mặc định là internet); M01 từ chối, M05 không ký task, M06 không chạy task internet khi thiếu.",
     )

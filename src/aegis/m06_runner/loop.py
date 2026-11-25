@@ -31,13 +31,14 @@ import signal as signal_module
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import FrameType
 from typing import Any
 
 import psycopg
 
+from aegis.common import platform as platform_set
 from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
@@ -114,6 +115,9 @@ class LoopConfig:
     uplink_network: str | None = None
     #: Deployment-owned OCI hook that installs the L3 job's only default route.
     l3_hook: Path | None = None
+    #: Why the platform deny set could not be loaded (empty string when it was): an internet job
+    #: is refused while it is empty, and the reason is logged.
+    platform_cidrs_error: str = ""
     poll_seconds: float = DEFAULT_POLL_SECONDS
     platform_cidrs: tuple[str, ...] = ()
     parser_python_path: tuple[str, ...] = field(default_factory=tuple)
@@ -133,6 +137,13 @@ class LoopConfig:
             raise SystemExit(f"{DSN_ENV} is required: the runner records job state in PostgreSQL")
         base_dir = source.get(BASE_DIR_ENV, "").strip()
         poll = source.get(POLL_ENV, "").strip()
+        try:
+            platform_cidrs = platform_set.platform_cidrs(source)
+            platform_error = ""
+        except platform_set.PlatformDenySetUnavailable as error:
+            # Lab jobs still work; an internet job is refused at prepare time with this reason.
+            platform_cidrs = ()
+            platform_error = str(error)
         return cls(
             dsn=dsn,
             base_dir=Path(base_dir) if base_dir else repository_root() / ".local" / "m06",
@@ -146,11 +157,8 @@ class LoopConfig:
                 Path(source[L3_HOOK_ENV].strip()) if source.get(L3_HOOK_ENV, "").strip() else None
             ),
             poll_seconds=float(poll) if poll else DEFAULT_POLL_SECONDS,
-            platform_cidrs=tuple(
-                item.strip()
-                for item in source.get("AEGIS_M06_PLATFORM_CIDRS", "").split(",")
-                if item.strip()
-            ),
+            platform_cidrs=platform_cidrs,
+            platform_cidrs_error=platform_error,
             parser_python_path=(str(repository_root()),),
         )
 
@@ -240,7 +248,7 @@ def plan_for(
         target_denylist=denylist,
         per_host_rps=limits[0],
         per_host_max_connections=limits[1],
-        authorization=_authorization(conn, campaign_id),
+        authorization=_authorization(conn, campaign_id, str(text(task.policy_version))),
         classification=_classification(record.document),
     )
 
@@ -291,14 +299,26 @@ def _signed_policy(
     )
 
 
-def _authorization(conn: psycopg.Connection[Any], campaign_id: str) -> str:
-    """The operator's authorization reference for the campaign targets (audit line field)."""
+def _authorization(conn: psycopg.Connection[Any], campaign_id: str, policy_version: str) -> str:
+    """The authorization reference of the **signed** RoE (audit line field).
+
+    It comes from the structured `authorization` object of the policy snapshot the task was signed
+    against (`owner`, `reference`, `date`, `authorized_suffixes`), never from a free-text campaign
+    label, so an audit line names the same authority the task was accepted under.
+    """
     row = conn.execute(
-        "SELECT labels ->> 'authorization' AS authorization FROM campaign WHERE campaign_id = %s",
-        (campaign_id,),
+        "SELECT policy -> 'authorization' AS authorization FROM policy_snapshot"
+        " WHERE policy_version = %s",
+        (policy_version,),
     ).fetchone()
     value = _field(row, "authorization", 0) if row is not None else None
-    return "" if value is None else str(value)
+    if not isinstance(value, Mapping):
+        return ""
+    suffixes = ", ".join(str(item) for item in value.get("authorized_suffixes") or [])
+    return (
+        f"{value.get('owner', '')} | {value.get('reference', '')} | "
+        f"{value.get('date', '')} | {suffixes}"
+    )
 
 
 def statuses_named(conn: psycopg.Connection[Any], statuses: Sequence[str]) -> list[str]:
@@ -399,6 +419,7 @@ def run_once(
                 continue
             try:
                 plan = plan_for(conn, job_id, registry)
+                plan = replace(plan, platform_cidrs=config.platform_cidrs)
             except JobPlanError as error:
                 # Every cause is definite, so this tick owns the refusal: terminalize the job with
                 # the contract code instead of leaving it VALIDATING for the next tick (proposal 5).
@@ -505,6 +526,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.poll_seconds is not None
             else config.poll_seconds,
             platform_cidrs=config.platform_cidrs,
+            platform_cidrs_error=config.platform_cidrs_error,
             parser_python_path=config.parser_python_path,
         )
     return run(config, once=args.once, ticks=args.ticks)

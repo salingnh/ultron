@@ -84,6 +84,9 @@ def policy_document(**overrides: Any) -> dict[str, Any]:
     policy.pop("capability_denylist", None)  # the fixture denies network.discover_services
     policy["budget"] = {"max_jobs": 50, "max_llm_tokens": 100000, "max_llm_cost_usd": 5}
     policy["rate_limits"] = {"requests_per_second_per_host": 10, "jobs_per_minute": 100}
+    # Test campaigns are lab campaigns: the internet profile requires a structured authorization
+    # and the platform deny set, which the unit/DB fixtures do not exercise.
+    policy["network_profile"] = "lab"
     policy.update(overrides)
     return policy
 

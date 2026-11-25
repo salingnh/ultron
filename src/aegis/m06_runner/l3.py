@@ -124,9 +124,12 @@ def allow_rules(
 
 
 def _address_allowed(policy: JobEgressPolicy, address: str) -> bool:
-    from aegis.m06_runner.denyset import deny_reason
+    from aegis.m06_runner.denyset import checked_address, deny_reason
 
     parsed = ipaddress.ip_address(address)
+    parsed, embedded = checked_address(parsed)
+    if embedded is not None:
+        return False
     if deny_reason(parsed) is not None:
         return False
     if any(parsed in network for network in policy.platform_cidrs):

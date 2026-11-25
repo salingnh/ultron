@@ -29,6 +29,7 @@ from aegis.m06_runner.denyset import (
     DenyReason,
     IPAddress,
     IPNetwork,
+    checked_address,
     deny_reason,
     host_key,
     normalize_host,
@@ -227,7 +228,10 @@ def decide(
 
     # 1. Address safety first, over the whole answer: one denied address denies the name, and a
     #    denied address never reaches the dial path whatever the job has bound.
-    for address in addresses:
+    for raw in addresses:
+        address, embedded = checked_address(raw)
+        if embedded is not None:
+            return Decision(False, _reason_for(embedded), host, port, resolved=resolved)
         denied = deny_reason(address)
         if denied is not None:
             return Decision(False, _reason_for(denied), host, port, resolved=resolved)

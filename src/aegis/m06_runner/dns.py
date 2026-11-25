@@ -325,6 +325,9 @@ class DnsForwarder:
             parsed = ipaddress.ip_address(address)
         except ValueError:
             return "RESOLVE_FAILED"
+        parsed, embedded = denyset.checked_address(parsed)
+        if embedded is not None:
+            return embedded.value
         denied = denyset.deny_reason(parsed)
         if denied is not None:
             return denied.value

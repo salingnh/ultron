@@ -21,10 +21,10 @@ from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.m01_campaign.policy import adopt_policy
 from aegis.m05_registry.manifest import parse_document
 from aegis.m05_registry.registry import ManifestNotFound, PostgresManifestRegistry
-from aegis.m05_registry.signing import KeyRing as SigningKeyRing
 from aegis.m06_runner import loop
 from aegis.m06_runner.lifecycle import JobClaim
 from aegis.m06_runner.values import text
+from tests import m06_support
 from tests.db_support import (
     migrated_database,
     policy_document,
@@ -144,7 +144,7 @@ def test_a_tick_terminalizes_a_job_it_cannot_plan(database: str) -> None:
     job_runner = JobRunner(
         runner,
         FakeEvidenceStore(),
-        key_ring=SigningKeyRing.dev(),
+        key_ring=m06_support.ANY_RING,
         lifecycle=JobLifecycle.from_dsn(database),
     )
     try:

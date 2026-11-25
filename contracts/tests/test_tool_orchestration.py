@@ -17,8 +17,11 @@ def validator(name):
  return Draft202012Validator(json.loads((ROOT/name).read_text()),registry=REGISTRY,format_checker=FORMAT_CHECKER)
 class ToolContracts(unittest.TestCase):
  def test_campaign_explicit_limits_and_retired_fields(self):
-  v=validator('campaign/roe-policy.v2.schema.json'); base={'max_parallel_jobs':10,'max_duration_hours':168}
+  v=validator('campaign/roe-policy.v2.schema.json'); base={'network_profile':'lab','max_parallel_jobs':10,'max_duration_hours':168}
   self.assertTrue(v.is_valid(base))
+  # internet (the default) needs the structured authorization; lab does not.
+  self.assertFalse(v.is_valid({'max_parallel_jobs':10,'max_duration_hours':168}))
+  self.assertTrue(v.is_valid({'network_profile':'lab','max_parallel_jobs':10,'max_duration_hours':168}))
   for key,value in [('scan_profile','passive'),('max_impact_tier','T3'),('t3_approval_mode','auto'),('approval_required_tiers',['T3'])]:
    self.assertFalse(v.is_valid(dict(base,**{key:value})),key)
  def test_mcp_priority_and_dependency_bounds(self):

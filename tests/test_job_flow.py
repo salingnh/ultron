@@ -18,7 +18,6 @@ from typing import Any
 import pytest
 
 from aegis.common.ports import ContainerSpec
-from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner.job import JobPlan, JobRunner
 from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle
@@ -130,7 +129,10 @@ def _plan(
         input=values,
         manifest_bytes=raw,
         task_body=m06_support.body_of(task),
-        platform_cidrs=platform_cidrs,
+        platform_cidrs=platform_cidrs or (("10.88.0.0/16",) if egress else ()),
+        authorization=(
+            "owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example" if egress else ""
+        ),
         per_host_rps=5.0 if egress else None,
         per_host_max_connections=2 if egress else None,
     )
@@ -150,7 +152,7 @@ def _job_runner(
     return JobRunner(
         runner,
         store,
-        key_ring=KeyRing.dev(),
+        key_ring=m06_support.ANY_RING,
         ingestion=ingestion,
         extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
         lifecycle=lifecycle,
@@ -574,6 +576,8 @@ def test_prepare_keeps_the_internet_profile_entry_and_checks_its_proxy_flag(
         input={"targets": ["internal.example"], "concurrency": 1, "rate_limit": 1},
         manifest_bytes=raw,
         task_body=m06_support.body_of(task),
+        platform_cidrs=("10.88.0.0/16",),
+        authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example",
         per_host_rps=2.0,
         per_host_max_connections=2,
     )
@@ -637,6 +641,6 @@ def _job_runner_for(runner: PodmanRunner) -> JobRunner:
     return JobRunner(
         runner,
         FakeEvidenceStore(),
-        key_ring=m06_support.DEV_RING,
+        key_ring=m06_support.ANY_RING,
         extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
     )

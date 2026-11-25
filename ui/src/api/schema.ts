@@ -483,6 +483,11 @@ export interface components {
         /** @description Capability cấp nghiệp vụ: <nhóm>.<động_từ_danh_từ>, vd dns.enumerate_subdomains. */
         CapabilityId: string;
         /**
+         * Format: aegis-domain-target
+         * @description Domain ASCII/IDNA đã chuẩn hóa, tùy chọn tiền tố dns:. Không dấu chấm cuối hoặc label rỗng.
+         */
+        DomainTarget: string;
+        /**
          * Campaign execution settings v2
          * @description Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency và danh sách mục tiêu bị loại. Không dùng phân loại thao tác. Khung giờ cho phép (allowed/blackout windows) đã bị bỏ khỏi contract theo quyết định chủ 2026-11-24 (G1 chỉ cần luồng chạy được); snapshot cũ còn khung giờ là lịch sử, không được chạy.
          */
@@ -517,7 +522,15 @@ export interface components {
             };
             /** @description Tùy chọn: capability không được dùng trong chiến dịch này. */
             capability_denylist?: components["schemas"]["CapabilityId"][];
-        };
+            /** @description Chủ sở hữu hợp pháp của mục tiêu internet: ai cho phép (owner), tham chiếu bằng chứng (reference, vD quyết định/ticket), ngày và các hậu tố tên miền được phép. Bắt buộc khi `network_profile=internet` (kể cả khi bỏ trống trường profile, vì mặc định là internet); M01 từ chối, M05 không ký task, M06 không chạy task internet khi thiếu. */
+            authorization?: {
+                owner: string;
+                reference: string;
+                /** Format: date */
+                date: string;
+                authorized_suffixes: components["schemas"]["DomainTarget"][];
+            };
+        } & unknown;
         /**
          * Format: aegis-ip-or-cidr
          * @description Seed IP hoặc CIDR, giữ raw; M07 chuẩn hóa về sau. Không interface scope ID hoặc netmask dạng dotted.

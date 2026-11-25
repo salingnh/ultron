@@ -102,7 +102,74 @@
         "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
       },
       "uniqueItems": true
+    },
+    "authorization": {
+      "description": "Chủ sở hữu hợp pháp của mục tiêu internet: ai cho phép (owner), tham chiếu bằng chứng (reference, vD quyết định/ticket), ngày và các hậu tố tên miền được phép. Bắt buộc khi `network_profile=internet` (kể cả khi bỏ trống trường profile, vì mặc định là internet); M01 từ chối, M05 không ký task, M06 không chạy task internet khi thiếu.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "reference",
+        "date",
+        "authorized_suffixes"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 300
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "authorized_suffixes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/DomainTarget"
+          }
+        }
+      }
     }
   },
-  "$defs": {}
+  "$defs": {},
+  "allOf": [
+    {
+      "description": "Chiến dịch internet phải khai authorization có cấu trúc (owner, reference, date, authorized_suffixes).",
+      "if": {
+        "anyOf": [
+          {
+            "not": {
+              "required": [
+                "network_profile"
+              ]
+            }
+          },
+          {
+            "required": [
+              "network_profile"
+            ],
+            "properties": {
+              "network_profile": {
+                "const": "internet"
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "required": [
+          "authorization"
+        ]
+      }
+    }
+  ]
 }

@@ -169,7 +169,10 @@ def create_campaign(
             # authorization reference is the operator's statement that the targets are his; both
             # belong to the immutable trail next to the RoE snapshot, not only to the row.
             "network_profile": str((policy or {}).get("network_profile") or "internet"),
-            "authorization": str(labels.get("authorization", "")),
+            # The structured authorization of the RoE (owner, reference, date, suffixes); the free
+            # text label stays on the campaign row for humans, the audit carries the signed source.
+            "authorization": (policy or {}).get("authorization") or {},
+            "labels": dict(labels),
         },
     )
     return CreatedCampaign(campaign_id, "CREATED", version, scope_id)

@@ -46,7 +46,7 @@ from aegis.common.ports import ContainerSpec
 from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
-from aegis.m05_registry.signing import KeyRing, SignatureError
+from aegis.m05_registry.signing import DEV_KEY_ID, KeyRing, SignatureError
 from aegis.m06_runner import denyset, netpolicy
 from aegis.m06_runner.values import TARGET_PREFIXES, text
 
@@ -626,8 +626,32 @@ def build_policy(
     Without a rate cap and a per-host concurrency cap an internet job has no bound on what it does
     to a third party, so the job is refused (fail closed) instead of running uncapped.
     """
-    verify_task(task_body, key_ring)
+    signing_key = verify_task(task_body, key_ring)
     profile = str(task.network_profile)
+    if profile == "internet":
+        # The authorization is the owner's statement that the targets are theirs; every internet
+        # audit line names it, and an empty one is refused here rather than audited as "" (F5).
+        if not authorization.strip():
+            raise SpecError(
+                "POLICY_DENIED",
+                "an internet job needs a structured authorization in its campaign RoE "
+                "(owner, reference, date, authorized_suffixes)",
+            )
+        # The published development key is for lab work only: an internet task signed with it
+        # could be forged by anyone who can write the job row (F7).
+        if signing_key == DEV_KEY_ID:
+            raise SpecError(
+                "POLICY_DENIED",
+                "an internet task signed with the published development key is refused; "
+                "run-local generates a per-install key for internet work",
+            )
+        if not platform_cidrs:
+            # B1: no dispatch with an empty platform deny set.
+            raise SpecError(
+                "DEPENDENCY_MISSING",
+                "the platform deny set (podman networks, host addresses) is empty; an internet "
+                "job must not run without it",
+            )
     permissions = manifest.spec.permissions
     binding = task.egress_binding
     declared_egress = permissions.networkAccess == "egress"
@@ -642,7 +666,7 @@ def build_policy(
             job_id=job_id,
             mode="none",
             profile=profile,
-            campaign_id=str(task.campaign_id),
+            campaign_id=text(task.campaign_id),
             authorization=authorization,
         )
     if not declared_egress:
@@ -669,9 +693,12 @@ def build_policy(
         )
     entries = _binding_entries(task)
     if not entries:
-        raise SpecError(
-            "POLICY_DENIED", "a broker binding with no destination is not a valid policy"
-        )
+        declared = permissions.egressSources or []
+        dns_only = bool(declared) and all(str(source.protocol) == "dns" for source in declared)
+        if not (profile == "internet" and dns_only):
+            raise SpecError(
+                "POLICY_DENIED", "a broker binding with no destination is not a valid policy"
+            )
     entry_keys = {f"{denyset.host_key(host)}:{port}" for host, port in entries}
     target_addresses = _binding_target_addresses(task)
 
@@ -685,12 +712,24 @@ def build_policy(
             )
 
     # 2. Every destination the pinned manifest declares must be inside the signed set (a manifest
-    #    cannot widen it), and nothing else may be.
+    #    cannot widen it), and nothing else may be. A `protocol: dns` source is a raw tunnel to a
+    #    recursive resolver, which would bypass the broker's DNS name binding, so the internet
+    #    profile never opens one (F4); its DNS goes through the broker's DNS front end instead.
+    dns_source_keys: set[str] = set()
+    for source in permissions.egressSources or []:
+        if profile == "internet" and str(source.protocol) == "dns":
+            for source_host in source.hosts:
+                for source_port in source.ports:
+                    dns_source_keys.add(
+                        f"{denyset.host_key(str(source_host))}:{int(text(source_port))}"
+                    )
     declared_sources: dict[str, str] = {}
     for source in permissions.egressSources or []:
         for source_host in source.hosts:
             for source_port in source.ports:
                 key = f"{denyset.host_key(str(source_host))}:{int(text(source_port))}"
+                if key in dns_source_keys:
+                    continue
                 denied = denyset.denied_host(str(source_host))
                 if denied is not None:
                     raise SpecError(
@@ -752,6 +791,8 @@ def build_policy(
     target_keys = {str(address) for address in target_addresses}
     for host, port in entries:
         key = f"{denyset.host_key(host)}:{port}"
+        if key in dns_source_keys:
+            continue
         if key in declared_sources:
             source_id = declared_sources[key]
         elif host in target_keys:
@@ -780,7 +821,7 @@ def build_policy(
         mode="egress",
         egress_mode=str(permissions.egressMode),
         profile=profile,
-        campaign_id=str(task.campaign_id),
+        campaign_id=text(task.campaign_id),
         authorization=authorization,
         target_ips=tuple(
             ipaddress.ip_network(f"{address}/{address.max_prefixlen}")

@@ -18,7 +18,7 @@ DECLARE
   blocked int := 0;
 BEGIN
   INSERT INTO policy_snapshot VALUES
-    ('roe-10',camp_a,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('a',64),'{"kind":"operator","id":"soc-1"}');
+    ('roe-10',camp_a,'{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',repeat('a',64),'{"kind":"operator","id":"soc-1"}');
   INSERT INTO scope_snapshot VALUES
     (scope_a,camp_a,'{"domains":["actor.example"]}');
   INSERT INTO campaign (campaign_id,name,objective,current_policy_version,scope_id,created_by) VALUES
