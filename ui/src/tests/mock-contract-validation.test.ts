@@ -221,7 +221,50 @@ describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
     expect(schema).toBeDefined();
 
     const validate = ajv.compile(schema);
-    const res = await mockHandlers.getAssetHistory('01934f6a-0000-7000-8000-0000000000f1');
+    for (const assetId of [
+      '01934f6a-0000-7000-8000-0000000000f1',
+      '01934f6a-0000-7000-8000-0000000000f6',
+      '01934f6a-0000-7000-8000-0000000000f7',
+      '01934f6a-0000-7000-8000-0000000000f8',
+      '01934f6a-0000-7000-8000-0000000000f9',
+    ]) {
+      const res = await mockHandlers.getAssetHistory(assetId);
+      const valid = validate(res);
+      expect(validate.errors, `History validation failed for ${assetId}`).toBeNull();
+      expect(valid).toBe(true);
+    }
+  });
+
+  it('validates mockHandlers.listAssetVulnerabilities matches /assets/{asset_id}/vulnerabilities 200 schema', async () => {
+    const schema =
+      openApiDoc.paths['/assets/{asset_id}/vulnerabilities']?.get?.responses['200']?.content[
+        'application/json'
+      ]?.schema;
+    expect(schema).toBeDefined();
+
+    const validate = ajv.compile(schema);
+    for (const assetId of [
+      '01934f6a-0000-7000-8000-0000000000f6',
+      '01934f6a-0000-7000-8000-0000000000f7',
+    ]) {
+      const res = await mockHandlers.listAssetVulnerabilities(assetId);
+      const valid = validate(res);
+      expect(validate.errors, `Vulnerabilities validation failed for ${assetId}`).toBeNull();
+      expect(valid).toBe(true);
+    }
+  });
+
+  it('validates mockHandlers.listCampaignEvents matches /campaigns/{campaign_id}/events 200 JSON schema', async () => {
+    const schema =
+      openApiDoc.paths['/campaigns/{campaign_id}/events']?.get?.responses['200']?.content[
+        'application/json'
+      ]?.schema;
+    expect(schema).toBeDefined();
+
+    const validate = ajv.compile(schema);
+    const res = await mockHandlers.listCampaignEvents('01934f6a-0000-7000-8000-000000000001', {
+      types: ['asset.discovered.v2'],
+    });
     const valid = validate(res);
     expect(validate.errors).toBeNull();
     expect(valid).toBe(true);

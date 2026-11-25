@@ -4,6 +4,9 @@ import {
   mockCampaignFlow,
   mockAssets,
   mockAssetGraph,
+  mockAssetHistoryMap,
+  mockAssetVulnerabilitiesMap,
+  mockCampaignEvents,
   mockCapabilities,
   mockProvenanceMap,
 } from './fixtures';
@@ -13,6 +16,8 @@ import type {
   CampaignFlow,
   AssetGraphResponse,
   AssetHistoryResponse,
+  AssetVulnerabilitiesResponse,
+  CampaignEventsResponse,
   CapabilitiesResponse,
   ProvenanceDetail,
   CampaignStatus,
@@ -135,6 +140,13 @@ export const mockHandlers = {
     _params?: { cursor?: string; limit?: number }
   ): Promise<AssetHistoryResponse> {
     const asset = mockAssets.find((a) => a.asset_id === assetId) || mockAssets[0];
+    const customItems = mockAssetHistoryMap[assetId];
+    if (customItems) {
+      return {
+        asset,
+        items: customItems,
+      };
+    }
     const prov =
       mockProvenanceMap[assetId] ||
       mockProvenanceMap['01934f6a-0000-7000-8000-0000000000f1'];
@@ -151,6 +163,42 @@ export const mockHandlers = {
           evidence_ids: ['01934f6a-0000-7000-8000-0000000000e1'],
         },
       ],
+    };
+  },
+
+  async listAssetVulnerabilities(
+    assetId: string,
+    params?: { campaign_id?: string; kev_only?: boolean; cursor?: string; limit?: number }
+  ): Promise<AssetVulnerabilitiesResponse> {
+    const asset = mockAssets.find((a) => a.asset_id === assetId) || mockAssets[0];
+    const entry = mockAssetVulnerabilitiesMap[assetId];
+    let items = entry ? [...entry.items] : [];
+    if (params?.kev_only) {
+      items = items.filter((item) => item.kev);
+    }
+    return {
+      asset: entry
+        ? entry.asset
+        : {
+            asset_id: asset.asset_id,
+            canonical_key: asset.canonical_key,
+            kind: asset.kind,
+          },
+      items,
+    };
+  },
+
+  async listCampaignEvents(
+    _campaignId: string,
+    params?: { cursor?: string; limit?: number; types?: string[] }
+  ): Promise<CampaignEventsResponse> {
+    let items = [...mockCampaignEvents];
+    if (params?.types && params.types.length > 0) {
+      const allowed = new Set(params.types);
+      items = items.filter((ev) => allowed.has(ev.type));
+    }
+    return {
+      items: params?.limit ? items.slice(0, params.limit) : items,
     };
   },
 

@@ -155,4 +155,27 @@ describe('ApiClient (Mock & Contract Operations)', () => {
     expect(res.items.some((c) => c.capability === 'dns.enumerate_subdomains')).toBe(true);
     expect(res.items.some((c) => c.capability === 'dns.resolve')).toBe(true);
   });
+
+  it('lists candidate vulnerabilities for a service asset and supports kev_only filter', async () => {
+    const all = await apiClient.listAssetVulnerabilities('01934f6a-0000-7000-8000-0000000000f6');
+    expect(all.asset.canonical_key).toBe('service:203.0.113.10:80/tcp');
+    expect(all.items).toHaveLength(1);
+    expect(all.items[0].vulnerability_id).toBe('CVE-2021-41773');
+    expect(all.items[0].kev).toBe(true);
+
+    const nonKevFiltered = await apiClient.listAssetVulnerabilities(
+      '01934f6a-0000-7000-8000-0000000000f7',
+      { kev_only: true }
+    );
+    expect(nonKevFiltered.items).toHaveLength(0);
+  });
+
+  it('lists campaign asset.discovered.v2 events', async () => {
+    const res = await apiClient.listCampaignEvents('01934f6a-0000-7000-8000-000000000001', {
+      types: ['asset.discovered.v2'],
+      limit: 200,
+    });
+    expect(res.items.length).toBeGreaterThanOrEqual(9);
+    expect(res.items.every((ev) => ev.type === 'asset.discovered.v2')).toBe(true);
+  });
 });

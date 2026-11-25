@@ -5,6 +5,9 @@ import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { TruncatedBanner } from '../components/TruncatedBanner';
 import { ProvenancePanel } from '../components/ProvenancePanel';
+import { VulnerabilityPanel } from '../components/VulnerabilityPanel';
+import { ServiceTable } from '../components/ServiceTable';
+import { AssetGraphScreen } from '../screens/AssetGraphScreen';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { TokenConfigModal } from '../components/TokenConfigModal';
 import { CampaignDetailScreen } from '../screens/CampaignDetailScreen';
@@ -146,5 +149,133 @@ describe('Ultron UI Reusable Components', () => {
     );
 
     expect(await screen.findByText('Chưa có dữ liệu ngân sách')).toBeInTheDocument();
+  });
+
+  it('renders VulnerabilityPanel with NVD link, candidate-only Vietnamese label, and all fields', () => {
+    render(
+      <VulnerabilityPanel
+        data={{
+          assetId: '01934f6a-0000-7000-8000-0000000000f6',
+          assetKey: 'service:203.0.113.10:80/tcp',
+          candidate: {
+            vulnerability_id: 'CVE-2021-41773',
+            cvss_base: 9.8,
+            cvss_severity: 'CRITICAL',
+            kev: true,
+            kev_due_date: '2021-11-17',
+            epss: 0.97431,
+            match_method: 'cpe_range',
+            affected_range: '>= 2.4.49, <= 2.4.50',
+            confidence: 0.7,
+            snapshot_id: '01934f6a-0000-7000-8000-00000000c001',
+            candidate_since: '2026-11-20T08:25:00Z',
+          },
+        }}
+        onClose={() => {}}
+      />
+    );
+
+    expect(screen.getByText('Ứng viên (chưa xác minh)')).toBeInTheDocument();
+    const nvdLink = screen.getByRole('link', { name: /CVE-2021-41773/ });
+    expect(nvdLink).toHaveAttribute('href', 'https://nvd.nist.gov/vuln/detail/CVE-2021-41773');
+    expect(screen.getByText('9.8')).toBeInTheDocument();
+    expect(screen.getByText('CRITICAL')).toBeInTheDocument();
+    expect(screen.getByText('Có trong CISA KEV')).toBeInTheDocument();
+    expect(screen.getByText('97.43%')).toBeInTheDocument();
+    expect(screen.getByText('>= 2.4.49, <= 2.4.50')).toBeInTheDocument();
+    expect(screen.getByText('cpe_range')).toBeInTheDocument();
+    expect(screen.getByText('70% (0.70)')).toBeInTheDocument();
+    expect(screen.getByText('01934f6a-0000-7000-8000-00000000c001')).toBeInTheDocument();
+    expect(document.body.textContent?.toLowerCase()).not.toContain('confirmed');
+    expect(document.body.textContent?.toLowerCase()).not.toContain('vulnerable');
+  });
+
+  it('renders ServiceTable with host, port, protocol, product, version, CPE, and CVE/KEV counts', () => {
+    const onSelect = vi.fn();
+    render(
+      <ServiceTable
+        rows={[
+          {
+            asset: {
+              asset_id: '01934f6a-0000-7000-8000-0000000000f6',
+              canonical_key: 'service:10.114.53.215:80/tcp',
+              kind: 'service',
+              first_seen: '2026-11-25T08:00:00Z',
+              last_seen: '2026-11-25T08:05:00Z',
+            },
+            host: '10.114.53.215',
+            port: '80',
+            transport: 'tcp',
+            protocol: 'http (tcp)',
+            product: 'http_server',
+            version: '2.4.49',
+            cpe: 'cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*',
+            candidates: [
+              {
+                vulnerability_id: 'CVE-2021-41773',
+                cvss_base: 9.8,
+                kev: true,
+                epss: 0.97431,
+                match_method: 'cpe_range',
+                confidence: 0.7,
+                candidate_since: '2026-11-25T08:06:00Z',
+              },
+            ],
+            candidateCount: 1,
+            kevCount: 1,
+            truncatedCandidates: false,
+          },
+        ]}
+        onSelectVulnerability={onSelect}
+        onFocusInGraph={() => {}}
+      />
+    );
+
+    expect(screen.getByText('10.114.53.215')).toBeInTheDocument();
+    expect(screen.getByText('80')).toBeInTheDocument();
+    expect(screen.getByText('http (tcp)')).toBeInTheDocument();
+    expect(screen.getByText('http_server')).toBeInTheDocument();
+    expect(screen.getByText('2.4.49')).toBeInTheDocument();
+    expect(screen.getByText('cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*')).toBeInTheDocument();
+    expect(screen.getByText('1 ứng viên')).toBeInTheDocument();
+    expect(screen.getByText('1 KEV')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /CVE-2021-41773/ }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders AssetGraphScreen with IP -> Service -> Application -> Vulnerability chain and opens VulnerabilityPanel on click', async () => {
+    render(
+      <MemoryRouter initialEntries={['/assets?campaign_id=01934f6a-0000-7000-8000-000000000001']}>
+        <Routes>
+          <Route path="/assets" element={<AssetGraphScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('CVE-2021-41773')).toBeInTheDocument();
+    expect(screen.getAllByText('EXPOSES').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('SERVES').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('AFFECTED_BY').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/http_server 2\.4\.49/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Apache HTTP Server:2\.4\.49/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('alert')).toBeInTheDocument(); // TruncatedBanner
+
+    // Click vulnerability node to open VulnerabilityPanel
+    fireEvent.click(screen.getByRole('button', { name: 'Ứng viên CVE CVE-2021-41773' }));
+    expect(await screen.findByLabelText('Bảng chi tiết ứng viên CVE')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /CVE-2021-41773/ })).toHaveAttribute(
+      'href',
+      'https://nvd.nist.gov/vuln/detail/CVE-2021-41773'
+    );
+
+    // Filter by kind = service
+    fireEvent.change(screen.getByLabelText('Lọc loại tài sản'), { target: { value: 'service' } });
+    expect(screen.queryByRole('button', { name: 'Ứng viên CVE CVE-2021-41773' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dịch vụ service:203.0.113.10:80/tcp' })).toBeInTheDocument();
+
+    // Switch to Service Table
+    fireEvent.click(screen.getByRole('button', { name: /Bảng Dịch vụ/ }));
+    expect(await screen.findByRole('table', { name: 'Bảng dịch vụ theo chiến dịch' })).toBeInTheDocument();
   });
 });
