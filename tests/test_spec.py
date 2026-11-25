@@ -625,6 +625,10 @@ def test_the_internet_profile_denies_private_ranges_except_signed_targets() -> N
     assert ipaddress.ip_network("10.0.0.0/8") in policy.private_cidrs
     assert policy.per_host_rps == 0.5
     assert policy.per_host_max_connections == 1
+    # DNS-over-broker: the target name and the declared sources are the only resolvable names.
+    assert policy.dns_target_names == ("internal.example",)
+    assert policy.dns_names == ("crt.sh", "internal.example", "otx.alienvault.com")
+    assert policy.dns_ttl == 30
     # A declared source that resolves into the host's own private network is refused on the
     # internet profile (no signed target covers it) and allowed on the lab profile.
     resolver = _StubResolver({"crt.sh": ["10.0.0.9"]})

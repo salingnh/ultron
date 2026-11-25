@@ -31,7 +31,7 @@ from typing import Any
 
 from aegis.common.ports import ContainerRunner, ContainerSpec, RunHandle, RunState
 from aegis.m06_runner import netpolicy
-from aegis.m06_runner.profile import DeploymentProfile, JobProfile
+from aegis.m06_runner.profile import BROKER_DNS, DeploymentProfile, JobProfile
 
 PODMAN = os.environ.get("AEGIS_PODMAN") or shutil.which("podman") or "podman"
 ROLE_LABEL = "aegis.role"
@@ -134,6 +134,9 @@ class PodmanRunner(ContainerRunner):
     #: Deployment network profiles of this runner, keyed by kind (`lab`, `internet`). A profile is
     #: off unless its file is configured, and a job only uses the profile its signed RoE names.
     profiles: Mapping[str, DeploymentProfile] = field(default_factory=dict)
+    #: Test/deployment hook: the resolver the broker forwards DNS to (`--dns-upstream`). None uses
+    #: the control plane's system resolver, which is what a deployment normally wants.
+    broker_dns_upstream: str | None = None
     _subnets: dict[str, str] = field(default_factory=dict, init=False)
     _images: dict[str, str] = field(default_factory=dict, init=False)
 
@@ -425,6 +428,11 @@ class PodmanRunner(ContainerRunner):
         argv += [
             "--mount",
             f"type=bind,src={policy_path},dst=/policy.json,ro,Z",
+            # The DNS front end listens on 53 in the broker's own network namespace; the broker
+            # runs as uid 65534 with no capabilities, so the unprivileged port floor is lowered for
+            # that namespace only (a net sysctl, never the host's).
+            "--sysctl",
+            "net.ipv4.ip_unprivileged_port_start=0",
             "--mount",
             f"type=bind,src={layout.audit},dst=/audit,rw,Z",
             self.broker_image,
@@ -440,6 +448,8 @@ class PodmanRunner(ContainerRunner):
             "--bind",
             self.broker_ip(job_id),
         ]
+        if self.broker_dns_upstream:
+            argv += ["--dns-upstream", self.broker_dns_upstream]
         started = _podman(*argv, timeout=120)
         container_id = started.stdout.strip().splitlines()[-1]
         deadline = time.monotonic() + 30
@@ -599,6 +609,10 @@ class PodmanRunner(ContainerRunner):
             argv += ["--cap-add=NET_RAW"]
         # Never host network, never the Podman socket, never --privileged.
         argv += ["--network", network if network != "none" else "none"]
+        if spec.egress_proxy:
+            # The job has no resolver of its own: /etc/resolv.conf names the broker, which answers
+            # every query with the signed-binding checks and audit (G1.6 item 4).
+            argv += ["--dns", self.broker_ip(spec.job_id)]
         if entry is not None:
             # The deployment profile of this job (lab endpoint data, or an internet provider
             # config): trusted deploy config, never a job input - see aegis.m06_runner.profile.
@@ -611,9 +625,30 @@ class PodmanRunner(ContainerRunner):
         argv += [
             self.image_reference(spec.image_digest),
             *spec.args,
-            *(entry.args if entry is not None else ()),
+            *self._profile_args(
+                entry,
+                broker_dns=(f"{self.broker_ip(spec.job_id)}:53" if spec.egress_proxy else None),
+            ),
         ]
         return argv
+
+    def _profile_args(self, entry: JobProfile | None, *, broker_dns: str | None) -> list[str]:
+        """The deployment profile's extra argv, with the broker DNS placeholder resolved."""
+        if entry is None:
+            return []
+        resolved: list[str] = []
+        for element in entry.args:
+            if element != BROKER_DNS:
+                resolved.append(element)
+                continue
+            if broker_dns is None:
+                # A profile that needs the broker's resolver on a job without a broker would run
+                # with the literal token: refuse instead of silently passing it to the tool.
+                raise RunnerError(
+                    f"profile of {entry.image_digest} uses {BROKER_DNS} but the job has no broker"
+                )
+            resolved.append(broker_dns)
+        return resolved
 
     @staticmethod
     def _egress_env(spec: ContainerSpec) -> dict[str, str]:

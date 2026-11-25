@@ -27,6 +27,7 @@ import select
 import signal
 import socket
 import socketserver
+import struct
 import sys
 import threading
 import time
@@ -37,6 +38,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from aegis.m06_runner import denyset, netpolicy
+from aegis.m06_runner import dns as dns_wire
 
 MAX_HEADER_BYTES = 64 * 1024
 HANDSHAKE_TIMEOUT_SECONDS = 30.0
@@ -132,15 +134,22 @@ class AuditLog:
         path.parent.mkdir(parents=True, exist_ok=True)
 
     def write(self, decision: netpolicy.Decision) -> None:
-        record: dict[str, Any] = {
+        self._append(decision.as_audit())
+
+    def write_dns(self, record: dict[str, Any]) -> None:
+        """One line per DNS query (G1.6 item 4): same file, `kind: dns`, same job context."""
+        self._append(record)
+
+    def _append(self, record: dict[str, Any]) -> None:
+        entry: dict[str, Any] = {
             "ts": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "job_id": self.job_id,
             "campaign_id": self.campaign_id,
             "network_profile": self.profile,
             "authorization": self.authorization,
-            **decision.as_audit(),
+            **record,
         }
-        line = json.dumps(record, sort_keys=True) + "\n"
+        line = json.dumps(entry, sort_keys=True) + "\n"
         with self._lock, self.path.open("a", encoding="utf-8") as handle:
             handle.write(line)
             handle.flush()
@@ -294,6 +303,74 @@ class _Server(socketserver.ThreadingTCPServer):
         self.broker = broker
 
 
+class _DnsUdpServer(socketserver.ThreadingUDPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(self, address: tuple[str, int], forwarder: dns_wire.DnsForwarder) -> None:
+        super().__init__(address, _DnsUdpHandler)
+        self.forwarder = forwarder
+
+
+class _DnsTcpServer(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(self, address: tuple[str, int], forwarder: dns_wire.DnsForwarder) -> None:
+        super().__init__(address, _DnsTcpHandler)
+        self.forwarder = forwarder
+
+
+class _DnsUdpHandler(socketserver.BaseRequestHandler):
+    """One query per datagram: the broker answers it, it never relays the payload."""
+
+    def handle(self) -> None:
+        data, sock = self.request
+        forwarder = cast(_DnsUdpServer, self.server).forwarder
+        try:
+            reply = forwarder.handle(data)
+        except Exception:  # noqa: BLE001 - a malformed packet must not stop the server
+            return
+        if reply:
+            try:
+                sock.sendto(reply, self.client_address)
+            except OSError:
+                return
+
+
+class _DnsTcpHandler(socketserver.BaseRequestHandler):
+    """DNS over TCP: a 2-byte length prefix, then the same one-query decision."""
+
+    def handle(self) -> None:
+        conn: socket.socket = self.request
+        conn.settimeout(HANDSHAKE_TIMEOUT_SECONDS)
+        forwarder = cast(_DnsTcpServer, self.server).forwarder
+        try:
+            length_bytes = _read_exact(conn, 2)
+            (length,) = struct.unpack("!H", length_bytes)
+            if not 0 < length <= 4096:
+                return
+            message = _read_exact(conn, length)
+            reply = forwarder.handle(message)
+        except (OSError, ValueError):
+            return
+        if reply:
+            try:
+                conn.sendall(struct.pack("!H", len(reply)) + reply)
+            except OSError:
+                return
+
+
+def _read_exact(conn: socket.socket, size: int) -> bytes:
+    data = b""
+    while len(data) < size:
+        chunk = conn.recv(size - len(data))
+        if not chunk:
+            raise ValueError("connection closed mid-message")
+        data += chunk
+    return data
+
+
 class _Handler(socketserver.BaseRequestHandler):
     """One connection: SOCKS5 when the first byte is 0x05, otherwise the HTTP proxy."""
 
@@ -440,11 +517,20 @@ def serve(
     http_port: int,
     socks_port: int,
     bind: str,
+    dns_port: int = 53,
+    dns_upstream: str | None = None,
 ) -> None:
     broker = EgressBroker(policy, audit)
+    resolver = dns_wire.system_resolver
+    if dns_upstream:
+        host, _, port_text = dns_upstream.rpartition(":")
+        resolver = dns_wire.UpstreamResolver(host or dns_upstream, int(port_text or 53))
+    forwarder = dns_wire.DnsForwarder(policy, audit, resolver=resolver, ttl=policy.dns_ttl)
     servers = [
         _Server((bind, http_port), broker),
         _Server((bind, socks_port), broker),
+        _DnsUdpServer((bind, dns_port), forwarder),
+        _DnsTcpServer((bind, dns_port), forwarder),
     ]
     stop = threading.Event()
 
@@ -458,7 +544,8 @@ def serve(
             target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True
         ).start()
     print(
-        f"READY http={bind}:{http_port} socks={bind}:{socks_port} job={policy.job_id}",
+        f"READY http={bind}:{http_port} socks={bind}:{socks_port} dns={bind}:{dns_port} "
+        f"job={policy.job_id}",
         flush=True,
     )
     stop.wait()
@@ -474,6 +561,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--http-port", type=int, default=3128)
     parser.add_argument("--socks-port", type=int, default=1080)
     parser.add_argument("--bind", default="0.0.0.0")
+    parser.add_argument("--dns-port", type=int, default=53)
+    parser.add_argument(
+        "--dns-upstream",
+        default=None,
+        help="pinned resolver host:port the broker forwards to (default: the system resolver)",
+    )
     args = parser.parse_args(argv)
     policy = netpolicy.load_policy(json.loads(args.policy.read_text(encoding="utf-8")))
     started = time.monotonic()
@@ -489,6 +582,8 @@ def main(argv: list[str] | None = None) -> int:
         http_port=args.http_port,
         socks_port=args.socks_port,
         bind=args.bind,
+        dns_port=args.dns_port,
+        dns_upstream=args.dns_upstream,
     )
     print(f"stopped after {time.monotonic() - started:.2f}s", flush=True)
     return 0

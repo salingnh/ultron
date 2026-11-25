@@ -110,6 +110,13 @@ class JobEgressPolicy:
     platform_cidrs: tuple[IPNetwork, ...] = ()
     deny_cidrs: tuple[IPNetwork, ...] = ()
     private_cidrs: tuple[IPNetwork, ...] = ()
+    #: Names the job may resolve through the broker's DNS front end: the task's target names and the
+    #: manifest's declared source hosts. `dns_target_names` is the subset whose answers are narrowed
+    #: to the signed target addresses (a target name never resolves to something the broker would
+    #: refuse to connect to).
+    dns_names: tuple[str, ...] = ()
+    dns_target_names: tuple[str, ...] = ()
+    dns_ttl: int = 30
     per_host_rps: float | None = None
     per_host_max_connections: int | None = None
     max_resolved: int = DEFAULT_MAX_RESOLVED
@@ -307,10 +314,17 @@ def load_policy(raw: dict[str, object]) -> JobEgressPolicy:
         platform_cidrs=nets(raw.get("platform_cidrs")),
         deny_cidrs=nets(raw.get("deny_cidrs")),
         private_cidrs=nets(raw.get("private_cidrs")),
+        dns_names=tuple(str(name) for name in _list(raw.get("dns_names"))),
+        dns_target_names=tuple(str(name) for name in _list(raw.get("dns_target_names"))),
+        dns_ttl=int(str(raw.get("dns_ttl", 30))),
         per_host_rps=per_host_rps,
         per_host_max_connections=per_host_max,
         max_resolved=int(str(raw.get("max_resolved", DEFAULT_MAX_RESOLVED))),
     )
+
+
+def _list(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
 
 
 def policy_document(policy: JobEgressPolicy) -> dict[str, object]:
@@ -335,6 +349,9 @@ def policy_document(policy: JobEgressPolicy) -> dict[str, object]:
         "platform_cidrs": [str(net) for net in policy.platform_cidrs],
         "deny_cidrs": [str(net) for net in policy.deny_cidrs],
         "private_cidrs": [str(net) for net in policy.private_cidrs],
+        "dns_names": list(policy.dns_names),
+        "dns_target_names": list(policy.dns_target_names),
+        "dns_ttl": policy.dns_ttl,
         "per_host_rps": policy.per_host_rps,
         "per_host_max_connections": policy.per_host_max_connections,
         "max_resolved": policy.max_resolved,
