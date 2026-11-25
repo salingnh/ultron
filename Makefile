@@ -10,6 +10,7 @@ SHELL := /bin/bash
 
 .PHONY: help dev-up dev-down dev-reset dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
+	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-recovery soak-start soak-stop \
 	run-local stop-local seed-demo
@@ -30,6 +31,15 @@ help:
 	  'make lab-check       inventory consistency + Subfinder and DNSx runs compared to fixtures' \
 	  'make lab-dnsx        only the DNSx run and its fixture comparison' \
 	  'make lab-subfinder   only the Subfinder run and its fixture comparison' \
+	  'make vulnlab-up      start the CVE test lab (deploy/vulnlab): known-vulnerable HTTP' \
+	  '                     origins on their own internal network + the lab network; auto-stops' \
+	  '                     after VULNLAB_TTL_MINUTES (default 120); the Cloudflare Tunnel only' \
+	  '                     when AEGIS_VULNLAB_TUNNEL_TOKEN is set in deploy/vulnlab/.env' \
+	  'make vulnlab-down    remove only the aegis-vulnlab project (containers + its two networks)' \
+	  'make vulnlab-status  boundary, tunnel state and remaining TTL (non-zero if not healthy)' \
+	  'make vulnlab-check   every origin serves the page its catalog entry documents' \
+	  'make vulnlab-test    PROFILE=lab|internet: one campaign per catalog case, assert the' \
+	  '                     detections and CVE candidates (needs make run-local)' \
 	  'make contracts-gate  README contract gate: validator, tests, PostgreSQL 16 chains' \
 	  'make graph-check     Neo4j Cypher smoke (CI: neo4j step)' \
 	  'make ci-local        contracts-gate + graph-check' \
@@ -85,6 +95,27 @@ lab-dnsx:
 
 lab-subfinder:
 	@scripts/lab/subfinder-run.sh
+
+# --- CVE test lab (G1.6 slice E) ----------------------------------------------
+# Known-vulnerable HTTP origins for the discovery chain (port -> fingerprint -> CVE candidates).
+# Isolation and auto-stop are owned by scripts/vulnlab/*.sh: every container is created with a
+# podman --timeout (VULNLAB_TTL_MINUTES), so the stack stops itself even if nobody remembers.
+
+vulnlab-up:
+	@scripts/vulnlab/vulnlab-up.sh
+
+vulnlab-down:
+	@scripts/vulnlab/vulnlab-down.sh
+
+vulnlab-status:
+	@scripts/vulnlab/vulnlab-status.sh
+
+vulnlab-check:
+	@python3 scripts/vulnlab/check_live.py
+
+vulnlab-test:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/vulnlab/test_cases.py --profile "$${PROFILE:-lab}"
 
 contracts-gate:
 	@scripts/ci/contracts-gate.sh
