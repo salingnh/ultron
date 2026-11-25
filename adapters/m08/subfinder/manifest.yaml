@@ -2,7 +2,7 @@ apiVersion: aegis.io/v2
 kind: CapabilityProvider
 metadata:
   name: subfinder
-  version: 1.0.0
+  version: 1.0.1
   module: M08
   license: MIT
   upstream: https://github.com/projectdiscovery/subfinder
@@ -15,6 +15,7 @@ spec:
     imageDigest: sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf
     argsTemplate:
     - -silent
+    - -duc
     - -json
     - -o
     - /out/result.jsonl
@@ -34,6 +35,7 @@ spec:
     networkAccess: egress
     egressMode: broker
     proxyAware: true
+    proxyFlag: -proxy
     egressSources:
     - id: crtsh
       hosts:

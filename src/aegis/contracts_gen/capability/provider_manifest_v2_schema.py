@@ -79,6 +79,11 @@ class EgressMode(StrEnum):
     l3 = "l3"
 
 
+class ProxyFlagFormat(StrEnum):
+    url = "url"
+    host_port = "host_port"
+
+
 class TargetBinding(StrEnum):
     required = "required"
     none = "none"
@@ -200,6 +205,14 @@ class Permissions(BaseModel):
     proxyAware: bool | None = Field(
         None,
         description="Khai báo trung thực công cụ có đi ra được qua proxy hay không. Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` không bắt buộc và có thể false: kênh ra do gateway lọc theo IP:port đã ký (G1.6b: fingerprintx khai false; M06 từ chối nó trên đường broker trước khi tạo container, fail closed).",
+    )
+    proxyFlag: constr(pattern=r"^-[a-z][a-z0-9-]*$") | None = Field(
+        None,
+        description="Cờ mà công cụ cần để đi qua broker, khi nó KHÔNG đọc HTTPS_PROXY/ALL_PROXY cho các kết nối của mình (vD Subfinder: nguồn thụ động chỉ đi qua `-proxy`). Khai báo này là sự thật về công cụ: M06 từ chối job internet-profile nếu profile deployment không truyền đúng cờ đó. Chỉ có khi `egressMode=broker`; không dùng cho `l3`.",
+    )
+    proxyFlagFormat: ProxyFlagFormat | None = Field(
+        "url",
+        description="Dạng giá trị của `proxyFlag`: `url` (http://host:port cho proxy HTTP CONNECT) hoặc `host_port` (host:port trần, vD Naabu từ chối scheme - G0.2). Mặc định `url`.",
     )
     egressSources: list[EgressSource] | None = Field(
         None,

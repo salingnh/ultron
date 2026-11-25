@@ -45,7 +45,7 @@ def test_args_template_renders_typed_values() -> None:
     manifest, _ = _manifest()
     schema = spec.load_input_schema(manifest.spec.inputSchemaRef)
     args = spec.render_args(manifest.spec.runtime.argsTemplate or [], _input(), schema)
-    assert args[:2] == ["-silent", "-json"]
+    assert args[:3] == ["-silent", "-duc", "-json"]
     assert args[-4:] == ["-t", "2", "-rl", "1"]
     assert "/in/targets.txt" in args
 
@@ -820,3 +820,17 @@ def test_a_non_proxy_aware_provider_rides_the_l3_channel() -> None:
     assert built.egress_mode == "l3"
     assert built.egress_proxy is None
     assert set(built.egress_binding) == {"10.1.2.3:8080"}
+
+
+def test_a_manifest_that_needs_its_proxy_flag_is_refused_without_it() -> None:
+    """A tool that ignores the proxy environment must not run when the profile omits its flag."""
+    manifest, raw = m06_support.manifest("manifest.subfinder.yaml")
+    spec.check_proxy_wiring(manifest, ["-sources", "crtsh", "-proxy", "${broker_http}"])
+    with pytest.raises(SpecError, match="needs its proxy as '-proxy'") as caught:
+        spec.check_proxy_wiring(manifest, ["-sources", "crtsh"])
+    assert caught.value.code == "POLICY_DENIED"
+    with pytest.raises(SpecError):
+        spec.check_proxy_wiring(manifest, None)
+    # A manifest without a flag needs nothing.
+    httpx, _ = m06_support.manifest("manifest.httpx.yaml")
+    spec.check_proxy_wiring(httpx, None)

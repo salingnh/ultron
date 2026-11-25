@@ -31,7 +31,13 @@ from typing import Any
 
 from aegis.common.ports import ContainerRunner, ContainerSpec, RunHandle, RunState
 from aegis.m06_runner import netpolicy
-from aegis.m06_runner.profile import BROKER_DNS, DeploymentProfile, JobProfile
+from aegis.m06_runner.profile import (
+    BROKER_DNS,
+    BROKER_HTTP,
+    BROKER_SOCKS,
+    DeploymentProfile,
+    JobProfile,
+)
 
 PODMAN = os.environ.get("AEGIS_PODMAN") or shutil.which("podman") or "podman"
 ROLE_LABEL = "aegis.role"
@@ -659,10 +665,7 @@ class PodmanRunner(ContainerRunner):
         argv += [
             self.image_reference(spec.image_digest),
             *spec.args,
-            *self._profile_args(
-                entry,
-                broker_dns=(f"{self.broker_ip(spec.job_id)}:53" if spec.egress_proxy else None),
-            ),
+            *self._profile_args(entry, **self._broker_endpoints(spec)),
         ]
         return argv
 
@@ -707,22 +710,55 @@ class PodmanRunner(ContainerRunner):
         )
         return directory
 
-    def _profile_args(self, entry: JobProfile | None, *, broker_dns: str | None) -> list[str]:
-        """The deployment profile's extra argv, with the broker DNS placeholder resolved."""
+    def _broker_endpoints(self, spec: ContainerSpec) -> dict[str, str | None]:
+        """The broker endpoints a deployment profile may substitute for this job.
+
+        A broker-channel job gets all three (DNS, HTTP proxy URL, SOCKS authority); an L3 job has
+        only the DNS listener (the gateway carries its traffic, there is no L7 proxy); a job with
+        no egress gets none, so a profile that asks for one is refused instead of running with a
+        literal token.
+        """
+        if not spec.egress_mode:
+            return {"broker_dns": None, "broker_http": None, "broker_socks": None}
+        ip = self.broker_ip(spec.job_id)
+        if spec.egress_mode == "l3":
+            return {"broker_dns": f"{ip}:53", "broker_http": None, "broker_socks": None}
+        return {
+            "broker_dns": f"{ip}:53",
+            "broker_http": f"http://{ip}:{BROKER_HTTP_PORT}",
+            "broker_socks": f"{ip}:{BROKER_SOCKS_PORT}",
+        }
+
+    def _profile_args(
+        self,
+        entry: JobProfile | None,
+        *,
+        broker_dns: str | None,
+        broker_http: str | None,
+        broker_socks: str | None,
+    ) -> list[str]:
+        """The deployment profile's extra argv, with the broker placeholders resolved."""
         if entry is None:
             return []
+        values = {
+            BROKER_DNS: broker_dns,
+            BROKER_HTTP: broker_http,
+            BROKER_SOCKS: broker_socks,
+        }
         resolved: list[str] = []
         for element in entry.args:
-            if element != BROKER_DNS:
+            if element not in values:
                 resolved.append(element)
                 continue
-            if broker_dns is None:
-                # A profile that needs the broker's resolver on a job without a broker would run
+            value = values[element]
+            if value is None:
+                # A profile that needs a broker endpoint on a job without that broker would run
                 # with the literal token: refuse instead of silently passing it to the tool.
                 raise RunnerError(
-                    f"profile of {entry.image_digest} uses {BROKER_DNS} but the job has no broker"
+                    f"profile of {entry.image_digest} uses {element} but the job has no such "
+                    "broker endpoint"
                 )
-            resolved.append(broker_dns)
+            resolved.append(value)
         return resolved
 
     @staticmethod

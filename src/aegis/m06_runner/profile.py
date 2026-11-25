@@ -57,6 +57,8 @@ from typing import Any, Literal
 
 __all__ = [
     "BROKER_DNS",
+    "BROKER_HTTP",
+    "BROKER_SOCKS",
     "ENV_INTERNET_PROFILE",
     "ENV_LAB_PROFILE",
     "DeploymentProfile",
@@ -74,9 +76,13 @@ IMAGE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 #: An environment variable name the deployment may forward; a name is not a secret, its value is.
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
-#: An argv element the runner replaces with the job's broker DNS address (`<broker_ip>:53`), e.g.
-#: `dnsx -r ${broker_dns}`. It is deployment data, like the rest of the profile, not a job input.
+#: An argv element the runner replaces with the job's broker endpoint, e.g. `dnsx -r ${broker_dns}`,
+#: `subfinder -proxy ${broker_http}`, `naabu -proxy ${broker_socks}`. Deployment data, like the
+#: rest of the profile, not a job input. The HTTP value is a URL (`http://ip:3128`); the SOCKS value
+#: is a bare authority (`ip:1080`) because Naabu's `-proxy` silently no-ops on a scheme (G0.2).
 BROKER_DNS = "${broker_dns}"
+BROKER_HTTP = "${broker_http}"
+BROKER_SOCKS = "${broker_socks}"
 
 ProfileKind = Literal["lab", "internet"]
 

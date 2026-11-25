@@ -273,18 +273,25 @@ def test_the_uplink_is_the_profile_then_the_deployment_override(tmp_path: Path) 
     assert from_env.uplink == "aegis-uplink"
 
 
-def test_the_broker_dns_placeholder_is_resolved_from_the_job(tmp_path: Path) -> None:
-    """`${broker_dns}` is deployment argv, replaced with the job's broker address, never a token."""
+def test_the_broker_placeholders_are_resolved_from_the_job(tmp_path: Path) -> None:
+    """`${broker_dns|http|socks}` are deployment argv, resolved per job, never a literal token."""
     from aegis.m06_runner.podman import RunnerError
-    from aegis.m06_runner.profile import BROKER_DNS, JobProfile
+    from aegis.m06_runner.profile import BROKER_DNS, BROKER_HTTP, BROKER_SOCKS, JobProfile
 
     runner = PodmanRunner(base_dir=tmp_path)
-    job = JobProfile(
-        image_digest=SUBFINDER,
-        args=("-r", BROKER_DNS),
+    job = JobProfile(image_digest=SUBFINDER, args=("-r", BROKER_DNS, "-proxy", BROKER_HTTP))
+    resolved = runner._profile_args(
+        job,
+        broker_dns="10.97.0.2:53",
+        broker_http="http://10.97.0.2:3128",
+        broker_socks=None,
     )
-    assert runner._profile_args(job, broker_dns="10.97.0.2:53") == ["-r", "10.97.0.2:53"]
-    # A job with no broker cannot run a profile that needs the broker's resolver.
-    with pytest.raises(RunnerError, match="no broker"):
-        runner._profile_args(job, broker_dns=None)
-    assert runner._profile_args(None, broker_dns=None) == []
+    assert resolved == ["-r", "10.97.0.2:53", "-proxy", "http://10.97.0.2:3128"]
+    naabu = JobProfile(image_digest=SUBFINDER, args=("-proxy", BROKER_SOCKS))
+    assert runner._profile_args(
+        naabu, broker_dns=None, broker_http=None, broker_socks="10.97.0.2:1080"
+    ) == ["-proxy", "10.97.0.2:1080"]
+    # A job without that broker endpoint cannot run a profile that needs it.
+    with pytest.raises(RunnerError, match="no such broker endpoint"):
+        runner._profile_args(job, broker_dns=None, broker_http=None, broker_socks=None)
+    assert runner._profile_args(None, broker_dns=None, broker_http=None, broker_socks=None) == []

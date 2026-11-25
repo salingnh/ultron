@@ -192,6 +192,17 @@
 "description": "Khai báo trung thực công cụ có đi ra được qua proxy hay không. Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` không bắt buộc và có thể false: kênh ra do gateway lọc theo IP:port đã ký (G1.6b: fingerprintx khai false; M06 từ chối nó trên đường broker trước khi tạo container, fail closed).",
               "type": "boolean"
             },
+            "proxyFlag": {
+              "description": "Cờ mà công cụ cần để đi qua broker, khi nó KHÔNG đọc HTTPS_PROXY/ALL_PROXY cho các kết nối của mình (vD Subfinder: nguồn thụ động chỉ đi qua `-proxy`). Khai báo này là sự thật về công cụ: M06 từ chối job internet-profile nếu profile deployment không truyền đúng cờ đó. Chỉ có khi `egressMode=broker`; không dùng cho `l3`.",
+              "type": "string",
+              "pattern": "^-[a-z][a-z0-9-]*$"
+            },
+            "proxyFlagFormat": {
+              "description": "Dạng giá trị của `proxyFlag`: `url` (http://host:port cho proxy HTTP CONNECT) hoặc `host_port` (host:port trần, vD Naabu từ chối scheme - G0.2). Mặc định `url`.",
+              "type": "string",
+              "enum": ["url", "host_port"],
+              "default": "url"
+            },
             "egressSources": {
               "description": "Đích ngoài mục tiêu mà provider cần (nguồn dữ liệu thụ động, resolver, API). Bắt buộc khai báo khi egress, kể cả rỗng; rỗng chỉ hợp lệ khi targetBinding=required. Host là tên chính xác, không wildcard/khớp hậu tố. Binding của một job là hợp của tập này với mục tiêu đã phân giải.",
               "type": "array",
@@ -285,6 +296,28 @@
                   "proxyAware"
                 ],
                 "properties": {
+                  "proxyAware": {
+                    "const": true
+                  }
+                }
+              }
+            },
+            {
+              "description": "proxyFlag chỉ có nghĩa trên kênh broker; công cụ tự khai nó phải nằm trong proxyAware=true.",
+              "if": {
+                "required": [
+                  "proxyFlag"
+                ]
+              },
+              "then": {
+                "required": [
+                  "egressMode",
+                  "proxyAware"
+                ],
+                "properties": {
+                  "egressMode": {
+                    "const": "broker"
+                  },
                   "proxyAware": {
                     "const": true
                   }
