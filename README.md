@@ -46,6 +46,7 @@ Nếu máy đã có stack `aegis-dev` từ bản trước khi gộp migration (c
 ```bash
 make run-local      # 1. dựng toàn bộ hệ + lab, in token; để nguyên terminal này
 make demo-g1        # 2. campaign thật -> agent/MCP -> Subfinder -> DNSx -> raw/metadata/graph
+make demo-g16c      #    G1.6: ... -> Naabu -> fingerprintx/httpx -> ứng viên CVE (KEV/EPSS) trên lab
 make demo-recovery  # 3. SIGKILL runner giữa job: chạy tiếp, không trùng container/job/envelope
 make soak-start     # 4. soak rút gọn 24 h (SOAK_HOURS=... để đổi), chạy nền
 ```
@@ -101,5 +102,6 @@ Dừng hết: `make stop-local` (hoặc `make soak-stop` trước nếu muốn d
 - Token chỉ in một lần vì trên đĩa chỉ có sha256; mất token thì `make run-local NEW_TOKEN=1`. `.local/operator-token` và `.local/service-token` là tiện ích dev (mode 600, đã git-ignore) để script demo dùng.
 - `make seed-demo AEGIS_DEV_TOKEN=<token>` tạo thêm một campaign demo qua `POST /campaigns`.
 - `AEGIS_CORS_ORIGINS` đổi danh sách origin được phép (mặc định `http://127.0.0.1:5173,http://localhost:5173`).
-- M06 chạy image đã pin theo digest; runner không pull. Job cần egress mà không có profile lab thì cần `AEGIS_M06_BROKER_IMAGE` (broker container) — G1 chỉ dùng hai adapter DNS trên lab nên không cần.
+- M06 chạy image đã pin theo digest; runner không pull. `make run-local` dựng broker image (`deploy/broker/Containerfile`), đặt `AEGIS_M06_INTERNET_PROFILE`, `AEGIS_L3_HOOK` và tạo uplink riêng `aegis-uplink`; job internet phân giải DNS qua broker, không cần cấu hình thêm. Campaign demo/CI khai `network_profile: lab`; campaign của người vận hành mặc định `internet`. Chạy thử internet (chỉ trên tài sản bạn sở hữu, thụ động trước): `make internet-smoke DOMAIN=<domain>`.
+- Mỗi checkout chạy stack riêng: đặt `AEGIS_DEV_PROJECT`/`AEGIS_LAB_PROJECT`/`AEGIS_VULNLAB_PROJECT` và port riêng trong `.env`; `dev-up`/`dev-down`/`lab-down`/`vulnlab-*` từ chối đụng stack do checkout khác tạo.
 - `make ci-local` và `make ci-python` là đúng hai job CI; `make demo-g15a` là bằng chứng flow/SSE riêng của G1.5a.

@@ -47,12 +47,9 @@ created outside `make vulnlab-up`.
 
 ## Tunnel
 
-Created by the leader through the Cloudflare MCP (tunnel + DNS + Access restricted to the scanner egress IP). Put the token and the public hostnames in
-`deploy/vulnlab/.env` (git-ignored; only names are in `.env.example`). `make vulnlab-up` then starts
-`cloudflared` as a compose profile; `scripts/vulnlab/render_cloudflared.py` renders the ingress into
-`deploy/vulnlab/.run/cloudflared/` (the only mount in the stack, read-only). Token-managed tunnels
-take ingress from the dashboard: the rendered file is the source of truth to mirror there. The token
-is never printed; do not `podman inspect` the container in logs.
+Created by the leader through the Cloudflare MCP: remote-managed tunnel `ultron-vulnlab` (ingress lives in the Cloudflare dashboard and mirrors `cloudflared/config.yml.template`), proxied `vl-*` hostnames on the authorized domain, and a Cloudflare Access app that bypasses only the scanner's egress IP (everyone else is blocked). Hostnames go in `deploy/vulnlab/.env` (git-ignored; only names in `.env.example`). The token is read from `AEGIS_VULNLAB_TUNNEL_TOKEN_FILE` (default `/home/admin/.config/ultron/vulnlab-tunnel.token`, must be 0600) and is never printed.
+
+Publishing is an explicit opt-in: `make vulnlab-up` is lab-only even when the token file exists; `VULNLAB_TUNNEL=1 make vulnlab-up` (or `make vulnlab-test PROFILE=internet`) starts `cloudflared`. Only one tunnel-enabled stack per host; another checkout's `aegis-vulnlab` is never touched (`AEGIS_VULNLAB_PROJECT` per checkout). If the scanner's egress IP changes, the Access policy must be updated (until then the scanner is blocked — fail closed).
 
 ## Tests
 

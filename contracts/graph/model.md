@@ -16,7 +16,7 @@ Nguồn chiếu có hai: M27 (kết quả tool, revision ≥ 1) và M01 (seed c�
 | `:Target` | `target_id` | `kind`, `raw_value`, `campaign_id`, `canonical_key` (NULL cho keyword/CIDR) | `campaign_target` (seed keyword/CIDR không có asset nên không có nhãn `:Asset`) |
 | `:Campaign` | `campaign_id` | `name`, `status` | `campaign` |
 | `:Job` | `job_id` | `capability`, `provider`, `provider_version`, `policy_version`, `status` | `scan_job` |
-| `:Observation` | `observation_id` | `predicate`, `value_summary`, `polarity`, `observed_at`, `confidence` | `observation` (chỉ predicate có `graph: true` trong registry, để đồ thị không phình) |
+| `:Observation` | `observation_id` | `predicate`, `value_summary`, `polarity`, `observed_at`, `confidence`, `subject` (canonical_key của tài sản) | `observation` (chỉ predicate có `graph: true` trong registry, để đồ thị không phình) |
 | `:Vulnerability` | `vulnerability_id` | `cvss_base`, `kev`, `epss`, `snapshot_id` | `vulnerability_current` |
 | `:Finding` | `finding_id` | `fingerprint`, `rule_id`, `status`, `severity`, `secret_value` (dạng rõ) | `finding` |
 | `:Evidence` | `evidence_id` | `sha256`, `storage_uri`, `source_tool` | `evidence` |

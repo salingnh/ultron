@@ -62,3 +62,17 @@ G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trườ
 - [ ] G4.3 Tích hợp CI gọi API quét image/repo khi build, giữ digest/commit, credential cấp riêng và idempotency.
 
 Các phương án kỹ thuật chưa khóa được ghi ngay tại đặc tả liên quan; không có backlog từ tài liệu nguồn cũ để agent tự suy thêm phạm vi.
+
+## G1.6 — discovery sâu, mạng internet, LLM thật (item 61, nhánh integ/g16-discovery)
+
+- [x] Port: Naabu + dịch vụ lab bản cũ, đồ thị IP → Service (#66).
+- [x] Fingerprint: fingerprintx/httpx, product/version/CPE thật (#68, #77).
+- [x] CVE/CTI: feed NVD/KEV/EPSS, ứng viên AFFECTED_BY (#64).
+- [x] Lab CVE + catalog testcase, tunnel opt-in qua Cloudflare (#65, #73, #74, #76).
+- [x] Profile internet, DNS qua broker, gateway L3 (#63, #70, #72).
+- [x] LLM thật OpenAI/Anthropic qua `.env` (#62).
+- [x] UI đồ thị/bảng dịch vụ/panel CVE (#75).
+- [ ] LLM gateway xoay vòng endpoint (item 62).
+- [ ] Chạy thử internet trên domain của chủ (icomm.vn, salingnh.com), thụ động trước.
+- [ ] Redis version: chuyển sang bản release fingerprintx đầu tiên đọc INFO (không pin pre-release); AJP chưa có detector.
+- [ ] Follow-up: index matcher thay catalog trong RAM; MCP truy vấn CVE cho service/app; lịch tự động sync feed (M02).

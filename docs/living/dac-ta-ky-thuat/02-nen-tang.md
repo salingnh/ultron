@@ -27,6 +27,14 @@ Giữ giới hạn egress theo provider: chỉ kết nối mục tiêu của job
 
 Kiểm: [test_egress_actor.py](../../../contracts/tests/test_egress_actor.py) và các fixture âm `contracts/fixtures/invalid/manifest.*.yaml`. Cưỡng chế lúc chạy (broker, ContainerSpec) thuộc G1.3a; chưa được coi schema đã là bằng chứng runtime.
 
+### Profile mạng của job (G1.6)
+
+RoE của campaign khai `network_profile` (`lab` | `internet`, mặc định `internet`); M05 ký giá trị này vào `ApprovedTask` nên M06 không chọn profile theo môi trường. `lab`: job vào mạng lab của deployment (`deploy/lab/runner-profile.json`), không có broker; job lab mà deployment không có entry cho image đã pin bị `POLICY_DENIED`, không tự rơi về internet. `internet`: job giữ mạng nội bộ riêng, chỉ tới được broker của job; broker có thêm một chân trên mạng uplink riêng của runner (`AEGIS_UPLINK_NETWORK`, run-local tạo `aegis-uplink`) và mở đúng tập đã ký, kiểm lại từng kết nối (CONNECT/absolute-URI/SOCKS5 cùng một quyết định). Trên internet, dải riêng (RFC1918, CGNAT, ULA) bị từ chối (`DENY_PRIVATE`) trừ khi địa chỉ đó là target đã ký. RoE bắt buộc khai `rate_limits.requests_per_second_per_host` và `rate_limits.max_concurrent_connections_per_host` cho job internet; broker cưỡng chế theo từng host và từ chối nhanh (`RATE_LIMITED`, `CONCURRENCY_LIMITED`). Danh sách port bị chặn bởi `ports.maxItems` của input schema đã pin. `target_denylist` và trần đọc từ bản policy đã ký. Mọi quyết định ghi một dòng audit kèm `campaign_id`, `network_profile`, `authorization` và lý do ổn định.
+
+**DNS qua broker.** Job internet không có resolver riêng: `/etc/resolv.conf` trỏ broker. Broker trả lời UDP+TCP 53, chỉ phân giải tên task đã ký (target names + `egressSources` đã pin), lọc từng địa chỉ theo deny set/private rule (target name chỉ trả địa chỉ đã ký), TTL 30 s và ghi một dòng audit `kind: dns` mỗi query; upstream là resolver deployment pin (`--dns-upstream`) hoặc resolver control plane. DNSx/Naabu chạy `-r ${broker_dns}`; không có resolver mở trong job.
+
+**`egressMode: l3`** (tool không proxy-aware, vd fingerprintx). Job giữ mạng nội bộ; hook OCI `createContainer` do deployment sở hữu (`AEGIS_L3_HOOK`, run-local đặt sẵn) cài route mặc định duy nhất qua broker; thiếu hoặc lỗi hook thì container bị từ chối, không có route dự phòng. Broker forward dưới nftables chỉ cho đúng tập IP:port đã ký (nguồn phân giải một lần và ghim) cộng deny set, audit theo bộ đếm từng đích. Job giữ 0 capability và không đổi được route. Kiểm từ bên trong job: target đã ký tới được (bộ đếm forward > 0), port lạ/metadata/loopback bị chặn.
+
 ### Bằng chứng đo trên máy dev (spike G0.2, 2026-11-24)
 
 Máy: Fedora 44, kernel 7.3.4, rootless Podman 5.8.9, netavark 1.17.2, pasta, SELinux Enforcing. Bằng chứng chạy được ở `spikes/g0.2-sandbox/` trên nhánh `spike/g0.2-sandbox` (chưa merge; 42 unit + 21 kiểm Podman). Đây là kết quả trên máy dev, chưa phải nghiệm thu máy chạy thật.

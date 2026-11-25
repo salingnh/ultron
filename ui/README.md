@@ -23,6 +23,13 @@ Operations console for Ultron security orchestration, implementing Item #51 (Car
    - Operations catalogue listing all registered execution tools and adapters.
    - Entrypoint functions, health check statuses, and Podman OCI sandbox isolation specifications.
 
+### Discovery & CVE (G1.6)
+
+- **Đồ thị tài sản:** IP → Service (port/protocol) → Application/công nghệ (product, version, CPE) → Vulnerability (CVE, CVSS, KEV, EPSS); cạnh có nhãn.
+- **Bảng dịch vụ** (`ServiceTable`): host, port, protocol, product, version, CPE, số ứng viên CVE (số KEV).
+- **Panel CVE** (`VulnerabilityPanel`): luôn ghi "Ứng viên (chưa xác minh)" — kết quả khớp CPE, không phải finding.
+- Ảnh chụp review chỉ theme sáng.
+
 ## Design System & UX Standards
 
 - Adheres to `DESIGN.md` tokens: `--bg`, `--surface`, `--ink`, `--muted`, `--line`, `--subtle`, `--accent`, `--success`, `--warning`, `--neutral`.

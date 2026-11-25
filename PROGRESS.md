@@ -79,3 +79,4 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 
 Mở G1 theo TASKS: G1.1a trước, tám điều kiện review phải xong cùng task sở hữu; G1 mặc định chạy scripted policy; provider thật bật bằng `AEGIS_SESSION_LIVE_MODEL=1` (G1.6). Cập nhật sau mỗi lần merge hoặc deploy (update after every merge or deploy).
 - G1.6 slice E (PR #65): `deploy/vulnlab` (7 pinned origins, internal + lab networks, podman TTL auto-stop) và catalog `tests/vulnlab` + `make vulnlab-test`; lab lộ đúng 7/7, assertion CVE ứng viên đã định nghĩa cho slice A/B/C; tunnel internet chờ đăng nhập Cloudflare MCP.
+- G1.6 (integ/g16-discovery, 2026-11-25): trên lab, chuỗi seed → Subfinder → DNSx → Naabu → fingerprintx/httpx → ứng viên CVE chạy thật: demo-g16b, demo-g16c PASS (CVE-2021-41773, CVE-2021-23017, CVE-2020-1938 kèm KEV/EPSS), vulnlab-test lab 7/7; PG == Neo4j. Migration 0004 (CVE matching), 0005 (internet profile); baseline bất biến. Chưa chạy trên mục tiêu internet thật.
