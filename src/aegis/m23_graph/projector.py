@@ -7,7 +7,8 @@ The loop is the C04/D25 consumer contract of `contracts/graph/model.md`:
    (`aegis.outbox_watermark_refresh`, 0013 waits for the publication lock instead of starving);
 3. read the next published events (`aegis.outbox_batch`) - never past the watermark, gaps legal;
 4. prefetch the entity rows of the whole batch from PostgreSQL (properties come from PG, not from
-   the payload), plan the Cypher operations, and apply them **partitioned by key** (per-key order)
+   the payload: assets, relationships, findings, evidence, vulnerabilities), plan the Cypher
+   operations, and apply them **partitioned by key** (per-key order)
    and in two phases (assets before the edges that `MATCH` them);
 5. check the batchpoint: `consumer_inbox` rows for the applied events and `aegis.consumer_advance`
    with the fence - Neo4j first, cursor second, so a crash replays instead of skipping;
@@ -35,6 +36,7 @@ from aegis.m23_graph.models import (
     ASSET_EVENT,
     FINDING_EVENT,
     OBSERVATION_EVENT,
+    VULNERABILITY_EVENT,
     CypherOp,
     OutboxEvent,
     ProjectorStats,
@@ -282,6 +284,12 @@ class Projector:
         findings = pg.prefetch_findings(
             self._conn, pg.event_ids(batch, FINDING_EVENT, "finding_id")
         )
+        vulnerabilities = pg.prefetch_vulnerabilities(
+            self._conn, pg.event_ids(batch, VULNERABILITY_EVENT, "vulnerability_id")
+        )
+        matches = pg.prefetch_matches(
+            self._conn, pg.event_ids(batch, VULNERABILITY_EVENT, "match_id")
+        )
         evidence = pg.prefetch_evidence(
             self._conn,
             [
@@ -299,6 +307,8 @@ class Projector:
             findings=findings,
             evidence=evidence,
             partitions=max(self.config.partitions, 1),
+            vulnerabilities=vulnerabilities,
+            matches=matches,
         )
         applied_ops = 0
         phases = planned.phases()

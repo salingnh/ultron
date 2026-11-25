@@ -20,7 +20,7 @@ import os
 
 from fastapi import FastAPI
 
-from aegis.m26_api import assets, capabilities, events, flow, jobs
+from aegis.m26_api import assets, capabilities, events, flow, jobs, vulnerabilities
 from aegis.m26_api.app import CORS_ORIGINS_ENV, cors_origins_from_env, create_app
 from aegis.m26_api.campaigns import register
 from aegis.m26_api.operator import (
@@ -39,7 +39,8 @@ PG_DSN_ENV = "AEGIS_PG_DSN"
 
 def build_registry() -> RouterRegistry:
     """Every router this service mounts: campaigns (G1.1b), jobs (G1.1c), flow/events/capabilities
-    (G1.5a), assets (G1.4b) and the ingestion endpoint M27 owns (G1.4a/G1.5c)."""
+    (G1.5a), assets (G1.4b), candidate vulnerabilities (G1.6 slice C) and the ingestion endpoint
+    M27 owns (G1.4a/G1.5c)."""
     registry = RouterRegistry()
     register(registry)
     jobs.register(registry)
@@ -47,6 +48,7 @@ def build_registry() -> RouterRegistry:
     events.register(registry)
     capabilities.register(registry)
     assets.register(registry)
+    vulnerabilities.register(registry)
     register_ingestion(registry)
     return registry
 

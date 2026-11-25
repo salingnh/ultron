@@ -37,6 +37,8 @@ from aegis.m23_graph.models import (
     ObservationSnapshot,
     OutboxEvent,
     RelationshipSnapshot,
+    VulnerabilityMatchSnapshot,
+    VulnerabilitySnapshot,
 )
 
 #: ids.v2 requires UUIDv7 and neither PostgreSQL 16 nor Python 3.12 can mint one; M27 owns the
@@ -53,8 +55,10 @@ __all__ = [
     "prefetch_evidence",
     "prefetch_findings",
     "prefetch_incoming_relationships",
+    "prefetch_matches",
     "prefetch_observations",
     "prefetch_relationships",
+    "prefetch_vulnerabilities",
     "read_batch",
     "read_cursor",
     "read_inbox",
@@ -301,6 +305,100 @@ def prefetch_observations(
         )
         for row in rows
     }
+
+
+def prefetch_vulnerabilities(
+    conn: psycopg.Connection[dict[str, Any]], vulnerability_ids: Iterable[str]
+) -> dict[str, VulnerabilitySnapshot]:
+    """`:Vulnerability` properties, assembled from the per-source `vulnerability_current` rows.
+
+    A CVE has one current revision per feed (`nvd`, `kev`, `epss`), so the node is a merge of up to
+    three rows: NVD supplies CVSS, KEV membership is a boolean, EPSS the score. `snapshot_id` is
+    the snapshot of the row that supplied CVSS (NVD), else KEV, else EPSS, so a node always names
+    the pinned feed set it came from. A withdrawn CVE contributes nothing and is skipped.
+    """
+    wanted = list(dict.fromkeys(vulnerability_ids))
+    if not wanted:
+        return {}
+    rows = conn.execute(
+        "SELECT vulnerability_id, source, cvss, kev, epss, snapshot_id"
+        "  FROM vulnerability_current"
+        " WHERE vulnerability_id = ANY(%s) AND NOT withdrawn",
+        (wanted,),
+    ).fetchall()
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["vulnerability_id"]), {})[str(row["source"])] = dict(row)
+    snapshots: dict[str, VulnerabilitySnapshot] = {}
+    for vulnerability_id, sources in grouped.items():
+        nvd = sources.get("nvd")
+        kev_row = sources.get("kev")
+        epss_row = sources.get("epss")
+        cvss = _json_object(nvd.get("cvss") if nvd else None)
+        epss = _json_object(epss_row.get("epss") if epss_row else None)
+        source_row = nvd or kev_row or epss_row
+        if source_row is None:  # pragma: no cover - grouped is built from rows
+            continue
+        base_score = cvss.get("base_score")
+        snapshots[vulnerability_id] = VulnerabilitySnapshot(
+            vulnerability_id=vulnerability_id,
+            cvss_base=float(base_score) if isinstance(base_score, (int, float)) else None,
+            cvss_severity=_text(cvss.get("base_severity")),
+            kev=kev_row is not None,
+            epss=_score(epss.get("score")),
+            snapshot_id=str(source_row["snapshot_id"]),
+        )
+    return snapshots
+
+
+def prefetch_matches(
+    conn: psycopg.Connection[dict[str, Any]], match_ids: Iterable[str]
+) -> dict[str, VulnerabilityMatchSnapshot]:
+    """The candidate rows a `vulnerability.matched.v2` event names, with their asset."""
+    ids = _uuid_list(match_ids)
+    if not ids:
+        return {}
+    rows = conn.execute(
+        "SELECT m.match_id, m.package_asset_id, a.kind, a.canonical_key, m.vulnerability_id,"
+        "       m.campaign_id, m.match_method, m.affected_range, m.confidence, m.snapshot_id,"
+        "       m.created_at"
+        "  FROM package_vuln_match m JOIN asset a ON a.asset_id = m.package_asset_id"
+        " WHERE m.match_id = ANY(%s::uuid[])",
+        (ids,),
+    ).fetchall()
+    matches: dict[str, VulnerabilityMatchSnapshot] = {}
+    for row in rows:
+        if row["campaign_id"] is None or row["snapshot_id"] is None:
+            raise RuntimeError(
+                f"package_vuln_match {row['match_id']} has no campaign/snapshot: migration 0004 "
+                "requires both on a candidate written by M20"
+            )
+        matches[str(row["match_id"])] = VulnerabilityMatchSnapshot(
+            match_id=str(row["match_id"]),
+            asset_id=str(row["package_asset_id"]),
+            asset_kind=str(row["kind"]),
+            canonical_key=str(row["canonical_key"]),
+            vulnerability_id=str(row["vulnerability_id"]),
+            campaign_id=str(row["campaign_id"]),
+            match_method=str(row["match_method"]),
+            affected_range=None if row["affected_range"] is None else str(row["affected_range"]),
+            confidence=float(row["confidence"] if row["confidence"] is not None else 0.0),
+            snapshot_id=str(row["snapshot_id"]),
+            observed_at=row["created_at"],
+        )
+    return matches
+
+
+def _json_object(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _score(value: object) -> float | None:
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def prefetch_findings(

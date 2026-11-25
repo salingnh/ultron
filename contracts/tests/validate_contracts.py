@@ -294,7 +294,10 @@ for mp in sorted((ROOT.parent / "adapters").glob("**/manifest.yaml")):
     for e in check_manifest(mp.relative_to(ROOT.parent), data):
         fail(e)
 
-ddl = (ROOT / "db/postgres/0001_baseline.sql").read_text(encoding="utf-8")
+# The schema is the baseline plus every migration the chain appends (0004 adds the
+# vulnerability.matched.v2 outbox type), applied in numeric order.
+ddl = "\n".join(path.read_text(encoding="utf-8")
+                 for path in sorted((ROOT / "db/postgres").glob("0*.sql")))
 
 
 def ddl_enum(table: str, column: str) -> set[str]:
@@ -322,8 +325,8 @@ event_types = set(schemas["events/event-envelope.v2.schema.json"]["properties"][
 event_files = {p.name.removesuffix(".schema.json") for p in (ROOT / "events").glob("*.v2.schema.json") if p.name != "event-envelope.v2.schema.json"}
 if event_types != event_files:
     fail(f"Sự kiện: enum {sorted(event_types)} khác file {sorted(event_files)}")
-if len(event_types) != 9:
-    fail(f"Sự kiện: đặc tả có 9 sự kiện v2, đang có {len(event_types)}")
+if len(event_types) != 10:
+    fail(f"Sự kiện: đặc tả có 10 sự kiện v2, đang có {len(event_types)}")
 migration = ddl
 migration_event_types = set(re.findall(r"'([a-z.]+\.v2)'", migration))
 if migration_event_types != event_types:

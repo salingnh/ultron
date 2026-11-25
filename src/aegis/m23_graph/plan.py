@@ -31,6 +31,7 @@ from aegis.m23_graph.models import (
     ASSET_EVENT,
     FINDING_EVENT,
     OBSERVATION_EVENT,
+    VULNERABILITY_EVENT,
     AssetSnapshot,
     CypherOp,
     EvidenceSnapshot,
@@ -38,6 +39,8 @@ from aegis.m23_graph.models import (
     OutboxEvent,
     RelationshipSnapshot,
     RoundPlan,
+    VulnerabilityMatchSnapshot,
+    VulnerabilitySnapshot,
 )
 
 __all__ = [
@@ -200,6 +203,8 @@ def plan_round(
     evidence: Mapping[str, EvidenceSnapshot],
     partitions: int,
     incoming: Mapping[str, Sequence[RelationshipSnapshot]] | None = None,
+    vulnerabilities: Mapping[str, VulnerabilitySnapshot] | None = None,
+    matches: Mapping[str, VulnerabilityMatchSnapshot] | None = None,
 ) -> RoundPlan:
     """The Neo4j work and the checkpoint facts of one batch.
 
@@ -219,6 +224,10 @@ def plan_round(
             _plan_observation(builder, event, assets, relationships, partitions, incoming or {})
         elif event.type == FINDING_EVENT:
             _plan_finding(builder, event, assets, findings, evidence, partitions)
+        elif event.type == VULNERABILITY_EVENT:
+            _plan_vulnerability(
+                builder, event, matches or {}, vulnerabilities or {}, assets, partitions
+            )
         # Every other event has no statement in the committed template: the projector still
         # checkpoints past it (the node types it would feed - `:Observation`/`:Target`/`:Campaign`/
         # `:Job` - have no projector statement yet).
@@ -264,6 +273,57 @@ def _plan_observation(
     subject_id = str(event.payload.get("subject_id") or "")
     revision = int(event.payload.get("revision") or 0) or 0
     _plan_asset_state(builder, subject_id, revision, assets, relationships, incoming, partitions)
+
+
+def _plan_vulnerability(
+    builder: _Builder,
+    event: OutboxEvent,
+    matches: Mapping[str, VulnerabilityMatchSnapshot],
+    vulnerabilities: Mapping[str, VulnerabilitySnapshot],
+    assets: Mapping[str, AssetSnapshot],
+    partitions: int,
+) -> None:
+    """The `:Vulnerability` node and its candidate `AFFECTED_BY` edge, from PostgreSQL rows.
+
+    The event only names the match: `match_method`, `affected_range`, `confidence`, the intel
+    snapshot and the campaign are read from `package_vuln_match`, and CVSS/KEV/EPSS from
+    `vulnerability_current` (model.md: properties come from PostgreSQL, not from the payload). A
+    match whose vulnerability is withdrawn everywhere has no node and plans nothing; a start asset
+    whose kind the model does not allow is a `ContractMismatch`, never a silently dropped edge.
+    """
+    match = matches.get(str(event.payload.get("match_id") or ""))
+    if match is None:
+        return
+    vulnerability = vulnerabilities.get(match.vulnerability_id)
+    if vulnerability is None:
+        return
+    contract.affected_by_source(match.asset_kind)
+    owner = assets.get(match.asset_id)
+    key = owner.canonical_key if owner is not None else match.canonical_key
+    partition = partition_of(key, partitions)
+    builder.append(
+        CypherOp(
+            statement=contract.vulnerability_upsert(),
+            parameters={
+                "asset_id": match.asset_id,
+                "vulnerability_id": match.vulnerability_id,
+                "cvss_base": vulnerability.cvss_base,
+                "kev": vulnerability.kev,
+                "epss": vulnerability.epss,
+                "node_snapshot_id": vulnerability.snapshot_id,
+                "observed_at": match.observed_at.isoformat(),
+                "match_method": match.match_method,
+                "affected_range": match.affected_range,
+                "confidence": match.confidence,
+                "snapshot_id": match.snapshot_id,
+                "match_id": match.match_id,
+                "campaign_id": match.campaign_id,
+            },
+            partition=partition,
+            phase=PHASE_GRAPH,
+            entity="vulnerability",
+        )
+    )
 
 
 def _plan_asset_state(

@@ -33,3 +33,16 @@ ON CREATE SET e.sha256 = $sha256, e.storage_uri = $storage_uri, e.source_tool = 
 MERGE (fd)-[s:SUPPORTED_BY]->(e)
 ON CREATE SET s.observed_at = datetime($observed_at), s.valid_from = datetime($observed_at),
               s.source_job_id = $source_job_id, s.confidence = 1.0;
+
+// 4. Ứng viên phơi nhiễm CVE: nút :Vulnerability (nguồn vulnerability_current) và cạnh AFFECTED_BY
+//    từ tài sản bị ảnh hưởng. Chỉ là ứng viên (package_vuln_match), không phải finding; các nhãn
+//    nguồn được phép (service, application, package) do projector kiểm trước khi chạy câu này.
+MATCH (a:Asset {asset_id: $asset_id})
+MERGE (v:Vulnerability {vulnerability_id: $vulnerability_id})
+SET v.cvss_base = $cvss_base, v.kev = $kev, v.epss = $epss,
+    v.snapshot_id = $node_snapshot_id
+MERGE (a)-[r:AFFECTED_BY]->(v)
+ON CREATE SET r.valid_from = datetime($observed_at)
+SET r.observed_at = datetime($observed_at), r.match_method = $match_method,
+    r.affected_range = $affected_range, r.confidence = $confidence,
+    r.snapshot_id = $snapshot_id, r.match_id = $match_id, r.campaign_id = $campaign_id;

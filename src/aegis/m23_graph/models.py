@@ -23,11 +23,14 @@ __all__ = [
     "RelationshipSnapshot",
     "RoundPlan",
     "RoundResult",
+    "VulnerabilityMatchSnapshot",
+    "VulnerabilitySnapshot",
 ]
 
 ASSET_EVENT = "asset.discovered.v2"
 OBSERVATION_EVENT = "observation.changed.v2"
 FINDING_EVENT = "finding.changed.v2"
+VULNERABILITY_EVENT = "vulnerability.matched.v2"
 DELTA_EVENT = "knowledge.delta.v2"
 
 
@@ -119,6 +122,41 @@ class EvidenceSnapshot:
     storage_uri: str
     source_tool: str
     job_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class VulnerabilitySnapshot:
+    """`:Vulnerability` of model.md, assembled from the four `vulnerability_current` sources.
+
+    `cvss_base`/`cvss_severity` come from the NVD row, `kev` is true when the KEV feed lists the
+    CVE (and it is not withdrawn there), `epss` is the EPSS score; `snapshot_id` is the intel
+    snapshot that supplied them (NVD first, then KEV, then EPSS), so a graph node always says which
+    pinned feed set it was projected from.
+    """
+
+    vulnerability_id: str
+    cvss_base: float | None
+    cvss_severity: str | None
+    kev: bool
+    epss: float | None
+    snapshot_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class VulnerabilityMatchSnapshot:
+    """The current candidate row of an (asset, vulnerability) pair (`package_vuln_match`)."""
+
+    match_id: str
+    asset_id: str
+    asset_kind: str
+    canonical_key: str
+    vulnerability_id: str
+    campaign_id: str
+    match_method: str
+    affected_range: str | None
+    confidence: float
+    snapshot_id: str
+    observed_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

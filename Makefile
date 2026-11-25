@@ -11,7 +11,7 @@ SHELL := /bin/bash
 .PHONY: help dev-up dev-down dev-reset dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder \
 	deps lint test codegen codegen-check migrate ci-python \
-	temporal-live demo-g15a demo-g1 demo-recovery soak-start soak-stop \
+	temporal-live demo-g15a demo-g1 demo-g16c demo-recovery soak-start soak-stop \
 	run-local stop-local seed-demo llm-smoke
 
 help:
@@ -44,6 +44,8 @@ help:
 	  'make ci-python       the python workflow: deps + lint + test + codegen-check' \
 	  'make demo-g1         end-to-end G1 gate on the lab: campaign -> agent/MCP -> Subfinder ->' \
 	  '                     DNSx -> raw + metadata + graph + events, with the evidence printed' \
+	  'make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS intel ->' \
+	  '                     candidate AFFECTED_BY in PostgreSQL and Neo4j + the candidate read API' \
 	  'make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate' \
 	  'make soak-start      start the shortened 24 h soak (SOAK_HOURS=... to change) in .local/soak/' \
 	  'make soak-stop       stop the soak; its report stays in .local/soak/report.txt' \
@@ -136,6 +138,10 @@ demo-g15a:
 demo-g1:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
 		uv run --frozen python scripts/demo/demo-g1.py
+
+demo-g16c:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/demo/demo-g16c.py
 
 demo-recovery:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
