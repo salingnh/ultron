@@ -1,0 +1,44 @@
+{
+  "provider": "naabu",
+  "capability": "network.discover_services",
+  "tool_version": "v2.7.0",
+  "adapter_version": "1.0.0",
+  "image_digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
+  "lab_run": "scripts/lab/naabu-run.sh on aegis-lab-lab, deploy/lab/.run/runs/naabu-20261125T003245Z (G1.6a)",
+  "lab_run_at": "2026-11-25T00:32:45Z",
+  "lab_network": "aegis-lab-lab",
+  "command": "-silent -json -s connect -duc -list /in/targets.txt -ports-file /in/ports.txt -c 4 -rate 100 -timeout 1s -o /out/result.jsonl",
+  "input": {
+    "targets": [
+      "ip:10.114.53.211",
+      "ip:10.114.53.212",
+      "ip:10.114.53.213",
+      "ip:10.114.53.214"
+    ],
+    "ports": [
+      22,
+      80,
+      443,
+      2222,
+      6379,
+      8009,
+      8080
+    ]
+  },
+  "raw": {
+    "file": "result.jsonl",
+    "sha256": "301fd6eb289b9f594440a7024edb8f041cd90da31da33f36a55e55b4909aecce",
+    "size_bytes": 855
+  },
+  "expected": "expected.json",
+  "cross_check": {
+    "file": "deploy/lab/inventory.json",
+    "kind": "services"
+  },
+  "notes": [
+    "result.jsonl is the byte-for-byte output of the authorized lab run (G1.6a) on aegis-lab-lab against the four service containers deploy/lab/inventory.json declares; no route off the host.",
+    "The manifest pins -s connect (no NET_RAW, rootless sandbox) and reads the port set from /in/ports.txt, the file M06 stages from input.ports. `22` is in the input as a negative control: nothing listens there, and a run that reported it would be scanning something other than the inventory.",
+    "expected.json is the parser output for this raw file and is cross-checked against the inventory's independent service list (addresses and ports), not only against the parser.",
+    "The tool writes a per-record `timestamp` and, on a local L2 network, a `mac_address`; the parser ignores both (observed_at is the collector's, and a MAC is not identity)."
+  ]
+}

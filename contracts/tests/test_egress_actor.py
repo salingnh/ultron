@@ -68,7 +68,7 @@ class Egress(unittest.TestCase):
 
     def test_target_ports_follow_the_target_binding(self):
         v = manifest_validator()
-        target_bound = load("fixtures/valid/manifest.target-bound.yaml")
+        target_bound = load("fixtures/valid/manifest.naabu.yaml")
         self.assertEqual(list(v.iter_errors(target_bound)), [])
         permissions = target_bound["spec"]["permissions"]
         self.assertEqual(permissions["targetBinding"], "required")

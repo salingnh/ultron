@@ -1,0 +1,90 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: naabu
+  version: 1.0.0
+  module: M09
+  license: MIT
+  upstream: https://github.com/projectdiscovery/naabu
+  licenseNotes: >-
+    Image pin v2.7.0 is the published image of the pinned upstream release; naabu's CONNECT scan is
+    the only scan type this manifest enables (SYN needs NET_RAW, which a rootless sandbox does not
+    grant, so rawSocket stays false). Service *version* detection (-sV) is not rendered: this
+    adapter answers network.discover_services at the port/service level, and input.version_intensity
+    is fixed at 0 by inputDefaults.
+spec:
+  capability: network.discover_services
+  providerVersion: v2.7.0
+  runtime:
+    type: container
+    image: registry.internal/aegis/naabu
+    imageDigest: sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa
+    argsTemplate:
+    - -silent
+    - -json
+    - -s
+    - connect
+    - -duc
+    - -list
+    - /in/targets.txt
+    - -ports-file
+    - /in/ports.txt
+    - -c
+    - "4"
+    - -rate
+    - ${input.packets_per_second}
+    - -timeout
+    - 1s
+    - -o
+    - /out/result.jsonl
+    outputPath: /out
+  inputSchemaRef: schema://network/discover-services/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - ip
+  permissions:
+    scopeRequired: false
+    networkAccess: egress
+    egressMode: broker
+    proxyAware: true
+    egressSources: []
+    targetBinding: required
+    targetPorts: from_input
+    rawSocket: false
+  budget:
+    timeoutSeconds: 900
+    maxConcurrency: 4
+    cpu: 1
+    memoryMb: 512
+    maxOutputMb: 64
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m09.naabu.parser:parse
+    outputFormat: jsonl
+  emits:
+    assetKinds:
+    - service
+    predicates:
+    - asset.seen
+    - net.port_state
+    - service.protocol
+    relationships:
+    - EXPOSES
+    findings: false
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation
+  inputDefaults:
+    packets_per_second: 100
+    version_intensity: 0

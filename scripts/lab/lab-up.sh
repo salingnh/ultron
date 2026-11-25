@@ -25,6 +25,9 @@ compose up -d
 wait_passive_healthy 180
 wait_dns_ready 180 ||
   die "lab DNS did not answer www.lab.aegis.test with A 203.0.113.10 within 180s"
+if ! wait_services_ready 180; then
+  die "the G1.6a lab services did not accept a connection within 180s (see: make lab-status)"
+fi
 
 "$LAB_SCRIPTS/lab-status.sh"
 log "lab is healthy - next: make lab-check (Subfinder + DNSx against the lab)"

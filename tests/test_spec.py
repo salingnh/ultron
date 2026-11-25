@@ -51,15 +51,15 @@ def test_args_template_renders_typed_values() -> None:
 
 
 def test_array_renders_one_element_per_item() -> None:
-    manifest, _ = m06_support.target_bound_manifest()
-    schema = spec.load_input_schema(manifest.spec.inputSchemaRef)
-    args = spec.render_args(
-        manifest.spec.runtime.argsTemplate or [],
-        {"targets": ["ip:10.0.0.5"], "ports": [80, 443]},
-        schema,
-    )
-    index = args.index("-p")
-    assert args[index + 1 : index + 3] == ["80", "443"]
+    """OI-12: an array field becomes one argv element per item, never one joined string.
+
+    The pinned `network.discover_services` manifest reads its port set from `/in/ports.txt`
+    (`-ports-file`), because the tool takes one port list argument and a joined value cannot be
+    rendered without breaking this rule; the rule itself is checked here, on the same input schema.
+    """
+    schema = spec.load_input_schema("schema://network/discover-services/v2")
+    args = spec.render_args(["-p", "${input.ports}"], {"ports": [80, 443]}, schema)
+    assert args == ["-p", "80", "443"]
 
 
 def test_boolean_renders_as_lowercase_word() -> None:
@@ -363,7 +363,12 @@ def test_signed_binding_missing_an_ip_ref_address_is_refused() -> None:
 
 def test_target_bound_job_uses_the_signed_binding_ports() -> None:
     manifest, raw = m06_support.target_bound_manifest()
-    task_input = {"targets": ["ip:10.1.2.3"], "ports": [8080, 8443]}
+    task_input = {
+        "targets": ["ip:10.1.2.3"],
+        "ports": [8080, 8443],
+        "packets_per_second": 100,
+        "version_intensity": 0,
+    }
     task = m06_support.task_for_manifest(
         manifest,
         raw,
@@ -382,8 +387,12 @@ def test_target_bound_job_uses_the_signed_binding_ports() -> None:
         manifest_bytes=raw,
     )
     assert set(built.egress_binding) == {"10.1.2.3:8080", "10.1.2.3:8443"}
-    index = built.args.index("-p")
-    assert built.args[index + 1 : index + 3] == ["8080", "8443"]
+    # The port set reaches the tool as the staged input file; the scan rate is the job's own input,
+    # rendered by the OI-12 rule (never a manifest default quietly replacing it).
+    index = built.args.index("-ports-file")
+    assert built.args[index + 1] == "/in/ports.txt"
+    index = built.args.index("-rate")
+    assert built.args[index + 1] == "100"
 
 
 def test_target_in_the_deny_set_is_refused_before_the_spec_exists() -> None:
@@ -399,7 +408,12 @@ def test_target_in_the_deny_set_is_refused_before_the_spec_exists() -> None:
         spec.build_spec(
             task,
             manifest,
-            {"targets": ["ip:169.254.169.254"], "ports": [80]},
+            {
+                "targets": ["ip:169.254.169.254"],
+                "ports": [80],
+                "packets_per_second": 100,
+                "version_intensity": 0,
+            },
             job_id="job-1",
             task_body=m06_support.body_of(task),
             key_ring=m06_support.DEV_RING,
@@ -551,7 +565,12 @@ def test_target_ports_from_input_are_bounded() -> None:
         spec.build_spec(
             task,
             manifest,
-            {"targets": ["ip:10.1.2.3"], "ports": [70000]},
+            {
+                "targets": ["ip:10.1.2.3"],
+                "ports": [70000],
+                "packets_per_second": 100,
+                "version_intensity": 0,
+            },
             job_id="job-1",
             task_body=m06_support.body_of(task),
             key_ring=m06_support.DEV_RING,

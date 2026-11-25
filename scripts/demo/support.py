@@ -35,6 +35,11 @@ LAB_ZONE = "lab.aegis.test"
 LAB_NETWORK = "aegis-lab-lab"
 ENUMERATE = "dns.enumerate_subdomains"
 RESOLVE = "dns.resolve"
+DISCOVER = "network.discover_services"
+#: Ports the G1.6a discovery demo asks for. The lab services answer on 80/443 (web), 8080/8009
+#: (Tomcat), 2222 (sshd) and 6379 (Redis); 22 is in the list as a negative control (nothing listens
+#: there, so a run that reports it is not scanning the lab).
+SERVICE_PORTS = (22, 80, 443, 2222, 6379, 8009, 8080)
 TERMINAL_CAMPAIGN = {"COMPLETED", "FAILED", "CANCELLED"}
 
 #: The campaign the demo creates: the lab zone only, the lab-only policy, a fake model.
@@ -74,11 +79,17 @@ def now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def campaign_body(name: str) -> dict[str, Any]:
-    """The demo campaign: one lab seed domain and the lab-only execution settings."""
+def campaign_body(name: str, objective: str | None = None) -> dict[str, Any]:
+    """The demo campaign: one lab seed domain and the lab-only execution settings.
+
+    `objective` is what the session reads (it reaches M03 verbatim in the context bundle), so it is
+    how a demo says how far the scripted policy should go: `make demo-g1` stops after the DNS
+    chain, `make demo-discovery` asks for the services on the resolved addresses.
+    """
     return {
         "name": name,
-        "objective": (
+        "objective": objective
+        or (
             "Enumerate the subdomains of the authorized lab zone, then resolve the names the "
             "enumeration found"
         ),
@@ -138,11 +149,11 @@ def operator_token() -> str:
     return token
 
 
-def create_campaign(name: str) -> str:
+def create_campaign(name: str, objective: str | None = None) -> str:
     created = api(
         "POST",
         "/api/v2/campaigns",
-        payload=campaign_body(name),
+        payload=campaign_body(name, objective),
         token=operator_token(),
         headers={"Idempotency-Key": f"demo-{uuid.uuid4()}"},
     )

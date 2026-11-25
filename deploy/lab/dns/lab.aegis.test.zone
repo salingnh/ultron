@@ -9,7 +9,7 @@ $ORIGIN lab.aegis.test.
 $TTL 3600
 
 @   IN SOA ns1.lab.aegis.test. hostmaster.lab.aegis.test. (
-        2026112401 ; serial
+        2026112501 ; serial
         3600       ; refresh
         600        ; retry
         604800     ; expire
@@ -25,3 +25,9 @@ mail IN MX   10 mx1.lab.aegis.test.
 mx1  IN A    203.0.113.25
 vpn  IN CNAME www.lab.aegis.test.
 txt  IN TXT  "aegis lab zone; not a real domain"
+; G1.6a service containers: the lab's own addresses (RFC 1918), reachable only from
+; aegis-lab-lab. Ports and images are in deploy/lab/inventory.json (one story).
+web   IN A    10.114.53.211
+app   IN A    10.114.53.212
+ssh   IN A    10.114.53.213
+cache IN A    10.114.53.214

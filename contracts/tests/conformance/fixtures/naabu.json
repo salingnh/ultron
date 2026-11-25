@@ -1,0 +1,19 @@
+{
+  "provider": "naabu",
+  "manifest": "fixtures/valid/manifest.naabu.yaml",
+  "task": "fixtures/valid/approved-task.naabu.json",
+  "envelope": "fixtures/valid/result-envelope.naabu.json",
+  "raw": "tests/conformance/fixtures/naabu/raw",
+  "raw_file": "result.jsonl",
+  "job_id": "01934f6a-0000-7000-8000-00000000d003",
+  "event_id": "01934f6a-0000-7000-8000-00000000e003",
+  "started_at": "2026-11-25T00:00:00Z",
+  "finished_at": "2026-11-25T00:00:10Z",
+  "retry_after_seconds": 5,
+  "coverage_subjects": [
+    "ip:198.51.100.10"
+  ],
+  "dependencies": [
+    "egress-broker"
+  ]
+}

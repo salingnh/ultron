@@ -48,6 +48,16 @@ class TargetBinder(Protocol):
     def addresses(self, value: str) -> tuple[str, ...]: ...
 
 
+def _address_literal(raw: str, *, prefix: str) -> str:
+    """The address a target names, without the canonical-key prefix and IPv6 brackets."""
+    value = raw.strip()
+    if value.lower().startswith(prefix):
+        value = value[len(prefix) :]
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    return value
+
+
 class SystemTargetBinder:
     """The production binder: system resolver, A/AAAA, sorted and de-duplicated."""
 
@@ -201,9 +211,18 @@ def build_egress_binding(
 def _target_addresses(
     *, ref: Mapping[str, str], kind: str, raw: str, binder: TargetBinder
 ) -> tuple[str, ...]:
+    """Addresses the broker may pin for one resolved target.
+
+    `raw` is what `resolve_targets` recorded: a seed's own `raw_value`, or the *input text* for an
+    asset ref - and the contract's input form for an address/service asset is its canonical key
+    (`ip:`/`service:`, capabilities/network/discover-services.v2). Reading only the bare literal
+    refused every address-targeted job whose target was an asset the campaign had discovered;
+    the key's own prefix and brackets are notation, so they are removed here, once.
+    """
     if kind == "ip":
+        value = _address_literal(raw, prefix="ip:")
         try:
-            return (str(ipaddress.ip_address(raw.strip())),)
+            return (str(ipaddress.ip_address(value)),)
         except ValueError as error:
             raise M05Error.policy_denied(
                 "target_not_bindable",
@@ -215,9 +234,15 @@ def _target_addresses(
         value = value[4:] if value.startswith("dns:") else value
         return binder.addresses(value)
     if kind == "service":
-        # service:<host>:<port>/<proto> - the address part is what the broker pins
+        # service:<host>:<port>/<proto> (bracketed IPv6 host) - the address part is what the broker
+        # pins. A literal address stays a literal; only a name goes through the binder.
         body = raw.split(":", 1)[1] if raw.startswith("service:") else raw
-        host = body.split(":", 1)[0]
+        host = body.rsplit("/", 1)[0] if "/" in body else body
+        if host.startswith("["):
+            return (host[1 : host.index("]")],)
+        address, sep, port = host.rpartition(":")
+        if sep and port.isdigit():
+            return (address,)
         return binder.addresses(host)
     raise M05Error.policy_denied(
         "target_not_bindable",

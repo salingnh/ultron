@@ -4,8 +4,8 @@
   "tool_version": "v2.17.0",
   "adapter_version": "1.0.0",
   "image_digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
-  "lab_run": "make lab-subfinder (deploy/lab/.run/runs/subfinder-20261124T031111Z)",
-  "lab_run_at": "2026-11-24T03:11:11Z",
+  "lab_run": "scripts/lab/subfinder-run.sh on aegis-lab-lab, deploy/lab/.run/runs/subfinder-20261125T003217Z (G1.6a lab update)",
+  "lab_run_at": "2026-11-25T00:32:17Z",
   "lab_zone": "lab.aegis.test",
   "command": "-silent -json -d lab.aegis.test -sources crtsh -t 1 -rl 5 -timeout 10 -o /out/result.jsonl",
   "input": {
@@ -15,8 +15,8 @@
   },
   "raw": {
     "file": "result.jsonl",
-    "sha256": "1afa57d0c933f6da07ee6854c5b94a9ef360f8ecb760131c28647acafc6dad1d",
-    "size_bytes": 216
+    "sha256": "43f8cf945fcdf514430f3a18eac9b6ea87b3a03f23563afe35e3f38150cf60e9",
+    "size_bytes": 506
   },
   "expected": "expected.json",
   "cross_check": {
@@ -26,6 +26,7 @@
   "notes": [
     "result.jsonl is the byte-for-byte output of the authorized lab run (G0.4c): the local crt.sh stub answered for lab.aegis.test, no third party was contacted.",
     "The run used -d lab.aegis.test (the zone); the pinned manifest renders -dL /in/targets.txt with the same target, so the fixture task's input.targets is ['lab.aegis.test'].",
-    "expected.json is the parser output for this raw file; its assets are cross-checked against the independent lab fixture list, not only against the parser."
+    "expected.json is the parser output for this raw file; its assets are cross-checked against the independent lab fixture list, not only against the parser.",
+    "G1.6a update: the lab zone gained the four service names (web/app/ssh/cache), so the stub fixture and the expected host list grew from three to seven names. This run reached the stub at 10.114.53.81 because the canonical 10.114.53.80 container on this host was the pre-G1.6a lab instance; the tool output carries names only, so it is identical to a run against .80, which `make lab-subfinder` repeats in the canonical lab."
   ]
 }

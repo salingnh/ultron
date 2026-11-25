@@ -82,9 +82,44 @@ def compare_subfinder(expected: dict, actual: list[dict]) -> list[str]:
     return problems
 
 
+def compare_naabu(expected: dict, actual: list[dict]) -> list[str]:
+    """Open (address, port, transport) triples against the inventory-derived expectation."""
+    problems: list[str] = []
+    want = {(str(item["ip"]), int(item["port"]), str(item["protocol"])) for item in expected["open"]}
+    got: set[tuple[str, int, str]] = set()
+    targets = set(expected["targets"])
+    for record in actual:
+        ip = str(record.get("ip", ""))
+        if ip and ip not in targets:
+            problems.append(f"{ip}: scanned address is not a lab service address")
+            continue
+        try:
+            triple = (ip, int(record.get("port")), str(record.get("protocol")))
+        except (TypeError, ValueError):
+            problems.append(f"{record!r}: not an open-port record")
+            continue
+        if triple in got:
+            problems.append(f"{triple}: reported twice")
+        got.add(triple)
+        allowed = {(item["ip"], int(item["port"])) for item in expected["open"]}
+        if (triple[0], triple[1]) not in allowed:
+            problems.append(f"{triple}: open port the inventory does not declare")
+    missing = sorted(want - got)
+    extra = sorted(got - want)
+    if missing:
+        problems.append(f"open ports missing from the run: {missing}")
+    if extra:
+        problems.append(f"open ports the run found but the inventory does not declare: {extra}")
+    for item in sorted(got):
+        print(f"  {item[0]}:{item[1]}/{item[2]}")
+    if not actual:
+        problems.append("naabu produced no output")
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kind", choices=["dnsx", "subfinder"])
+    parser.add_argument("kind", choices=["dnsx", "subfinder", "naabu"])
     parser.add_argument("--expected", type=Path, required=True)
     parser.add_argument("--actual", type=Path, required=True)
     args = parser.parse_args()
@@ -93,17 +128,19 @@ def main() -> int:
         raise SystemExit(f"actual output is missing: {args.actual}")
     expected = json.loads(args.expected.read_text(encoding="utf-8"))
     actual = load_jsonl(args.actual)
-    problems = (
-        compare_dnsx(expected, actual)
-        if args.kind == "dnsx"
-        else compare_subfinder(expected, actual)
-    )
+    if args.kind == "dnsx":
+        problems = compare_dnsx(expected, actual)
+    elif args.kind == "subfinder":
+        problems = compare_subfinder(expected, actual)
+    else:
+        problems = compare_naabu(expected, actual)
     if problems:
         print(f"{args.kind}: FAIL ({len(problems)} problem(s))", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1
-    checked = len(expected["probes"]) if args.kind == "dnsx" else len(expected["hosts"])
+    checked = {"dnsx": lambda: len(expected["probes"]), "subfinder": lambda: len(expected["hosts"]),
+               "naabu": lambda: len(expected["open"])}[args.kind]()
     print(f"{args.kind}: PASS ({checked} expected entries match {args.actual})")
     return 0
 

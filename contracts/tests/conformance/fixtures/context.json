@@ -52,6 +52,7 @@
     }
   ],
   "assets": [
-    "dns:vpn.internal.example"
+    "dns:vpn.internal.example",
+    "ip:198.51.100.10"
   ]
 }
