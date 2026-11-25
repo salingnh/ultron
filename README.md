@@ -20,6 +20,7 @@ Bắt đầu từ [PRD](PRD.md), [kiến trúc](ARCHITECTURE.md), [thiết kế 
 ```bash
 make run-local                  # toàn bộ hệ, có lab DNS
 make run-local WORKERS=0        # chỉ API + MCP (làm UI, không chạy job)
+make llm-smoke                  # một lần gọi LLM thật bằng key trong .env (không chạy trong CI; tên biến ở .env.example)
 make run-local LAB=0            # không dựng lab (job DNS không có endpoint để chạy)
 make run-local NEW_TOKEN=1      # xoay operator token và in lại
 make stop-local                 # dừng đúng những process/stack mà run-local đã bật
