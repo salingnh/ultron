@@ -175,6 +175,63 @@ def _assert_lab_cross_check(adapter: Adapter, run: dict[str, Any], parsed: dict[
     assert path.is_file(), f"{adapter.provider}: the cross-check fixture {path} is missing"
     expected: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     keys = {asset["canonical_key"] for asset in parsed["assets"]}
+    if cross_check["kind"] == "fingerprint":
+        # G1.6b: service identity is the target (the port scan created the asset); the parser adds
+        # protocol/product/banner observations. Compare the product/version/CPE claims the inventory
+        # pins per service, and require protocol claims for every endpoint in the list.
+        by_subject: dict[str, dict[str, Any]] = {}
+        for observation in parsed["observations"]:
+            by_subject.setdefault(observation["subject"], {})[observation["predicate"]] = (
+                observation["value"]
+            )
+        for entry in expected.get("services") or []:
+            per_service = by_subject.get(entry["key"], {})
+            assert per_service.get("service.protocol") == entry["protocol"], (
+                f"{entry['key']}: protocol {per_service.get('service.protocol')!r} "
+                f"!= {entry['protocol']!r}"
+            )
+        for entry in expected.get("products") or []:
+            product = (by_subject.get(entry["key"], {}).get("service.product")) or {}
+            assert product.get("product") == entry["product"], (
+                f"{entry['key']}: product {product.get('product')!r} != {entry['product']!r}"
+            )
+            assert product.get("version") == entry["version"], (
+                f"{entry['key']}: version {product.get('version')!r} != {entry['version']!r}"
+            )
+            assert product.get("cpe") == entry["cpe"], (
+                f"{entry['key']}: cpe {product.get('cpe')!r} != {entry['cpe']!r}"
+            )
+        expected_keys = {entry["key"] for entry in expected.get("services") or []}
+        assert set(by_subject) == expected_keys, (
+            f"{adapter.provider}: observations are about {sorted(by_subject)}, the lab inventory "
+            f"lists {sorted(expected_keys)}"
+        )
+        return
+    if cross_check["kind"] == "applications":
+        # G1.6b: one application per web origin and the SERVES edge from its service.
+        by_key = {asset["canonical_key"]: asset for asset in parsed["assets"]}
+        edges = {(edge["from"], edge["to"]) for edge in parsed["relationships"]}
+        claims: dict[str, dict[str, Any]] = {}
+        for observation in parsed["observations"]:
+            claims.setdefault(observation["subject"], {})[observation["predicate"]] = observation[
+                "value"
+            ]
+        for entry in expected["applications"]:
+            assert entry["key"] in by_key, f"{adapter.provider}: {entry['key']} is not an asset"
+            assert (entry["service"], entry["key"]) in edges, (
+                f"{adapter.provider}: SERVES {entry['service']} -> {entry['key']} is missing"
+            )
+            assert claims[entry["key"]]["http.status"] == entry["status"]
+            if entry.get("title"):
+                assert claims[entry["key"]]["http.title"] == entry["title"]
+            if entry.get("technology"):
+                technologies = set(claims[entry["key"]]["http.technology"])
+                missing = {item.lower() for item in entry["technology"]} - technologies
+                assert not missing, (
+                    f"{adapter.provider}: technologies missing on {entry['key']}: {missing}"
+                )
+        assert set(by_key) == {entry["key"] for entry in expected["applications"]}
+        return
     if cross_check["kind"] == "domains":
         assert keys == {f"dns:{str(host).lower().rstrip('.')}" for host in expected["hosts"]}
         return

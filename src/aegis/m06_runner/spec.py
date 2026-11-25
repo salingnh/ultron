@@ -19,6 +19,16 @@ Four rules live here, all of them "check before the container exists":
   targets plus the manifest's `egressSources`, drops the platform deny set and refuses a declared
   source that hits it. `ApprovedTask` carries no binding field, so this recomputation is the M06
   side of E-1; seed targets contribute nothing (fail closed) and are called out in the report.
+* **tool target format (G1.6b).** `runtime.targetsFormat` decides how `input.targets` becomes the
+  tool's own value in `/in/targets.txt`: `canonical` (default) strips the platform prefix and keeps
+  the rest, which is what the DNS tools read; `host_port` also drops the `/tcp` transport suffix of
+  a `service:` key so a service tool reads `host:port`. A `/udp` target under `host_port` is
+  refused before the container exists (the file cannot express the transport, so the tool would
+  scan TCP while the job claims UDP); the renderer never guesses per tool.
+* **proxy awareness (G1.6b).** A provider whose manifest says `proxyAware: false` dials directly
+  and cannot reach anything through the broker; M06 refuses it unless the deployment is running it
+  on a direct-egress path (the authorized lab profile), so it fails closed off-lab instead of
+  timing out silently inside a broker-only network.
 """
 
 from __future__ import annotations
@@ -38,7 +48,7 @@ from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
 from aegis.m05_registry.signing import KeyRing, SignatureError
 from aegis.m06_runner import denyset, netpolicy
-from aegis.m06_runner.values import text
+from aegis.m06_runner.values import TARGET_PREFIXES, text
 
 MIB = 1048576
 DEFAULT_MAX_OUTPUT_MB = 256
@@ -48,6 +58,15 @@ SCHEMA_REF = re.compile(
 )
 DOMAIN_TARGET = "aegis-domain-target"
 CANONICAL_KEY_PREFIXES = ("dns:", "ip:", "service:", "app:", "url:")
+#: `runtime.targetsFormat` values: how `input.targets` becomes the tool's own value.
+TARGETS_FORMATS = ("canonical", "host_port")
+SERVICE_KEY = re.compile(
+    r"^service:(?P<host>\[[0-9a-f:.]+\]|[0-9a-f:.]+):(?P<port>[0-9]{1,5})/(?P<transport>tcp|udp)$"
+)
+#: A service value after the platform prefix is stripped (`10.0.0.5:443/tcp`).
+SERVICE_VALUE = re.compile(
+    r"^(?P<host>\[[0-9a-f:.]+\]|[^:/\s]+):(?P<port>[0-9]{1,5})/(?P<transport>tcp|udp)$"
+)
 
 #: Internet profile: the host's own private networks are not reachable unless the campaign names
 #: the address as a target (RFC 1918, CGNAT, IPv6 ULA). The always-deny set stays in `denyset.py`;
@@ -309,6 +328,69 @@ def recheck_targets(task: ApprovedTask, input_values: Mapping[str, Any]) -> None
         )
 
 
+# --- tool target format (G1.6b) --------------------------------------------------------------
+
+
+def targets_format(manifest: ProviderManifest) -> str:
+    """The pinned manifest's `runtime.targetsFormat`, defaulted and validated."""
+    runtime = manifest.spec.runtime
+    raw = getattr(runtime, "targets_format", None)
+    if raw is None:
+        raw = getattr(runtime, "targetsFormat", None)
+    name = text(raw) if raw is not None else "canonical"
+    if name not in TARGETS_FORMATS:
+        raise SpecError(
+            "DEPENDENCY_MISSING",
+            f"pinned manifest runtime.targetsFormat {name!r} is not one of {TARGETS_FORMATS}",
+        )
+    return name
+
+
+def check_targets_format(manifest: ProviderManifest, input_values: Mapping[str, Any]) -> str:
+    """Refuse a target the manifest's format cannot express, before any container exists.
+
+    `host_port` writes `host:port` and has no way to say which transport the job meant; a `/udp`
+    service key would then be scanned as TCP while the task claims UDP, so it is refused here
+    instead of being rewritten or silently dropped.
+    """
+    name = targets_format(manifest)
+    if name != "host_port":
+        return name
+    for value in input_values.get("targets") or []:
+        item = text(value)
+        if not item.startswith("service:"):
+            continue
+        match = SERVICE_KEY.match(item.lower())
+        if match is not None and match.group("transport") != "tcp":
+            raise SpecError(
+                "POLICY_DENIED",
+                f"targetsFormat=host_port cannot express {item!r}: only /tcp services can be "
+                "written as host:port, and the harness never guesses the transport",
+            )
+    return name
+
+
+def tool_target(value: str, name: str) -> str:
+    """The tool's own value for one input target: the format rule, applied once.
+
+    `canonical` (today's DNS tools): the platform prefix (`dns:`, `ip:`, `service:`, ...) is
+    stripped, everything else is kept. `host_port` (service tools): for a service key the
+    `/tcp` transport suffix is dropped too, so `service:10.0.0.5:443/tcp` becomes `10.0.0.5:443`.
+    """
+    rendered = TARGET_PREFIXES.sub("", str(value), count=1)
+    if name != "host_port":
+        return rendered
+    match = SERVICE_VALUE.match(rendered)
+    if match is None:
+        return rendered
+    if match.group("transport") != "tcp":
+        raise SpecError(
+            "POLICY_DENIED",
+            f"targetsFormat=host_port cannot express {value!r} (only /tcp services)",
+        )
+    return rendered[: match.start("transport") - 1]
+
+
 # --- egress binding (E-1) -------------------------------------------------------------------
 
 
@@ -385,6 +467,27 @@ def _target_addresses(
                 except ValueError:
                     continue
                 networks.append(ipaddress.ip_network(f"{address}/{address.max_prefixlen}"))
+            continue
+        if kind == "service":
+            # `service:<host>:<port>/<transport>`: the address part is what the broker pins, so it
+            # is checked against the deny set exactly like an `ip:` ref. The port comes from
+            # `input.ports` (targetPorts: from_input), never from the key alone.
+            match = SERVICE_KEY.match(key.lower())
+            if match is None:
+                raise SpecError("POLICY_DENIED", f"target {key!r} is not a service key")
+            try:
+                address = ipaddress.ip_address(match.group("host").strip("[]"))
+            except ValueError as error:
+                raise SpecError(
+                    "POLICY_DENIED", f"target {key!r} has no IP address the broker can pin"
+                ) from error
+            denied = denyset.deny_reason(address)
+            if denied is not None:
+                raise SpecError(
+                    "POLICY_DENIED",
+                    f"target {key!r} is in the always-deny set ({denied.value})",
+                )
+            networks.append(ipaddress.ip_network(f"{address}/{address.max_prefixlen}"))
             continue
         raise SpecError("POLICY_DENIED", f"target kind {kind!r} has no known resolution")
     return networks
@@ -774,6 +877,8 @@ def build_spec(
     if runtime.argsTemplate is None:
         raise SpecError("DEPENDENCY_MISSING", "the pinned manifest declares no argsTemplate")
     recheck_targets(task, input_values)
+    targets_format(manifest)
+    check_targets_format(manifest, input_values)
     schema = load_input_schema(manifest.spec.inputSchemaRef)
     args = render_args(runtime.argsTemplate, input_values, schema)
     budget = manifest.spec.budget
@@ -783,6 +888,23 @@ def build_spec(
         raise SpecError(
             "POLICY_DENIED",
             f"unknown egressMode {permissions.egressMode!r} in the pinned manifest",
+        )
+    # G1.6b: `proxyAware: false` is a truthful declaration (the tool dials directly). Only a
+    # channel that does not need the tool to speak proxy can run it: the signed lab profile
+    # (direct egress) or an `egressMode: l3` manifest, whose gateway enforces the signed IP:port
+    # set without a proxy. A broker job would silently time out, so it is refused here.
+    channel = str(permissions.egressMode) if egress else None
+    if (
+        egress
+        and permissions.proxyAware is not True
+        and channel != "l3"
+        and str(task.network_profile) != "lab"
+    ):
+        raise SpecError(
+            "POLICY_DENIED",
+            "the pinned manifest declares proxyAware=false (the tool dials directly) and this "
+            "deployment only offers the L7 broker: run it on the lab profile or an l3 channel, "
+            "or refuse the job",
         )
     policy = build_policy(
         task,
@@ -800,7 +922,6 @@ def build_spec(
         per_host_max_connections=per_host_max_connections,
     )
     profile = str(task.network_profile)
-    channel = str(permissions.egressMode) if egress else None
     if egress and channel == "broker" and broker_proxy is None and profile != "lab":
         raise SpecError("POLICY_DENIED", "a broker job needs the proxy of its job network")
     if permissions.targetBinding == "required" and not policy.target_ips:

@@ -190,6 +190,54 @@ def _check_permissions(
                 reasons.append("input.ports must be an array of integers to become target ports")
 
 
+def _check_targets_format(
+    spec: Mapping[str, Any], properties: Mapping[str, Any], reasons: list[str]
+) -> None:
+    """`runtime.targetsFormat` is a renderer rule, so the manifest must be able to use it.
+
+    `host_port` exists for service keys: without `service` among `acceptsTargetKinds` the renderer
+    has nothing to strip a transport from, and a `/udp`-capable capability would break the file
+    format. The schema fixes the enum; this check fixes what the value can mean.
+    """
+    runtime = spec.get("runtime")
+    if not isinstance(runtime, Mapping):
+        return
+    declared = str(runtime.get("targetsFormat") or "canonical")
+    if declared == "canonical":
+        return
+    if declared != "host_port":
+        reasons.append(f"runtime.targetsFormat {declared!r} is not canonical|host_port")
+        return
+    kinds = spec.get("acceptsTargetKinds") or []
+    if "service" not in kinds:
+        reasons.append(
+            "runtime.targetsFormat=host_port requires 'service' in acceptsTargetKinds "
+            "(the format only changes service keys)"
+        )
+    if "targets" not in properties:
+        reasons.append("runtime.targetsFormat=host_port requires an input schema field 'targets'")
+    elif "/udp" in " ".join(_patterns(properties.get("targets"))):
+        reasons.append(
+            "runtime.targetsFormat=host_port cannot express /udp targets: the input schema "
+            "must exclude them"
+        )
+
+
+def _patterns(node: Any) -> list[str]:
+    """Every `pattern` string under a JSON Schema node (branches included), for the checks above."""
+    found: list[str] = []
+    if isinstance(node, Mapping):
+        pattern = node.get("pattern")
+        if isinstance(pattern, str):
+            found.append(pattern)
+        for value in node.values():
+            found.extend(_patterns(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_patterns(value))
+    return found
+
+
 @dataclass(frozen=True, slots=True)
 class ManifestRecord:
     """One accepted manifest: exact bytes, parsed document, and the pins a job copies."""
@@ -271,6 +319,7 @@ def admit_manifest(raw: bytes) -> ManifestRecord:
         if properties:
             _check_args(spec, properties, reasons)
         _check_permissions(spec, properties, reasons)
+        _check_targets_format(spec, properties, reasons)
     if reasons:
         raise ManifestRejected(tuple(reasons))
     return ManifestRecord(sha256=manifest_sha256(raw), raw=raw, document=document)

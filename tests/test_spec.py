@@ -710,3 +710,113 @@ class _StubResolver(netpolicy.Resolver):
 
     def resolve(self, host: str) -> list[str]:
         return list(self.answers.get(host, []))
+
+
+# --- G1.6b: service targets, targetsFormat and proxy awareness --------------------------------
+
+
+def test_host_port_renders_a_service_target_as_the_tools_own_value() -> None:
+    """`targetsFormat: host_port` writes `host:port`; the DNS default keeps the old form."""
+    assert spec.tool_target("service:10.1.2.3:8080/tcp", "host_port") == "10.1.2.3:8080"
+    assert spec.tool_target("service:[2001:db8::10]:8443/tcp", "host_port") == "[2001:db8::10]:8443"
+    assert spec.tool_target("dns:example.test", "host_port") == "example.test"
+    assert spec.tool_target("dns:example.test", "canonical") == "example.test"
+    assert spec.tool_target("service:10.1.2.3:8080/tcp", "canonical") == "10.1.2.3:8080/tcp"
+
+
+def test_the_target_file_carries_the_manifest_those_values(tmp_path: Any) -> None:
+    from aegis.m06_runner.job import JobRunner
+
+    manifest, _ = m06_support.manifest("manifest.httpx.yaml")
+    JobRunner._write_inputs(  # noqa: SLF001 - the seam under test
+        tmp_path,
+        {"targets": ["service:10.1.2.3:8080/tcp", "service:10.1.2.4:8443/tcp"]},
+        manifest,
+    )
+    assert (tmp_path / "targets.txt").read_text() == "10.1.2.3:8080\n10.1.2.4:8443\n"
+
+
+def test_host_port_refuses_a_udp_service_target() -> None:
+    """The file cannot say which transport the job meant, so the job is refused, not guessed."""
+    manifest, raw = m06_support.manifest("manifest.fingerprintx.yaml")
+    key = "service:10.1.2.3:5353/udp"
+    task = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        network_profile="lab",
+        targets=[{"canonical_key": key}],
+        input={"targets": [key], "ports": [5353]},
+        egress_binding=_binding(["10.1.2.3:5353"], ["10.1.2.3"]),
+    )
+    with pytest.raises(SpecError, match="host_port cannot express"):
+        spec.build_spec(
+            task,
+            manifest,
+            {"targets": [key], "ports": [5353]},
+            job_id="job-1",
+            task_body=m06_support.body_of(task),
+            key_ring=m06_support.DEV_RING,
+            manifest_bytes=raw,
+        )
+
+
+def test_a_service_target_binds_its_own_address() -> None:
+    """`service:<ip>:<port>/tcp` is a broker destination like an `ip:` ref (M06 side of E-1)."""
+    manifest, raw = m06_support.manifest("manifest.httpx.yaml")
+    key = "service:10.1.2.3:8080/tcp"
+    values = {"targets": [key], "ports": [8080], "concurrency": 4, "timeout_seconds": 10}
+    task = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        network_profile="lab",
+        targets=[{"canonical_key": key}],
+        input=values,
+        egress_binding=_binding(["10.1.2.3:8080"], ["10.1.2.3"]),
+    )
+    built = spec.build_spec(
+        task,
+        manifest,
+        values,
+        job_id="job-1",
+        task_body=m06_support.body_of(task),
+        key_ring=m06_support.DEV_RING,
+        manifest_bytes=raw,
+    )
+    assert built.network == "exec"
+    assert set(built.egress_binding) == {"10.1.2.3:8080"}
+    index = built.args.index("-threads")
+    assert built.args[index + 1] == "4"
+    timeout_index = built.args.index("-timeout")
+    assert built.args[timeout_index + 1] == "10"
+
+
+def test_a_non_proxy_aware_provider_rides_the_l3_channel() -> None:
+    """G1.6b: `proxyAware: false` is truthful; the manifest asks for L3, not the broker."""
+    manifest, raw = m06_support.manifest("manifest.fingerprintx.yaml")
+    assert manifest.spec.permissions.proxyAware is False
+    assert str(manifest.spec.permissions.egressMode) == "l3"
+    key = "service:10.1.2.3:8080/tcp"
+    values = {"targets": [key], "ports": [8080], "timeout_ms": 2000}
+    task = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        network_profile="internet",
+        targets=[{"canonical_key": key}],
+        input=values,
+        egress_binding=_binding(["10.1.2.3:8080"], ["10.1.2.3"], mode="l3"),
+    )
+    built = spec.build_spec(
+        task,
+        manifest,
+        values,
+        job_id="job-1",
+        task_body=m06_support.body_of(task),
+        key_ring=m06_support.DEV_RING,
+        manifest_bytes=raw,
+        per_host_rps=1.0,
+        per_host_max_connections=1,
+    )
+    # An l3 job needs no proxy of its network; the gateway filters by the signed IP:port set.
+    assert built.egress_mode == "l3"
+    assert built.egress_proxy is None
+    assert set(built.egress_binding) == {"10.1.2.3:8080"}

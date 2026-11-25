@@ -1,0 +1,41 @@
+{
+  "provider": "httpx",
+  "capability": "web.probe_http",
+  "tool_version": "v1.12.0",
+  "adapter_version": "1.0.0",
+  "image_digest": "sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc",
+  "lab_run": "make lab-httpx (deploy/lab/.run/runs/httpx-20261125T023900Z)",
+  "lab_run_at": "2026-11-25T02:38:00Z",
+  "lab_network": "aegis-lab-lab",
+  "command": "-l /in/targets.txt -json -silent -o /out/result.jsonl -tech-detect -cpe -tls-grab -irh -threads 4 -timeout 10 -no-color",
+  "input": {
+    "targets": [
+      "service:10.114.53.211:80/tcp",
+      "service:10.114.53.211:443/tcp",
+      "service:10.114.53.212:8080/tcp",
+      "service:10.114.53.215:80/tcp"
+    ],
+    "ports": [
+      80,
+      443,
+      8080
+    ],
+    "concurrency": 4,
+    "timeout_seconds": 10
+  },
+  "raw": {
+    "file": "result.jsonl",
+    "sha256": "c9699fd3e6f900ed0719cd45187de1664090795fd7c0597285646f4402716bad",
+    "size_bytes": 3161
+  },
+  "expected": "expected.json",
+  "cross_check": {
+    "file": "deploy/lab/fixtures/httpx.expected.json",
+    "kind": "applications"
+  },
+  "notes": [
+    "result.jsonl is the byte-for-byte output of the authorized lab run (G1.6b) against the lab HTTP(S) origins on the internal lab network; no route off the host.",
+    "httpx is given host:port without a scheme (runtime.targetsFormat=host_port); it probes HTTPS first and falls back to HTTP, so .211:443 appears with its TLS certificate (lab CA) and the others without one.",
+    "expected.json is the parser output for this raw file and is cross-checked against the inventory-derived origin list (deploy/lab/fixtures/httpx.expected.json): application keys, SERVES edges and the status each origin answers."
+  ]
+}

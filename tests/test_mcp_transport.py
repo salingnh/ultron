@@ -50,7 +50,16 @@ async def test_wire_tools_list_is_filtered_and_self_contained() -> None:
             )
     tools = body["result"]["tools"]
     names = sorted(tool["name"] for tool in tools)
-    assert names == sorted([ENUMERATE, RESOLVE, DISCOVER, *GRAPH_TOOLS])
+    assert names == sorted(
+        [
+            ENUMERATE,
+            RESOLVE,
+            DISCOVER,
+            "service.fingerprint",
+            "web.probe_http",
+            *GRAPH_TOOLS,
+        ]
+    )
     for tool in tools:
         raw = json.dumps(tool)
         assert "../" not in raw and "aegis.io/contracts" not in raw

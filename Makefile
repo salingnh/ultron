@@ -10,6 +10,7 @@ SHELL := /bin/bash
 
 .PHONY: help dev-up dev-down dev-reset dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder lab-naabu \
+	lab-fingerprintx lab-httpx lab-httpx-proxy lab-build-fingerprintx demo-g16b \
 	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-recovery soak-start soak-stop \
@@ -29,11 +30,15 @@ help:
 	  '                     lab zone DNS + local passive-source stub on an internal network' \
 	  'make lab-down        remove only this checkout\'s lab project and the throwaway lab CA' \
 	  'make lab-status      lab health and boundary (non-zero if not healthy)' \
-	  'make lab-check       inventory consistency + Subfinder, DNSx and Naabu runs compared to' \
-	  '                     fixtures' \
+	  'make lab-check       inventory consistency + Subfinder, DNSx, Naabu, fingerprintx and' \
+	  '                     httpx runs compared to fixtures' \
 	  'make lab-dnsx        only the DNSx run and its fixture comparison' \
 	  'make lab-subfinder   only the Subfinder run and its fixture comparison' \
 	  'make lab-naabu       only the Naabu CONNECT run on the lab service containers' \
+	  'make lab-fingerprintx only the fingerprintx run (service fingerprint) and comparison' \
+	  'make lab-httpx       only the httpx run (web.probe_http) and comparison' \
+	  'make lab-httpx-proxy httpx through a SOCKS5 allow-list proxy (the proxyAware evidence)' \
+	  'make lab-build-fingerprintx  build the pinned fingerprintx image (no upstream image)' \
 	  'make vulnlab-up      start the CVE test lab (deploy/vulnlab): known-vulnerable HTTP' \
 	  '                     origins on their own internal network + the lab network; auto-stops' \
 	  '                     after VULNLAB_TTL_MINUTES (default 120); the Cloudflare Tunnel only' \
@@ -103,6 +108,8 @@ lab-check:
 	@scripts/lab/subfinder-run.sh
 	@scripts/lab/dnsx-run.sh
 	@scripts/lab/naabu-run.sh
+	@scripts/lab/fingerprintx-run.sh
+	@scripts/lab/httpx-run.sh
 
 lab-dnsx:
 	@scripts/lab/dnsx-run.sh
@@ -112,6 +119,25 @@ lab-subfinder:
 
 lab-naabu:
 	@scripts/lab/naabu-run.sh
+
+# G1.6b: service fingerprint and web probe against the lab service containers.
+lab-fingerprintx:
+	@scripts/lab/fingerprintx-run.sh
+
+lab-httpx:
+	@scripts/lab/httpx-run.sh
+
+# Proves httpx's `proxyAware: true`: it reaches the lab services only through a SOCKS5 CONNECT
+# proxy whose allow-list is the job binding, and a destination outside it is refused.
+lab-httpx-proxy:
+	@scripts/lab/httpx-proxy-check.sh
+
+# fingerprintx publishes no container image; this builds the pinned one from the upstream source.
+# A rebuild changes the image digest, which is a pin bump: deploy/lab/images.env, the adapter
+# manifest and contracts/fixtures/valid/manifest.fingerprintx.yaml move together.
+lab-build-fingerprintx:
+	@podman build --network host -t localhost/aegis/fingerprintx:v1.1.19 deploy/lab/tools/fingerprintx
+	@podman image inspect localhost/aegis/fingerprintx:v1.1.19 --format 'fingerprintx image: {{.Digest}}'
 
 # --- CVE test lab (G1.6 slice E) ----------------------------------------------
 # Known-vulnerable HTTP origins for the discovery chain (port -> fingerprint -> CVE candidates).
@@ -187,6 +213,12 @@ demo-g1:
 demo-discovery:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
 		uv run --frozen python scripts/demo/demo-discovery.py
+
+
+# G1.6b acceptance: the discovery chain plus fingerprintx/httpx, evidence in PostgreSQL and Neo4j.
+demo-g16b:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/demo/demo-g16b.py
 
 demo-g16c:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \

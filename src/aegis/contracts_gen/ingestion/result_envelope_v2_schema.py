@@ -116,8 +116,9 @@ class Observation(BaseModel):
         ...,
         description="Phải có trong contracts/ingestion/predicates.v2.yaml (cổng G4).",
     )
-    value: str | float | bool | dict[str, Any] | list[Any] | None = Field(
-        ..., description="Giá trị theo value_type của predicate."
+    value: int | str | float | bool | dict[str, Any] | list[Any] | None = Field(
+        ...,
+        description="Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu.",
     )
     polarity: Polarity | None = Field(
         "present",

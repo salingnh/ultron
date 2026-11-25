@@ -1,0 +1,44 @@
+{
+  "provider": "fingerprintx",
+  "capability": "service.fingerprint",
+  "tool_version": "v1.1.19",
+  "adapter_version": "1.0.0",
+  "image_digest": "sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+  "lab_run": "make lab-fingerprintx (deploy/lab/.run/runs/fingerprintx-20261125T023754Z)",
+  "lab_run_at": "2026-11-25T02:38:00Z",
+  "lab_network": "aegis-lab-lab",
+  "command": "-l /in/targets.txt --json -o /out/result.jsonl -w 2000",
+  "input": {
+    "targets": [
+      "service:10.114.53.211:80/tcp",
+      "service:10.114.53.211:443/tcp",
+      "service:10.114.53.212:8080/tcp",
+      "service:10.114.53.213:2222/tcp",
+      "service:10.114.53.214:6379/tcp",
+      "service:10.114.53.215:80/tcp"
+    ],
+    "ports": [
+      80,
+      443,
+      2222,
+      6379,
+      8080
+    ],
+    "timeout_ms": 2000
+  },
+  "raw": {
+    "file": "result.jsonl",
+    "sha256": "6df96167e34a007f75cccdea51a1c6b1630f6e26652e99c8d49a208d3f0cdf4d",
+    "size_bytes": 3501
+  },
+  "expected": "expected.json",
+  "cross_check": {
+    "file": "deploy/lab/fixtures/fingerprintx.expected.json",
+    "kind": "fingerprint"
+  },
+  "notes": [
+    "result.jsonl is the byte-for-byte output of the authorized lab run (G1.6b) against the five old lab service images (nginx 1.18, Tomcat 9.0.30, OpenSSH 9.9, Redis 6.0.5, Apache httpd 2.4.49) on the internal lab network; no route off the host.",
+    "expected.json is the parser output for this raw file and is cross-checked against the inventory-derived product list (deploy/lab/fixtures/fingerprintx.expected.json), not only against the parser itself.",
+    "Tomcat's AJP port 8009 has no fingerprintx plugin and is not part of the job's input ports; the Redis image exposes no version the plugin reads, so no service.product is claimed for it."
+  ]
+}

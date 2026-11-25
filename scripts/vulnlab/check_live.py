@@ -212,36 +212,35 @@ def internet_url(case: Case) -> str:
         raise ProbeError(f"case {case.id} has no public hostname")
     hostname = (os.environ.get(case.host_env) or "").strip().lower()
     if not hostname:
-        raise ProbeError(f"{case.host_env} is empty: set the public hostname in deploy/vulnlab/.env")
+        raise ProbeError(
+            f"{case.host_env} is empty: set the public hostname in deploy/vulnlab/.env"
+        )
     if not HOSTNAME.match(hostname):
         raise ProbeError(f"{case.host_env} is not a lowercase FQDN: {hostname!r}")
     return f"https://{hostname}{case.request_path}"
 
 
 def check(case: Case, profile: str, observed: Probe) -> LiveResult:
-    """Compare one observation with the case's expectations for that profile."""
-    expectation = case.expectation(profile)
+    """Compare one observation with the case's disclosure block for that profile."""
     url = internet_url(case) if profile == "internet" else lab_url(case)
     if observed.error:
         return LiveResult(case.id, False, f"{url}: {observed.error}", observed)
     problems: list[str] = []
-    if expectation.http_status is not None and observed.status != expectation.http_status:
-        problems.append(f"status {observed.status} != {expectation.http_status}")
-    if profile == "lab" and case.disclose_server and case.disclose_server not in (
-        observed.server or ""
+    # The probe asks for `request.path` (a 404 page, the login page, ...); the campaign's own
+    # `expect.httpStatus`/`httpTitleContains` describe what httpx reads on `/`. They are different
+    # requests, so the probe is compared with the case's `disclose` block only.
+    if case.disclose_status is not None and observed.status != case.disclose_status:
+        problems.append(f"status {observed.status} != {case.disclose_status}")
+    if (
+        profile == "lab"
+        and case.disclose_server
+        and case.disclose_server not in (observed.server or "")
     ):
         # Cloudflare normalizes Server, so the origin banner is a lab-only assertion.
         problems.append(f"Server {observed.server!r} does not contain {case.disclose_server!r}")
     for marker in case.disclose_body:
         if marker not in observed.body:
             problems.append(f"body does not contain {marker!r}")
-    if (
-        expectation.http_title_contains is not None
-        and expectation.http_title_contains.casefold() not in (observed.title or "").casefold()
-    ):
-        problems.append(
-            f"title {observed.title!r} does not contain {expectation.http_title_contains!r}"
-        )
     if problems:
         return LiveResult(case.id, False, f"{url}: " + "; ".join(problems), observed)
     detail = (
@@ -363,7 +362,10 @@ def main(argv: list[str] | None = None) -> int:
             "the documented page"
         )
         return 1
-    print(f"[vulnlab] {len(results)}/{len(results)} {arguments.profile} endpoint(s) serve the documented page")
+    print(
+        f"[vulnlab] {len(results)}/{len(results)} {arguments.profile} endpoint(s) serve the "
+        "documented page"
+    )
     return 0
 
 

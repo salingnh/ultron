@@ -23,7 +23,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from aegis.m03_agent.config import SessionConfig
-from aegis.m03_agent.fake_policy import ENUMERATE, RESOLVE, ScriptedLabPolicy, job_lines
+from aegis.m03_agent.fake_policy import (
+    ENUMERATE,
+    FINGERPRINT,
+    PROBE_HTTP,
+    RESOLVE,
+    ScriptedLabPolicy,
+    job_lines,
+)
 from aegis.m03_agent.session import run_session
 from aegis.m04_model.usage import InMemoryUsageSink
 from aegis.m05_registry.mcp.graph import UnavailableGraphQueries
@@ -92,6 +99,31 @@ class Demo:
             config=_config(),
         )
         return run(run_session(session_request(session_id=_label(cycle), cycle=cycle), deps.deps))
+
+    def record_open(self, *keys: str) -> None:
+        for index, key in enumerate(keys):
+            self.observations.append(
+                {
+                    "observation_id": f"01934f6a-0000-7000-8000-0000000001{index:02d}",
+                    "subject": key,
+                    "predicate": "net.port_state",
+                    "value": "open",
+                    "revision": len(self.observations) + 1,
+                    "confidence": 1.0,
+                }
+            )
+
+    def record_protocol(self, key: str, protocol: str) -> None:
+        self.observations.append(
+            {
+                "observation_id": f"01934f6a-0000-7000-8000-0000000002{len(self.observations):02d}",
+                "subject": key,
+                "predicate": "service.protocol",
+                "value": protocol,
+                "revision": len(self.observations) + 1,
+                "confidence": 1.0,
+            }
+        )
 
     def record_discovered(self, *names: str) -> None:
         for index, name in enumerate(names):
@@ -179,6 +211,67 @@ def test_with_no_discovered_names_the_policy_proposes_no_dnsx_job() -> None:
     assert response.finish_reason.value == "completed"
     assert (response.parsed or {})["decision"] == "wait"
     assert "no new domain name" in (response.parsed or {})["summary"]
+
+
+def test_after_ports_the_policy_fingerprints_every_open_service_then_probes_http() -> None:
+    """G1.6b: the two new steps are proposed from open-service observations, never from a list."""
+    demo = Demo()
+    first = demo.session(0)
+    _complete(demo, first.outcome.job_ids[0], "SUCCEEDED")
+    demo.record_discovered("www.internal.example")
+    second = demo.session(1)
+    _complete(demo, second.outcome.job_ids[0], "SUCCEEDED")
+    # the port scan (slice A) recorded two open services
+    demo.record_open("service:10.114.53.21:8080/tcp", "service:10.114.53.22:8443/tcp")
+
+    third = demo.session(2)
+    assert len(third.outcome.job_ids) == 1
+    fingerprint_call = _call(demo.policy.responses[-1])
+    assert fingerprint_call["name"] == FINGERPRINT
+    assert fingerprint_call["arguments"]["input"] == {
+        "targets": ["service:10.114.53.21:8080/tcp", "service:10.114.53.22:8443/tcp"],
+        "ports": [8080, 8443],
+        "timeout_ms": 2000,
+    }
+    fingerprint_job = third.outcome.job_ids[0]
+
+    # fingerprintx recorded the protocols; only http(s) services are probed
+    _complete(demo, fingerprint_job, "SUCCEEDED")
+    demo.record_protocol("service:10.114.53.21:8080/tcp", "http")
+    demo.record_protocol("service:10.114.53.22:8443/tcp", "https")
+    demo.record_protocol("service:10.114.53.53:53/tcp", "dns")
+
+    fourth = demo.session(3)
+    assert len(fourth.outcome.job_ids) == 1
+    probe_call = _call(demo.policy.responses[-1])
+    assert probe_call["name"] == PROBE_HTTP
+    assert probe_call["arguments"]["input"] == {
+        "targets": ["service:10.114.53.21:8080/tcp", "service:10.114.53.22:8443/tcp"],
+        "ports": [8080, 8443],
+        "concurrency": 4,
+        "timeout_seconds": 10,
+    }
+    assert probe_call["arguments"]["depends_on"] == [fingerprint_job]
+
+    _complete(demo, fourth.outcome.job_ids[0], "SUCCEEDED")
+    fifth = demo.session(4)
+    assert fifth.outcome.job_ids == ()
+    assert (fifth.result or {})["decision"] == "stop"
+
+
+def test_no_open_service_means_no_fingerprint_job() -> None:
+    """Without a port observation the policy stops: it never invents a service to scan."""
+    demo = Demo()
+    first = demo.session(0)
+    _complete(demo, first.outcome.job_ids[0], "SUCCEEDED")
+    demo.record_discovered("www.internal.example")
+    second = demo.session(1)
+    _complete(demo, second.outcome.job_ids[0], "SUCCEEDED")
+
+    third = demo.session(2)
+
+    assert third.outcome.job_ids == ()
+    assert (third.result or {})["decision"] == "stop"
 
 
 def test_the_policy_waits_while_a_job_is_still_in_flight() -> None:

@@ -1,0 +1,64 @@
+{
+  "kind": "fingerprint",
+  "note": "Independent expectation for the G1.6b fingerprintx lab run, derived from deploy/lab/inventory.json (the pinned image of each service and the ports it answers on), never from parser output. `protocol` is the tool's protocol name; `token`/`version` must appear in the version/banner string the tool reported; the AJP port 8009 has no fingerprintx plugin and is therefore not expected. `products` is the parser-level expectation (product/version/CPE 2.3 with NVD's vendor/product), which the adapter test compares service.product against.",
+  "services": [
+    {
+      "key": "service:10.114.53.211:80/tcp",
+      "protocol": "http",
+      "token": "nginx",
+      "version": "1.18.0"
+    },
+    {
+      "key": "service:10.114.53.211:443/tcp",
+      "protocol": "https",
+      "token": "nginx",
+      "version": "1.18.0"
+    },
+    {
+      "key": "service:10.114.53.212:8080/tcp",
+      "protocol": "http"
+    },
+    {
+      "key": "service:10.114.53.213:2222/tcp",
+      "protocol": "ssh",
+      "token": "OpenSSH",
+      "version": "9.9"
+    },
+    {
+      "key": "service:10.114.53.214:6379/tcp",
+      "protocol": "redis"
+    },
+    {
+      "key": "service:10.114.53.215:80/tcp",
+      "protocol": "http",
+      "token": "Apache",
+      "version": "2.4.49"
+    }
+  ],
+  "products": [
+    {
+      "key": "service:10.114.53.211:80/tcp",
+      "product": "nginx",
+      "version": "1.18.0",
+      "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+    },
+    {
+      "key": "service:10.114.53.211:443/tcp",
+      "product": "nginx",
+      "version": "1.18.0",
+      "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+    },
+    {
+      "key": "service:10.114.53.213:2222/tcp",
+      "product": "openssh",
+      "version": "9.9",
+      "cpe": "cpe:2.3:a:openbsd:openssh:9.9:*:*:*:*:*:*:*"
+    },
+    {
+      "key": "service:10.114.53.215:80/tcp",
+      "product": "http_server",
+      "version": "2.4.49",
+      "cpe": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*"
+    }
+  ]
+}

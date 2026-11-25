@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capabilities/web/probe-http.v2.schema.json",
+  "title": "web.probe_http v2",
+  "description": "Input của httpx (G1.6b): thăm dò HTTP/HTTPS trên dịch vụ đã biết mở, sinh asset application (app:<scheme>://<host>:<port>) cùng SERVES Service->Application và các observation http/tls. targets là khóa service:<ip>:<port>/tcp; httpx tự thử HTTPS rồi HTTP khi target không nêu scheme (G1.6b lab: cả hai dịch vụ đều trả đúng giao thức của nó). Trần tham số lấy từ manifest đã pin: threads <= budget.maxConcurrency.",
+  "type": "object",
+  "required": [
+    "targets",
+    "ports"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "targets": {
+      "description": "Khóa chuẩn của dịch vụ HTTP/HTTPS đã biết, dạng service:<ip>:<port>/tcp. Phải là asset của campaign; /udp bị từ chối vì httpx chỉ nói HTTP trên TCP.",
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "../../common/ids.v2.schema.json#/$defs/CanonicalKey"
+          },
+          {
+            "pattern": "^service:(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}|\\[(?=[0-9a-f:]*:)[0-9a-f:]+\\]):(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])/tcp$"
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true
+    },
+    "ports": {
+      "description": "Tập cổng của targets, dựng binding egress (targetPorts: from_input). Mảng rỗng hoặc cổng ngoài 1..65535 là INPUT_INVALID.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true
+    },
+    "concurrency": {
+      "description": "Số kết nối song song (httpx -threads). Tên trường theo luật chung của nền tảng để M05 cưỡng chế trần: budget.maxConcurrency của manifest đã pin; yêu cầu lớn hơn trả POLICY_DENIED, không tự hạ.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 8
+    },
+    "timeout_seconds": {
+      "description": "Thời gian chờ mỗi request (httpx -timeout, giây).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60,
+      "default": 10
+    }
+  }
+}

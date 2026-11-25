@@ -20,6 +20,7 @@ from aegis.m23_graph.models import (
     AssetSnapshot,
     EvidenceSnapshot,
     FindingSnapshot,
+    ObservationSnapshot,
     OutboxEvent,
     RelationshipSnapshot,
 )
@@ -133,6 +134,7 @@ def plan(
     relationships: dict[str, tuple[RelationshipSnapshot, ...]] | None = None,
     findings: dict[str, FindingSnapshot] | None = None,
     evidence: dict[str, EvidenceSnapshot] | None = None,
+    observations: dict[str, ObservationSnapshot] | None = None,
     seen: set[str] | None = None,
     partitions: int = 4,
 ) -> Any:
@@ -143,6 +145,7 @@ def plan(
         relationships=relationships or {},
         findings=findings or {},
         evidence=evidence or {},
+        observations=observations or {},
         partitions=partitions,
     )
 
@@ -187,6 +190,75 @@ def test_observation_events_checkpoint_but_write_nothing() -> None:
     assert planned.ops == ()
     assert planned.applied == (("obs-obs-1", "observation.changed.v2:obs-1"),)
     assert planned.last_seq == 1
+
+
+def observation_snapshot(
+    observation_id: str, key: str, predicate: str, value: Any, revision: int = 7
+) -> ObservationSnapshot:
+    return ObservationSnapshot(
+        observation_id=observation_id,
+        revision=revision,
+        campaign_id=CAMPAIGN_A,
+        predicate=predicate,
+        subject_asset_id="asset-1",
+        subject_key=key,
+        observed_at=MOMENT,
+        polarity="present",
+        value=value,
+        confidence=0.8,
+    )
+
+
+def test_a_graph_predicate_projects_its_observation_node() -> None:
+    """G1.6b: `service.product` is `graph: true`, so the projector writes its :Observation node."""
+    key = "service:203.0.113.10:8080/tcp"
+    planned = plan(
+        [observation_event("obs-2", key)],
+        assets={"asset-1": snapshot("asset-1", key)},
+        observations={
+            "obs-2": observation_snapshot(
+                "obs-2",
+                key,
+                "service.product",
+                {
+                    "product": "nginx",
+                    "version": "1.29.8",
+                    "cpe": "cpe:2.3:a:f5:nginx:1.29.8:*:*:*:*:*:*:*",
+                },
+            )
+        },
+    )
+    nodes = [op for op in planned.ops if op.entity == "observation"]
+    assert len(nodes) == 1
+    assert nodes[0].statement == contract.observation_upsert()
+    assert nodes[0].parameters["predicate"] == "service.product"
+    assert nodes[0].parameters["subject"] == key
+    assert nodes[0].parameters["confidence"] == 0.8
+    assert nodes[0].parameters["revision"] == 7
+    assert "nginx" in (nodes[0].parameters["value_summary"] or "")
+    assert nodes[0].partition == partition_of(key, 4)
+    assert nodes[0].phase == PHASE_GRAPH
+
+
+def test_a_predicate_without_graph_stays_in_postgres() -> None:
+    """`net.port_state` has no `graph: true`: the graph must not grow one node per port state."""
+    key = "service:203.0.113.10:8080/tcp"
+    planned = plan(
+        [observation_event("obs-3", key)],
+        assets={"asset-1": snapshot("asset-1", key)},
+        observations={"obs-3": observation_snapshot("obs-3", key, "net.port_state", "open")},
+    )
+    assert [op.entity for op in planned.ops] == ["asset"]
+
+
+def test_an_observation_without_a_snapshot_writes_no_node() -> None:
+    """The row is gone (append-only, so a data bug): nothing is invented from the payload."""
+    planned = plan(
+        [observation_event("obs-4", "service:203.0.113.10:8080/tcp")],
+        assets={"asset-1": snapshot("asset-1", "service:203.0.113.10:8080/tcp")},
+        observations={},
+    )
+    assert [op.entity for op in planned.ops] == ["asset"]
 
 
 def test_events_already_in_the_inbox_still_move_the_cursor() -> None:

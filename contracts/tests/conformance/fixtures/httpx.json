@@ -1,0 +1,22 @@
+{
+  "provider": "httpx",
+  "manifest": "fixtures/valid/manifest.httpx.yaml",
+  "task": "fixtures/valid/approved-task.httpx.json",
+  "envelope": "fixtures/valid/result-envelope.httpx.json",
+  "raw": "tests/conformance/fixtures/httpx/raw",
+  "raw_file": "result.jsonl",
+  "job_id": "01934f6a-0000-7000-8000-0000000000d4",
+  "event_id": "01934f6a-0000-7000-8000-0000000000e4",
+  "started_at": "2026-11-25T00:29:50Z",
+  "finished_at": "2026-11-25T00:30:00Z",
+  "retry_after_seconds": 5,
+  "coverage_subjects": [
+    "service:10.114.53.211:443/tcp",
+    "service:10.114.53.211:80/tcp",
+    "service:10.114.53.212:8080/tcp",
+    "service:10.114.53.215:80/tcp"
+  ],
+  "dependencies": [
+    "egress-broker"
+  ]
+}

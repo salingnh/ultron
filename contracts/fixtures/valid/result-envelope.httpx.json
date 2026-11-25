@@ -1,0 +1,418 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-0000000000e4",
+  "dedup_key": "job:01934f6a-0000-7000-8000-0000000000d4:envelope",
+  "job_id": "01934f6a-0000-7000-8000-0000000000d4",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "capability": "web.probe_http",
+  "provider": {
+    "name": "httpx",
+    "version": "v1.12.0",
+    "adapter_version": "1.0.0",
+    "image_digest": "sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc"
+  },
+  "policy_version": "roe-1",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": [
+      "service:10.114.53.211:443/tcp",
+      "service:10.114.53.211:80/tcp",
+      "service:10.114.53.212:8080/tcp",
+      "service:10.114.53.215:80/tcp"
+    ],
+    "complete": true
+  },
+  "results": {
+    "assets": [
+      {
+        "kind": "application",
+        "canonical_key": "app:http://10.114.53.211:80",
+        "discovered_from": [
+          "service:10.114.53.211:80/tcp"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "kind": "application",
+        "canonical_key": "app:http://10.114.53.215:80",
+        "discovered_from": [
+          "service:10.114.53.215:80/tcp"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "kind": "application",
+        "canonical_key": "app:https://10.114.53.211:443",
+        "discovered_from": [
+          "service:10.114.53.211:443/tcp"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      },
+      {
+        "kind": "application",
+        "canonical_key": "app:http://10.114.53.212:8080",
+        "discovered_from": [
+          "service:10.114.53.212:8080/tcp"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ]
+      }
+    ],
+    "observations": [
+      {
+        "subject": "app:http://10.114.53.211:80",
+        "predicate": "http.status",
+        "value": 200,
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.211:80",
+        "predicate": "http.headers",
+        "value": {
+          "content_length": "35",
+          "content_type": "text/plain",
+          "date": "Wed, 25 Nov 2026 02:39:03 GMT",
+          "server": "nginx/1.18.0"
+        },
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.211:80",
+        "predicate": "http.technology",
+        "value": [
+          "nginx:1.18.0"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.211:80/tcp",
+        "predicate": "service.product",
+        "value": {
+          "product": "nginx",
+          "version": "1.18.0",
+          "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+        },
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.215:80",
+        "predicate": "http.status",
+        "value": 200,
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.215:80",
+        "predicate": "http.headers",
+        "value": {
+          "accept_ranges": "bytes",
+          "content_length": "45",
+          "content_type": "text/html",
+          "date": "Wed, 25 Nov 2026 02:39:03 GMT",
+          "etag": "\"2d-432a5e4a73a80\"",
+          "last_modified": "Mon, 11 Jun 2007 18:53:14 GMT",
+          "server": "Apache/2.4.49 (Unix)"
+        },
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.215:80",
+        "predicate": "http.technology",
+        "value": [
+          "apache http server:2.4.49",
+          "unix"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.215:80/tcp",
+        "predicate": "service.product",
+        "value": {
+          "product": "http_server",
+          "version": "2.4.49",
+          "cpe": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*"
+        },
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:https://10.114.53.211:443",
+        "predicate": "http.status",
+        "value": 200,
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:https://10.114.53.211:443",
+        "predicate": "http.headers",
+        "value": {
+          "content_length": "34",
+          "content_type": "text/plain",
+          "date": "Wed, 25 Nov 2026 02:39:03 GMT",
+          "server": "nginx/1.18.0"
+        },
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:https://10.114.53.211:443",
+        "predicate": "http.technology",
+        "value": [
+          "nginx:1.18.0"
+        ],
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:https://10.114.53.211:443",
+        "predicate": "tls.certificate",
+        "value": {
+          "subject_cn": "web.lab.aegis.test",
+          "sans": [
+            "web.lab.aegis.test"
+          ],
+          "issuer": "AEGIS lab CA (G0.4c, throwaway)",
+          "not_before": "2026-11-25T02:35:21Z",
+          "not_after": "2026-12-25T02:35:21Z",
+          "sha256": "77b6942237caa603c3a18ec002df3683cf3559368f8b29747311b469459836d0"
+        },
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "service:10.114.53.211:443/tcp",
+        "predicate": "service.product",
+        "value": {
+          "product": "nginx",
+          "version": "1.18.0",
+          "cpe": "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"
+        },
+        "confidence": 0.8,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.212:8080",
+        "predicate": "http.status",
+        "value": 404,
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.212:8080",
+        "predicate": "http.title",
+        "value": "HTTP Status 404 \u2013 Not Found",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "subject": "app:http://10.114.53.212:8080",
+        "predicate": "http.headers",
+        "value": {
+          "content_language": "en",
+          "content_length": "713",
+          "content_type": "text/html;charset=utf-8",
+          "date": "Wed, 25 Nov 2026 02:39:03 GMT"
+        },
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      }
+    ],
+    "relationships": [
+      {
+        "type": "SERVES",
+        "from": "service:10.114.53.211:80/tcp",
+        "to": "app:http://10.114.53.211:80",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "type": "SERVES",
+        "from": "service:10.114.53.215:80/tcp",
+        "to": "app:http://10.114.53.215:80",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "type": "SERVES",
+        "from": "service:10.114.53.211:443/tcp",
+        "to": "app:https://10.114.53.211:443",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      },
+      {
+        "type": "SERVES",
+        "from": "service:10.114.53.212:8080/tcp",
+        "to": "app:http://10.114.53.212:8080",
+        "confidence": 1.0,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "observed_at": "2026-11-25T00:30:00Z"
+      }
+    ],
+    "findings": []
+  },
+  "evidence": [
+    {
+      "local_ref": "raw",
+      "sha256": "c9699fd3e6f900ed0719cd45187de1664090795fd7c0597285646f4402716bad",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-0000000000d4/c9699fd3e6f900ed0719cd45187de1664090795fd7c0597285646f4402716bad",
+      "size_bytes": 3161,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
+  ],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "4002ab4e34e84337fa9fef5060c1d859a161bc19fe7fc14476f6866683dcb895",
+    "started_at": "2026-11-25T00:29:50Z",
+    "finished_at": "2026-11-25T00:30:00Z",
+    "seed_targets": [
+      {
+        "canonical_key": "service:10.114.53.211:80/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.211:443/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.212:8080/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.53.215:80/tcp"
+      }
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-0000000000d4",
+    "capability_id": "web.probe_http",
+    "provider_version": "v1.12.0",
+    "policy_version": "roe-1"
+  }
+}

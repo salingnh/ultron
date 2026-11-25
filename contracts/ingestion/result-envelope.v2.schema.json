@@ -297,8 +297,9 @@
           "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
         },
         "value": {
-          "description": "Giá trị theo value_type của predicate.",
+          "description": "Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu.",
           "type": [
+            "integer",
             "string",
             "number",
             "boolean",

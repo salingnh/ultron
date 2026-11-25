@@ -151,7 +151,6 @@ class Egress(unittest.TestCase):
     def test_egress_rejects_what_g1_cannot_enforce(self):
         v = manifest_validator()
         cases = {
-            "broker only, proxy-aware only": {"proxyAware": False},
             "no raw socket without an L3 mode": {"rawSocket": True},
             "single documented mode": {"egressMode": "router"},
         }
@@ -160,6 +159,20 @@ class Egress(unittest.TestCase):
                 doc = manifest()
                 doc["spec"]["permissions"].update(change)
                 self.assertFalse(v.is_valid(doc))
+        # G1.6b: `proxyAware: false` is a truthful declaration for a tool that dials directly, and
+        # such a tool cannot ride the L7 broker - it asks for the L3 channel, whose gateway filters
+        # by the signed IP:port set (G1.6 L3). The manifest is accepted; M06 refuses a broker job
+        # for it before a container exists.
+        truthful = manifest()
+        truthful["spec"]["permissions"]["proxyAware"] = False
+        truthful["spec"]["permissions"]["egressMode"] = "l3"
+        self.assertTrue(v.is_valid(truthful))
+        on_broker = manifest()
+        on_broker["spec"]["permissions"]["proxyAware"] = False
+        self.assertFalse(v.is_valid(on_broker))  # the broker needs a proxy-aware tool
+        undeclared = manifest()
+        del undeclared["spec"]["permissions"]["proxyAware"]
+        self.assertFalse(v.is_valid(undeclared))  # egress still has to declare it
         udp = manifest()
         udp["spec"]["permissions"]["egressSources"][0]["protocol"] = "udp"
         self.assertFalse(v.is_valid(udp))  # the broker relays no UDP, so it cannot be declared
@@ -170,7 +183,7 @@ class Egress(unittest.TestCase):
         prefixed["spec"]["permissions"]["egressSources"][0]["hosts"] = ["dns:crt.sh"]
         self.assertFalse(v.is_valid(prefixed))
         for fixture in [
-            "fixtures/invalid/manifest.egress-not-proxy-aware.yaml",
+            "fixtures/invalid/manifest.egress-proxy-undeclared.yaml",
             "fixtures/invalid/manifest.egress-raw-socket.yaml",
             "fixtures/invalid/manifest.egress-udp-source.yaml",
         ]:

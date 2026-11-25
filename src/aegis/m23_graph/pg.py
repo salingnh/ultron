@@ -287,7 +287,7 @@ def prefetch_observations(
         return {}
     rows = conn.execute(
         "SELECT o.observation_id, o.revision, o.campaign_id, o.predicate, o.subject_asset_id,"
-        "       a.canonical_key AS subject_key, o.observed_at, o.polarity"
+        "       a.canonical_key AS subject_key, o.observed_at, o.polarity, o.value, o.confidence"
         "  FROM observation o JOIN asset a ON a.asset_id = o.subject_asset_id"
         " WHERE o.observation_id = ANY(%s::uuid[])",
         (ids,),
@@ -302,6 +302,8 @@ def prefetch_observations(
             subject_key=str(row["subject_key"]),
             observed_at=row["observed_at"],
             polarity=str(row["polarity"]),
+            value=row["value"],
+            confidence=None if row["confidence"] is None else float(row["confidence"]),
         )
         for row in rows
     }

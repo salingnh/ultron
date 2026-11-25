@@ -87,7 +87,7 @@ class RelationshipSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class ObservationSnapshot:
-    """`aegis.observation` row needed for a delta (revision) and for the subject key."""
+    """`aegis.observation` row needed for a delta, the subject key and the `:Observation` node."""
 
     observation_id: str
     revision: int
@@ -97,6 +97,8 @@ class ObservationSnapshot:
     subject_key: str
     observed_at: datetime
     polarity: str
+    value: Any = None
+    confidence: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
