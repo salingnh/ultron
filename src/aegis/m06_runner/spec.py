@@ -634,6 +634,7 @@ def build_policy(
         sources.append(
             netpolicy.SourceAllow(id=source_id, hosts=(denyset.host_key(host),), ports=(port,))
         )
+    dns_names, dns_target_names = _dns_binding(task, sources, input_values)
     if profile == "internet":
         if per_host_rps is None or per_host_max_connections is None:
             raise SpecError(
@@ -659,10 +660,48 @@ def build_policy(
         platform_cidrs=tuple(ipaddress.ip_network(entry) for entry in platform_cidrs),
         deny_cidrs=_denylist_networks(target_denylist),
         private_cidrs=private_cidrs,
+        dns_names=dns_names,
+        dns_target_names=dns_target_names,
         per_host_rps=per_host_rps,
         per_host_max_connections=per_host_max_connections,
         resolver=resolver or netpolicy.Resolver(),
     )
+
+
+def _dns_binding(
+    task: ApprovedTask, sources: Sequence[netpolicy.SourceAllow], input_values: Mapping[str, Any]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Names the broker may resolve for this job, and which of them are targets.
+
+    Allowed = the task's target names (`dns:` refs and domain-shaped input targets) plus the pinned
+    manifest's source hosts; anything else is refused by the broker's DNS front end (G1.6 item 4).
+    A target name's answers are narrowed to the signed target addresses, so DNS can never hand the
+    job an address the signed binding would refuse to connect to.
+    """
+    targets: set[str] = set()
+    for reference in task.targets:
+        key = _canonical_key(reference)
+        if key is not None and key.startswith("dns:"):
+            targets.add(key[4:].rstrip(".").lower())
+    raw = input_values.get("targets")
+    if isinstance(raw, list):
+        for value in raw:
+            if not isinstance(value, str):
+                continue
+            try:
+                projection = project_target(value)
+            except SpecError:
+                continue
+            if projection.startswith("dns:"):
+                targets.add(projection[4:].rstrip(".").lower())
+    declared: set[str] = set()
+    for source in sources:
+        for host in source.hosts:
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                declared.add(host.rstrip(".").lower())
+    return (tuple(sorted(targets | declared)), tuple(sorted(targets)))
 
 
 # --- spec assembly --------------------------------------------------------------------------

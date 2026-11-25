@@ -3,7 +3,10 @@
   "jobs": [
     {
       "imageDigest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
-      "args": ["-sources", "crtsh,otx"],
+      "args": [
+        "-sources",
+        "crtsh,otx"
+      ],
       "env": {
         "HOME": "/tmp"
       },
@@ -13,6 +16,26 @@
           "target": "/tmp/.config/subfinder/provider-config.yaml"
         }
       ]
+    },
+    {
+      "imageDigest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec",
+      "args": [
+        "-r",
+        "${broker_dns}"
+      ],
+      "env": {
+        "HOME": "/tmp"
+      }
+    },
+    {
+      "imageDigest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
+      "args": [
+        "-r",
+        "${broker_dns}"
+      ],
+      "env": {
+        "HOME": "/tmp"
+      }
     }
   ]
 }
