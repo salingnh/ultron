@@ -61,7 +61,7 @@ cases:
     imageVersion: "2.4.49"
     version: "2.4.49"
     license: Apache-2.0
-    container: aegis-vulnlab-httpd
+    service: httpd
     imagePort: 80
     request:
       path: /nosuch
@@ -115,7 +115,7 @@ cases:
     imageVersion: "1.16.0"
     version: "1.16.0"
     license: BSD-2-Clause
-    container: aegis-vulnlab-nginx
+    service: nginx
     imagePort: 80
     request:
       path: /
@@ -161,7 +161,7 @@ cases:
     imageVersion: "8.5.19"
     version: "8.5.19"
     license: "Apache-2.0 (image: vulhub, MIT)"
-    container: aegis-vulnlab-tomcat
+    service: tomcat
     imagePort: 8080
     request:
       path: /
@@ -227,7 +227,7 @@ cases:
     imageVersion: "5.3.17"
     version: "8.5.77"
     license: "Apache-2.0 (image: vulhub, MIT)"
-    container: aegis-vulnlab-spring
+    service: spring
     readOnlyRootfs: false
     readOnlyReason: >-
       Tomcat unpacks ROOT.war into webapps/ on start; a read-only rootfs either hides the war
@@ -280,7 +280,7 @@ cases:
     imageVersion: "2.138"
     version: "2.138"
     license: MIT
-    container: aegis-vulnlab-jenkins
+    service: jenkins
     imagePort: 8080
     request:
       path: /login
@@ -335,7 +335,7 @@ cases:
     imageVersion: "9.4.40"
     version: "9.4.40.v20210413"
     license: "EPL-2.0 OR Apache-2.0"
-    container: aegis-vulnlab-jetty
+    service: jetty
     readOnlyRootfs: false
     readOnlyReason: >-
       The official Jetty entrypoint writes jetty.start into /var/lib/jetty, next to the webapps it
@@ -394,7 +394,7 @@ cases:
     imageVersion: "2.3.30"
     version: "2.3.30"
     license: "Apache-2.0 (image: vulhub, MIT)"
-    container: aegis-vulnlab-struts2
+    service: struts2
     readOnlyRootfs: false
     readOnlyReason: >-
       The demo image runs `mvn jetty:run`, which compiles into /usr/src/target at start; a tmpfs

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Removes compose project `aegis-vulnlab` only - its containers, its two networks, its stale one-shot
-# probe containers and the rendered tunnel ingress. The external lab network `aegis-lab-lab` and
-# anything else on the host are untouched.
+# Removes this checkout's vulnlab project only - its containers, its two networks, its stale one-shot
+# probe containers and the readiness files. Another checkout's stack is refused by the ownership
+# check; the external lab network `aegis-lab-lab` and anything else on the host are untouched.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -10,11 +10,15 @@ require_cmd podman-compose
 load_images
 load_env
 load_ttl
+resolve_tunnel_request
+set_vulnlab_names
+
+require_vulnlab_stack_ownership
 
 log "compose project $VULNLAB_PROJECT: removing its containers and networks"
 if [ -n "$(podman ps -a --filter "label=io.podman.compose.project=$VULNLAB_PROJECT" --format '{{.Names}}')" ] ||
-  podman network inspect aegis-vulnlab-net >/dev/null 2>&1 ||
-  podman network inspect aegis-vulnlab-egress >/dev/null 2>&1; then
+  podman network inspect "$VULNLAB_NETWORK" >/dev/null 2>&1 ||
+  podman network inspect "$VULNLAB_EGRESS" >/dev/null 2>&1; then
   compose down --remove-orphans --timeout 20
 else
   log "compose project $VULNLAB_PROJECT: nothing to remove"
@@ -29,7 +33,7 @@ done
 
 leftovers=$(
   podman ps -a --filter "label=io.podman.compose.project=$VULNLAB_PROJECT" --format 'container {{.Names}}'
-  for network in aegis-vulnlab-net aegis-vulnlab-egress; do
+  for network in "$VULNLAB_NETWORK" "$VULNLAB_EGRESS"; do
     if podman network inspect "$network" >/dev/null 2>&1; then printf 'network %s\n' "$network"; fi
   done
 )

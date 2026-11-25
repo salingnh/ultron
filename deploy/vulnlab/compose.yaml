@@ -23,19 +23,26 @@
 # mounted here, and `deploy/vulnlab/cloudflared/config.yml.template` is only the documented mirror
 # of the dashboard rules. The token reaches the container through its environment (read from the
 # 0600 file by scripts/vulnlab/lib.sh) and is never written into the checkout or logged.
-name: aegis-vulnlab
+# The project name is this checkout's identity: `AEGIS_VULNLAB_PROJECT` (default aegis-vulnlab) is
+# exported by scripts/vulnlab/lib.sh after reading .env, and every container/network name derives
+# from it so a checkout never silently joins another checkout's stack. The origin addresses stay
+# fixed because they come from the catalog, so only one vulnlab stack may exist per host.
+name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}
 
 x-vulnlab-origin: &vulnlab-origin
   restart: "no"
   cap_drop: [ALL]
   security_opt:
     - no-new-privileges:true
+  labels:
+    aegis.vulnlab.project: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}
+    aegis.vulnlab.role: origin
 
 services:
   httpd:
     <<: *vulnlab-origin
     image: ${AEGIS_VULNLAB_HTTPD_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-httpd
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-httpd
     read_only: true
     # Binds 80 inside the container and drops to www-data; the event MPM starts dozens of threads,
     # so the PID cap must cover them (podman counts threads as PIDs).
@@ -58,7 +65,7 @@ services:
   nginx:
     <<: *vulnlab-origin
     image: ${AEGIS_VULNLAB_NGINX_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-nginx
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-nginx
     read_only: true
     # Bind 80, drop workers to the nginx user, and chown the tmpfs cache directory.
     cap_add: [NET_BIND_SERVICE, SETUID, SETGID, CHOWN]
@@ -79,7 +86,7 @@ services:
   tomcat:
     <<: *vulnlab-origin
     image: ${AEGIS_VULNLAB_TOMCAT_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-tomcat
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-tomcat
     read_only: true
     mem_limit: 512m
     cpus: 0.5
@@ -103,7 +110,7 @@ services:
   spring:
     <<: *vulnlab-origin
     image: ${AEGIS_VULNLAB_SPRING_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-spring
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-spring
     # Tomcat unpacks ROOT.war into webapps/ (a tmpfs would hide the war): this one origin keeps its
     # writable layer. It still has no host mount, no capabilities and the same caps.
     read_only: false
@@ -123,7 +130,7 @@ services:
   jenkins:
     <<: *vulnlab-origin
     image: ${AEGIS_VULNLAB_JENKINS_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-jenkins
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-jenkins
     read_only: true
     mem_limit: 1g
     cpus: 1.0
@@ -142,7 +149,7 @@ services:
   jetty:
     <<: *vulnlab-origin
     image: ${AEGIS_VULNLAB_JETTY_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-jetty
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-jetty
     # The official entrypoint writes /var/lib/jetty/jetty.start next to the webapps it serves; a
     # tmpfs would hide them. No host mount, all capabilities dropped, same caps.
     read_only: false
@@ -162,7 +169,7 @@ services:
   struts2:
     <<: *vulnlab-origin
     image: ${AEGIS_VULNLAB_STRUTS2_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-struts2
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-struts2
     # `mvn jetty:run` compiles into /usr/src/target at every start, so this rootfs is writable. The
     # Maven+Jetty pair needs more than a bare app server: bound the JVM and give the container
     # enough headroom for the compile, then Jetty drops to ~200 MiB once it is up.
@@ -187,7 +194,7 @@ services:
     # Opt-in: `up --profile tunnel` only. Without a token the lab is lab-only and nothing is public.
     profiles: ["tunnel"]
     image: ${AEGIS_VULNLAB_CLOUDFLARED_IMAGE:?run through make vulnlab-up so deploy/vulnlab/images.env is loaded}
-    container_name: aegis-vulnlab-cloudflared
+    container_name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-cloudflared
     restart: "no"
     read_only: true
     cap_drop: [ALL]
@@ -206,6 +213,10 @@ services:
     # No `--config`: a remotely managed tunnel takes its ingress from Cloudflare. The template in
     # cloudflared/ is the mirror to compare the dashboard rules against, not a runtime input.
     command: ["tunnel", "run"]
+    labels:
+      aegis.vulnlab.project: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}
+      # The host-wide "one tunnel-enabled stack" check looks for this label (and the pre-label name).
+      aegis.vulnlab.role: cloudflared
     networks:
       vulnlab:
         ipv4_address: 10.114.54.2
@@ -214,7 +225,7 @@ services:
 
 networks:
   vulnlab:
-    name: aegis-vulnlab-net
+    name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-net
     internal: true
     ipam:
       config:
@@ -226,4 +237,4 @@ networks:
     name: aegis-lab-lab
     external: true
   egress:
-    name: aegis-vulnlab-egress
+    name: ${AEGIS_VULNLAB_PROJECT:-aegis-vulnlab}-egress

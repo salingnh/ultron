@@ -41,12 +41,14 @@ help:
 	  'make lab-build-fingerprintx  build the pinned fingerprintx image (no upstream image)' \
 	  'make vulnlab-up      start the CVE test lab (deploy/vulnlab): known-vulnerable HTTP' \
 	  '                     origins on their own internal network + the lab network; auto-stops' \
-	  '                     after VULNLAB_TTL_MINUTES (default 120); the Cloudflare Tunnel only' \
-	  '                     when AEGIS_VULNLAB_TUNNEL_TOKEN is set in deploy/vulnlab/.env' \
+	  '                     after VULNLAB_TTL_MINUTES (default 120). Publishing is explicit:' \
+	  '                     VULNLAB_TUNNEL=1 (default lab-only). One stack per host; name this' \
+	  '                     checkout with AEGIS_VULNLAB_PROJECT in deploy/vulnlab/.env' \
 	  'make vulnlab-down    remove only the aegis-vulnlab project (containers + its two networks)' \
 	  'make vulnlab-status  boundary, tunnel state and remaining TTL (non-zero if not healthy)' \
 	  'make vulnlab-check   PROFILE=lab|internet: every origin (lab) or public hostname (internet)' \
-	  '                     serves the page its catalog entry documents' \
+	  '                     serves the page its catalog entry documents (read-only; works on' \
+	  '                     another checkout\'s running stack too)' \
 	  'make vulnlab-test    PROFILE=lab|internet: one campaign per catalog case, assert the' \
 	  '                     detections and CVE candidates (needs make run-local)' \
 	  'make contracts-gate  README contract gate: validator, tests, PostgreSQL 16 chains' \
