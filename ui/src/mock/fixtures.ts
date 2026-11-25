@@ -26,6 +26,7 @@ export const mockCampaigns: Campaign[] = [
       ips: ['203.0.113.0/24'],
     },
     policy: {
+      network_profile: 'lab',
       max_parallel_jobs: 5,
       max_duration_hours: 48,
       budget: {
@@ -69,6 +70,7 @@ export const mockCampaigns: Campaign[] = [
       domains: ['dmz.internal.example'],
     },
     policy: {
+      network_profile: 'lab',
       max_parallel_jobs: 3,
       max_duration_hours: 24,
       budget: {
@@ -107,6 +109,7 @@ export const mockCampaigns: Campaign[] = [
       domains: ['haiphong.example.vn'],
     },
     policy: {
+      network_profile: 'lab',
       max_parallel_jobs: 2,
       max_duration_hours: 30,
       budget: {
