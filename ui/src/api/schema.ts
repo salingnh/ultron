@@ -331,6 +331,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assets/{asset_id}/vulnerabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: components["parameters"]["AssetId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Ứng viên CVE của một tài sản (cạnh AFFECTED_BY), kèm KEV/EPSS
+         * @description Chỉ là ứng viên so khớp CPE từ bản intel đã nạp (package_vuln_match), không phải finding đã xác minh. Sắp theo vulnerability_id tăng dần; con trỏ là mã CVE cuối trang.
+         */
+        get: operations["listAssetVulnerabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/findings": {
         parameters: {
             query?: never;
@@ -805,6 +827,21 @@ export interface components {
             cause: "scan" | "intel_revision" | "verification" | "operator" | "regression_check";
             changed_at: components["schemas"]["Timestamp"];
         };
+        /**
+         * Payload vulnerability.matched.v2
+         * @description Bên phát: M20. Khóa khử duy nhất của consumer: match_id. Bên nhận: M23 (projector đồ thị chiếu :Vulnerability và cạnh AFFECTED_BY), M26 (UI đọc ứng viên CVE của tài sản). Chỉ là ứng viên: cạnh AFFECTED_BY không phải finding và không bao giờ tự lên VERIFIED.
+         */
+        "vulnerability.matched.v2.schema": {
+            match_id: components["schemas"]["Id"];
+            /** @description Tài sản bị ảnh hưởng (service, application hoặc package). */
+            asset_id: components["schemas"]["Id"];
+            /** @description Khóa chuẩn của tài sản; dùng làm khóa phân vùng của projector. */
+            canonical_key: components["schemas"]["CanonicalKey"];
+            /** @description Mã CVE của bản ghi NVD đã khớp. */
+            vulnerability_id: string;
+            /** @description Chiến dịch mà observation sinh ra ứng viên này thuộc về. */
+            campaign_id: components["schemas"]["Id"];
+        };
         ModuleCode: string;
         /** @description Bộ ID truy vết bắt buộc (RULES mục 3). Trường không áp dụng thì bỏ qua, không gửi chuỗi rỗng. */
         TraceContext: {
@@ -827,14 +864,14 @@ export interface components {
         "event-envelope.v2.schema": {
             event_id: components["schemas"]["Id"];
             /** @enum {string} */
-            type: "job.started.v2" | "job.completed.v2" | "policy.denied.v2" | "asset.discovered.v2" | "observation.changed.v2" | "artifact.ready.v2" | "knowledge.delta.v2" | "intel.revision.v2" | "finding.changed.v2";
+            type: "job.started.v2" | "job.completed.v2" | "policy.denied.v2" | "asset.discovered.v2" | "observation.changed.v2" | "artifact.ready.v2" | "knowledge.delta.v2" | "intel.revision.v2" | "finding.changed.v2" | "vulnerability.matched.v2";
             occurred_at: components["schemas"]["Timestamp"];
             producer: components["schemas"]["ModuleCode"];
             /** @description Theo bảng sự kiện tab Dữ liệu mục 5, nối bằng ':' (vd '<finding_id>:3'). */
             dedup_key: string;
             trace: components["schemas"]["TraceContext"];
             payload: Record<string, never>;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         /** @enum {string} */
         JobStatus: "QUEUED" | "VALIDATING" | "DISPATCHED" | "RUNNING" | "COLLECTING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
         /** @description Ý định hủy đã ghi nhận (cancel intent). Bản thân nó không đổi trạng thái: job terminal khi M06 gọi terminal hóa. Ý định không bao giờ ghi đè một kết quả terminal đã nhận trước đó; nó vẫn nằm trong lịch sử. */
@@ -1285,6 +1322,56 @@ export interface components {
                 limit: number;
                 /** @description Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms). */
                 timeout_ms: number;
+            };
+        };
+        Candidate: {
+            vulnerability_id: string;
+            cvss_base?: number | null;
+            /** @enum {unknown} */
+            cvss_severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "NONE" | null;
+            /** @description CVE có trong CISA KEV tại bản intel đã pin. */
+            kev: boolean;
+            /** Format: date */
+            kev_due_date?: string | null;
+            epss?: number | null;
+            /** @enum {unknown} */
+            match_method: "cpe_range" | "purl_range" | "scanner_direct";
+            affected_range?: string | null;
+            confidence: number;
+            snapshot_id?: components["schemas"]["Id"];
+            candidate_since: components["schemas"]["Timestamp"];
+        };
+        /**
+         * Ứng viên CVE của một tài sản
+         * @description Phản hồi của listAssetVulnerabilities (M26): các hàng package_vuln_match hiện hành của một tài sản, kèm CVSS/KEV/EPSS của bản intel đã pin. Chỉ là ứng viên (AFFECTED_BY), không phải finding đã xác minh.
+         */
+        "asset-vulnerabilities.v2.schema": {
+            /** @description Danh tính tài sản mà trang này nói về (không lặp lại toàn bộ hồ sơ tài sản). */
+            asset: {
+                asset_id: components["schemas"]["Id"];
+                canonical_key: components["schemas"]["CanonicalKey"];
+                kind: components["schemas"]["AssetKind"];
+            };
+            items: components["schemas"]["Candidate"][];
+            next_cursor?: string;
+            $defs: {
+                Candidate: {
+                    vulnerability_id: string;
+                    cvss_base?: number | null;
+                    /** @enum {unknown} */
+                    cvss_severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "NONE" | null;
+                    /** @description CVE có trong CISA KEV tại bản intel đã pin. */
+                    kev: boolean;
+                    /** Format: date */
+                    kev_due_date?: string | null;
+                    epss?: number | null;
+                    /** @enum {unknown} */
+                    match_method: "cpe_range" | "purl_range" | "scanner_direct";
+                    affected_range?: string | null;
+                    confidence: number;
+                    snapshot_id?: components["schemas"]["Id"];
+                    candidate_since: components["schemas"]["Timestamp"];
+                };
             };
         };
         /**
@@ -2056,6 +2143,38 @@ export interface operations {
                         }[];
                         next_cursor?: string;
                     };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listAssetVulnerabilities: {
+        parameters: {
+            query?: {
+                /** @description Chỉ lấy ứng viên sinh từ observation của chiến dịch này */
+                campaign_id?: components["schemas"]["Id"];
+                /** @description Chỉ lấy ứng viên có trong CISA KEV */
+                kev_only?: boolean;
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                asset_id: components["parameters"]["AssetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["asset-vulnerabilities.v2.schema"];
                 };
             };
             400: components["responses"]["Error"];
