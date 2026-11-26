@@ -90,6 +90,9 @@ def _plan(
             "target_binding": "required",
             "entries": [f"{target_bound_ip}:8080"],
             "target_addresses": [target_bound_ip],
+            # The probe target is a container address on the test uplink (a private range); the RoE
+            # of this fixture lists exactly that address as its private seed (R4).
+            "authorized_private_cidrs": [f"{target_bound_ip}/32"],
         }
         refs = [{"canonical_key": f"ip:{target_bound_ip}"}]
     else:
@@ -130,9 +133,7 @@ def _plan(
         manifest_bytes=raw,
         task_body=m06_support.body_of(task),
         platform_cidrs=platform_cidrs or (("10.88.0.0/16",) if egress else ()),
-        authorization=(
-            "owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example" if egress else ""
-        ),
+        authorization=m06_support.AUTHORIZATION if egress else None,
         per_host_rps=5.0 if egress else None,
         per_host_max_connections=2 if egress else None,
     )
@@ -580,7 +581,7 @@ def test_prepare_keeps_the_internet_profile_entry_and_checks_its_proxy_flag(
         manifest_bytes=raw,
         task_body=m06_support.body_of(task),
         platform_cidrs=("10.88.0.0/16",),
-        authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example",
+        authorization=m06_support.AUTHORIZATION,
         per_host_rps=2.0,
         per_host_max_connections=2,
     )

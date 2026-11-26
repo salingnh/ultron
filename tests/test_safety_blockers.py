@@ -19,6 +19,7 @@ from aegis.m05_registry import egress as m05_egress
 from aegis.m05_registry.errors import M05Error
 from aegis.m05_registry.signing import DEV_KEY_ID
 from aegis.m06_runner import denyset, netpolicy
+from aegis.m06_runner.authorization import Authorization
 from aegis.m06_runner.broker import AuditLog
 from aegis.m06_runner.netpolicy import JobEgressPolicy, Resolver, SourceAllow
 from tests.db_support import requires_postgres
@@ -157,7 +158,12 @@ def test_m06_does_not_open_a_dns_source_that_sits_in_the_signed_binding() -> Non
             "target_addresses": [],
         },
     )
-    policy = m06_support.build_policy_for(task, manifest, raw)
+
+    class _NoAnswers(netpolicy.Resolver):
+        def resolve(self, host: str) -> list[str]:
+            return []
+
+    policy = m06_support.build_policy_for(task, manifest, raw, resolver=_NoAnswers())
     assert [source.hosts for source in policy.sources] == []
     assert policy.binding_hosts == ()
     assert policy.dns_names == ("internal.example",)
@@ -260,7 +266,7 @@ def test_an_internet_policy_needs_a_structured_authorization() -> None:
     manifest, raw = m06_support.manifest("manifest.subfinder.yaml")
     task = m06_support.task_for_manifest(manifest, raw, network_profile="internet")
     with pytest.raises(Exception, match="authorization") as caught:
-        m06_support.build_policy_for(task, manifest, raw, authorization="")
+        m06_support.build_policy_for(task, manifest, raw, authorization=None)
     assert "authorization" in str(caught.value)
 
 
@@ -288,7 +294,7 @@ def test_the_broker_audit_carries_the_campaign_id_not_a_repr(tmp_path: Path) -> 
     policy = JobEgressPolicy(
         job_id="job-1",
         campaign_id="01934f6a-0000-7000-8000-000000000001",
-        authorization="owner | ref | 2026-11-25 | x.test",
+        authorization=m06_support.AUTHORIZATION.reference_line(),
         dns_names=("bound.example",),
     )
     audit = AuditLog(tmp_path / "audit.jsonl", policy.job_id)
@@ -360,9 +366,12 @@ def test_the_l3_plan_refuses_a_platform_address() -> None:
 # --- F3 guardrail 4: a wildcard zone is refused, never scanned ----------------------------
 
 
-def test_a_wildcard_zone_refuses_active_signing() -> None:
+def test_a_wildcard_zone_refuses_active_signing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aegis.common import dns_cname
     from aegis.m05_registry.egress import ActiveProvenance, build_egress_binding
 
+    # R5/the resolver guard: the CNAME chain is stubbed (the fixture names are not real DNS).
+    monkeypatch.setattr(dns_cname, "cname_chain", lambda host: ())
     record = m06_support.record("manifest.naabu.yaml")
     binder = m06_support.StaticBinder({"10.0.0.5": ["93.184.216.34"]})
 
@@ -746,13 +755,20 @@ def test_dnsx_parser_emits_cname_observations_and_m05_refuses_resulting_targets(
                     "dns:random.wild.icomm.vn",
                 ],
                 "target_addresses": [],
+                # The campaign seeded no private CIDR, so no private range is opened (R4).
+                "authorized_private_cidrs": [],
             }
             assert m06_support.INTERNET_RING.verify(dnsx_task_body) == "g16-test-1"
             from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 
             dnsx_manifest, dnsx_raw = m06_support.manifest("manifest.dnsx.yaml")
             task = ApprovedTask.model_validate(dnsx_task_body)
-            dnsx_policy_auth = "icomm | item-61 | 2026-11-26 | icomm.vn"
+            dnsx_policy_auth = Authorization(
+                owner="icomm",
+                reference="item-61",
+                date="2026-11-26",
+                suffixes=("icomm.vn",),
+            )
             dnsx_policy = m06_support.build_policy_for(
                 task,
                 dnsx_manifest,
@@ -766,7 +782,7 @@ def test_dnsx_parser_emits_cname_observations_and_m05_refuses_resulting_targets(
                 "cdn.icomm.vn",
                 "random.wild.icomm.vn",
             )
-            assert dnsx_policy.authorization == dnsx_policy_auth
+            assert dnsx_policy.authorization == dnsx_policy_auth.reference_line()
             sha = "c" * 64
             ev_id = uuid7()
             uri = f"s3://evidence/{created.campaign_id}/{dnsx_job.job['job_id']}/{sha}"

@@ -26,7 +26,16 @@ from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
 from aegis.m05_registry.signing import KeyRing
+from aegis.m06_runner.authorization import Authorization
 from aegis.m06_runner.values import text
+
+#: The RoE authorization the internet fixtures sign: a real structured object, as M05 requires.
+AUTHORIZATION = Authorization(
+    owner="owner",
+    reference="owner, item 61, 2026-11-25",
+    date="2026-11-25",
+    suffixes=("internal.example",),
+)
 
 REPO_ROOT = repository_root()
 CONTAINER_DIR = REPO_ROOT / "tests" / "container"
@@ -529,7 +538,7 @@ def build_policy_for(
     manifest: Any,
     raw: bytes,
     *,
-    authorization: str = "owner | owner, item 61, 2026-11-25 | 2026-11-25 | x.test",
+    authorization: Authorization | None = AUTHORIZATION,
     task_body: Mapping[str, Any] | None = None,
     **kwargs: Any,
 ) -> Any:

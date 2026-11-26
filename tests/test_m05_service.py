@@ -526,6 +526,8 @@ def test_target_bound_binding_pins_resolved_addresses_and_drops_the_deny_set() -
             "target_binding": "required",
             "entries": ["10.114.53.53:443"],
             "target_addresses": ["10.114.53.53"],
+            # A lab campaign lists no private seed: the internet private rule does not apply to it.
+            "authorized_private_cidrs": [],
         }
         assert KeyRing.dev().verify(task) == "g1-dev-1"
 
@@ -601,5 +603,6 @@ def test_a_discovered_address_asset_target_binds_its_canonical_key() -> None:
             "target_binding": "required",
             "entries": [f"{address}:443", f"{address}:80"],
             "target_addresses": [address],
+            "authorized_private_cidrs": [],
         }
         assert KeyRing.dev().verify(task) == "g1-dev-1"

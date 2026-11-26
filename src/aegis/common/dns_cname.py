@@ -4,7 +4,7 @@ The active capabilities must not turn an owner name that CNAMEs out of the autho
 into a third-party address: discovery records the name, not the canonical target. M05 signs at
 dispatch time, so this is the last point where the chain is still visible. Only the system
 resolver (`/etc/resolv.conf`) is asked, with one short query per hop; an error or a missing
-resolver returns no chain (the caller treats "unknown" as "no reason to refuse").
+resolver raises, and the signing guardrail refuses the name (R5: "unknown" is not "clean").
 
 The wire format is the subset this lookup needs: one question, and the CNAME rdata of the answer.
 """
@@ -115,14 +115,15 @@ def cname_chain(
 ) -> tuple[str, ...]:
     """The CNAME targets of `name`, in order, at most `MAX_HOPS` of them.
 
-    Raises OSError/ValueError on a resolution failure; callers decide whether that is a reason to
-    refuse (fail closed only when the chain is known to leave the authorized suffixes).
+    Raises OSError/ValueError on a resolution failure, including "there is no resolver to ask":
+    a caller that needs the chain (the signing guardrail) must refuse rather than read "no answer"
+    as "no foreign hop" (R5).
     """
     current = name.strip(".").lower()
     hops: list[str] = []
     server = resolver or resolver_address()
     if server is None:
-        return ()
+        raise OSError("no system resolver is configured; the CNAME chain cannot be checked")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.settimeout(timeout)
         for _ in range(MAX_HOPS):

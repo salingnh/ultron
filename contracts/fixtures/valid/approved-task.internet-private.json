@@ -1,0 +1,58 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c8",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000c7",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "network_profile": "internet",
+  "capability": "network.discover_services",
+  "provider": "naabu",
+  "provider_version": "v2.7.0",
+  "adapter_version": "1.0.2",
+  "manifest_sha256": "1d1673adf040647f6dfb18525778a43b52fed26ce6ed03e5ef88f6f2a8108ee9",
+  "image_digest": "sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
+  "input": {
+    "targets": [
+      "ip:10.114.53.61"
+    ],
+    "ports": [
+      80,
+      443
+    ],
+    "packets_per_second": 100,
+    "version_intensity": 0
+  },
+  "targets": [
+    {
+      "canonical_key": "ip:10.114.53.61"
+    }
+  ],
+  "idempotency_key": "fixture:naabu-internet-private-seed",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: a private target whose private seed CIDR the RoE lists is signed with authorized_private_cidrs; no execution",
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "signature": "hmac-sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "required",
+    "entries": [
+      "10.114.53.61:80",
+      "10.114.53.61:443"
+    ],
+    "target_addresses": [
+      "10.114.53.61"
+    ],
+    "authorized_private_cidrs": [
+      "10.114.53.0/24"
+    ]
+  },
+  "priority": 60,
+  "depends_on": []
+}

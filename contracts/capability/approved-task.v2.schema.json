@@ -145,6 +145,13 @@
           "items": {"$ref": "../common/ids.v2.schema.json#/$defs/IPAddress"},
           "uniqueItems": true,
           "maxItems": 1000
+        },
+        "authorized_private_cidrs": {
+          "description": "CIDR seed riêng tư (RFC1918, CGNAT, ULA) mà RoE của chiến dịch liệt kê tường minh và M05 đã ký cho task này (R4). Trên profile internet, một địa chỉ riêng tư chỉ được mở khi nằm trong một CIDR ở đây: M06 từ chối (`DENY_PRIVATE`) mọi dải riêng khác, kể cả khi địa chỉ đó có trong `target_addresses`; một entry không nằm trong dải riêng làm task bị từ chối. Rỗng là mặc định an toàn: không dải riêng nào được mở.",
+          "type": "array",
+          "items": {"$ref": "../common/ids.v2.schema.json#/$defs/IPOrCIDR"},
+          "uniqueItems": true,
+          "maxItems": 100
         }
       },
       "allOf": [

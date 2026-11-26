@@ -220,20 +220,26 @@ class PostgresJobService:
         key_ring: KeyRing,
         binder: TargetBinder | None = None,
         platform_cidrs: Sequence[str] | None = None,
+        platform_env: Mapping[str, str] | None = None,
     ) -> None:
         self._connect = connect
         self._registry = registry
         self._key_ring = key_ring
         self._binder = binder
-        self._platform_cidrs: tuple[str, ...] = ()
-        self._platform_error: str = ""
-        if platform_cidrs is None:
-            try:
-                self._platform_cidrs = platform_set.platform_cidrs()
-            except platform_set.PlatformDenySetUnavailable as error:
-                self._platform_error = str(error)
-        else:
-            self._platform_cidrs = tuple(platform_cidrs)
+        #: Tests and single-host deployments can pin the set; otherwise it is read from the host for
+        #: **every** task (R1): the set is a snapshot of podman networks and host addresses, and a
+        #: network created after this process started must still be denied.
+        self._platform_cidrs_override = None if platform_cidrs is None else tuple(platform_cidrs)
+        self._platform_env = platform_env
+
+    def _platform_deny_set(self) -> tuple[tuple[str, ...], str]:
+        """The platform deny set right now, and why it could not be read (``""`` when it was)."""
+        if self._platform_cidrs_override is not None:
+            return self._platform_cidrs_override, ""
+        try:
+            return platform_set.platform_cidrs(self._platform_env), ""
+        except platform_set.PlatformDenySetUnavailable as error:
+            return (), str(error)
 
     # --- submission ---------------------------------------------------------------------
     def submit(
@@ -415,6 +421,7 @@ class PostgresJobService:
             self._check_target_kinds(record, targets)
             check_declared_destinations(record, merged_input)
             profile = network_profile(campaign.policy)
+            platform_cidrs: tuple[str, ...] = ()
             if profile == "internet":
                 authorization_value = campaign.policy.get("authorization")
                 if not isinstance(authorization_value, Mapping) or not authorization_value:
@@ -424,11 +431,13 @@ class PostgresJobService:
                         "(owner, reference, date, authorized_suffixes)",
                         field="/policy/authorization",
                     )
-                if not self._platform_cidrs:
+                platform_cidrs, platform_error = self._platform_deny_set()
+                if not platform_cidrs:
                     raise M05Error.policy_denied(
                         "platform_deny_set_unavailable",
                         "the platform deny set cannot be read on this host; refusing to sign an "
-                        "internet task without it",
+                        "internet task without it"
+                        + (f": {platform_error}" if platform_error else ""),
                     )
             check_campaign_caps(
                 conn,
@@ -445,10 +454,10 @@ class PostgresJobService:
             )
             active_binder = self._binder or _MissingBinder()
             active_provenance = None
-            if (
-                profile == "internet"
-                and str(record.permissions.get("targetBinding") or "none") == "required"
-            ):
+            if profile == "internet":
+                # The seed networks are needed for every internet task, not only a target-bound one:
+                # the private seed CIDRs the RoE lists are signed into the binding (R4), and a
+                # dns-only provider's answers are judged against them at M06.
                 active_provenance = load_active_provenance(
                     conn,
                     campaign_id=campaign.campaign_id,
@@ -462,7 +471,7 @@ class PostgresJobService:
                 targets=targets,
                 binder=active_binder,
                 network_profile=profile,
-                platform_cidrs=self._platform_cidrs,
+                platform_cidrs=platform_cidrs,
                 authorized_suffixes=_authorized_suffixes(campaign.policy),
                 provenance=active_provenance,
             )
