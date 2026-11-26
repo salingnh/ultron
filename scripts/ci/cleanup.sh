@@ -22,7 +22,7 @@ filters=("--filter" "label=$CI_SUITE_LABEL" "--filter" "label=$CI_RUN_LABEL")
 
 mapfile -t containers < <(podman ps -aq "${filters[@]}")
 if ((${#containers[@]})); then
-  podman rm -f "${containers[@]}" >/dev/null
+  podman rm -f -v "${containers[@]}" >/dev/null
   log "cleanup: removed ${#containers[@]} container(s)"
   removed=$((removed + ${#containers[@]}))
 fi

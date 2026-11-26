@@ -372,7 +372,7 @@ def topology(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iter
         )
     finally:
         for name in (target_name, control_name):
-            m06_support.podman("rm", "-f", name, check=False)
+            m06_support.remove_container(name)
         runner.reconcile([])
         m06_support.podman("network", "rm", "-f", job_network, check=False)
         m06_support.remove_network(uplink)

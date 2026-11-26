@@ -19,7 +19,7 @@ log "compose project $VULNLAB_PROJECT: removing its containers and networks"
 if [ -n "$(podman ps -a --filter "label=io.podman.compose.project=$VULNLAB_PROJECT" --format '{{.Names}}')" ] ||
   podman network inspect "$VULNLAB_NETWORK" >/dev/null 2>&1 ||
   podman network inspect "$VULNLAB_EGRESS" >/dev/null 2>&1; then
-  compose down --remove-orphans --timeout 20
+  compose down --volumes --remove-orphans --timeout 20
 else
   log "compose project $VULNLAB_PROJECT: nothing to remove"
 fi
@@ -28,7 +28,7 @@ mapfile -t stale < <(podman ps -a --filter "label=$VULNLAB_LABEL" --format '{{.N
 for name in "${stale[@]}"; do
   [ -n "$name" ] || continue
   log "removing stale probe container $name"
-  podman rm -f "$name" >/dev/null
+  podman rm -f -v "$name" >/dev/null
 done
 
 leftovers=$(

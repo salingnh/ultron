@@ -154,3 +154,79 @@ def test_dropping_a_throwaway_database_is_allowed() -> None:
     admin = _Admin()
     pg_support.drop_throwaway_database(admin, "aegis_g15c_0123456789ab")
     assert admin.statements == ['DROP DATABASE IF EXISTS "aegis_g15c_0123456789ab" WITH (FORCE)']
+
+
+def test_start_container_mounts_tmpfs_and_stop_removes_volumes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Throwaway Neo4j never creates anonymous volumes and tears down with `rm -f -v`."""
+    import atexit
+    import subprocess
+
+    calls: list[tuple[str, ...]] = []
+    registered: list[object] = []
+
+    def fake_podman(*args: str) -> str:
+        calls.append(args)
+        if args[0] == "run":
+            return "cid-123"
+        if args[0] == "port":
+            return "127.0.0.1:47687"
+        return ""
+
+    def fake_register(fn: object) -> object:
+        registered.append(fn)
+        return fn
+
+    monkeypatch.setattr(graph_support, "_podman", fake_podman)
+    monkeypatch.setattr(graph_support, "_pinned_image", lambda: "neo4j:test")
+    monkeypatch.setattr(atexit, "register", fake_register)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(args=[], returncode=0, stdout="1\n"),
+    )
+    monkeypatch.setattr(graph_support, "_STARTED", [])
+
+    uri, _password = graph_support._start_container()
+    assert uri == "bolt://127.0.0.1:47687"
+    run_args = calls[0]
+    tmpfs_targets = [run_args[i + 1] for i, arg in enumerate(run_args) if arg == "--tmpfs"]
+    assert any(target.startswith("/data:") for target in tmpfs_targets), tmpfs_targets
+    assert any(target.startswith("/logs:") for target in tmpfs_targets), tmpfs_targets
+    assert registered == [graph_support.stop_test_graph]
+
+    graph_support.stop_test_graph()
+    assert any(call[:3] == ("rm", "-f", "-v") for call in calls), calls
+    assert graph_support._STARTED == []
+
+
+def test_start_container_cleans_up_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An interrupt while waiting for Neo4j readiness still removes the container and volumes."""
+    import atexit
+    import subprocess
+
+    calls: list[tuple[str, ...]] = []
+
+    def fake_podman(*args: str) -> str:
+        calls.append(args)
+        if args[0] == "run":
+            return "cid-456"
+        if args[0] == "port":
+            return "127.0.0.1:47688"
+        return ""
+
+    def raise_interrupt(*_args: object, **_kwargs: object) -> object:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(graph_support, "_podman", fake_podman)
+    monkeypatch.setattr(graph_support, "_pinned_image", lambda: "neo4j:test")
+    monkeypatch.setattr(atexit, "register", lambda fn: fn)
+    monkeypatch.setattr(subprocess, "run", raise_interrupt)
+    monkeypatch.setattr(graph_support, "_STARTED", [])
+
+    with pytest.raises(KeyboardInterrupt):
+        graph_support._start_container()
+
+    assert any(call[:3] == ("rm", "-f", "-v") for call in calls), calls
+    assert graph_support._STARTED == []

@@ -65,7 +65,24 @@ start_container() {
 
 remove_container() {
   local name=$1
-  podman rm -f "$name" >/dev/null 2>&1 || true
+  [ -n "$name" ] || return 0
+  podman rm -f -v "$name" >/dev/null 2>&1 || true
+}
+
+dangling_volume_count() {
+  podman volume ls -q --filter dangling=true | grep -c . || true
+}
+
+check_dangling_volume_growth() {
+  local before=$1 label=${2:-ci} after
+  after=$(dangling_volume_count)
+  if ((after > before)); then
+    printf '[ci] error: %s leaked podman volume(s): dangling count grew %s -> %s\n' \
+      "$label" "$before" "$after" >&2
+    podman volume ls --filter dangling=true >&2 || true
+    return 1
+  fi
+  log "$label: dangling podman volumes $before -> $after (no growth)"
 }
 
 # Dumps the last log lines of a container; used from failure traps.

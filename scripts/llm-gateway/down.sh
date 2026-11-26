@@ -25,5 +25,5 @@ if ! container_exists "$CONTAINER" && ! podman network exists "$NETWORK" 2>/dev/
   log "nothing to remove: project $PROJECT does not exist"
   exit 0
 fi
-compose down
+compose down --volumes
 log "removed project $PROJECT (the owner's config in $CONFIG_DIR is untouched)"

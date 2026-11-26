@@ -191,8 +191,8 @@ def test_the_l3_gateway_allows_only_the_signed_ip_and_port(
         assert allowed and int(str(allowed[0].get("packets", 0))) > 0, flows
         assert any(record.get("event") == "denied" for record in records), records
     finally:
-        m06_support.podman("rm", "-f", extra_name, check=False)
-        m06_support.podman("rm", "-f", target_name, check=False)
+        m06_support.remove_container(extra_name)
+        m06_support.remove_container(target_name)
         runner.reconcile([])
         m06_support.podman("network", "rm", "-f", job_network, check=False)
         m06_support.remove_network(uplink)

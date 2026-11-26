@@ -47,8 +47,10 @@ ALLOW_ARGS=()
 for entry in "${ALLOW[@]}"; do ALLOW_ARGS+=(--allow "$entry"); done
 
 cleanup() {
-  podman rm -f "$PROXY_CONTAINER" >/dev/null 2>&1 || true
+  podman rm -f -v "$PROXY_CONTAINER" >/dev/null 2>&1 || true
 }
+trap 'exit 130' INT
+trap 'exit 143' TERM
 trap cleanup EXIT
 
 log "httpx proxy check: starting $PROXY_IMAGE as a SOCKS5 allow-list proxy on $PROXY_IP:1080"

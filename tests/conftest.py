@@ -8,6 +8,7 @@ contracts/tests/*.py.
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any, cast
 
 import pytest
@@ -40,3 +41,11 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]) 
             f"{report.nodeid}: skipped, but AEGIS_NO_SKIPS=1 requires every check to run"
         )
     return report
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Ensure any throwaway Neo4j container started during this pytest session is removed."""
+    del session, exitstatus
+    module = sys.modules.get("tests.graph_support")
+    if module is not None:
+        module.stop_test_graph()

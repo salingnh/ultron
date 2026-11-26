@@ -316,7 +316,9 @@ class GatewayProcess:
     def start(self, *, timeout: float = 180) -> GatewayProcess:
         assert shutil.which("podman"), "podman is required (the CI python gate provides it)"
         self._write_owner_files()
-        subprocess.run(["podman", "rm", "-f", self.container], check=False, capture_output=True)
+        subprocess.run(
+            ["podman", "rm", "-f", "-v", self.container], check=False, capture_output=True
+        )
         args = [
             "podman",
             "run",
@@ -343,25 +345,30 @@ class GatewayProcess:
             "--port",
             str(self.port),
         ]
-        result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=120)
-        assert result.returncode == 0, f"cannot start the gateway: {result.stderr}"
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                ready = urllib.request.urlopen(f"{self.base_url}/health/readiness", timeout=2)
-                with ready as answer:
-                    if answer.status == 200:
-                        return self
-            except (urllib.error.URLError, OSError):
-                pass
-            time.sleep(1)
-        logs = self.logs()
-        self.stop()
-        raise AssertionError(f"the gateway did not become ready within {timeout}s:\n{logs}")
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=120)
+            assert result.returncode == 0, f"cannot start the gateway: {result.stderr}"
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                try:
+                    ready = urllib.request.urlopen(f"{self.base_url}/health/readiness", timeout=2)
+                    with ready as answer:
+                        if answer.status == 200:
+                            return self
+                except (urllib.error.URLError, OSError):
+                    pass
+                time.sleep(1)
+            logs = self.logs()
+            raise AssertionError(f"the gateway did not become ready within {timeout}s:\n{logs}")
+        except BaseException:
+            self.stop()
+            raise
 
     def stop(self) -> None:
         if self.container:
-            subprocess.run(["podman", "rm", "-f", self.container], check=False, capture_output=True)
+            subprocess.run(
+                ["podman", "rm", "-f", "-v", self.container], check=False, capture_output=True
+            )
         # The config dir is this test's own throwaway copy of the owner's files; leaving it behind
         # would litter a shared runner (and CI runs on one) with a secrets file per run.
         if self.config_dir.parts:

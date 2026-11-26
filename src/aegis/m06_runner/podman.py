@@ -358,7 +358,7 @@ class PodmanRunner(ContainerRunner):
             _podman("kill", "--signal", "SIGKILL", name, check=False)
 
     def remove(self, handle: RunHandle) -> None:
-        _podman("rm", "-f", self.container_name(handle.job_id), check=False)
+        _podman("rm", "-f", "-v", self.container_name(handle.job_id), check=False)
         self.stop_broker(handle.job_id)
         self._remove_network(handle.job_id)
 
@@ -413,7 +413,7 @@ class PodmanRunner(ContainerRunner):
 
     def discard(self, job_id: str) -> None:
         """Forget everything a failed preparation created; no container and no output exists."""
-        _podman("rm", "-f", self.container_name(job_id), check=False)
+        _podman("rm", "-f", "-v", self.container_name(job_id), check=False)
         self.stop_broker(job_id)
         self._remove_network(job_id)
 
@@ -516,7 +516,7 @@ class PodmanRunner(ContainerRunner):
         )
 
     def stop_broker(self, job_id: str) -> None:
-        _podman("rm", "-f", self.broker_name(job_id), check=False)
+        _podman("rm", "-f", "-v", self.broker_name(job_id), check=False)
 
     def broker_name(self, job_id: str) -> str:
         return f"aegis-broker-{job_id}"
@@ -594,12 +594,12 @@ class PodmanRunner(ContainerRunner):
                 continue
             # The container is removed but its output directory stays: the collector may still
             # upload what the job produced before it died.
-            _podman("rm", "-f", name, check=False)
+            _podman("rm", "-f", "-v", name, check=False)
             removed.append(job_id)
             self._remove_network(job_id)
         brokers = [name for name, job_id in self._containers(BROKER_ROLE) if job_id not in live]
         for name in brokers:
-            _podman("rm", "-f", name, check=False)
+            _podman("rm", "-f", "-v", name, check=False)
         networks = [name for name, job_id in self._networks() if job_id not in live]
         for name in networks:
             _podman("network", "rm", "-f", name, check=False)

@@ -399,6 +399,10 @@ def remove_network(name: str) -> None:
     podman("network", "rm", "-f", name, check=False)
 
 
+def remove_container(name: str) -> None:
+    podman("rm", "-f", "-v", name, check=False)
+
+
 def run_detached(
     name: str,
     image: str,

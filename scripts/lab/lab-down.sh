@@ -20,7 +20,7 @@ compose_project_resources=$(
   podman volume ls --filter "label=io.podman.compose.project=$LAB_PROJECT" --format '{{.Name}}'
 )
 if [ -n "$compose_project_resources" ] || podman network inspect "$LAB_NETWORK" >/dev/null 2>&1; then
-  compose down --remove-orphans --timeout 20
+  compose down --volumes --remove-orphans --timeout 20
 else
   log "compose project $LAB_PROJECT: nothing to remove"
 fi
@@ -29,7 +29,7 @@ mapfile -t stale < <(podman ps -a --filter "label=$RUN_LABEL" --format '{{.Names
 for name in "${stale[@]}"; do
   [ -n "$name" ] || continue
   log "removing stale run container $name"
-  podman rm -f "$name" >/dev/null
+  podman rm -f -v "$name" >/dev/null
 done
 
 leftovers=$(

@@ -95,30 +95,31 @@ def _seaweedfs_ready(ports: dict[str, str]) -> tuple[bool, str]:
 def seaweedfs() -> Iterator[str]:
     m06_support.require_podman()
     name = f"aegis-g13a-s3-{uuid.uuid4().hex[:6]}"
-    m06_support.podman(
-        "run",
-        "--detach",
-        "--name",
-        name,
-        "--label",
-        "aegis.test=g13a",
-        "--tmpfs",
-        "/data:size=128M",
-        "--publish",
-        "127.0.0.1::8333",
-        "--publish",
-        "127.0.0.1::8888",
-        "--publish",
-        "127.0.0.1::9333",
-        "--publish",
-        "127.0.0.1::9340",
-        m06_support.SEAWEEDFS,
-        "mini",
-        "-dir=/data",
-        "-master.volumeSizeLimitMB=16",
-        "-master.telemetry=false",
-    )
     try:
+        m06_support.podman(
+            "run",
+            "--detach",
+            "--rm",
+            "--name",
+            name,
+            "--label",
+            "aegis.test=g13a",
+            "--tmpfs",
+            "/data:rw,size=128m,mode=1777",
+            "--publish",
+            "127.0.0.1::8333",
+            "--publish",
+            "127.0.0.1::8888",
+            "--publish",
+            "127.0.0.1::9333",
+            "--publish",
+            "127.0.0.1::9340",
+            m06_support.SEAWEEDFS,
+            "mini",
+            "-dir=/data",
+            "-master.volumeSizeLimitMB=16",
+            "-master.telemetry=false",
+        )
         deadline = time.monotonic() + 60
         ports: dict[str, str] = {}
         last_reason = "ports not published"
@@ -160,7 +161,7 @@ def seaweedfs() -> Iterator[str]:
         assert created.stdout.strip() in {"200", "409"}, created.stdout
         yield endpoint
     finally:
-        m06_support.podman("rm", "-f", name, check=False)
+        m06_support.remove_container(name)
 
 
 def test_put_and_verify_round_trip_on_the_real_store(seaweedfs: str, tmp_path: Path) -> None:
