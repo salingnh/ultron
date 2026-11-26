@@ -149,3 +149,31 @@ def _entries() -> Iterator[str]:
 
 def test_registry_keeps_registration_order() -> None:
     assert list(_entries()) == ["a", "b"]
+
+
+def test_unhandled_500_returns_error_envelope_with_cors_headers() -> None:
+    from aegis import validation
+
+    router = APIRouter()
+
+    @router.get("/boom")
+    def boom() -> dict[str, str]:
+        raise RuntimeError("unhandled boom")
+
+    registry = RouterRegistry()
+    registry.register("boom", router, prefix=API_PREFIX)
+    origin = "http://127.0.0.1:5174"
+    client = TestClient(create_app(registry, cors_origins=[origin]), raise_server_exceptions=False)
+
+    response = client.get(f"{API_PREFIX}/boom", headers={"Origin": origin})
+    assert response.status_code == 500
+    assert response.headers.get("access-control-allow-origin") == origin
+    assert response.headers.get("traceparent")
+    body = response.json()
+    validation.validate("common/error.v2.schema.json", body)
+    assert body["code"] == "INTERNAL_ERROR"
+    assert body["trace_id"]
+
+    disallowed = client.get(f"{API_PREFIX}/boom", headers={"Origin": "http://evil.example"})
+    assert disallowed.status_code == 500
+    assert "access-control-allow-origin" not in disallowed.headers

@@ -42,6 +42,7 @@ SERVICE_TOKEN_FILE="$STATE_DIR/service-token"
 SIGNING_KEY_FILE="$STATE_DIR/task-signing-key"
 STACK_MARKER="$STATE_DIR/stack.started"
 LAB_MARKER="$STATE_DIR/lab.started"
+UPLINK_MARKER="$STATE_DIR/uplink.started"
 LAB_PROFILE="$REPO_ROOT/deploy/lab/runner-profile.json"
 # The lab profile names the lab network; a checkout with its own lab project gets its own network and
 # therefore its own copy of the profile (absolute paths, so the copy can live under .local/).
@@ -89,6 +90,13 @@ write_secret() {
   (umask 077 && printf '%s\n' "$value" >"$file")
 }
 
+# Resolve .env and project/network names once before checking whether our dev/lab stacks exist.
+if [ ! -f "$ENV_FILE" ]; then
+  cp "$ENV_EXAMPLE" "$ENV_FILE"
+  log "created .env from .env.example (local dev values, git-ignored)"
+fi
+load_env
+
 # --- 1. the dev stack (and the lab, on request) ------------------------------
 stack_was_present=0
 dev_project_present && stack_was_present=1
@@ -112,7 +120,6 @@ if [ "${LAB:-1}" = 1 ]; then
   fi
 fi
 
-load_env
 API_PORT=${API_PORT:-${AEGIS_API_PORT:-8000}}
 PG_DSN="postgresql://$AEGIS_PG_USER:$AEGIS_PG_PASSWORD@127.0.0.1:$AEGIS_PG_PORT/$AEGIS_PG_DB"
 export AEGIS_PG_DSN="$PG_DSN"
@@ -294,6 +301,7 @@ run_env="$STATE_DIR/run-local.env"
 (umask 077
   cat >"$run_env" <<RUNENV
 # written by scripts/dev/run-local.sh - sourced by the demo scripts, do not edit
+export AEGIS_DEV_PROJECT="$DEV_PROJECT"
 export AEGIS_API_URL="$api_url"
 export AEGIS_PG_DSN="$PG_DSN"
 export AEGIS_NEO4J_URI="$AEGIS_NEO4J_URI"

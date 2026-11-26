@@ -644,3 +644,66 @@ def _job_runner_for(runner: PodmanRunner) -> JobRunner:
         key_ring=m06_support.ANY_RING,
         extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
     )
+
+
+def test_job_under_umask_077_remains_readable_by_uid_65534(
+    runner: PodmanRunner, probe_image: str, ingestion: m06_support.FakeIngestion
+) -> None:
+    import os
+    import stat
+
+    plan = _plan(probe_image)
+    job_runner = _job_runner(
+        runner, FakeEvidenceStore(), ingestion.base_url, ingestion.service_token
+    )
+    previous = os.umask(0o077)
+    try:
+        outcome = job_runner.execute(plan)
+    finally:
+        os.umask(previous)
+
+    assert outcome.status == "succeeded", outcome.error
+    layout = runner.layout(plan.job_id)
+    assert stat.S_IMODE(layout.input.stat().st_mode) == 0o755
+    assert stat.S_IMODE((layout.input / "targets.txt").stat().st_mode) == 0o644
+
+
+def test_nonzero_exit_without_output_reports_tool_unavailable(
+    runner: PodmanRunner, probe_image: str, ingestion: m06_support.FakeIngestion
+) -> None:
+    plan = _plan(
+        probe_image,
+        args_template=["python3", "-c", "import sys; sys.exit(2)"],
+    )
+    job_runner = _job_runner(
+        runner, FakeEvidenceStore(), ingestion.base_url, ingestion.service_token
+    )
+    outcome = job_runner.execute(plan)
+
+    assert outcome.status == "failed"
+    assert outcome.errors
+    assert outcome.errors[0]["code"] == "TOOL_UNAVAILABLE"
+    assert "exit_code=2" in str(outcome.errors[0].get("technical_cause") or "")
+    assert all(err["code"] != "OUTPUT_INVALID" for err in outcome.errors)
+
+
+def test_nonzero_exit_with_corrupt_output_still_reports_tool_unavailable(
+    runner: PodmanRunner, probe_image: str, ingestion: m06_support.FakeIngestion
+) -> None:
+    plan = _plan(
+        probe_image,
+        args_template=[
+            "python3",
+            "-c",
+            "open('/out/result.jsonl','w').write('{not-json'); import sys; sys.exit(3)",
+        ],
+    )
+    job_runner = _job_runner(
+        runner, FakeEvidenceStore(), ingestion.base_url, ingestion.service_token
+    )
+    outcome = job_runner.execute(plan)
+
+    assert outcome.status == "failed"
+    assert outcome.errors
+    assert outcome.errors[0]["code"] == "TOOL_UNAVAILABLE"
+    assert "exit_code=3" in str(outcome.errors[0].get("technical_cause") or "")

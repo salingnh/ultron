@@ -13,6 +13,9 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 require_cmd podman
+if [ -f "$ENV_FILE" ]; then
+  load_env
+fi
 
 stop_bg m06 "aegis.m06_runner"
 stop_bg m23 "aegis.m23_graph"
@@ -26,11 +29,11 @@ if [ -f "$STATE_DIR/stack.started" ]; then
     "$(dev_stack_fingerprint)" "$STACK_IDENTITY")" != "ours" ]; then
     log "dev stack: not this checkout's any more - left in place (dev-down refuses to remove it)"
     rm -f "$STATE_DIR/stack.started"
-    return 0 2>/dev/null || exit 0
+  else
+    log "dev stack: started by run-local - removing compose project $DEV_PROJECT"
+    make --no-print-directory -C "$REPO_ROOT" dev-down
+    rm -f "$STATE_DIR/stack.started"
   fi
-  log "dev stack: started by run-local - removing compose project $DEV_PROJECT"
-  make --no-print-directory -C "$REPO_ROOT" dev-down
-  rm -f "$STATE_DIR/stack.started"
 else
   log "dev stack: left as run-local found it (not started by it) - 'make dev-down' removes it"
 fi
@@ -43,11 +46,11 @@ if [ -f "$STATE_DIR/lab.started" ]; then
     "$REPO_ROOT/deploy/lab/.run/identity")" != "ours" ]; then
     log "lab: not this checkout's any more - left in place (lab-down refuses to remove it)"
     rm -f "$STATE_DIR/lab.started"
-    return 0 2>/dev/null || exit 0
+  else
+    log "lab: started by run-local - removing compose project $LAB_PROJECT"
+    make --no-print-directory -C "$REPO_ROOT" lab-down
+    rm -f "$STATE_DIR/lab.started"
   fi
-  log "lab: started by run-local - removing compose project $LAB_PROJECT"
-  make --no-print-directory -C "$REPO_ROOT" lab-down
-  rm -f "$STATE_DIR/lab.started"
 else
   log "lab: left as run-local found it (not started by it) - 'make lab-down' removes it"
 fi

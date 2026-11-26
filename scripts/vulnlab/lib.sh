@@ -236,21 +236,39 @@ require_vulnlab_stack_ownership() {
 
 # One vulnlab stack per host: every origin joins `aegis-lab-lab` with fixed addresses from the
 # catalog (10.114.53.61-.67), so a second stack cannot start even with another project name.
+# Exited/created containers (e.g. a TTL-expired stack) do not hold the running stack slot and are
+# skipped with a log line naming the project and owner label; only a running container blocks.
 vulnlab_projects_on_host() {
-  podman ps -a --format '{{.Label "io.podman.compose.project"}}' |
-    grep -E '^aegis-vulnlab(-[a-z0-9-]+)?$' | sort -u
+  podman ps -a --format '{{.Label "io.podman.compose.project"}}	{{.State}}	{{.Label "com.docker.compose.project.working_dir"}}	{{.Label "io.podman.compose.project.working_dir"}}' |
+    awk -F '\t' '$1 ~ /^aegis-vulnlab(-[a-z0-9-]+)?$/ { print }'
 }
 
 require_no_other_vulnlab_stack() {
-  local project
-  while IFS= read -r project; do
+  local project state docker_owner podman_owner owner
+  local -A seen_running=()
+  local -A project_owner=()
+  while IFS=$'\t' read -r project state docker_owner podman_owner; do
     [ -n "$project" ] || continue
     [ "$project" = "$VULNLAB_PROJECT" ] && continue
-    die "another vulnlab stack exists on this host (project $project).
-  The origins use fixed addresses on the shared lab network, so only one vulnlab stack may exist
-  per host. Use the running one (make vulnlab-status / vulnlab-check) or ask its owner to stop it
-  (make vulnlab-down in that checkout)."
+    owner=${docker_owner:-${podman_owner:-unknown}}
+    if [ -z "${project_owner[$project]:-}" ] || [ "${project_owner[$project]}" = "unknown" ]; then
+      project_owner[$project]=$owner
+    fi
+    case ${state,,} in
+    running) seen_running[$project]=1 ;;
+    esac
   done < <(vulnlab_projects_on_host)
+
+  for project in $(printf '%s\n' "${!project_owner[@]}" | sort); do
+    owner=${project_owner[$project]}
+    if [ "${seen_running[$project]:-0}" = 1 ]; then
+      die "another running vulnlab stack exists on this host (project $project, owner: $owner).
+  The origins use fixed addresses on the shared lab network, so only one running vulnlab stack
+  may exist per host. Use the running one (make vulnlab-status / vulnlab-check) or ask its owner
+  to stop it (make vulnlab-down in that checkout)."
+    fi
+    log "skipping non-running vulnlab project $project (owner: $owner, no running containers)"
+  done
 }
 
 # At most one tunnel-enabled stack per host: the Cloudflare Tunnel is a host-wide resource (the

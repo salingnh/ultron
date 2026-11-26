@@ -427,10 +427,20 @@ class JobRunner:
                 self._collect(plan, spec, layout, outcome)
                 if wait.cancelled:
                     return outcome
-                self._parse(plan, layout, outcome)
+                run_failure = self._run_failure(outcome.run)
+                if run_failure is None or (
+                    outcome.collected is not None and outcome.collected.files
+                ):
+                    self._parse(plan, layout, outcome)
                 status, errors = self._status_of(outcome)
                 outcome.status = status
-                outcome.errors.extend(errors)
+                if run_failure is not None:
+                    # Tool/sandbox exit status wins over any parse error on missing/partial output.
+                    outcome.errors = errors + outcome.errors
+                    if outcome.error is None:
+                        outcome.error = run_failure[0]
+                else:
+                    outcome.errors.extend(errors)
                 if outcome.collected is not None and outcome.parser is not None:
                     self._build_and_submit(plan, layout, outcome, started_at)
                 return outcome
@@ -521,16 +531,18 @@ class JobRunner:
         if isinstance(targets, list) and all(isinstance(item, str) for item in targets):
             name = specs.targets_format(manifest)
             values = [specs.tool_target(item, name) for item in targets]
-            (input_dir / "targets.txt").write_text("\n".join(values) + "\n", encoding="utf-8")
+            targets_path = input_dir / "targets.txt"
+            targets_path.write_text("\n".join(values) + "\n", encoding="utf-8")
+            targets_path.chmod(0o644)
         ports = input_values.get("ports")
         if (
             isinstance(ports, list)
             and ports
             and all(isinstance(port, int) and not isinstance(port, bool) for port in ports)
         ):
-            (input_dir / "ports.txt").write_text(
-                "\n".join(str(port) for port in ports) + "\n", encoding="utf-8"
-            )
+            ports_path = input_dir / "ports.txt"
+            ports_path.write_text("\n".join(str(port) for port in ports) + "\n", encoding="utf-8")
+            ports_path.chmod(0o644)
 
     def _collect(
         self, plan: JobPlan, spec: ContainerSpec, layout: JobLayout, outcome: JobOutcome
@@ -699,45 +711,51 @@ class JobRunner:
         return None
 
     @staticmethod
-    def _status_of(outcome: JobOutcome) -> tuple[EnvelopeStatus, list[dict[str, Any]]]:
-        errors: list[dict[str, Any]] = []
-        run = outcome.run
-        if outcome.error is not None:
-            return "failed", errors
+    def _run_failure(run: RunState | None) -> tuple[str, dict[str, Any]] | None:
         if run is None:
-            return "failed", errors
+            return None
         if run.status in TERMINAL_FAILURES:
-            errors.append(
+            code = TERMINAL_FAILURES[run.status]
+            return (
+                f"{code}: exit_code={run.exit_code}",
                 envelopes.error_object(
-                    TERMINAL_FAILURES[run.status],
+                    code,
                     f"the sandbox ended the job with state {run.status}",
                     technical_cause=f"exit_code={run.exit_code}",
-                )
+                ),
             )
-            return "failed", errors
         if run.status == "missing":
-            errors.append(
+            return (
+                "INTERNAL_ERROR: container missing",
                 envelopes.error_object(
                     "INTERNAL_ERROR",
                     "the job container disappeared before the runner could inspect it",
-                )
+                ),
             )
-            return "failed", errors
         if run.exit_code not in (0, None):
-            errors.append(
+            return (
+                f"TOOL_UNAVAILABLE: exit_code={run.exit_code}",
                 envelopes.error_object(
                     "TOOL_UNAVAILABLE",
                     "the tool exited non-zero",
                     technical_cause=f"exit_code={run.exit_code}",
-                )
+                ),
             )
-            return "failed", errors
+        return None
+
+    @staticmethod
+    def _status_of(outcome: JobOutcome) -> tuple[EnvelopeStatus, list[dict[str, Any]]]:
+        run_failure = JobRunner._run_failure(outcome.run)
+        if run_failure is not None:
+            return "failed", [run_failure[1]]
+        if outcome.error is not None or outcome.run is None:
+            return "failed", []
         skipped = outcome.collected.skipped if outcome.collected is not None else []
         if skipped:
             # A skipped hostile entry does not fail a job that produced usable output, but the
             # envelope must not claim a complete run.
-            return "partial", errors
-        return "succeeded", errors
+            return "partial", []
+        return "succeeded", []
 
     def _build_and_submit(
         self, plan: JobPlan, layout: JobLayout, outcome: JobOutcome, started_at: str

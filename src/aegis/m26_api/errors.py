@@ -10,16 +10,26 @@ gets the contract body. Every response carries the request's `traceparent` back.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Final
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .tracing import TRACEPARENT_HEADER, current_trace_id, traceparent
 
-__all__ = ["INPUT_INVALID", "ApiError", "error_payload", "install_error_handlers"]
+__all__ = [
+    "INPUT_INVALID",
+    "ApiError",
+    "UnhandledErrorMiddleware",
+    "error_payload",
+    "install_error_handlers",
+]
+
+logger = logging.getLogger(__name__)
 
 #: Codes published by `common/error.v2`; a route may only raise one of these.
 ERROR_CODES: Final = frozenset(
@@ -185,3 +195,48 @@ def install_error_handlers(app: FastAPI) -> None:
             trace_id=trace_id,
             headers={key: value for key, value in (error.headers or {}).items()},
         )
+
+
+class UnhandledErrorMiddleware:
+    """Catch unhandled exceptions inside CORSMiddleware and render `error.v2` 500 responses.
+
+    Starlette puts `Exception` handlers on `ServerErrorMiddleware` outside user middlewares, which
+    would strip CORS headers from unhandled 500s. Installing this pure ASGI middleware inside
+    `CORSMiddleware` keeps browser-visible CORS headers and the contract error envelope on 500s
+    without buffering SSE streams.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        response_started = False
+
+        async def _send(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _send)
+        except Exception:
+            if response_started:
+                raise
+            logger.exception("unhandled exception in M26 API")
+            request = Request(scope, receive)
+            trace_id = current_trace_id(request)
+            response = _json(
+                error_payload(
+                    code="INTERNAL_ERROR",
+                    message="internal server error",
+                    next_action="ESCALATE",
+                    trace_id=trace_id,
+                ),
+                status_code=500,
+                trace_id=trace_id,
+            )
+            await response(scope, receive, send)
