@@ -56,6 +56,30 @@ class RunnerError(RuntimeError):
     """The sandbox runtime could not do what the contract requires (fail loudly)."""
 
 
+def _ci_job_label_args() -> list[str]:
+    job = os.environ.get("AEGIS_CI_JOB", "").strip()
+    return ["--label", f"aegis.ci-job={job}"] if job else []
+
+
+def _remove_container(name: str) -> None:
+    log_path = os.environ.get("AEGIS_CI_VOLUME_LOG", "").strip()
+    if log_path:
+        mounts = _podman(
+            "container",
+            "inspect",
+            name,
+            "--format",
+            '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}',
+            check=False,
+        ).stdout
+        names = [line.strip() for line in mounts.splitlines() if line.strip()]
+        if names:
+            with Path(log_path).open("a", encoding="utf-8") as handle:
+                for volume in names:
+                    handle.write(f"{volume}\n")
+    _podman("rm", "-f", "-v", name, check=False)
+
+
 def _podman(*args: str, check: bool = True, timeout: int = 600) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [PODMAN, *args], capture_output=True, text=True, check=check, timeout=timeout
@@ -358,7 +382,7 @@ class PodmanRunner(ContainerRunner):
             _podman("kill", "--signal", "SIGKILL", name, check=False)
 
     def remove(self, handle: RunHandle) -> None:
-        _podman("rm", "-f", "-v", self.container_name(handle.job_id), check=False)
+        _remove_container(self.container_name(handle.job_id))
         self.stop_broker(handle.job_id)
         self._remove_network(handle.job_id)
 
@@ -413,7 +437,7 @@ class PodmanRunner(ContainerRunner):
 
     def discard(self, job_id: str) -> None:
         """Forget everything a failed preparation created; no container and no output exists."""
-        _podman("rm", "-f", "-v", self.container_name(job_id), check=False)
+        _remove_container(self.container_name(job_id))
         self.stop_broker(job_id)
         self._remove_network(job_id)
 
@@ -451,6 +475,7 @@ class PodmanRunner(ContainerRunner):
             f"{ROLE_LABEL}={BROKER_ROLE}",
             "--label",
             f"{RUNNER_LABEL}={self.owner}",
+            *_ci_job_label_args(),
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--pids-limit",
@@ -516,7 +541,7 @@ class PodmanRunner(ContainerRunner):
         )
 
     def stop_broker(self, job_id: str) -> None:
-        _podman("rm", "-f", "-v", self.broker_name(job_id), check=False)
+        _remove_container(self.broker_name(job_id))
 
     def broker_name(self, job_id: str) -> str:
         return f"aegis-broker-{job_id}"
@@ -594,12 +619,12 @@ class PodmanRunner(ContainerRunner):
                 continue
             # The container is removed but its output directory stays: the collector may still
             # upload what the job produced before it died.
-            _podman("rm", "-f", "-v", name, check=False)
+            _remove_container(name)
             removed.append(job_id)
             self._remove_network(job_id)
         brokers = [name for name, job_id in self._containers(BROKER_ROLE) if job_id not in live]
         for name in brokers:
-            _podman("rm", "-f", "-v", name, check=False)
+            _remove_container(name)
         networks = [name for name, job_id in self._networks() if job_id not in live]
         for name in networks:
             _podman("network", "rm", "-f", name, check=False)
@@ -632,6 +657,7 @@ class PodmanRunner(ContainerRunner):
             f"{ROLE_LABEL}={JOB_ROLE}",
             "--label",
             f"{RUNNER_LABEL}={self.owner}",
+            *_ci_job_label_args(),
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--pids-limit",

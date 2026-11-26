@@ -1,4 +1,4 @@
-"""Regression tests for Podman anonymous-volume leak fixes and the CI dangling-volume guard."""
+"""Regression tests for Podman anonymous-volume leak fixes and the job-scoped CI guard."""
 
 from __future__ import annotations
 
@@ -13,12 +13,29 @@ REPO = Path(__file__).resolve().parents[1]
 CHECK_SCRIPT = REPO / "scripts/ci/check-volume-leak.sh"
 
 PODMAN_STUB = """#!/usr/bin/env bash
-if [ "$1" = "volume" ] && [ "$2" = "ls" ]; then
-  if [ -n "${STUB_DANGLING_VOLUMES:-}" ]; then
-    printf '%s\\n' ${STUB_DANGLING_VOLUMES}
-  fi
-  exit 0
-fi
+case "$1:$2" in
+  ps:*)
+    if [[ "$*" == *"label=aegis.ci-job="* ]]; then
+      printf '%s\\n' ${STUB_JOB_CONTAINERS:-}
+    fi
+    ;;
+  volume:ls)
+    if [[ "$*" == *"label=aegis.ci-job="* ]]; then
+      printf '%s\\n' ${STUB_JOB_VOLUMES:-}
+    fi
+    ;;
+  volume:exists)
+    for v in ${STUB_EXISTING_VOLUMES:-}; do
+      if [ "$v" = "$3" ]; then
+        exit 0
+      fi
+    done
+    exit 1
+    ;;
+  container:inspect)
+    printf '%s\\n' ${STUB_INSPECT_MOUNTS:-}
+    ;;
+esac
 exit 0
 """
 
@@ -31,7 +48,13 @@ def _run_guard(
     stub = bin_dir / "podman"
     stub.write_text(PODMAN_STUB, encoding="utf-8")
     stub.chmod(0o755)
-    environment = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", **env}
+    environment = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "AEGIS_CI_JOB": "job-42",
+        "AEGIS_CI_VOLUME_LOG": str(tmp_path / "volumes.txt"),
+        **env,
+    }
     return subprocess.run(  # noqa: S603 - repository CI script under a stubbed podman
         ["bash", str(CHECK_SCRIPT), *args],
         capture_output=True,
@@ -42,43 +65,78 @@ def _run_guard(
     )
 
 
-def test_ci_volume_guard_records_and_allows_equal_or_fewer_dangling_volumes(
+def test_job_scoped_guard_records_env_and_ignores_unrelated_host_volumes(
     tmp_path: Path,
 ) -> None:
     env_file = tmp_path / "github_env"
+    log_file = tmp_path / "volumes.txt"
     recorded = _run_guard(
         tmp_path,
         ["--record"],
-        env={"GITHUB_ENV": str(env_file), "STUB_DANGLING_VOLUMES": "vol1 vol2"},
+        env={
+            "GITHUB_ENV": str(env_file),
+            "AEGIS_CI_JOB": "python-99-1",
+            "AEGIS_CI_VOLUME_LOG": str(log_file),
+        },
     )
     assert recorded.returncode == 0, recorded.stderr
-    assert env_file.read_text(encoding="utf-8").strip() == "DANGLING_VOLUMES_BEFORE=2"
+    env_text = env_file.read_text(encoding="utf-8")
+    assert "AEGIS_CI_JOB=python-99-1" in env_text
+    assert f"AEGIS_CI_VOLUME_LOG={log_file}" in env_text
 
-    same = _run_guard(
-        tmp_path,
-        ["2"],
-        env={"STUB_DANGLING_VOLUMES": "vol1 vol2"},
-    )
-    assert same.returncode == 0, same.stderr
-    assert "2 -> 2" in same.stdout
-
-    fewer = _run_guard(
-        tmp_path,
-        ["2"],
-        env={"STUB_DANGLING_VOLUMES": "vol1"},
-    )
-    assert fewer.returncode == 0, fewer.stderr
-
-
-def test_ci_volume_guard_fails_when_dangling_volumes_grow(tmp_path: Path) -> None:
-    grew = _run_guard(
+    # Unrelated volumes from other jobs on the shared host exist, but none belong to this job.
+    clean = _run_guard(
         tmp_path,
         [],
-        env={"DANGLING_VOLUMES_BEFORE": "1", "STUB_DANGLING_VOLUMES": "vol1 leaked_anon"},
+        env={
+            "AEGIS_CI_JOB": "python-99-1",
+            "AEGIS_CI_VOLUME_LOG": str(log_file),
+            "STUB_EXISTING_VOLUMES": "other-job-anon-vol",
+        },
     )
-    assert grew.returncode == 1
-    assert "1 -> 2" in grew.stderr
-    assert "leaked_anon" in grew.stderr
+    assert clean.returncode == 0, clean.stderr
+    assert "0 leaked podman volumes for aegis.ci-job=python-99-1" in clean.stdout
+
+
+def test_job_scoped_guard_fails_on_labelled_volume_or_container(tmp_path: Path) -> None:
+    leaked_vol = _run_guard(
+        tmp_path,
+        [],
+        env={"STUB_JOB_VOLUMES": "ci-job-42-vol"},
+    )
+    assert leaked_vol.returncode == 1
+    assert "labelled:ci-job-42-vol" in leaked_vol.stderr
+
+    leaked_ctr = _run_guard(
+        tmp_path,
+        [],
+        env={
+            "STUB_JOB_CONTAINERS": "ctr-123",
+            "STUB_INSPECT_MOUNTS": "anon-vol-from-ctr",
+            "STUB_EXISTING_VOLUMES": "anon-vol-from-ctr",
+        },
+    )
+    assert leaked_ctr.returncode == 1
+    assert "container:ctr-123" in leaked_ctr.stderr
+    assert "container-volume:anon-vol-from-ctr" in leaked_ctr.stderr
+
+
+def test_job_scoped_guard_fails_when_recorded_anonymous_volume_survived_removal(
+    tmp_path: Path,
+) -> None:
+    log_file = tmp_path / "volumes.txt"
+    log_file.write_text("leaked-anon-abc\nremoved-anon-xyz\n", encoding="utf-8")
+    result = _run_guard(
+        tmp_path,
+        [],
+        env={
+            "AEGIS_CI_VOLUME_LOG": str(log_file),
+            "STUB_EXISTING_VOLUMES": "leaked-anon-abc",
+        },
+    )
+    assert result.returncode == 1
+    assert "container-volume:leaked-anon-abc" in result.stderr
+    assert "removed-anon-xyz" not in result.stderr
 
 
 @pytest.mark.parametrize(

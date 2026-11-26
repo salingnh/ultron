@@ -291,6 +291,9 @@ class GatewayProcess:
         # one too when a gate is killed before its own trap runs.
         self.container = f"aegis-ci-{run}-{self.name}"
         self.labels = {"aegis.ci.suite": suite, "aegis.ci.run": run}
+        job = os.environ.get("AEGIS_CI_JOB", "").strip()
+        if job:
+            self.labels["aegis.ci-job"] = job
 
     @classmethod
     def spawn(cls, config: Mapping[str, Any], *, name: str = "llm-gateway") -> GatewayProcess:
@@ -366,6 +369,26 @@ class GatewayProcess:
 
     def stop(self) -> None:
         if self.container:
+            log_path = os.environ.get("AEGIS_CI_VOLUME_LOG", "").strip()
+            if log_path:
+                mounts = subprocess.run(
+                    [
+                        "podman",
+                        "container",
+                        "inspect",
+                        self.container,
+                        "--format",
+                        '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}',
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+                names = [line.strip() for line in mounts.splitlines() if line.strip()]
+                if names:
+                    with Path(log_path).open("a", encoding="utf-8") as handle:
+                        for volume in names:
+                            handle.write(f"{volume}\n")
             subprocess.run(
                 ["podman", "rm", "-f", "-v", self.container], check=False, capture_output=True
             )

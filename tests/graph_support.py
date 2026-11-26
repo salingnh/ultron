@@ -161,6 +161,29 @@ def _podman(*args: str) -> str:
     return completed.stdout.strip()
 
 
+def _ci_job_label_args() -> list[str]:
+    job = os.environ.get("AEGIS_CI_JOB", "").strip()
+    return ["--label", f"aegis.ci-job={job}"] if job else []
+
+
+def _record_container_volumes(name: str) -> None:
+    log_path = os.environ.get("AEGIS_CI_VOLUME_LOG", "").strip()
+    if not log_path:
+        return
+    mounts = _podman(
+        "container",
+        "inspect",
+        name,
+        "--format",
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}',
+    )
+    names = [line.strip() for line in mounts.splitlines() if line.strip()]
+    if names:
+        with open(log_path, "a", encoding="utf-8") as handle:
+            for volume in names:
+                handle.write(f"{volume}\n")
+
+
 def _start_container() -> tuple[str, str]:
     """Start a labelled, throwaway Neo4j from the pinned image; removed when this process exits."""
     password = secrets.token_urlsafe(18)
@@ -173,6 +196,7 @@ def _start_container() -> tuple[str, str]:
         name,
         "--label",
         CONTAINER_LABEL,
+        *_ci_job_label_args(),
         "--tmpfs",
         "/data:rw,size=1g,mode=1777",
         "--tmpfs",
@@ -249,4 +273,5 @@ def stop_test_graph() -> None:
 
 
 def _stop(name: str) -> None:
+    _record_container_volumes(name)
     _podman("rm", "-f", "-v", name)

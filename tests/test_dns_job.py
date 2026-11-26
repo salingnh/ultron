@@ -86,6 +86,7 @@ def test_a_job_resolves_only_through_the_broker_and_is_audited(
         result = m06_support.podman(
             "run",
             "--rm",
+            *m06_support.ci_job_label_args(),
             "--network",
             job_network,
             "--user",
@@ -117,6 +118,7 @@ def test_a_job_resolves_only_through_the_broker_and_is_audited(
         resolv = m06_support.podman(
             "run",
             "--rm",
+            *m06_support.ci_job_label_args(),
             "--network",
             job_network,
             "--dns",

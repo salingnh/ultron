@@ -29,7 +29,7 @@ export PATH="$(dirname "$UV"):$PATH"
 
 require_cmd podman
 
-VOLUMES_BEFORE=$(dangling_volume_count)
+: >"$AEGIS_CI_VOLUME_LOG"
 PG=$(ci_container pg-python)
 PG_PASSWORD=$(random_password)
 NEO4J=$(ci_container neo4j-python)
@@ -43,9 +43,10 @@ cleanup() {
   fi
   remove_container "$PG"
   remove_container "$NEO4J"
-  if ! check_dangling_volume_growth "$VOLUMES_BEFORE" "python gate" && ((status == 0)); then
+  if ! check_job_volume_leaks "python gate" && ((status == 0)); then
     status=1
   fi
+  rm -f "$AEGIS_CI_VOLUME_LOG"
   exit "$status"
 }
 trap 'exit 130' INT

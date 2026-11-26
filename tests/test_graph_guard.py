@@ -178,6 +178,7 @@ def test_start_container_mounts_tmpfs_and_stop_removes_volumes(
         registered.append(fn)
         return fn
 
+    monkeypatch.setenv("AEGIS_CI_JOB", "job-guard-test")
     monkeypatch.setattr(graph_support, "_podman", fake_podman)
     monkeypatch.setattr(graph_support, "_pinned_image", lambda: "neo4j:test")
     monkeypatch.setattr(atexit, "register", fake_register)
@@ -192,8 +193,10 @@ def test_start_container_mounts_tmpfs_and_stop_removes_volumes(
     assert uri == "bolt://127.0.0.1:47687"
     run_args = calls[0]
     tmpfs_targets = [run_args[i + 1] for i, arg in enumerate(run_args) if arg == "--tmpfs"]
+    labels = [run_args[i + 1] for i, arg in enumerate(run_args) if arg == "--label"]
     assert any(target.startswith("/data:") for target in tmpfs_targets), tmpfs_targets
     assert any(target.startswith("/logs:") for target in tmpfs_targets), tmpfs_targets
+    assert "aegis.ci-job=job-guard-test" in labels, labels
     assert registered == [graph_support.stop_test_graph]
 
     graph_support.stop_test_graph()

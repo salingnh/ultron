@@ -395,11 +395,36 @@ def create_network(name: str, *, internal: bool, label: str = "aegis.test=g13a")
     return name
 
 
+def ci_job_label_args() -> list[str]:
+    job = os.environ.get("AEGIS_CI_JOB", "").strip()
+    return ["--label", f"aegis.ci-job={job}"] if job else []
+
+
+def record_container_volumes(name: str) -> None:
+    log_path = os.environ.get("AEGIS_CI_VOLUME_LOG", "").strip()
+    if not log_path or not podman_available():
+        return
+    mounts = podman(
+        "container",
+        "inspect",
+        name,
+        "--format",
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}',
+        check=False,
+    ).stdout
+    names = [line.strip() for line in mounts.splitlines() if line.strip()]
+    if names:
+        with Path(log_path).open("a", encoding="utf-8") as handle:
+            for volume in names:
+                handle.write(f"{volume}\n")
+
+
 def remove_network(name: str) -> None:
     podman("network", "rm", "-f", name, check=False)
 
 
 def remove_container(name: str) -> None:
+    record_container_volumes(name)
     podman("rm", "-f", "-v", name, check=False)
 
 
@@ -412,7 +437,17 @@ def run_detached(
     label: str = "aegis.test=g13a",
     user: str = "65534:65534",
 ) -> str:
-    argv = ["run", "--detach", "--name", name, "--label", label, "--user", user]
+    argv = [
+        "run",
+        "--detach",
+        "--name",
+        name,
+        "--label",
+        label,
+        *ci_job_label_args(),
+        "--user",
+        user,
+    ]
     for network in networks:
         argv += ["--network", network]
     argv += [image, *args]

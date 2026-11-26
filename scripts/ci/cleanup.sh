@@ -22,9 +22,22 @@ filters=("--filter" "label=$CI_SUITE_LABEL" "--filter" "label=$CI_RUN_LABEL")
 
 mapfile -t containers < <(podman ps -aq "${filters[@]}")
 if ((${#containers[@]})); then
+  for ctr in "${containers[@]}"; do
+    record_container_volumes "$ctr"
+  done
   podman rm -f -v "${containers[@]}" >/dev/null
   log "cleanup: removed ${#containers[@]} container(s)"
   removed=$((removed + ${#containers[@]}))
+fi
+
+mapfile -t job_containers < <(podman ps -aq --filter "label=$CI_JOB_LABEL")
+if ((${#job_containers[@]})); then
+  for ctr in "${job_containers[@]}"; do
+    record_container_volumes "$ctr"
+  done
+  podman rm -f -v "${job_containers[@]}" >/dev/null
+  log "cleanup: removed ${#job_containers[@]} job-scoped container(s)"
+  removed=$((removed + ${#job_containers[@]}))
 fi
 
 mapfile -t volumes < <(podman volume ls -q "${filters[@]}")
@@ -32,6 +45,13 @@ if ((${#volumes[@]})); then
   podman volume rm -f "${volumes[@]}" >/dev/null
   log "cleanup: removed ${#volumes[@]} volume(s)"
   removed=$((removed + ${#volumes[@]}))
+fi
+
+mapfile -t job_volumes < <(podman volume ls -q --filter "label=$CI_JOB_LABEL")
+if ((${#job_volumes[@]})); then
+  podman volume rm -f "${job_volumes[@]}" >/dev/null
+  log "cleanup: removed ${#job_volumes[@]} job-scoped volume(s)"
+  removed=$((removed + ${#job_volumes[@]}))
 fi
 
 mapfile -t networks < <(podman network ls -q "${filters[@]}")

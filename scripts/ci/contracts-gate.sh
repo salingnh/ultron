@@ -20,7 +20,7 @@ set -euo pipefail
 require_cmd podman
 require_cmd python3
 
-VOLUMES_BEFORE=$(dangling_volume_count)
+: >"$AEGIS_CI_VOLUME_LOG"
 NETWORK=$(ci_container net)
 PG=$(ci_container pg)
 VENV_DIR=$(mktemp -d -t aegis-contract-venv-XXXXXX)
@@ -40,9 +40,10 @@ cleanup() {
   podman network rm -f "$NETWORK" >/dev/null 2>&1 || true
   rm -rf "$VENV_DIR"
   rm -f "$PLAN"
-  if ! check_dangling_volume_growth "$VOLUMES_BEFORE" "contract gate" && ((status == 0)); then
+  if ! check_job_volume_leaks "contract gate" && ((status == 0)); then
     status=1
   fi
+  rm -f "$AEGIS_CI_VOLUME_LOG"
   exit "$status"
 }
 trap 'exit 130' INT
@@ -71,9 +72,9 @@ log "plan from contracts/README.md: ${#PYTHON_CHECKS[@]} python checks, clean ch
 
 # --- throwaway PostgreSQL 16 + python 3.12 ------------------------------------
 log "network $NETWORK + postgres $PG (throwaway)"
-podman network create --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" "$NETWORK" >/dev/null
+podman network create --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" --label "$CI_JOB_LABEL" "$NETWORK" >/dev/null
 podman run -d --name "$PG" --network "$NETWORK" --network-alias pg \
-  --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" \
+  --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" --label "$CI_JOB_LABEL" \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_USER=aegis -e POSTGRES_DB=postgres \
   --tmpfs /var/lib/postgresql/data "$AEGIS_PG_IMAGE" >/dev/null
 
@@ -88,6 +89,7 @@ log "python 3.12 environment (pinned image, throwaway temp dir)"
 PY=$(ci_container pip)
 status=0
 output=$(podman run --rm --name "$PY" --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" \
+  --label "$CI_JOB_LABEL" \
   -v "$VENV_DIR:/opt/venv" -v "$REPO_ROOT:/src:ro" -w /src --security-opt label=disable \
   "$AEGIS_PYTHON_IMAGE" sh -c '
     set -eu
@@ -104,7 +106,7 @@ PY=
 
 python_run() { # prints the command output, returns its exit status
   local script=$1
-  podman run --rm --network "$NETWORK" \
+  podman run --rm --network "$NETWORK" --label "$CI_JOB_LABEL" \
     -v "$VENV_DIR:/opt/venv:ro" -v "$REPO_ROOT:/src:ro" -w /src \
     --security-opt label=disable -e AEGIS_TEST_PG_DSN="$DSN" -e PYTHONDONTWRITEBYTECODE=1 \
     "$AEGIS_PYTHON_IMAGE" /opt/venv/bin/python -I "$script" 2>&1

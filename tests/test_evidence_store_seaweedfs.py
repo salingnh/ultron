@@ -104,6 +104,7 @@ def seaweedfs() -> Iterator[str]:
             name,
             "--label",
             "aegis.test=g13a",
+            *m06_support.ci_job_label_args(),
             "--tmpfs",
             "/data:rw,size=128m,mode=1777",
             "--publish",

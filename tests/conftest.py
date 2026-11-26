@@ -8,10 +8,24 @@ contracts/tests/*.py.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
+
+_LOCAL_JOB_ID: str | None = None
+_LOCAL_VOLUME_LOG: Path | None = None
+if not os.environ.get("AEGIS_CI_JOB"):
+    _LOCAL_JOB_ID = f"local-pytest-{os.getpid()}"
+    os.environ["AEGIS_CI_JOB"] = _LOCAL_JOB_ID
+    if not os.environ.get("AEGIS_CI_VOLUME_LOG"):
+        _LOCAL_VOLUME_LOG = Path(tempfile.gettempdir()) / f"aegis-ci-volumes-{_LOCAL_JOB_ID}.txt"
+        _LOCAL_VOLUME_LOG.write_text("", encoding="utf-8")
+        os.environ["AEGIS_CI_VOLUME_LOG"] = str(_LOCAL_VOLUME_LOG)
 
 #: `tests/live` needs a Temporal server; the CI `python` job has none, and a skipped check is not
 #: evidence (AEGIS_NO_SKIPS). It is collected only when a target is configured, and the live runner
@@ -45,7 +59,26 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]) 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Ensure any throwaway Neo4j container started during this pytest session is removed."""
-    del session, exitstatus
+    del exitstatus
     module = sys.modules.get("tests.graph_support")
     if module is not None:
         module.stop_test_graph()
+    if _LOCAL_JOB_ID is None:
+        return
+    try:
+        if shutil.which("podman") is not None:
+            script = Path(__file__).resolve().parents[1] / "scripts" / "ci" / "check-volume-leak.sh"
+            if script.is_file():
+                checked = subprocess.run(
+                    ["bash", str(script)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=60,
+                )
+                if checked.returncode != 0:
+                    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+                    sys.stderr.write(checked.stderr)
+    finally:
+        if _LOCAL_VOLUME_LOG is not None:
+            _LOCAL_VOLUME_LOG.unlink(missing_ok=True)

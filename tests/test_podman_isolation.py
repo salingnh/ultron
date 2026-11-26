@@ -383,6 +383,7 @@ def _in_job_network(topology: Topology, probe_image: str, args: list[str]) -> st
     result = m06_support.podman(
         "run",
         "--rm",
+        *m06_support.ci_job_label_args(),
         "--network",
         topology.job_network,
         "--user",
@@ -465,6 +466,7 @@ def test_broker_allows_the_bound_target_and_denies_everything_else(
         output = m06_support.podman(
             "run",
             "--rm",
+            *m06_support.ci_job_label_args(),
             "--network",
             broker_network,
             "--user",
@@ -509,6 +511,7 @@ def test_broker_allows_the_bound_target_and_denies_everything_else(
         direct = m06_support.podman(
             "run",
             "--rm",
+            *m06_support.ci_job_label_args(),
             "--network",
             broker_network,
             "--user",

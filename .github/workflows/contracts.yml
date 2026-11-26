@@ -47,7 +47,7 @@ jobs:
           persist-credentials: false
           clean: true
 
-      - name: Record dangling volume count
+      - name: Record job volume scope
         run: scripts/ci/check-volume-leak.sh --record
 
       - name: Cleanup is scoped to this run
