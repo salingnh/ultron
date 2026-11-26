@@ -22,6 +22,10 @@ import pytest
 
 from aegis import validation
 from aegis.m18_intel.sync import FeedSync
+from aegis.m20_vuln.configurations import (
+    PLATFORM_UNCONFIRMED_CODE,
+    VERSION_UNSPECIFIED_CODE,
+)
 from aegis.m20_vuln.matching import (
     VERSION_UNKNOWN_CODE,
     VERSION_UNKNOWN_MESSAGE,
@@ -230,6 +234,48 @@ def test_a_withdrawn_cve_is_not_a_candidate(database: tuple[str, list[str]]) -> 
 
     assert report.new_matches == 2
     assert found == {"CVE-2021-23017", "CVE-2022-22965"}
+
+
+def test_a_configuration_that_needs_an_unobserved_platform_is_not_a_candidate(
+    database: tuple[str, list[str]],
+) -> None:
+    """Item 61: the trial's httpd 2.4.49 service was a candidate for "httpd on Windows".
+
+    The fixture adds CVE-2024-40898 (httpd < 2.4.62 **and** microsoft:windows), CVE-1999-0289
+    (`http_server:-`, no version) and CVE-2021-42013 (a real bounded range). Only the range may
+    become a candidate, and the two rejected decisions must be visible in the report's coverage.
+    """
+    dsn, jobs = database
+    ingest_services(dsn, jobs[0])
+    with connect(dsn) as connection:
+        fixtures.seed_intel(dsn)
+        FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+            "nvd",
+            "2026-11-26-configurations",
+            fixtures.nvd_with_configuration_cases(),
+            source_uri="nvd-configurations.json",
+            snapshot_at=fixtures.SNAPSHOT_AT,
+        )
+        report = Matcher(connection).run()
+        found = fixtures.matches(connection)
+
+    candidates = {row["vulnerability_id"] for row in found}
+    assert candidates == {"CVE-2021-41773", "CVE-2021-23017", "CVE-2022-22965", "CVE-2021-42013"}
+    assert "CVE-2024-40898" not in candidates
+    assert "CVE-1999-0289" not in candidates
+    assert report.new_matches == 4
+    assert report.platform_unconfirmed == 1
+    assert report.version_unspecified == 1
+
+    limitations = {item["code"]: item for item in report.coverage["limitations"]}
+    platform = limitations[PLATFORM_UNCONFIRMED_CODE]
+    assert platform["vulnerability_ids"] == ["CVE-2024-40898"]
+    assert platform["subjects"] == [fixtures.SERVICE_KEY]
+    assert platform["decisions"] == 1
+    assert limitations[VERSION_UNSPECIFIED_CODE]["vulnerability_ids"] == ["CVE-1999-0289"]
+    # The range candidate keeps its bounds, so an operator can audit what matched.
+    range_row = next(row for row in found if row["vulnerability_id"] == "CVE-2021-42013")
+    assert range_row["affected_range"] == ">= 2.4.49, <= 2.4.50"
 
 
 def _ensure_0007(dsn: str) -> None:

@@ -79,6 +79,10 @@ def match(**bounds: object) -> CpeMatch:
     return CpeMatch.from_json({"criteria": NGINX, "vulnerable": True, **bounds})
 
 
+def match_wildcard(criteria: str, **bounds: object) -> CpeMatch:
+    return CpeMatch.from_json({"criteria": criteria, "vulnerable": True, **bounds})
+
+
 def test_a_range_matches_inside_and_outside_its_bounds() -> None:
     criterion = match(version_start_including="0.6.18", version_end_excluding="1.20.1")
     assert criterion.matches(parse_cpe("cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"))
@@ -112,10 +116,23 @@ def test_another_product_or_no_version_never_matches() -> None:
     assert not criterion.matches(parse_cpe(NGINX))
 
 
-def test_a_wildcard_criterion_matches_every_version_of_the_product() -> None:
+def test_a_wildcard_criterion_is_not_a_version_match() -> None:
+    """`*` is CPE's "any" and `-` its "not applicable": NVD published no version to match.
+
+    The trial of item 61 showed the cost of the old reading: `cpe:2.3:a:apache:http_server:-`
+    matched every Apache version, which is where 11 of the 99 candidates on httpd 2.4.49 came from.
+    """
     criterion = match()
-    assert criterion.matches(parse_cpe("cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"))
+    assert criterion.has_version_evidence is False
+    assert not criterion.matches(parse_cpe("cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"))
     assert criterion.range_text() is None
+    not_applicable = match_wildcard("cpe:2.3:a:f5:nginx:-:*:*:*:*:*:*:*")
+    assert not_applicable.has_version_evidence is False
+    assert not not_applicable.matches(parse_cpe("cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"))
+    # A wildcard product *with* a bound is a range and still matches.
+    bounded = match(version_end_excluding="1.20.1")
+    assert bounded.has_version_evidence is True
+    assert bounded.matches(parse_cpe("cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"))
 
 
 def test_a_malformed_entry_is_refused() -> None:
