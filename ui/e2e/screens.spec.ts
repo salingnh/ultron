@@ -49,128 +49,256 @@ async function captureScreen(page: Page, filename: string) {
   }
 }
 
-test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
-  test.use({ viewport: { width: 1440, height: 900 } });
-
-  test('Capture all screens in light theme', async ({ page }) => {
-    const theme = 'light';
-    const isRealMode = process.env.VITE_USE_MOCK === 'false';
-    const token = resolveTestToken();
-
-    // Set theme and token in localStorage before navigating
-    await page.addInitScript(({ t, tok }) => {
-      window.localStorage.setItem('ultron-theme', t);
-      document.documentElement.setAttribute('data-theme', t);
-      if (tok) {
-        window.localStorage.setItem('ultron-operator-token', tok);
-      }
-    }, { t: theme, tok: token });
-
-    // 1. Campaign List Screen
-    await page.goto('/campaigns');
-    if (token) {
-      await page.evaluate((tok) => {
-        window.localStorage.setItem('ultron-operator-token', tok);
-        window.dispatchEvent(new CustomEvent('ultron-token-changed', { detail: { token: tok } }));
-      }, token);
-    }
-    await expect(page.getByText('Quản lý Chiến dịch (Campaigns)')).toBeVisible();
-    await expect(
-      page.getByRole('table', { name: 'Bảng danh sách chiến dịch' }).or(page.getByText('Chưa có chiến dịch nào'))
-    ).toBeVisible();
-    if (isRealMode) {
-      await expect(page.getByText('REAL API')).toBeVisible();
-      await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
-    }
-    await captureScreen(page, `01-campaign-list-${theme}.png`);
-
-    // Resolve campaign ID: prefer explicit env var or G1.6c/vulnlab campaign in real mode
-    let campaignId = process.env.AEGIS_SCREENSHOT_CAMPAIGN_ID || '01934f6a-0000-7000-8000-000000000001';
-    if (!process.env.AEGIS_SCREENSHOT_CAMPAIGN_ID) {
-      const preferredLink = page
-        .locator('table tr', { hasText: /G1\.6c|vulnlab-lab-httpd/ })
-        .locator('a[href^="/campaigns/"]')
-        .first();
-      const detailLink = page.locator('table a[href^="/campaigns/"]').first();
-      try {
-        await detailLink.waitFor({ state: 'visible', timeout: 6000 });
-        const targetLink = (await preferredLink.count()) > 0 ? preferredLink : detailLink;
-        const href = await targetLink.getAttribute('href');
-        if (href) {
-          campaignId = href.replace('/campaigns/', '');
-        }
-      } catch {
-        // fallback to default id if not rendered in time
-      }
-    }
-
-    // 2. Campaign Detail Screen
-    await page.goto(`/campaigns/${campaignId}`);
-    await expect(page.getByText('Mục tiêu đầu vào (Target Seeds)')).toBeVisible();
-    await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
-    await captureScreen(page, `02-campaign-detail-${theme}.png`);
-
-    // 3. Job Table View Screen (showing status, priority, and wait/block reasons)
-    await page.goto(`/jobs?campaign_id=${campaignId}`);
-    await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
-    await expect(page.getByRole('table', { name: 'Bảng chi tiết Job' })).toBeVisible();
-    await captureScreen(page, `03-job-table-${theme}.png`);
-
-    // 4. Job React Flow View Screen
-    await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
-    await expect(page.locator('.react-flow__renderer')).toBeVisible();
-    await expect(page.locator('.react-flow__node').first()).toBeVisible();
-    await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
-
-    // 5. Asset Graph View Screen (IP -> Service -> Application -> Vulnerability)
-    await page.goto(`/assets?campaign_id=${campaignId}`);
-    await expect(page.getByText('Đồ thị Tri thức & Dịch vụ Tài sản')).toBeVisible();
-    const graphNode = page.locator('.graph-container svg g[role="button"]').first();
-    const emptyGraph = page.getByText('Chưa có dữ liệu đồ thị tài sản cho chiến dịch này');
-    await expect(graphNode.or(emptyGraph)).toBeVisible({ timeout: 15000 });
-    await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
-
-    // 5b. Vulnerability Panel on click (from graph CVE node if present)
-    const vulnNode = page.locator('.graph-container svg g[aria-label^="Ứng viên CVE "]').first();
-    if ((await vulnNode.count()) > 0) {
-      await vulnNode.click();
-      const vulnPanel = page.getByLabel('Bảng chi tiết ứng viên CVE');
-      await expect(vulnPanel).toBeVisible();
-      await expect(vulnPanel.getByText('Ứng viên (chưa xác minh)')).toBeVisible();
-      await captureScreen(page, `05c-vulnerability-panel-${theme}.png`);
-    }
-
-    // 5c. Service Table per campaign
-    await page.getByRole('button', { name: /Bảng Dịch vụ/ }).click();
-    await expect(
-      page.getByRole('table', { name: 'Bảng dịch vụ theo chiến dịch' }).or(
-        page.getByText('Chưa phát hiện dịch vụ nào khớp bộ lọc trong chiến dịch')
-      )
-    ).toBeVisible();
-    const firstCveBtn = page.locator('table[aria-label="Bảng dịch vụ theo chiến dịch"] button', { hasText: /CVE-/ }).first();
-    if ((await firstCveBtn.count()) > 0) {
-      await firstCveBtn.click();
-      await expect(page.getByLabel('Bảng chi tiết ứng viên CVE')).toBeVisible();
-    }
-    await captureScreen(page, `05b-service-table-${theme}.png`);
-
-    // 5d. Asset Table View Screen
-    await page.getByRole('button', { name: 'Bảng Tài sản' }).click();
-    await expect(
-      page.getByRole('table', { name: 'Bảng tài sản số' }).or(page.getByText('Không tìm thấy tài sản nào phù hợp'))
-    ).toBeVisible();
-    await captureScreen(page, `05d-asset-table-${theme}.png`);
-
-    // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
-    await page.goto('/tools');
-    await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
-    await expect(page.getByText('dns.enumerate_subdomains')).toBeVisible();
-    await expect(page.getByText('subfinder', { exact: true })).toBeVisible();
-    if (isRealMode) {
-      await expect(page.getByText('Khớp Manifest (Healthy)').first()).toBeVisible();
-    }
-    await captureScreen(page, `06-tool-catalogue-${theme}.png`);
+async function assertNoHorizontalOverflow(page: Page) {
+  const metrics = await page.evaluate(() => {
+    const header = document.querySelector('.app-header');
+    const lastAction = document.querySelector('.app-header .header-actions')?.lastElementChild;
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      headerScrollWidth: header ? header.scrollWidth : 0,
+      headerClientWidth: header ? header.clientWidth : window.innerWidth,
+      lastActionRight: lastAction ? lastAction.getBoundingClientRect().right : 0,
+    };
   });
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth);
+  expect(metrics.headerScrollWidth).toBeLessThanOrEqual(metrics.headerClientWidth + 1);
+  expect(metrics.lastActionRight).toBeLessThanOrEqual(metrics.innerWidth + 1);
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test.describe(`Ultron Operations UI - 1440px (${theme})`, () => {
+    test.use({ viewport: { width: 1440, height: 900 } });
+
+    test(`Capture all screens and verify FE defects (${theme})`, async ({ page }) => {
+      const isRealMode = process.env.VITE_USE_MOCK === 'false';
+      const token = resolveTestToken();
+
+      // Set theme and token in localStorage before navigating
+      await page.addInitScript(({ t, tok }) => {
+        window.localStorage.setItem('ultron-theme', t);
+        if (tok) {
+          window.localStorage.setItem('ultron-operator-token', tok);
+        }
+        document.documentElement?.setAttribute('data-theme', t);
+      }, { t: theme, tok: token });
+
+      // 1. Campaign List Screen + F3 single-line "Chi tiết" + F6 Token modal Escape & focus
+      await page.goto('/campaigns');
+      if (token) {
+        await page.evaluate((tok) => {
+          window.localStorage.setItem('ultron-operator-token', tok);
+          window.dispatchEvent(new CustomEvent('ultron-token-changed', { detail: { token: tok } }));
+        }, token);
+      }
+      await expect(page.getByText('Quản lý Chiến dịch (Campaigns)')).toBeVisible();
+      await expect(
+        page.getByRole('table', { name: 'Bảng danh sách chiến dịch' }).or(page.getByText('Chưa có chiến dịch nào'))
+      ).toBeVisible();
+      if (isRealMode) {
+        await expect(page.getByText('REAL API')).toBeVisible();
+        await expect(page.getByText('Token: Đã cấu hình')).toBeVisible();
+      }
+      await assertNoHorizontalOverflow(page);
+
+      // F3: verify "Chi tiết" button does not wrap onto 2 lines
+      const firstDetailBtn = page.locator('table a[href^="/campaigns/"]').first();
+      if ((await firstDetailBtn.count()) > 0) {
+        const box = await firstDetailBtn.boundingBox();
+        expect(box?.height ?? 0).toBeLessThan(36);
+      }
+
+      // F6: verify TokenConfigModal focuses input and closes on Escape
+      await page.getByRole('button', { name: 'Cấu hình Operator Bearer Token' }).click();
+      const tokenInput = page.getByLabel('Nhập Operator Token');
+      await expect(tokenInput).toBeVisible();
+      await expect(tokenInput).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(tokenInput).toBeHidden();
+
+      await captureScreen(page, `01-campaign-list-${theme}.png`);
+
+      // Resolve campaign ID: prefer explicit env var or G1.6c/vulnlab campaign in real mode
+      let campaignId = process.env.AEGIS_SCREENSHOT_CAMPAIGN_ID || '01934f6a-0000-7000-8000-000000000001';
+      if (!process.env.AEGIS_SCREENSHOT_CAMPAIGN_ID) {
+        const preferredLink = page
+          .locator('table tr', { hasText: /G1\.6c|vulnlab-lab-httpd/ })
+          .locator('a[href^="/campaigns/"]')
+          .first();
+        const detailLink = page.locator('table a[href^="/campaigns/"]').first();
+        try {
+          await detailLink.waitFor({ state: 'visible', timeout: 6000 });
+          const targetLink = (await preferredLink.count()) > 0 ? preferredLink : detailLink;
+          const href = await targetLink.getAttribute('href');
+          if (href) {
+            campaignId = href.replace('/campaigns/', '');
+          }
+        } catch {
+          // fallback to default id if not rendered in time
+        }
+      }
+
+      // 2. Campaign Detail Screen
+      await page.goto(`/campaigns/${campaignId}`);
+      await expect(page.getByText('Mục tiêu đầu vào (Target Seeds)')).toBeVisible();
+      await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `02-campaign-detail-${theme}.png`);
+
+      // 3. Job Table View Screen (showing status, priority, and wait/block reasons)
+      await page.goto(`/jobs?campaign_id=${campaignId}`);
+      await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
+      await expect(page.getByRole('table', { name: 'Bảng chi tiết Job' })).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `03-job-table-${theme}.png`);
+
+      // 4. Job React Flow View Screen + F7 fitView no horizontal overflow
+      await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
+      await expect(page.locator('.react-flow__renderer')).toBeVisible();
+      await expect(page.locator('.react-flow__node').first()).toBeVisible();
+      const rfOverflow = await page.locator('.react-flow').evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(rfOverflow.scrollWidth).toBeLessThanOrEqual(rfOverflow.clientWidth + 2);
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `04-job-flow-reactflow-${theme}.png`);
+
+      // 4b. Agent Activity Screen
+      await page.goto(`/activity?campaign_id=${campaignId}`);
+      await expect(page.getByText('Nhật ký Hoạt động Agent (Activity)')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `04b-activity-${theme}.png`);
+
+      // 5. Asset Graph View Screen (IP -> Service -> Application -> Vulnerability)
+      await page.goto(`/assets?campaign_id=${campaignId}`);
+      await expect(page.getByText('Đồ thị Tri thức & Dịch vụ Tài sản')).toBeVisible();
+      const graphNode = page.locator('.graph-container svg g[role="button"]').first();
+      const emptyGraph = page.getByText('Chưa có dữ liệu đồ thị tài sản cho chiến dịch này');
+      const graphError = page.getByText('Không thể tải đồ thị tài sản cho chiến dịch này');
+      await expect(graphNode.or(emptyGraph).or(graphError)).toBeVisible({ timeout: 15000 });
+      if (await graphError.isVisible()) {
+        await expect(page.getByRole('alert')).toContainText('Đường dẫn (path):');
+        await expect(page.getByRole('alert')).toContainText('Mã lỗi:');
+      }
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `05-asset-graph-provenance-${theme}.png`);
+
+      // 5b. Vulnerability Panel on click (from graph CVE node if present)
+      const vulnNode = page.locator('.graph-container svg g[aria-label^="Ứng viên CVE "]').first();
+      if ((await vulnNode.count()) > 0) {
+        await vulnNode.click();
+        const vulnPanel = page.getByLabel('Bảng chi tiết ứng viên CVE');
+        await expect(vulnPanel).toBeVisible();
+        await expect(vulnPanel.getByText('Ứng viên (chưa xác minh)')).toBeVisible();
+        await captureScreen(page, `05c-vulnerability-panel-${theme}.png`);
+      }
+
+      // 5c. Service Table per campaign + F5 badge click opens CVE panel + F1 graphError isolated from table views
+      await page.getByRole('button', { name: /Bảng Dịch vụ/ }).click();
+      await expect(graphError).toBeHidden();
+      await expect(
+        page.getByRole('table', { name: 'Bảng dịch vụ theo chiến dịch' }).or(
+          page.getByText('Chưa phát hiện dịch vụ nào khớp bộ lọc trong chiến dịch')
+        )
+      ).toBeVisible();
+      const candidateBadge = page
+        .locator('table[aria-label="Bảng dịch vụ theo chiến dịch"] button', { hasText: /ứng viên/ })
+        .first();
+      if ((await candidateBadge.count()) > 0) {
+        await candidateBadge.click();
+        await expect(page.getByLabel('Bảng chi tiết ứng viên CVE')).toBeVisible();
+      }
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `05b-service-table-${theme}.png`);
+
+      // 5d. Asset Table View Screen + F1 graphError stays hidden above AssetTable
+      await page.getByRole('button', { name: 'Bảng Tài sản' }).click();
+      await expect(graphError).toBeHidden();
+      await expect(
+        page.getByRole('table', { name: 'Bảng tài sản số' }).or(page.getByText('Không tìm thấy tài sản nào phù hợp'))
+      ).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `05d-asset-table-${theme}.png`);
+
+      // 6. Tool Catalogue Screen (Wired to real GET /capabilities)
+      await page.goto('/tools');
+      await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
+      await expect(page.getByText('dns.enumerate_subdomains')).toBeVisible();
+      await expect(page.getByText('subfinder', { exact: true })).toBeVisible();
+      if (isRealMode) {
+        await expect(page.getByText('Khớp Manifest (Healthy)').first()).toBeVisible();
+      }
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `06-tool-catalogue-${theme}.png`);
+    });
+  });
+}
+
+test.describe('Ultron Operations UI - 390px Responsive Verification', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`Renders all main routes without horizontal overflow at 390px (${theme})`, async ({ page }) => {
+      const token = resolveTestToken();
+      await page.addInitScript(({ t, tok }) => {
+        window.localStorage.setItem('ultron-theme', t);
+        if (tok) {
+          window.localStorage.setItem('ultron-operator-token', tok);
+        }
+        document.documentElement?.setAttribute('data-theme', t);
+      }, { t: theme, tok: token });
+
+      await page.goto('/campaigns');
+      await expect(page.getByText('Quản lý Chiến dịch (Campaigns)')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `09-mobile-390-campaigns-${theme}.png`);
+
+      const firstLink = page.locator('table a[href^="/campaigns/"]').first();
+      let campaignId = process.env.AEGIS_SCREENSHOT_CAMPAIGN_ID || '01934f6a-0000-7000-8000-000000000001';
+      if ((await firstLink.count()) > 0) {
+        const href = await firstLink.getAttribute('href');
+        if (href) campaignId = href.replace('/campaigns/', '');
+      }
+
+      await page.goto(`/campaigns/${campaignId}`);
+      await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+
+      await page.goto(`/jobs?campaign_id=${campaignId}`);
+      await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await page.getByRole('button', { name: 'Đồ thị Luồng (React Flow)' }).click();
+      await expect(page.locator('.react-flow__renderer')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `09b-mobile-390-jobs-flow-${theme}.png`);
+
+      await page.goto(`/activity?campaign_id=${campaignId}`);
+      await expect(page.getByText('Nhật ký Hoạt động Agent (Activity)')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `09c-mobile-390-activity-${theme}.png`);
+
+      await page.goto(`/assets?campaign_id=${campaignId}`);
+      await expect(page.getByText('Đồ thị Tri thức & Dịch vụ Tài sản')).toBeVisible();
+      await expect(
+        page
+          .locator('.graph-container svg g[role="button"]')
+          .first()
+          .or(page.getByText('Chưa có dữ liệu đồ thị tài sản cho chiến dịch này'))
+          .or(page.getByText('Không thể tải đồ thị tài sản cho chiến dịch này'))
+      ).toBeVisible({ timeout: 15000 });
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `09d-mobile-390-assets-${theme}.png`);
+
+      await page.goto('/tools');
+      await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+    });
+  }
+});
+
+test.describe('Ultron Operations UI - Create & Live Flows', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
 
   test('Campaign create form, internet confirmation, validation error, policy adopt, and first-run token help', async ({
     page,
@@ -185,8 +313,8 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
     // First-run help check without token
     await page.addInitScript(({ t }) => {
       window.localStorage.setItem('ultron-theme', t);
-      document.documentElement.setAttribute('data-theme', t);
       window.localStorage.removeItem('ultron-operator-token');
+      document.documentElement?.setAttribute('data-theme', t);
     }, { t: theme });
 
     await page.goto('/campaigns');
@@ -292,8 +420,8 @@ test.describe('Ultron Operations UI - 1440px Visual Screenshots', () => {
 
     await page.addInitScript((tok) => {
       window.localStorage.setItem('ultron-theme', 'light');
-      document.documentElement.setAttribute('data-theme', 'light');
       window.localStorage.setItem('ultron-operator-token', tok);
+      document.documentElement?.setAttribute('data-theme', 'light');
     }, token);
 
     // Navigate to campaigns and get the active campaign

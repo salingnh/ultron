@@ -13,9 +13,10 @@ import {
   Radio,
   Edit3,
   CheckCircle2,
+  Activity,
 } from 'lucide-react';
-import { ApiError, apiClient, generateIdempotencyKey } from '../api/client';
-import type { AppError, Campaign, CapabilityItem, RoEPolicy } from '../api/types';
+import { ApiError, apiClient, generateIdempotencyKey, toUiError } from '../api/client';
+import type { AppError, Campaign, CapabilityItem, RoEPolicy, UiError } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay, InlineFieldError } from '../components/ErrorDisplay';
@@ -32,9 +33,9 @@ export const CampaignDetailScreen: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [actionError, setActionError] = useState<AppError | Error | string | null>(null);
+  const [actionError, setActionError] = useState<UiError | null>(null);
   const [modalAction, setModalAction] = useState<'pause' | 'resume' | 'cancel' | null>(null);
   const [actionReason, setActionReason] = useState('');
   const [sseConnected, setSseConnected] = useState(false);
@@ -49,7 +50,7 @@ export const CampaignDetailScreen: React.FC = () => {
   const [policyServerErrors, setPolicyServerErrors] = useState<Record<string, AppError | undefined>>(
     {}
   );
-  const [policyTopError, setPolicyTopError] = useState<AppError | Error | string | null>(null);
+  const [policyTopError, setPolicyTopError] = useState<UiError | null>(null);
   const [policySubmitting, setPolicySubmitting] = useState(false);
   const [policySuccessMsg, setPolicySuccessMsg] = useState<string | null>(null);
   const [pendingInternetPolicy, setPendingInternetPolicy] = useState<{
@@ -65,7 +66,7 @@ export const CampaignDetailScreen: React.FC = () => {
       const data = await apiClient.getCampaign(campaignId);
       setCampaign(data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Không thể tải thông tin chiến dịch');
+      setError(toUiError(err, `/campaigns/${campaignId}`));
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -170,11 +171,9 @@ export const CampaignDetailScreen: React.FC = () => {
       setModalAction(null);
       setActionReason('');
     } catch (err: unknown) {
-      if (err instanceof ApiError && err.appError) {
-        setActionError(err.appError);
-      } else {
-        setActionError(err instanceof Error ? err.message : 'Thao tác thất bại');
-      }
+      setActionError(
+        toUiError(err, `/campaigns/${campaign.campaign_id}/${modalAction}`)
+      );
     } finally {
       setActionLoading(false);
     }
@@ -226,14 +225,14 @@ export const CampaignDetailScreen: React.FC = () => {
       await loadCampaign(campaign.campaign_id, false);
     } catch (err: unknown) {
       setPendingInternetPolicy(null);
+      setPolicyTopError(
+        toUiError(err, `/campaigns/${campaign.campaign_id}/policy`)
+      );
       if (err instanceof ApiError && err.appError) {
-        setPolicyTopError(err.appError);
         const key = mapServerFieldToKey(err.appError.field);
         if (key) {
           setPolicyServerErrors({ [key]: err.appError });
         }
-      } else {
-        setPolicyTopError(err instanceof Error ? err.message : 'Không thể cập nhật chính sách RoE');
       }
     } finally {
       setPolicySubmitting(false);
@@ -399,6 +398,9 @@ export const CampaignDetailScreen: React.FC = () => {
 
             <Link to={`/jobs?campaign_id=${campaign.campaign_id}`} className="btn">
               <GitBranch size={14} /> Xem Luồng Job
+            </Link>
+            <Link to={`/activity?campaign_id=${campaign.campaign_id}`} className="btn">
+              <Activity size={14} /> Nhật ký Agent
             </Link>
             <Link to={`/assets?campaign_id=${campaign.campaign_id}`} className="btn">
               <Network size={14} /> Xem Đồ thị Tài sản
@@ -804,20 +806,44 @@ export const CampaignDetailScreen: React.FC = () => {
             <BarChart3 size={18} style={{ color: 'var(--accent)' }} />
             <span>Ngân sách &amp; Bộ đếm Tác chiến</span>
           </div>
-          {campaign.budget_remaining && (campaign.budget_remaining.llm_cost_usd !== undefined || campaign.budget_remaining.hours !== undefined) ? (
+          {campaign.budget_remaining &&
+          (campaign.budget_remaining.llm_cost_usd !== undefined ||
+            campaign.budget_remaining.llm_tokens !== undefined ||
+            campaign.budget_remaining.jobs !== undefined ||
+            campaign.budget_remaining.hours !== undefined) ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-              <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Chi phí LLM còn lại</div>
-                <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--ink)' }}>
-                  ${campaign.budget_remaining.llm_cost_usd?.toFixed(2)}
+              {campaign.budget_remaining.llm_cost_usd !== undefined && (
+                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Chi phí LLM còn lại</div>
+                  <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--ink)' }}>
+                    ${campaign.budget_remaining.llm_cost_usd.toFixed(2)}
+                  </div>
                 </div>
-              </div>
-              <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Thời lượng còn lại</div>
-                <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--ink)' }}>
-                  {campaign.budget_remaining.hours?.toFixed(1)}h
+              )}
+              {campaign.budget_remaining.llm_tokens !== undefined && (
+                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Token LLM còn lại</div>
+                  <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--ink)' }}>
+                    {campaign.budget_remaining.llm_tokens.toLocaleString('en-US')}
+                  </div>
                 </div>
-              </div>
+              )}
+              {campaign.budget_remaining.jobs !== undefined && (
+                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Số job còn lại</div>
+                  <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--ink)' }}>
+                    {campaign.budget_remaining.jobs}
+                  </div>
+                </div>
+              )}
+              {campaign.budget_remaining.hours !== undefined && (
+                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Thời lượng còn lại</div>
+                  <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--ink)' }}>
+                    {campaign.budget_remaining.hours.toFixed(1)}h
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ color: 'var(--muted)', fontSize: 'var(--text-sm)', marginBottom: 14 }}>
@@ -829,16 +855,32 @@ export const CampaignDetailScreen: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Tài sản phát hiện</div>
-                <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--success)' }}>
-                  {campaign.counters.assets}
+                <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--success)' }}>
+                  {campaign.counters.assets ?? '—'}
                 </div>
               </div>
               <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Job đang chạy / Tổng</div>
-                <div style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--accent)' }}>
-                  {campaign.counters.jobs_running} / {campaign.counters.jobs_total}
+                <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--accent)' }}>
+                  {campaign.counters.jobs_running ?? '—'} / {campaign.counters.jobs_total ?? '—'}
                 </div>
               </div>
+              {campaign.counters.jobs_failed !== undefined && (
+                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Job thất bại / Từ chối policy</div>
+                  <div className="tabular" style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--ink)' }}>
+                    {campaign.counters.jobs_failed} failed · {campaign.counters.policy_denials ?? 0} denied
+                  </div>
+                </div>
+              )}
+              {campaign.counters.agent_sessions !== undefined && (
+                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Phiên Agent / Graph rev</div>
+                  <div className="tabular" style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--ink)' }}>
+                    {campaign.counters.agent_sessions} phiên · rev {campaign.counters.graph_revision ?? '—'}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, Shield, Target, Info } from 'lucide-react';
-import { ApiError, apiClient, generateIdempotencyKey } from '../api/client';
-import type { AppError, CapabilityItem, CreateCampaignRequest } from '../api/types';
+import { ApiError, apiClient, generateIdempotencyKey, toUiError } from '../api/client';
+import type { AppError, CapabilityItem, CreateCampaignRequest, UiError } from '../api/types';
 import { ErrorDisplay, InlineFieldError } from '../components/ErrorDisplay';
 import { RoEPolicyFields } from '../components/RoEPolicyFields';
 import { InternetConfirmModal } from '../components/InternetConfirmModal';
@@ -29,7 +29,7 @@ export const CampaignCreateScreen: React.FC = () => {
   const [capabilities, setCapabilities] = useState<CapabilityItem[]>([]);
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
   const [serverErrors, setServerErrors] = useState<Record<string, AppError | undefined>>({});
-  const [topError, setTopError] = useState<AppError | Error | string | null>(null);
+  const [topError, setTopError] = useState<UiError | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => generateIdempotencyKey());
   const [submitting, setSubmitting] = useState(false);
   const [pendingInternetPayload, setPendingInternetPayload] = useState<CreateCampaignRequest | null>(
@@ -98,14 +98,12 @@ export const CampaignCreateScreen: React.FC = () => {
       navigate(`/campaigns/${created.campaign_id}`);
     } catch (err: unknown) {
       setPendingInternetPayload(null);
+      setTopError(toUiError(err, '/campaigns'));
       if (err instanceof ApiError && err.appError) {
-        setTopError(err.appError);
         const mappedKey = mapServerFieldToKey(err.appError.field);
         if (mappedKey) {
           setServerErrors({ [mappedKey]: err.appError });
         }
-      } else {
-        setTopError(err instanceof Error ? err.message : 'Không thể tạo chiến dịch');
       }
     } finally {
       setSubmitting(false);

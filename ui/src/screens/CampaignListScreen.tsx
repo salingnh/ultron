@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Eye, Plus, Layers, Filter, Clock, DollarSign, Activity, Key } from 'lucide-react';
-import { ApiError, apiClient } from '../api/client';
-import type { AppError, Campaign, CampaignStatus } from '../api/types';
+import { ApiError, apiClient, toUiError } from '../api/client';
+import type { Campaign, CampaignStatus, UiError } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay } from '../components/ErrorDisplay';
@@ -10,11 +10,12 @@ import { ErrorDisplay } from '../components/ErrorDisplay';
 export const CampaignListScreen: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<AppError | Error | string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
   const loadCampaigns = useCallback(async () => {
+    const qs = statusFilter !== 'ALL' ? `?status=${encodeURIComponent(statusFilter)}` : '';
     try {
       setLoading(true);
       setError(null);
@@ -24,11 +25,9 @@ export const CampaignListScreen: React.FC = () => {
       setCampaigns(res.items);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
-        setErrorStatus(err.status);
-        setError(err.appError || err);
-      } else {
-        setError(err instanceof Error ? err.message : 'Không thể tải danh sách chiến dịch');
+        setErrorStatus(err.status ?? null);
       }
+      setError(toUiError(err, `/campaigns${qs}`));
     } finally {
       setLoading(false);
     }
@@ -159,30 +158,51 @@ export const CampaignListScreen: React.FC = () => {
                     <span className="brand-badge">{camp.policy_version}</span>
                   </td>
                   <td>
-                    {camp.budget_remaining ? (
+                    {camp.budget_remaining &&
+                    (camp.budget_remaining.llm_cost_usd !== undefined ||
+                      camp.budget_remaining.llm_tokens !== undefined ||
+                      camp.budget_remaining.hours !== undefined ||
+                      camp.budget_remaining.jobs !== undefined) ? (
                       <div style={{ fontSize: 'var(--text-xs)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <span className="tabular">
-                          <DollarSign size={11} style={{ display: 'inline', verticalAlign: -1 }} />
-                          {camp.budget_remaining.llm_cost_usd?.toFixed(2) || '0.00'} USD
-                        </span>
-                        <span className="tabular" style={{ color: 'var(--muted)' }}>
-                          <Clock size={11} style={{ display: 'inline', verticalAlign: -1 }} />
-                          {camp.budget_remaining.hours?.toFixed(1) || '0'}h / {camp.budget_remaining.jobs || 0} jobs
-                        </span>
+                        {camp.budget_remaining.llm_cost_usd !== undefined && (
+                          <span className="tabular">
+                            <DollarSign size={11} style={{ display: 'inline', verticalAlign: -1 }} />
+                            {camp.budget_remaining.llm_cost_usd.toFixed(2)} USD
+                          </span>
+                        )}
+                        {(camp.budget_remaining.hours !== undefined || camp.budget_remaining.jobs !== undefined) && (
+                          <span className="tabular" style={{ color: 'var(--muted)' }}>
+                            <Clock size={11} style={{ display: 'inline', verticalAlign: -1 }} />
+                            {camp.budget_remaining.hours !== undefined
+                              ? `${camp.budget_remaining.hours.toFixed(1)}h`
+                              : '—'}
+                            {camp.budget_remaining.jobs !== undefined
+                              ? ` / ${camp.budget_remaining.jobs} jobs`
+                              : ''}
+                          </span>
+                        )}
+                        {camp.budget_remaining.llm_tokens !== undefined && (
+                          <span className="tabular" style={{ color: 'var(--muted)' }}>
+                            {camp.budget_remaining.llm_tokens.toLocaleString('en-US')} tok
+                          </span>
+                        )}
                       </div>
                     ) : (
-                      <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Không giới hạn</span>
+                      <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>
+                        Chưa có dữ liệu ngân sách
+                      </span>
                     )}
                   </td>
                   <td>
                     {camp.counters ? (
-                      <div style={{ fontSize: 'var(--text-xs)', display: 'flex', gap: 8 }}>
+                      <div style={{ fontSize: 'var(--text-xs)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <span title="Tổng số job / đang chạy" className="tabular">
-                          <strong>{camp.counters.jobs_running}</strong> running / {camp.counters.jobs_total} total
+                          <strong>{camp.counters.jobs_running ?? '—'}</strong> running /{' '}
+                          {camp.counters.jobs_total ?? '—'} total
                         </span>
                         <span style={{ color: 'var(--muted)' }}>•</span>
                         <span title="Số tài sản phát hiện" className="tabular" style={{ color: 'var(--success)', fontWeight: 600 }}>
-                          {camp.counters.assets} assets
+                          {camp.counters.assets ?? '—'} assets
                         </span>
                       </div>
                     ) : (
@@ -190,15 +210,15 @@ export const CampaignListScreen: React.FC = () => {
                     )}
                   </td>
                   <td>
-                    <span className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
+                    <span className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {new Date(camp.created_at).toLocaleDateString('vi-VN')}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <Link
                       to={`/campaigns/${camp.campaign_id}`}
                       className="btn btn-sm"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', flexShrink: 0 }}
                     >
                       <Eye size={13} /> Chi tiết
                     </Link>

@@ -57,11 +57,20 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
         <tbody>
           {rows.map((row) => {
             const isSelected = selectedAssetId === row.asset.asset_id;
+            const firstCandidate = row.candidates[0];
+            const firstKevCandidate = row.candidates.find((c) => c.kev) || firstCandidate;
+            const hasCandidates = row.candidates.length > 0;
             return (
               <tr
                 key={row.asset.asset_id}
+                onClick={() => {
+                  if (firstKevCandidate) {
+                    onSelectVulnerability(row, firstKevCandidate);
+                  }
+                }}
                 style={{
                   backgroundColor: isSelected ? 'var(--subtle)' : undefined,
+                  cursor: hasCandidates ? 'pointer' : undefined,
                 }}
               >
                 <td style={{ ...tdStyle, maxWidth: 148 }}>
@@ -114,20 +123,45 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
                 <td style={{ ...tdStyle, minWidth: 155 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                      <span
-                        className={`status-chip ${
-                          row.kevCount > 0 ? 'danger' : row.candidateCount > 0 ? 'warning' : 'neutral'
-                        }`}
-                      >
-                        <span className="tabular">
-                          {row.candidateCount}
-                          {row.truncatedCandidates ? '+' : ''} ứng viên
+                      {hasCandidates && firstCandidate ? (
+                        <button
+                          type="button"
+                          className={`status-chip ${
+                            row.kevCount > 0 ? 'danger' : row.candidateCount > 0 ? 'warning' : 'neutral'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectVulnerability(row, firstCandidate);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          title="Mở bảng chi tiết ứng viên CVE"
+                        >
+                          <span className="tabular">
+                            {row.candidateCount}
+                            {row.truncatedCandidates ? '+' : ''} ứng viên
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="status-chip neutral">
+                          <span className="tabular">
+                            {row.candidateCount}
+                            {row.truncatedCandidates ? '+' : ''} ứng viên
+                          </span>
                         </span>
-                      </span>
-                      {row.kevCount > 0 && (
-                        <span className="status-chip danger">
+                      )}
+                      {row.kevCount > 0 && firstKevCandidate && (
+                        <button
+                          type="button"
+                          className="status-chip danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectVulnerability(row, firstKevCandidate);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          title="Mở bảng chi tiết ứng viên CVE trong CISA KEV"
+                        >
                           <span className="tabular">{row.kevCount} KEV</span>
-                        </span>
+                        </button>
                       )}
                     </div>
                     {row.candidates.length > 0 && (
@@ -140,7 +174,10 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
                               key={cand.vulnerability_id}
                               type="button"
                               className={`btn btn-sm ${active ? 'btn-primary' : ''}`}
-                              onClick={() => onSelectVulnerability(row, cand)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectVulnerability(row, cand);
+                              }}
                               style={{
                                 fontFamily: 'var(--font-mono)',
                                 fontSize: '11px',
@@ -163,7 +200,10 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
                   <button
                     type="button"
                     className="btn btn-sm"
-                    onClick={() => onFocusInGraph(row.asset.asset_id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFocusInGraph(row.asset.asset_id);
+                    }}
                     style={{ whiteSpace: 'nowrap' }}
                     title="Xem dịch vụ này trên đồ thị tài sản"
                   >

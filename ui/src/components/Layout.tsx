@@ -10,6 +10,7 @@ import {
   Moon,
   Radio,
   Key,
+  Activity,
 } from 'lucide-react';
 import { apiClient, getOperatorToken } from '../api/client';
 import { TokenConfigModal } from './TokenConfigModal';
@@ -89,6 +90,13 @@ export const Layout: React.FC = () => {
             <span>Kế hoạch & Luồng Job</span>
           </NavLink>
           <NavLink
+            to="/activity"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+          >
+            <Activity size={16} />
+            <span>Hoạt động Agent</span>
+          </NavLink>
+          <NavLink
             to="/assets"
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
           >
@@ -112,6 +120,7 @@ export const Layout: React.FC = () => {
               gap: 6,
               fontSize: 'var(--text-xs)',
               color: 'var(--success)',
+              whiteSpace: 'nowrap',
             }}
           >
             <Radio size={14} className="pulse-icon" />

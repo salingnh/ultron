@@ -7,8 +7,8 @@ import {
   Filter,
   CheckCircle2,
 } from 'lucide-react';
-import { apiClient } from '../api/client';
-import type { CapabilityItem, Campaign } from '../api/types';
+import { apiClient, toUiError } from '../api/client';
+import type { CapabilityItem, Campaign, UiError } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 
@@ -17,7 +17,7 @@ export const ToolCatalogueScreen: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
 
   const loadCapabilities = useCallback(async () => {
     try {
@@ -26,7 +26,10 @@ export const ToolCatalogueScreen: React.FC = () => {
       const res = await apiClient.listCapabilities(selectedCampaignId || undefined);
       setCapabilities(res.items);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Không thể nạp danh mục công cụ');
+      const path = selectedCampaignId
+        ? `/capabilities?campaign_id=${encodeURIComponent(selectedCampaignId)}`
+        : '/capabilities';
+      setError(toUiError(err, path));
     } finally {
       setLoading(false);
     }

@@ -283,4 +283,70 @@ describe('ApiClient (Mock & Contract Operations)', () => {
       apiClient.setMock(null);
     }
   });
+
+  it('captures HTTP status, API error code, and request path on ApiError/UiError, and translates network failure to Vietnamese', async () => {
+    apiClient.setMock(false);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 'INTERNAL_ERROR',
+            message: 'the app has no graph driver',
+            next_action: 'CHECK_PROVIDER',
+          }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    try {
+      let caughtHttp: unknown;
+      try {
+        await apiClient.getAssetGraph('01934f6a-0000-7000-8000-0000000000f1', {
+          campaign_id: '01934f6a-0000-7000-8000-000000000001',
+          max_hops: 2,
+        });
+      } catch (e) {
+        caughtHttp = e;
+      }
+      expect(caughtHttp).toBeInstanceOf(ApiError);
+      const httpUiErr = (caughtHttp as ApiError).toUiError();
+      expect(httpUiErr.status).toBe(500);
+      expect(httpUiErr.code).toBe('INTERNAL_ERROR');
+      expect(httpUiErr.path).toContain('/assets/01934f6a-0000-7000-8000-0000000000f1/graph');
+
+      let caughtNet: unknown;
+      try {
+        await apiClient.listCampaigns();
+      } catch (e) {
+        caughtNet = e;
+      }
+      expect(caughtNet).toBeInstanceOf(ApiError);
+      const netUiErr = (caughtNet as ApiError).toUiError();
+      expect(netUiErr.status).toBeUndefined();
+      expect(netUiErr.code).toBe('NETWORK_ERROR');
+      expect(netUiErr.path).toBe('/campaigns');
+      expect(netUiErr.message).toContain('Không thể kết nối tới máy chủ API');
+    } finally {
+      fetchSpy.mockRestore();
+      apiClient.setMock(null);
+    }
+  });
+
+  it('retrieves campaign activity timeline with cursor pagination', async () => {
+    const page1 = await apiClient.getCampaignActivity('01934f6a-0000-7000-8000-000000000001', {
+      limit: 3,
+    });
+    expect(page1.items).toHaveLength(3);
+    expect(page1.truncated).toBe(true);
+    expect(page1.next_cursor).toBeTruthy();
+
+    const page2 = await apiClient.getCampaignActivity('01934f6a-0000-7000-8000-000000000001', {
+      cursor: page1.next_cursor,
+      limit: 10,
+    });
+    expect(page2.items.length).toBeGreaterThan(0);
+    expect(page2.truncated).toBe(false);
+  });
 });

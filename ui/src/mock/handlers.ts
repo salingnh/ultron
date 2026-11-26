@@ -8,6 +8,7 @@ import {
   mockAssetVulnerabilitiesMap,
   mockCampaignEvents,
   mockCapabilities,
+  mockCampaignActivity,
   mockProvenanceMap,
 } from './fixtures';
 import type {
@@ -19,6 +20,7 @@ import type {
   AssetVulnerabilitiesResponse,
   CampaignEventsResponse,
   CapabilitiesResponse,
+  CampaignActivityResponse,
   ProvenanceDetail,
   CampaignStatus,
   JobStatus,
@@ -378,6 +380,25 @@ export const mockHandlers = {
 
   async listCapabilities(_campaignId?: string): Promise<CapabilitiesResponse> {
     return mockCapabilities;
+  },
+
+  async getCampaignActivity(
+    campaignId: string,
+    params?: { cursor?: string; limit?: number }
+  ): Promise<CampaignActivityResponse> {
+    if (!campaigns.some((c) => c.campaign_id === campaignId)) {
+      throw makeError(404, 'INPUT_INVALID', `campaign ${campaignId} does not exist`, 'FIX_INPUT');
+    }
+    const allItems = mockCampaignActivity.items;
+    const offset = params?.cursor ? Math.max(0, Number(params.cursor) || 0) : 0;
+    const limit = params?.limit ?? 50;
+    const pageItems = allItems.slice(offset, offset + limit);
+    const hasMore = offset + limit < allItems.length;
+    return {
+      items: pageItems,
+      truncated: hasMore,
+      ...(hasMore ? { next_cursor: String(offset + limit) } : {}),
+    };
   },
 
   async getProvenance(targetId: string): Promise<ProvenanceDetail | null> {

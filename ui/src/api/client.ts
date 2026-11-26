@@ -10,10 +10,12 @@ import type {
   CampaignEventsResponse,
   Asset,
   CapabilitiesResponse,
+  CampaignActivityResponse,
   ProvenanceDetail,
   CampaignStatus,
   JobStatus,
   AppError,
+  UiError,
   CreateCampaignRequest,
   CreateCampaignResponse,
   UpdateCampaignPolicyRequest,
@@ -21,6 +23,8 @@ import type {
 } from './types';
 import { mockHandlers } from '../mock/handlers';
 import { subscribeToCampaignEvents, type SSEConnection, type SSEOptions } from './sse';
+
+export type { UiError };
 
 export const STORAGE_KEY_TOKEN = 'ultron-operator-token';
 
@@ -49,8 +53,19 @@ export function setOperatorToken(token: string): void {
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v2';
 let mockOverride: boolean | null = null;
 
+const NETWORK_ERROR_VI =
+  'Không thể kết nối tới máy chủ API (lỗi mạng hoặc CORS bị chặn). Kiểm tra API server đang chạy và cấu hình CORS.';
+
+export function isLikelyNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'TypeError') return true;
+  return /failed to fetch|networkerror|network request failed|load failed|fetch/i.test(err.message);
+}
+
 export class ApiError extends Error {
-  public code?: string;
+  public code: string;
+  public path?: string;
+  public isNetworkError: boolean;
   public next_action?: string;
   public next_action_detail?: string;
   public technical_cause?: string;
@@ -58,21 +73,97 @@ export class ApiError extends Error {
   public trace_id?: string;
 
   constructor(
-    public status: number,
+    public status: number | undefined,
     public appError?: AppError,
-    message?: string
+    message?: string,
+    path?: string,
+    isNetworkError: boolean = false
   ) {
-    super(message || appError?.message || `API Error: ${status}`);
+    super(
+      message ||
+        appError?.message ||
+        (isNetworkError
+          ? NETWORK_ERROR_VI
+          : status !== undefined
+          ? `Yêu cầu thất bại với mã HTTP ${status}`
+          : 'Lỗi kết nối API')
+    );
     this.name = 'ApiError';
+    this.path = path;
+    this.isNetworkError = isNetworkError;
+    this.code =
+      appError?.code ||
+      (isNetworkError
+        ? 'NETWORK_ERROR'
+        : status === 401
+        ? 'POLICY_DENIED'
+        : status === 404
+        ? 'INPUT_INVALID'
+        : 'INTERNAL_ERROR');
     if (appError) {
-      this.code = appError.code;
       this.next_action = appError.next_action;
       this.next_action_detail = appError.next_action_detail;
       this.technical_cause = appError.technical_cause;
       this.field = appError.field;
       this.trace_id = appError.trace_id;
+    } else if (isNetworkError) {
+      this.next_action = 'CHECK_PROVIDER';
+      this.next_action_detail = 'Kiểm tra kết nối mạng, trạng thái API server và cấu hình CORS.';
     }
   }
+
+  toUiError(): UiError {
+    return {
+      status: this.status,
+      code: this.code,
+      path: this.path,
+      message: this.message,
+      next_action: this.next_action,
+      next_action_detail: this.next_action_detail,
+      technical_cause: this.technical_cause,
+      field: this.field,
+      trace_id: this.trace_id,
+      isNetworkError: this.isNetworkError,
+    };
+  }
+}
+
+export function toUiError(err: unknown, fallbackPath?: string): UiError {
+  if (err instanceof ApiError) {
+    const uiErr = err.toUiError();
+    if (!uiErr.path && fallbackPath) uiErr.path = fallbackPath;
+    return uiErr;
+  }
+  if (typeof err === 'object' && err !== null && 'code' in err && 'message' in err) {
+    const obj = err as UiError;
+    return {
+      ...obj,
+      path: obj.path || fallbackPath,
+    };
+  }
+  if (err instanceof Error) {
+    if (isLikelyNetworkError(err)) {
+      return {
+        code: 'NETWORK_ERROR',
+        path: fallbackPath,
+        message: NETWORK_ERROR_VI,
+        technical_cause: err.message,
+        next_action: 'CHECK_PROVIDER',
+        next_action_detail: 'Kiểm tra kết nối mạng, trạng thái API server và cấu hình CORS.',
+        isNetworkError: true,
+      };
+    }
+    return {
+      code: 'ERROR',
+      path: fallbackPath,
+      message: err.message || 'Đã xảy ra lỗi không xác định',
+    };
+  }
+  return {
+    code: 'ERROR',
+    path: fallbackPath,
+    message: typeof err === 'string' ? err : 'Đã xảy ra lỗi không xác định',
+  };
 }
 
 export function generateIdempotencyKey(): string {
@@ -100,7 +191,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers.set('Idempotency-Key', generateIdempotencyKey());
   }
 
-  const res = await fetch(url, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (err: unknown) {
+    const netErr = new ApiError(undefined, undefined, NETWORK_ERROR_VI, path, true);
+    if (err instanceof Error && err.message) {
+      netErr.technical_cause = err.message;
+    }
+    throw netErr;
+  }
 
   if (!res.ok) {
     let errorData: AppError | undefined;
@@ -109,7 +209,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // not json error
     }
-    throw new ApiError(res.status, errorData, errorData?.message || `Yêu cầu thất bại với mã ${res.status}`);
+    throw new ApiError(
+      res.status,
+      errorData,
+      errorData?.message || `Yêu cầu thất bại với mã HTTP ${res.status}`,
+      path,
+      false
+    );
   }
 
   return res.json();
@@ -292,6 +398,20 @@ export const apiClient = {
     const qs = query.toString() ? `?${query.toString()}` : '';
     return request<CampaignEventsResponse>(
       `/campaigns/${encodeURIComponent(campaignId)}/events${qs}`
+    );
+  },
+
+  async getCampaignActivity(
+    campaignId: string,
+    params?: { cursor?: string; limit?: number }
+  ): Promise<CampaignActivityResponse> {
+    if (this.isMock) return mockHandlers.getCampaignActivity(campaignId, params);
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<CampaignActivityResponse>(
+      `/campaigns/${encodeURIComponent(campaignId)}/activity${qs}`
     );
   },
 
