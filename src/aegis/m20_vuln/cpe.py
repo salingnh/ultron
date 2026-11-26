@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass
 
 __all__ = [
+    "CompiledCpeMatch",
     "Cpe",
     "CpeMatch",
     "CpeVersion",
@@ -62,8 +63,20 @@ class Cpe:
         return (self.vendor.lower(), self.product.lower())
 
     @property
+    def product_index_key(self) -> str:
+        """Normalized `part:vendor:product` key used by the PostgreSQL GIN index."""
+        return f"{self.part}:{self.vendor.lower()}:{self.product.lower()}"
+
+    @property
     def has_version(self) -> bool:
         return self.version not in {"*", "-", ""}
+
+    @property
+    def effective_version(self) -> str:
+        """Version combined with CPE `update` (e.g. OpenSSH `8.9` + `p1` -> `8.9-p1`)."""
+        if self.update in {"*", "-", ""}:
+            return self.version
+        return f"{self.version}-{self.update}"
 
     def as_text(self, *, with_version: bool = True) -> str:
         version = self.version if with_version else "*"
@@ -211,9 +224,9 @@ class CpeMatch:
             return False
         if not cpe.has_version:
             return False
-        version = parse_version(cpe.version)
+        version = parse_version(cpe.effective_version)
         if target.has_version and target.version != "*":
-            return compare_versions(version, parse_version(target.version)) == 0
+            return compare_versions(version, parse_version(target.effective_version)) == 0
         return self._within(version)
 
     def _within(self, version: CpeVersion) -> bool:
@@ -266,3 +279,64 @@ def _text(value: object) -> str | None:
     if value is None:
         return None
     return value if isinstance(value, str) and value.strip() else None
+
+
+def _maybe_version(text: str | None) -> CpeVersion | None:
+    return None if text is None else parse_version(text)
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledCpeMatch:
+    """Pre-parsed `CpeMatch` so scanning many services parses criteria and bounds once."""
+
+    match: CpeMatch
+    target: Cpe
+    exact_version: CpeVersion | None
+    start_including: CpeVersion | None
+    start_excluding: CpeVersion | None
+    end_including: CpeVersion | None
+    end_excluding: CpeVersion | None
+    exact: bool
+    range_text: str | None
+
+    @property
+    def vulnerable(self) -> bool:
+        return self.match.vulnerable
+
+    @classmethod
+    def compile(cls, match: CpeMatch) -> CompiledCpeMatch:
+        target = parse_cpe(match.criteria)
+        exact_version = (
+            parse_version(target.effective_version)
+            if target.has_version and target.version != "*"
+            else None
+        )
+        return cls(
+            match=match,
+            target=target,
+            exact_version=exact_version,
+            start_including=_maybe_version(match.version_start_including),
+            start_excluding=_maybe_version(match.version_start_excluding),
+            end_including=_maybe_version(match.version_end_including),
+            end_excluding=_maybe_version(match.version_end_excluding),
+            exact=match.exact,
+            range_text=match.range_text(),
+        )
+
+    def matches_parsed(self, cpe: Cpe, version: CpeVersion) -> bool:
+        if self.target.part != cpe.part or self.target.product_key != cpe.product_key:
+            return False
+        if self.exact_version is not None:
+            return compare_versions(version, self.exact_version) == 0
+        if self.start_including is not None and compare_versions(version, self.start_including) < 0:
+            return False
+        if (
+            self.start_excluding is not None
+            and compare_versions(version, self.start_excluding) <= 0
+        ):
+            return False
+        if self.end_including is not None and compare_versions(version, self.end_including) > 0:
+            return False
+        if self.end_excluding is not None and compare_versions(version, self.end_excluding) >= 0:
+            return False
+        return True

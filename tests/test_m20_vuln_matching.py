@@ -22,12 +22,18 @@ import pytest
 
 from aegis import validation
 from aegis.m18_intel.sync import FeedSync
-from aegis.m20_vuln.matching import Matcher, changed_vulnerabilities
+from aegis.m20_vuln.matching import (
+    VERSION_UNKNOWN_CODE,
+    VERSION_UNKNOWN_MESSAGE,
+    Matcher,
+    changed_vulnerabilities,
+)
 from aegis.m23_graph.models import VULNERABILITY_EVENT
+from tests import db_support as support
 from tests import g16c_support as fixtures
 from tests.db_support import requires_postgres
 from tests.m23_support import connect, ingest, pipeline_database
-from tests.support_ingestion import observation
+from tests.support_ingestion import asset, observation
 
 pytestmark = requires_postgres
 
@@ -224,3 +230,181 @@ def test_a_withdrawn_cve_is_not_a_candidate(database: tuple[str, list[str]]) -> 
 
     assert report.new_matches == 2
     assert found == {"CVE-2021-23017", "CVE-2022-22965"}
+
+
+def _ensure_0007(dsn: str) -> None:
+    import psycopg
+
+    migration = (support.REPO / "contracts/db/postgres/0007_intel_indexes.sql").read_text(
+        encoding="utf-8"
+    )
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT to_regprocedure('aegis.nvd_cpe_products(jsonb)') IS NOT NULL"
+        ).fetchone()
+        if row and row[0]:
+            return
+        conn.execute(migration)
+
+
+def test_versionless_products_yield_no_candidates_and_report_coverage(
+    database: tuple[str, list[str]],
+) -> None:
+    dsn, jobs = database
+    ssh_key = "service:10.114.53.20:22/tcp"
+    nginx_key = "service:10.114.53.20:80/tcp"
+    app_key = "app:http://10.114.53.20:80"
+    ingest(
+        dsn,
+        jobs[0],
+        assets=[
+            asset("dns:edge.internal.example", "domain"),
+            asset(ssh_key, "service", discovered_from=("dns:edge.internal.example",)),
+            asset(nginx_key, "service", discovered_from=("dns:edge.internal.example",)),
+            asset(app_key, "application", discovered_from=(nginx_key,)),
+        ],
+        observations=[
+            observation(
+                ssh_key,
+                "service.product",
+                {
+                    "product": "OpenSSH",
+                    "version": "8.9p1",
+                    "cpe": "cpe:2.3:a:openbsd:openssh:8.9p1:*:*:*:*:*:*:*",
+                },
+            ),
+            observation(
+                nginx_key,
+                "service.product",
+                {"vendor": "f5", "product": "nginx", "cpe": "cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*"},
+            ),
+            observation(app_key, "http.technology", ["openresty", "nginx"]),
+        ],
+        coverage=[ssh_key, nginx_key, app_key],
+    )
+    import json as _json
+
+    openssh_nvd = _json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "cve": {
+                        "id": "CVE-2023-38408",
+                        "vulnStatus": "Analyzed",
+                        "lastModified": "2026-11-24T06:00:00.000",
+                        "descriptions": [{"lang": "en", "value": "OpenSSH PKCS11"}],
+                        "configurations": [
+                            {
+                                "nodes": [
+                                    {
+                                        "cpeMatch": [
+                                            {
+                                                "vulnerable": True,
+                                                "criteria": (
+                                                    "cpe:2.3:a:openbsd:openssh:8.9:p1:*:*:*:*:*:*"
+                                                ),
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
+    _ensure_0007(dsn)
+    FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+        "nvd",
+        "2026-11-24-ssh",
+        openssh_nvd,
+        source_uri="openssh.json",
+        snapshot_at=fixtures.SNAPSHOT_AT,
+    )
+    with connect(dsn) as connection:
+        report = Matcher(connection).run()
+        found = fixtures.matches(connection)
+
+    assert [row["vulnerability_id"] for row in found] == ["CVE-2023-38408"]
+    assert found[0]["canonical_key"] == ssh_key
+    assert report.unmatchable_targets == 2
+    assert report.coverage["subjects"] == 3
+    assert report.coverage["matchable_subjects"] == 1
+    assert report.coverage["unmatchable_subjects"] == 2
+    limitation = report.coverage["limitations"][0]
+    assert limitation["code"] == VERSION_UNKNOWN_CODE
+    assert limitation["message"] == VERSION_UNKNOWN_MESSAGE
+    assert set(limitation["products"]) == {"nginx", "openresty"}
+    assert report.coverage["by_subject"][app_key]["matchable"] is False
+
+
+def test_gin_indexed_catalogue_narrows_100_services(database: tuple[str, list[str]]) -> None:
+    dsn, jobs = database
+    _ensure_0007(dsn)
+    service_assets = [asset("dns:scale.internal.example", "domain")]
+    service_obs = []
+    service_cov = []
+    for port in range(1000, 1100):
+        key = f"service:10.114.53.99:{port}/tcp"
+        service_assets.append(
+            asset(key, "service", discovered_from=("dns:scale.internal.example",))
+        )
+        service_obs.append(
+            observation(
+                key,
+                "service.product",
+                {
+                    "product": "OpenSSH",
+                    "version": "8.9p1",
+                    "cpe": "cpe:2.3:a:openbsd:openssh:8.9p1:*:*:*:*:*:*:*",
+                },
+            )
+        )
+        service_cov.append(key)
+    ingest(dsn, jobs[0], assets=service_assets, observations=service_obs, coverage=service_cov)
+    import json as _json
+
+    entries = [
+        {
+            "cve": {
+                "id": f"CVE-2024-{10000 + idx}",
+                "vulnStatus": "Analyzed",
+                "lastModified": "2026-11-24T06:00:00.000",
+                "configurations": [
+                    {
+                        "nodes": [
+                            {
+                                "cpeMatch": [
+                                    {
+                                        "vulnerable": True,
+                                        "criteria": (
+                                            "cpe:2.3:a:openbsd:openssh:*:*:*:*:*:*:*:*"
+                                            if idx < 3
+                                            else f"cpe:2.3:a:unrelated{idx}:app:*:*:*:*:*:*:*:*"
+                                        ),
+                                        "versionStartIncluding": "8.0",
+                                        "versionEndExcluding": "9.3",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            }
+        }
+        for idx in range(50)
+    ]
+    FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+        "nvd",
+        "2026-11-24-scale",
+        _json.dumps({"vulnerabilities": entries}).encode("utf-8"),
+        source_uri="scale.json",
+        snapshot_at=fixtures.SNAPSHOT_AT,
+    )
+    with connect(dsn) as connection:
+        report = Matcher(connection).run()
+
+    assert report.targets == 100
+    assert report.catalogue_revisions == 3
+    assert report.new_matches == 300

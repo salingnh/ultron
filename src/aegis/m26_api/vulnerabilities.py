@@ -20,6 +20,12 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi import status as http_status
 
 from aegis import validation
+from aegis.m20_vuln.matching import (
+    TARGET_PREDICATES,
+    VERSION_UNKNOWN_CODE,
+    VERSION_UNKNOWN_MESSAGE,
+    inspect_product_observations,
+)
 from aegis.m23_graph import queries
 from aegis.m26_api.app import API_PREFIX
 from aegis.m26_api.assets import _asset_row
@@ -195,10 +201,45 @@ def list_asset_vulnerabilities(
             "kind": row["kind"],
         },
         "items": [_item(dict(item)) for item in page],
+        "coverage": _asset_coverage(db, asset_id, campaign_id, bool(page)),
     }
     if len(rows) > limit and page:
         body["next_cursor"] = encode_cursor(str(page[-1]["vulnerability_id"]))
     return _validated(body)
+
+
+def _asset_coverage(
+    db: ConnectionDep,
+    asset_id: str,
+    campaign_id: str | None,
+    has_candidates: bool,
+) -> dict[str, Any]:
+    obs_rows = db.execute(
+        "SELECT DISTINCT ON (predicate) predicate, value"
+        "  FROM observation"
+        " WHERE subject_asset_id = %s"
+        "   AND polarity = 'present'"
+        "   AND predicate = ANY(%s)"
+        "   AND (%s::uuid IS NULL OR campaign_id = %s::uuid)"
+        " ORDER BY predicate, observed_at DESC, ingested_at DESC",
+        (asset_id, list(TARGET_PREDICATES), campaign_id, campaign_id),
+    ).fetchall()
+    inspection = inspect_product_observations(
+        [(str(obs["predicate"]), obs["value"]) for obs in obs_rows]
+    )
+    limitations: list[dict[str, Any]] = []
+    if inspection.versionless_products:
+        limitations.append(
+            {
+                "code": VERSION_UNKNOWN_CODE,
+                "message": VERSION_UNKNOWN_MESSAGE,
+                "products": list(inspection.versionless_products[:100]),
+            }
+        )
+    return {
+        "matchable": bool(inspection.cpes) or has_candidates,
+        "limitations": limitations,
+    }
 
 
 def _validated(document: dict[str, Any]) -> dict[str, Any]:

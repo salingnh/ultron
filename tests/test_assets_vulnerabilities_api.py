@@ -167,3 +167,54 @@ def test_a_foreign_campaign_sees_no_candidates(database: tuple[str, dict[str, st
         campaign_id="01900000-0000-7000-8000-0000000c00ff",
     ).json()
     assert body["items"] == []
+
+
+def test_versionless_asset_reports_match_coverage_reason(
+    database: tuple[str, dict[str, str]],
+) -> None:
+    from tests.support_ingestion import asset, observation
+
+    dsn, assets = database
+    versionless_key = "app:http://10.114.53.10:8081"
+    with pipeline_database(jobs=1) as (isolated_dsn, jobs):
+        ingest(
+            isolated_dsn,
+            jobs[0],
+            assets=[
+                asset("dns:edge.internal.example", "domain"),
+                asset(
+                    versionless_key,
+                    "application",
+                    discovered_from=("dns:edge.internal.example",),
+                ),
+            ],
+            observations=[
+                observation(versionless_key, "http.technology", ["openresty", "nginx"]),
+            ],
+            coverage=[versionless_key],
+        )
+        with connect(isolated_dsn) as connection:
+            fixtures.seed_intel(isolated_dsn)
+            Matcher(connection).run()
+            row = connection.execute(
+                "SELECT asset_id FROM asset WHERE canonical_key = %s", (versionless_key,)
+            ).fetchone()
+            assert row is not None
+            asset_id = str(row["asset_id"])
+        body = _get(_client(isolated_dsn), asset_id).json()
+        _validated(body)
+        assert body["items"] == []
+        assert body["coverage"] == {
+            "matchable": False,
+            "limitations": [
+                {
+                    "code": "VERSION_UNKNOWN",
+                    "message": "version unknown, not matchable",
+                    "products": ["openresty", "nginx"],
+                }
+            ],
+        }
+    # Matchable fixture assets also carry valid coverage metadata.
+    apache_body = _get(_client(dsn), assets[fixtures.SERVICE_KEY]).json()
+    _validated(apache_body)
+    assert apache_body["coverage"] == {"matchable": True, "limitations": []}
