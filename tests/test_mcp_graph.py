@@ -199,3 +199,60 @@ def test_the_limits_are_the_contract_caps() -> None:
     assert CAPS == {"max_hops": 2, "limit": 200, "timeout_ms": 2000, "max_bytes": 8192}
     limits = GraphLimits(applied={"limit": 10})
     assert limits.as_json() == {"limit": 10}
+
+
+def test_m23_graph_queries_delegates_to_m23_and_pops_bookkeeping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from aegis.m05_registry.mcp.graph import M23GraphQueries
+    from aegis.m23_graph import queries as m23_queries
+
+    fake_conn = MagicMock()
+    ctx = MagicMock()
+    ctx.__enter__.return_value = fake_conn
+    ctx.__exit__.return_value = False
+
+    recorded: dict[str, Any] = {}
+
+    def fake_recent(conn: Any, **kwargs: Any) -> dict[str, Any]:
+        recorded["conn"] = conn
+        recorded["kwargs"] = kwargs
+        return {
+            "observations": [],
+            "revision": 4,
+            "truncated": True,
+            "limits_applied": {"limit": 200, "timeout_ms": 2000},
+        }
+
+    monkeypatch.setattr(m23_queries, "get_recent_observations", fake_recent)
+    service = make_service(graph=M23GraphQueries(lambda: ctx, driver=None))
+    value = structured(
+        graph_call(
+            service,
+            "graph.get_recent_observations",
+            graph_arguments(since_revision=2, limit=15),
+        )
+    )
+
+    assert recorded["conn"] is fake_conn
+    assert recorded["kwargs"]["campaign_id"] == "01934f6a-0000-7000-8000-000000000001"
+    assert recorded["kwargs"]["since_revision"] == 2
+    assert recorded["kwargs"]["limit"] == 15
+    assert value["revision"] == 4
+    assert value["truncated"] is True
+    assert value["limits_applied"] == {"limit": 15, "timeout_ms": 2000}
+
+
+def test_m23_graph_queries_refuses_neighbors_when_neo4j_driver_absent() -> None:
+    from aegis.m05_registry.mcp.graph import GraphUnavailable, M23GraphQueries
+
+    queries_svc = M23GraphQueries(lambda: None, driver=None)  # type: ignore[arg-type,return-value]
+    with pytest.raises(GraphUnavailable, match="AEGIS_NEO4J_PASSWORD"):
+        queries_svc.run(
+            "get_asset_neighbors",
+            {"campaign_id": "01934f6a-0000-7000-8000-000000000001", "canonical_key": "dns:a.test"},
+            campaign_id="01934f6a-0000-7000-8000-000000000001",
+            limits=GraphLimits(applied={"max_hops": 1, "limit": 50, "timeout_ms": 2000}),
+        )

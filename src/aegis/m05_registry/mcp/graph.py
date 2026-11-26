@@ -14,17 +14,27 @@ unbuilt component. G1.4b swaps in a provider; the interface and the limits do no
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
+
+import psycopg
+from neo4j import Driver
+from neo4j.exceptions import Neo4jError
+from psycopg.rows import dict_row
+
+from aegis.common.ports import EvidenceStore
+from aegis.m23_graph import queries as m23_queries
 
 __all__ = [
     "CAPS",
     "DEFAULTS",
+    "GraphInputError",
     "GraphLimits",
     "GraphQueryResult",
     "GraphQueryService",
     "GraphUnavailable",
+    "M23GraphQueries",
     "UnavailableGraphQueries",
     "limits_for",
 ]
@@ -82,7 +92,11 @@ class GraphQueryResult:
 
 
 class GraphUnavailable(RuntimeError):
-    """No projection is wired (G1.4b has not landed); the caller must not read an empty answer."""
+    """No projection is wired (or a required backend is absent); never answer empty."""
+
+
+class GraphInputError(ValueError):
+    """A graph query referenced a missing record for the bound campaign (e.g. evidence id)."""
 
 
 class GraphQueryService(Protocol):
@@ -99,7 +113,7 @@ class GraphQueryService(Protocol):
 
 
 class UnavailableGraphQueries:
-    """The G1.2b default: the interface exists, the projection does not."""
+    """Fallback test double: refuses loudly instead of claiming an empty graph."""
 
     def run(
         self,
@@ -112,3 +126,111 @@ class UnavailableGraphQueries:
         raise GraphUnavailable(
             f"graph.{query} needs the M23 projection (G1.4b); it is not wired in this deployment"
         )
+
+
+class M23GraphQueries:
+    """M23 projection-backed `GraphQueryService` for all six `graph.*` tools."""
+
+    def __init__(
+        self,
+        connect: Callable[[], psycopg.Connection[Any]],
+        *,
+        driver: Driver | None = None,
+        store: EvidenceStore | None = None,
+    ) -> None:
+        self._connect = connect
+        self._driver = driver
+        self._store = store
+
+    def run(
+        self,
+        query: str,
+        inputs: Mapping[str, Any],
+        *,
+        campaign_id: str,
+        limits: GraphLimits,
+    ) -> GraphQueryResult:
+        if query == "get_asset_neighbors":
+            if self._driver is None:
+                raise GraphUnavailable(
+                    "graph.get_asset_neighbors needs Neo4j: set "
+                    "AEGIS_NEO4J_URI, AEGIS_NEO4J_USER and AEGIS_NEO4J_PASSWORD"
+                )
+            try:
+                payload = m23_queries.get_asset_neighbors(
+                    self._driver,
+                    campaign_id=campaign_id,
+                    canonical_key=str(inputs["canonical_key"]),
+                    limit=limits.applied["limit"],
+                    max_hops=limits.applied["max_hops"],
+                    relationship_types=inputs.get("relationship_types"),
+                    as_of=inputs.get("as_of"),
+                )
+            except Neo4jError as error:
+                raise GraphUnavailable(f"graph.{query} unavailable: {error}") from error
+        else:
+            try:
+                payload = self._run_relational(
+                    query, inputs, campaign_id=campaign_id, limits=limits
+                )
+            except m23_queries.GraphQueryUnavailable as error:
+                raise GraphUnavailable(str(error)) from error
+            except m23_queries.DocumentNotFound as error:
+                raise GraphInputError(str(error)) from error
+        truncated = bool(payload.pop("truncated", False))
+        payload.pop("limits_applied", None)
+        return GraphQueryResult(data=payload, truncated=truncated)
+
+    def _run_relational(
+        self,
+        query: str,
+        inputs: Mapping[str, Any],
+        *,
+        campaign_id: str,
+        limits: GraphLimits,
+    ) -> dict[str, Any]:
+        with self._connect() as conn:
+            conn.row_factory = cast(Any, dict_row)
+            conn.execute("SET search_path = aegis, public")
+            if query == "get_recent_observations":
+                return m23_queries.get_recent_observations(
+                    conn,
+                    campaign_id=campaign_id,
+                    since_revision=int(inputs["since_revision"]),
+                    limit=limits.applied["limit"],
+                    subject=inputs.get("subject"),
+                    predicates=inputs.get("predicates"),
+                )
+            if query == "get_unverified_hypotheses":
+                return m23_queries.get_unverified_hypotheses(
+                    conn,
+                    campaign_id=campaign_id,
+                    limit=limits.applied["limit"],
+                    min_confidence=inputs.get("min_confidence"),
+                )
+            if query == "get_package_cve_matches":
+                return m23_queries.get_package_cve_matches(
+                    conn,
+                    campaign_id=campaign_id,
+                    canonical_key=str(inputs["canonical_key"]),
+                    limit=limits.applied["limit"],
+                    include_kev_only=bool(inputs.get("include_kev_only", False)),
+                )
+            if query == "summarize_campaign_delta":
+                return m23_queries.summarize_campaign_delta(
+                    conn,
+                    campaign_id=campaign_id,
+                    from_revision=int(inputs["from_revision"]),
+                    to_revision=inputs.get("to_revision"),
+                    limit=limits.applied["limit"],
+                )
+            if query == "get_evidence_excerpt":
+                return m23_queries.get_evidence_excerpt(
+                    conn,
+                    self._store,
+                    campaign_id=campaign_id,
+                    evidence_id=str(inputs["evidence_id"]),
+                    offset=int(inputs.get("offset", 0)),
+                    max_bytes=limits.applied["max_bytes"],
+                )
+        raise GraphInputError(f"unknown graph query: {query}")

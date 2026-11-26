@@ -17,6 +17,7 @@ verbatim (see `contract.py`). This module owns everything about the server:
 
 from __future__ import annotations
 
+import os
 import random
 import time
 from collections.abc import Iterable, Mapping, Sequence
@@ -31,14 +32,22 @@ from aegis.m23_graph.models import CypherOp
 
 __all__ = [
     "GRAPH_NODE_KEYS",
+    "NEO4J_PASSWORD_ENV",
+    "NEO4J_URI_ENV",
+    "NEO4J_USER_ENV",
     "RebuildContext",
     "apply_ops",
     "connect",
+    "connect_from_env",
     "install_constraints",
     "plain",
     "snapshot",
     "wipe",
 ]
+
+NEO4J_URI_ENV = "AEGIS_NEO4J_URI"
+NEO4J_USER_ENV = "AEGIS_NEO4J_USER"
+NEO4J_PASSWORD_ENV = "AEGIS_NEO4J_PASSWORD"
 
 #: Property holding the stable identity of each node label, for comparison across rebuilds.
 #: Neo4j `elementId` cannot be used: it is a store-local value and changes on rebuild.
@@ -60,6 +69,19 @@ RETRY_PREFIXES = ("Neo.TransientError", "Neo.ClientError.Schema.ConstraintValida
 def connect(uri: str, user: str, password: str) -> Driver:
     """A driver for `uri`; the caller closes it (FastAPI/driver pools are not used here)."""
     return GraphDatabase.driver(uri, auth=(user, password))
+
+
+def connect_from_env(env: Mapping[str, str] | None = None) -> Driver | None:
+    """Build the Neo4j driver from env when configured; fail loudly on partial config."""
+    source = os.environ if env is None else env
+    uri = (source.get(NEO4J_URI_ENV) or "").strip()
+    password = (source.get(NEO4J_PASSWORD_ENV) or "").strip()
+    user = (source.get(NEO4J_USER_ENV) or "neo4j").strip() or "neo4j"
+    if uri and not password:
+        raise RuntimeError(f"{NEO4J_PASSWORD_ENV} is required when {NEO4J_URI_ENV} is set")
+    if not password:
+        return None
+    return connect(uri or "bolt://127.0.0.1:7687", user, password)
 
 
 def _retryable(error: BaseException) -> bool:
