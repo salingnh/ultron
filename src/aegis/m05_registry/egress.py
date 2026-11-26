@@ -217,9 +217,11 @@ def build_egress_binding(
     if permissions.get("networkAccess") != "egress":
         return EgressBinding(mode="none", target_binding="none", entries=(), target_addresses=())
 
+    declared = permissions.get("egressSources") or []
+    dns_only = bool(declared) and all(str(source.get("protocol")) == "dns" for source in declared)
     platform = _networks(platform_cidrs)
     entries: set[str] = set()
-    for source in permissions.get("egressSources") or []:
+    for source in declared:
         if network_profile == "internet" and str(source.get("protocol")) == "dns":
             continue
         for host in source.get("hosts") or []:
@@ -229,6 +231,16 @@ def build_egress_binding(
     wildcard_zones: dict[str, tuple[str, str] | None] = {}
     active_provenance = provenance or ActiveProvenance()
     target_binding = str(permissions.get("targetBinding") or "none")
+    if network_profile == "internet" and dns_only and target_binding != "required":
+        # A DNS-only provider on the internet profile (F4) resolves names through the broker's
+        # DNS front end instead of dialing a recursive resolver directly; sign the bound DNS names.
+        for _ref, kind, raw in zip(targets.refs, targets.kinds, targets.raw, strict=True):
+            if kind == "domain" or _is_host_name(raw):
+                host = raw.strip().lower().rstrip(".").removeprefix("dns:")
+                if not host.isascii():
+                    host = host.encode("idna").decode("ascii")
+                if host and not _denied(host):
+                    entries.add(f"dns:{host}")
     addresses: list[str] = []
     if target_binding == "required":
         ports = [int(port) for port in merged_input.get("ports") or []]
@@ -287,16 +299,6 @@ def build_egress_binding(
             )
 
     if not entries:
-        declared = permissions.get("egressSources") or []
-        dns_only = bool(declared) and all(
-            str(source.get("protocol")) == "dns" for source in declared
-        )
-        if network_profile == "internet" and dns_only and target_binding != "required":
-            # A passive DNS provider (DNSx) has no L7 destination on the internet profile: its
-            # egress is the broker's DNS front end, which is not part of this binding (F4).
-            return EgressBinding(
-                mode="broker", target_binding="none", entries=(), target_addresses=()
-            )
         raise M05Error.policy_denied(
             "egress_binding_empty",
             f"manifest provider {record.provider} declares egress but no openable destination; an "

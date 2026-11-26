@@ -131,7 +131,7 @@ def test_a_dns_protocol_source_is_not_part_of_an_internet_binding() -> None:
         binder=m06_support.StaticBinder({"internal.example": ["198.51.100.10"]}),
         network_profile="internet",
     )
-    assert "9.9.9.9:53" not in internet.entries
+    assert internet.entries == ("dns:internal.example",)
     lab = m05_egress.build_egress_binding(
         record,
         merged_input={"targets": ["internal.example"]},
@@ -153,13 +153,85 @@ def test_m06_does_not_open_a_dns_source_that_sits_in_the_signed_binding() -> Non
         egress_binding={
             "mode": "broker",
             "target_binding": "none",
-            "entries": ["9.9.9.9:53", "1.1.1.1:53"],
+            "entries": ["9.9.9.9:53", "1.1.1.1:53", "dns:internal.example"],
             "target_addresses": [],
         },
     )
     policy = m06_support.build_policy_for(task, manifest, raw)
     assert [source.hosts for source in policy.sources] == []
     assert policy.binding_hosts == ()
+    assert policy.dns_names == ("internal.example",)
+    assert policy.dns_target_names == ("internal.example",)
+
+
+def test_dnsx_internet_policy_refuses_missing_dns_binding_and_unbound_names(
+    tmp_path: Path,
+) -> None:
+    from aegis.m06_runner import broker as broker_mod
+    from aegis.m06_runner import dns as dns_wire
+    from aegis.m06_runner.spec import SpecError
+
+    manifest, raw = m06_support.manifest("manifest.dnsx.yaml")
+    no_dns = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        network_profile="internet",
+        targets=[{"canonical_key": "dns:internal.example"}],
+        input={"targets": ["internal.example"], "concurrency": 1},
+        egress_binding={
+            "mode": "broker",
+            "target_binding": "none",
+            "entries": ["9.9.9.9:53"],
+            "target_addresses": [],
+        },
+    )
+    with pytest.raises(SpecError, match="requires signed dns: entries"):
+        m06_support.build_policy_for(no_dns, manifest, raw)
+
+    # Seed target with extra unsigned domain in input: broker DNS only resolves the signed set.
+    signed = m06_support.task_for_manifest(
+        manifest,
+        raw,
+        network_profile="internet",
+        targets=[{"seed_id": "01934f6a-0000-7000-8000-0000000000b1"}],
+        input={"targets": ["internal.example", "unsigned.example"], "concurrency": 1},
+        egress_binding={
+            "mode": "broker",
+            "target_binding": "none",
+            "entries": ["dns:internal.example"],
+            "target_addresses": [],
+        },
+    )
+    policy = m06_support.build_policy_for(
+        signed,
+        manifest,
+        raw,
+        input_values={"targets": ["internal.example", "unsigned.example"], "concurrency": 1},
+    )
+    assert policy.dns_names == ("internal.example",)
+    audit = broker_mod.AuditLog(
+        tmp_path / "egress.jsonl",
+        policy.job_id,
+        profile=policy.profile,
+        campaign_id=policy.campaign_id,
+        authorization=policy.authorization,
+    )
+    asked: list[str] = []
+
+    def resolve_stub(name: str) -> list[str]:
+        asked.append(name)
+        return ["198.51.100.10"]
+
+    forwarder = dns_wire.DnsForwarder(policy, audit, resolver=resolve_stub)
+    reply_refused = forwarder.handle(dns_wire.build_query(2, "unsigned.example", dns_wire.TYPE_A))
+    assert reply_refused is not None
+    assert reply_refused[3] & 0x0F == dns_wire.RCODE_REFUSED
+    assert asked == []
+
+    reply_ok = forwarder.handle(dns_wire.build_query(1, "internal.example", dns_wire.TYPE_A))
+    assert reply_ok is not None
+    assert reply_ok[3] & 0x0F == dns_wire.RCODE_NOERROR
+    assert dns_wire.parse_addresses(reply_ok) == ["198.51.100.10"]
 
 
 # --- B1: a target inside the platform set is refused at acceptance --------------------------
@@ -595,11 +667,6 @@ def test_dnsx_parser_emits_cname_observations_and_m05_refuses_resulting_targets(
             return super().addresses(value)
 
     with migrated_database() as dsn:
-        from psycopg.types.json import Jsonb
-
-        from aegis.m05_registry.canonical import sha256_hex
-
-        lab_policy = policy_document(network_profile="lab")
         internet_policy = policy_document(
             network_profile="internet",
             authorization={
@@ -624,7 +691,7 @@ def test_dnsx_parser_emits_cname_observations_and_m05_refuses_resulting_targets(
                         "domains": ["cdn.icomm.vn", "api.icomm.vn", "random.wild.icomm.vn"],
                         "ips": ["192.0.2.0/24"],
                     },
-                    "policy": lab_policy,
+                    "policy": internet_policy,
                 },
                 actor=OPERATOR,
                 trace_id="a" * 32,
@@ -664,29 +731,42 @@ def test_dnsx_parser_emits_cname_observations_and_m05_refuses_resulting_targets(
             idempotency_key="dnsx-1",
         )
         with connect(dsn) as conn, conn.transaction():
-            conn.execute(
-                "INSERT INTO policy_snapshot (policy_version, campaign_id, policy, policy_hash, "
-                "created_by) VALUES ('roe-999', %s, %s, %s, %s)",
-                (
-                    created.campaign_id,
-                    Jsonb(internet_policy),
-                    sha256_hex(internet_policy),
-                    Jsonb(OPERATOR),
-                ),
-            )
-            conn.execute(
-                "UPDATE campaign SET current_policy_version = 'roe-999' WHERE campaign_id = %s",
-                (created.campaign_id,),
-            )
-        with connect(dsn) as conn, conn.transaction():
             task_row = conn.execute(
                 "SELECT approved_task FROM scan_job WHERE job_id = %s",
                 (dnsx_job.job["job_id"],),
             ).fetchone()
             assert task_row is not None
+            dnsx_task_body = task_row[0]
+            assert dnsx_task_body["egress_binding"] == {
+                "mode": "broker",
+                "target_binding": "none",
+                "entries": [
+                    "dns:api.icomm.vn",
+                    "dns:cdn.icomm.vn",
+                    "dns:random.wild.icomm.vn",
+                ],
+                "target_addresses": [],
+            }
+            assert m06_support.INTERNET_RING.verify(dnsx_task_body) == "g16-test-1"
             from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 
-            task = ApprovedTask.model_validate(task_row[0])
+            dnsx_manifest, dnsx_raw = m06_support.manifest("manifest.dnsx.yaml")
+            task = ApprovedTask.model_validate(dnsx_task_body)
+            dnsx_policy_auth = "icomm | item-61 | 2026-11-26 | icomm.vn"
+            dnsx_policy = m06_support.build_policy_for(
+                task,
+                dnsx_manifest,
+                dnsx_raw,
+                task_body=dnsx_task_body,
+                input_values=dnsx_task_body["input"],
+                authorization=dnsx_policy_auth,
+            )
+            assert dnsx_policy.dns_names == (
+                "api.icomm.vn",
+                "cdn.icomm.vn",
+                "random.wild.icomm.vn",
+            )
+            assert dnsx_policy.authorization == dnsx_policy_auth
             sha = "c" * 64
             ev_id = uuid7()
             uri = f"s3://evidence/{created.campaign_id}/{dnsx_job.job['job_id']}/{sha}"
