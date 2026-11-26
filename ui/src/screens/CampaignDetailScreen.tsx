@@ -28,6 +28,12 @@ import {
   validatePolicyForm,
   type PolicyFormValues,
 } from '../utils/campaignValidation';
+import {
+  assetKindLabel,
+  buildBudgetDimensions,
+  summarizeAssetCounters,
+  summarizeJobCounters,
+} from '../utils/campaignStats';
 
 export const CampaignDetailScreen: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -431,7 +437,7 @@ export const CampaignDetailScreen: React.FC = () => {
       </div>
 
       {/* Grid of details */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16 }}>
         {/* Targets & Scope */}
         <div className="card">
           <div className="card-title">
@@ -806,11 +812,90 @@ export const CampaignDetailScreen: React.FC = () => {
             <BarChart3 size={18} style={{ color: 'var(--accent)' }} />
             <span>Ngân sách &amp; Bộ đếm Tác chiến</span>
           </div>
-          {campaign.budget_remaining &&
-          (campaign.budget_remaining.llm_cost_usd !== undefined ||
-            campaign.budget_remaining.llm_tokens !== undefined ||
-            campaign.budget_remaining.jobs !== undefined ||
-            campaign.budget_remaining.hours !== undefined) ? (
+          {campaign.budget ? (
+            <div style={{ marginBottom: 16 }}>
+              <div
+                style={{
+                  fontSize: 'var(--text-xs)',
+                  fontWeight: 600,
+                  color: 'var(--muted)',
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                }}
+              >
+                Ngân sách thực thi (Đã dùng / Giới hạn &amp; Còn lại)
+              </div>
+              <div className="stats-grid-2">
+                {buildBudgetDimensions(campaign.budget).map((row) => (
+                  <div
+                    key={row.key}
+                    style={{
+                      padding: 10,
+                      backgroundColor: 'var(--subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--line)',
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: 'var(--text-xs)',
+                        color: 'var(--muted)',
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span>{row.label}</span>
+                      {row.usedRatio !== null && (
+                        <span className="tabular mono">{Math.round(row.usedRatio * 100)}%</span>
+                      )}
+                    </div>
+                    <div className="tabular" style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--ink)' }}>
+                      {row.usedText}{' '}
+                      <span style={{ fontWeight: 500, color: 'var(--muted)' }}>/ {row.limitText}</span>
+                    </div>
+                    {row.usedRatio !== null && (
+                      <div
+                        role="progressbar"
+                        aria-valuenow={Math.round(row.usedRatio * 100)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`${row.label} đã dùng`}
+                        style={{
+                          height: 4,
+                          borderRadius: 999,
+                          backgroundColor: 'var(--line)',
+                          marginTop: 6,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${Math.round(row.usedRatio * 100)}%`,
+                            height: '100%',
+                            backgroundColor: row.usedRatio >= 0.9 ? 'var(--warning)' : 'var(--accent)',
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 4 }} className="tabular">
+                      {row.remainingText !== null
+                        ? `Còn lại: ${row.remainingText}`
+                        : row.hasLimit
+                          ? 'Còn lại: —'
+                          : 'Không giới hạn trần RoE'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : campaign.budget_remaining &&
+            (campaign.budget_remaining.llm_cost_usd !== undefined ||
+              campaign.budget_remaining.llm_tokens !== undefined ||
+              campaign.budget_remaining.jobs !== undefined ||
+              campaign.budget_remaining.hours !== undefined) ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
               {campaign.budget_remaining.llm_cost_usd !== undefined && (
                 <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
@@ -851,42 +936,105 @@ export const CampaignDetailScreen: React.FC = () => {
             </div>
           )}
 
-          {campaign.counters ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Tài sản phát hiện</div>
-                <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--success)' }}>
-                  {campaign.counters.assets ?? '—'}
+          {(() => {
+            const jobSummary = summarizeJobCounters(campaign.counters);
+            const assetSummary = summarizeAssetCounters(campaign.counters);
+            const hasCounters = Boolean(campaign.counters && (jobSummary.hasData || assetSummary.hasData));
+            if (!hasCounters || !campaign.counters) {
+              return (
+                <div style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>
+                  Chưa có dữ liệu bộ đếm
+                </div>
+              );
+            }
+            return (
+              <div>
+                <div
+                  style={{
+                    fontSize: 'var(--text-xs)',
+                    fontWeight: 600,
+                    color: 'var(--muted)',
+                    textTransform: 'uppercase',
+                    marginBottom: 8,
+                  }}
+                >
+                  Bộ đếm Job &amp; Tài sản
+                </div>
+                <div className="stats-grid-2">
+                  <div
+                    style={{
+                      padding: 10,
+                      backgroundColor: 'var(--subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--line)',
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Tổng số Job theo trạng thái</div>
+                    <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--accent)' }}>
+                      {jobSummary.total ?? '—'}
+                    </div>
+                    {jobSummary.byStatus.length > 0 ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                        {jobSummary.byStatus.map(({ status, count }) => (
+                          <span key={status} className="brand-badge tabular">
+                            {status}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 4 }}>
+                        {campaign.counters.jobs_by_status ? 'Chưa có job nào' : '—'}
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 10,
+                      backgroundColor: 'var(--subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--line)',
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Tổng tài sản theo loại</div>
+                    <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--success)' }}>
+                      {assetSummary.total ?? '—'}
+                    </div>
+                    {assetSummary.byKind.length > 0 ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                        {assetSummary.byKind.map(({ kind, count }) => (
+                          <span key={kind} className="brand-badge tabular">
+                            {assetKindLabel(kind)}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 4 }}>
+                        {campaign.counters.assets_by_kind ? 'Chưa có tài sản nào' : '—'}
+                      </div>
+                    )}
+                  </div>
+
+                  {campaign.counters.jobs_failed !== undefined && (
+                    <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Job thất bại / Từ chối policy</div>
+                      <div className="tabular" style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--ink)' }}>
+                        {campaign.counters.jobs_failed} failed · {campaign.counters.policy_denials ?? 0} denied
+                      </div>
+                    </div>
+                  )}
+                  {campaign.counters.agent_sessions !== undefined && (
+                    <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Phiên Agent / Graph rev</div>
+                      <div className="tabular" style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--ink)' }}>
+                        {campaign.counters.agent_sessions} phiên · rev {campaign.counters.graph_revision ?? '—'}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Job đang chạy / Tổng</div>
-                <div className="tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--accent)' }}>
-                  {campaign.counters.jobs_running ?? '—'} / {campaign.counters.jobs_total ?? '—'}
-                </div>
-              </div>
-              {campaign.counters.jobs_failed !== undefined && (
-                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Job thất bại / Từ chối policy</div>
-                  <div className="tabular" style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--ink)' }}>
-                    {campaign.counters.jobs_failed} failed · {campaign.counters.policy_denials ?? 0} denied
-                  </div>
-                </div>
-              )}
-              {campaign.counters.agent_sessions !== undefined && (
-                <div style={{ padding: 10, backgroundColor: 'var(--subtle)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>Phiên Agent / Graph rev</div>
-                  <div className="tabular" style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--ink)' }}>
-                    {campaign.counters.agent_sessions} phiên · rev {campaign.counters.graph_revision ?? '—'}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>
-              Chưa có dữ liệu bộ đếm
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 
