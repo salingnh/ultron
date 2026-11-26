@@ -11,7 +11,7 @@ SHELL := /bin/bash
 .PHONY: help dev-up dev-down dev-reset dev-status dev-logs contracts-gate graph-check ci-local \
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder lab-naabu \
 	lab-fingerprintx lab-httpx lab-httpx-proxy lab-build-fingerprintx demo-g16b \
-	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test intel-kev \
+	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test intel-kev intel-sync \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-recovery soak-start soak-stop \
 	run-local stop-local seed-demo llm-smoke broker-image internet-smoke \
@@ -88,8 +88,11 @@ make demo-g16b       G1.6b gate: Naabu port -> fingerprintx service/CPE -> httpx
                      application, checked in PostgreSQL, Neo4j and the flow read model
 make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS intel ->
                      candidate AFFECTED_BY in PostgreSQL and Neo4j + the candidate read API
-make intel-kev       load the configured CISA KEV mirror: deploy/intel/kev-source.json
-                     (cisagov/kev-data pinned to a commit, size and sha256 verified; no fallback)
+make intel-kev       refresh the configured CISA KEV mirror: cisagov/kev-data default-branch
+                     HEAD via the GitHub API, validated (shape, bounds, version) and recorded
+                     with its commit; no fallback source
+make intel-sync      the scheduled/incremental intel refresh: NVD (auto), EPSS when
+                     AEGIS_EPSS_SOURCE is set, then KEV; exits non-zero if any leg is stale
 make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate
 make broker-image    build the internet-profile egress broker image (stdlib-only)
 make internet-smoke  passive Subfinder on an authorized domain over the internet profile;
@@ -201,6 +204,10 @@ vulnlab-test:
 intel-kev:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
 		uv run --frozen python -m aegis.m18_intel sync-kev
+
+intel-sync:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python -m aegis.m18_intel sync-intel
 
 contracts-gate:
 	@scripts/ci/contracts-gate.sh
