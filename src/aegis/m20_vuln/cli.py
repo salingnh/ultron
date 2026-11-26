@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m aegis.m20_vuln")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="match observations against the loaded intel")
-    run.add_argument("--campaign", default=None, help="only targets observed by this campaign")
+    run.add_argument("--campaign", default=None, help="only assets of this campaign")
     run.add_argument(
         "--changed-since",
         type=int,

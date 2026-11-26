@@ -236,6 +236,46 @@ def test_neighbors_respect_as_of_time() -> None:
     assert all(edge_item["from"] == "dns:old.test" for edge_item in after_close["edges"])
 
 
+def test_neighbors_never_walk_through_a_node_that_is_not_an_asset() -> None:
+    """D2 (item 61 trial): two services sharing a CVE are a legal 2-hop path with a null endpoint.
+
+    The projection's `AFFECTED_BY` candidate edge ends at a `:Vulnerability`, which has no
+    `canonical_key`; returning that edge made the output violate its own contract and the REST
+    endpoint answered an opaque 500. The asset neighbourhood is asset nodes and asset-to-asset
+    edges only (`contracts/graph/model.md`); candidates are read per asset instead.
+    """
+    service_a, service_b = "service:10.114.53.61:80/tcp", "service:10.114.53.61:443/tcp"
+    with graph_driver() as driver:
+        write_graph(
+            driver,
+            assets=[
+                asset("svc-a", service_a, kind="service"),
+                asset("svc-b", service_b, kind="service"),
+            ],
+            edges=[],
+        )
+        with driver.session() as session:
+            session.run(
+                "MATCH (a:Asset {canonical_key: $a}), (b:Asset {canonical_key: $b})"
+                " MERGE (v:Vulnerability {vulnerability_id: 'CVE-2021-41773'})"
+                " MERGE (a)-[ra:AFFECTED_BY]->(v)"
+                "   SET ra.valid_from = datetime(), ra.observed_at = datetime(),"
+                "       ra.confidence = 0.7, ra.campaign_id = $cid"
+                " MERGE (b)-[rb:AFFECTED_BY]->(v)"
+                "   SET rb.valid_from = datetime(), rb.observed_at = datetime(),"
+                "       rb.confidence = 0.7, rb.campaign_id = $cid",
+                a=service_a,
+                b=service_b,
+                cid=CAMPAIGN_ID,
+            ).consume()
+        result = queries.get_asset_neighbors(
+            driver, campaign_id=CAMPAIGN_ID, canonical_key=service_a, max_hops=2, limit=10
+        )
+    validation.validate(NEIGHBORS_OUTPUT, result)
+    assert {node["canonical_key"] for node in result["nodes"]} == {service_a}
+    assert result["edges"] == []
+
+
 def test_neighbors_are_limited_to_the_campaign() -> None:
     other = "01900000-0000-7000-8000-0000000c0009"
     with graph_driver() as driver:

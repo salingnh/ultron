@@ -2504,7 +2504,7 @@ export interface operations {
     listAssetVulnerabilities: {
         parameters: {
             query?: {
-                /** @description Chỉ lấy ứng viên sinh từ observation của chiến dịch này */
+                /** @description Chỉ lấy ứng viên khi tài sản thuộc chiến dịch này (asset_campaign); hàng ứng viên không thuộc riêng một chiến dịch nào vì khóa duy nhất là (asset, CVE, bản intel, phương pháp). */
                 campaign_id?: components["schemas"]["Id"];
                 /** @description Chỉ lấy ứng viên có trong CISA KEV */
                 kev_only?: boolean;

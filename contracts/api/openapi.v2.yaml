@@ -889,7 +889,9 @@ paths:
       parameters:
       - name: campaign_id
         in: query
-        description: Chỉ lấy ứng viên sinh từ observation của chiến dịch này
+        description: Chỉ lấy ứng viên khi tài sản thuộc chiến dịch này (asset_campaign);
+          hàng ứng viên không thuộc riêng một chiến dịch nào vì khóa duy nhất là (asset, CVE,
+          bản intel, phương pháp).
         schema:
           $ref: ../common/ids.v2.schema.json#/$defs/Id
       - name: kev_only

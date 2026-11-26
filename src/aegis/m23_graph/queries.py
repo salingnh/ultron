@@ -109,6 +109,7 @@ MATCH (a:Asset {canonical_key: $canonical_key})
 WHERE $campaign_id IN coalesce(a.campaign_ids, [])
 OPTIONAL MATCH p = (a)-[rels*1..%d]-(b:Asset)
 WHERE $campaign_id IN coalesce(b.campaign_ids, [])
+  AND all(n IN nodes(p) WHERE n:Asset)
   AND all(r IN rels WHERE r.campaign_id = $campaign_id)
   AND ($types IS NULL OR all(r IN rels WHERE type(r) IN $types))
   AND ($as_of IS NULL OR all(r IN rels WHERE r.valid_from <= $as_of
@@ -135,7 +136,15 @@ def get_asset_neighbors(
     as_of: str | None = None,
     stale_after: timedelta = STALE_AFTER,
 ) -> dict[str, Any]:
-    """The neighbourhood of one asset, at most two hops, filtered by campaign and time."""
+    """The asset neighbourhood of one asset, at most two hops, filtered by campaign and time.
+
+    Only paths whose every node is an `:Asset` are walked. `contracts/graph/model.md` defines this
+    answer as asset nodes and asset-to-asset edges (the ones carrying `relationship_id`);
+    `AFFECTED_BY` ends at a `:Vulnerability`, `HAS_FINDING` at a `:Finding` and `DISCOVERED_FROM`
+    may end at a `:Target` with no `canonical_key`, so walking through them produced an edge with
+    a null endpoint that the output schema rejects (D2, item 61 trial). Candidates stay reachable
+    through `get_package_cve_matches` and the REST vulnerability read model, which are per asset.
+    """
     hops = max(1, min(int(max_hops), SERVER_MAX_HOPS))
     records_limit = max(1, min(int(limit), SERVER_LIMIT))
     moment = None

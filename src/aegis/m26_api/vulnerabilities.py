@@ -8,10 +8,13 @@ The candidates are M20's `package_vuln_match` rows, one per `(asset, vulnerabili
 decision, because the table is append-only. A newest decision can be a retraction (`matched =
 false`, migration 0008: the intel changed and the CPE no longer matches), which is why the query
 filters `latest.matched`: the same rule the graph read model applies (`m23_graph/queries.py`), so
-the API and the graph never disagree about whether a pair is a candidate. CVSS/KEV/EPSS are read
-from `vulnerability_current` per source, so the API never shows a value the graph or the catalogue
-do not have. Nothing here raises a candidate to a finding: an operator reading "candidate + KEV"
-still has to verify.
+the API and the graph never disagree about whether a pair is a candidate. `campaign_id` narrows the
+page to the campaigns that hold the asset (`asset_campaign`), never to the campaign named on the
+match row: 0004's uniqueness has no campaign, so a second campaign that acquired the same asset
+must see the same candidates (D5, item 61 trial). CVSS/KEV/EPSS are read from
+`vulnerability_current` per source, so the API never shows a value the graph or the catalogue do
+not have. Nothing here raises a candidate to a finding: an operator reading "candidate + KEV" still
+has to verify.
 """
 
 from __future__ import annotations
@@ -62,10 +65,12 @@ QUERY = (
     "WITH latest AS ("
     "  SELECT DISTINCT ON (m.vulnerability_id)"
     "         m.match_id, m.vulnerability_id, m.match_method, m.affected_range, m.confidence,"
-    "         m.snapshot_id, m.campaign_id, m.matched, m.created_at"
+    "         m.snapshot_id, m.matched, m.created_at"
     "    FROM package_vuln_match m"
     "   WHERE m.package_asset_id = %s"
-    "     AND (%s::uuid IS NULL OR m.campaign_id = %s::uuid)"
+    "     AND (%s::uuid IS NULL OR EXISTS ("
+    "           SELECT 1 FROM asset_campaign ac"
+    "            WHERE ac.asset_id = m.package_asset_id AND ac.campaign_id = %s::uuid))"
     "     AND (%s::text IS NULL OR m.vulnerability_id > %s::text)"
     "   ORDER BY m.vulnerability_id, m.created_at DESC, m.match_id DESC"
     ")"

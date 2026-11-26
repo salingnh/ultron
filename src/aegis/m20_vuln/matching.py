@@ -118,7 +118,17 @@ Connect = Callable[[], Connection]
 
 
 def connect(dsn: str) -> Connection:
-    connection: Connection = psycopg.connect(dsn, row_factory=psycopg.rows.dict_row)
+    """The module's connection factory: autocommit, like every aegis module.
+
+    Autocommit is not a convenience here. `Matcher.run` wraps each asset in
+    `with self._conn.transaction()`; on a connection that is not autocommit the first SELECT opens
+    an implicit transaction, `conn.transaction()` becomes a savepoint inside it, and `close()`
+    rolls the candidates and their outbox events back while the run still reports them. The CLI
+    used to open exactly such a connection and silently wrote nothing (D6, item 61 trial).
+    """
+    connection: Connection = psycopg.connect(
+        dsn, autocommit=True, row_factory=psycopg.rows.dict_row
+    )
     connection.execute(SEARCH_PATH)
     return connection
 
@@ -412,13 +422,24 @@ def _dedupe_labels(labels: Iterable[str]) -> tuple[str, ...]:
 def _targets(
     connection: Connection, campaign_id: str | None
 ) -> tuple[list[Target], int, dict[str, Any]]:
+    """Every matchable asset, narrowed to one campaign's assets by membership, not by observer.
+
+    A candidate is a decision about an (asset, vulnerability, intel revision): it belongs to the
+    asset, not to the campaign whose job happened to observe the product. 0004's uniqueness does
+    not include the campaign for that reason, so a second campaign that acquired the same asset
+    must see the same candidates. Narrowing `--campaign` by `observation.campaign_id` made the
+    asset invisible to every campaign but the first observer (D5); `asset_campaign` is the row
+    that says which campaigns upstream to the asset.
+    """
     rows = connection.execute(
         "SELECT DISTINCT ON (o.subject_asset_id, o.predicate)"
         "       o.observation_id, o.campaign_id, o.predicate, o.subject_asset_id, o.value,"
         "       a.canonical_key, a.kind"
         "  FROM observation o JOIN asset a ON a.asset_id = o.subject_asset_id"
         " WHERE o.predicate = ANY(%s) AND o.polarity = 'present'"
-        "   AND (%s::uuid IS NULL OR o.campaign_id = %s::uuid)"
+        "   AND (%s::uuid IS NULL OR EXISTS ("
+        "         SELECT 1 FROM asset_campaign ac"
+        "          WHERE ac.asset_id = o.subject_asset_id AND ac.campaign_id = %s::uuid))"
         " ORDER BY o.subject_asset_id, o.predicate, o.observed_at DESC, o.ingested_at DESC",
         (list(TARGET_PREDICATES), campaign_id, campaign_id),
     ).fetchall()

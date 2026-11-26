@@ -362,6 +362,8 @@ def test_the_max_agent_sessions_budget_refuses_another_cycle() -> None:
             )
 
     assert "max_agent_sessions" in str(caught.value)
+    # M02 terminalises the campaign from this code (D4, item 61 trial); the message is for people.
+    assert caught.value.code == SessionRefused.BUDGET_EXHAUSTED
 
 
 def test_the_sdk_client_reaches_the_real_mcp_server_from_inside_a_session() -> None:

@@ -3,7 +3,8 @@
 
 For every case in `tests/vulnlab/cases.yaml` this creates one campaign against the case's target
 (the origin address on the lab network for `lab`, the public tunnel hostname for `internet`), waits
-for it to finish, loads the committed intel slices through M18 when the store is empty,
+for it to finish, loads the committed NVD/EPSS slices and the configured, pinned KEV source
+through M18 when the store is empty,
 runs the M20 matcher for the campaign, then reads what the campaign recorded (PostgreSQL
 observations and assets, the Neo4j `AFFECTED_BY` candidates) and prints a verdict per case:
 
@@ -260,7 +261,12 @@ def snapshot(connection: Any, campaign_id: str, status: str) -> CampaignSnapshot
         str(row["vulnerability_id"])
         for row in support.rows(
             connection,
-            "SELECT vulnerability_id FROM aegis.vulnerability_current ORDER BY vulnerability_id",
+            # Only the NVD catalogue can produce a candidate (the KEV/EPSS rows are scores for a
+            # CVE, not a CPE range). Counting them as "known" made the catalog assert a candidate
+            # the loaded NVD snapshot cannot match, so the configured KEV source turned into false
+            # failures on a store that holds only the fixture NVD slice (D8, item 61 trial).
+            "SELECT vulnerability_id FROM aegis.vulnerability_current"
+            " WHERE source = 'nvd' AND NOT withdrawn ORDER BY vulnerability_id",
         )
     )
     return CampaignSnapshot(
@@ -314,7 +320,16 @@ INTEL_VERSION = "2026-11-24"
 
 
 def _ensure_intel(connection: Any) -> None:
-    """Load the committed feed slices when the intel store is empty (idempotent when it is not)."""
+    """Load the committed NVD/EPSS slices and the configured KEV source when the store is empty.
+
+    KEV is deliberately not loaded from the committed 3-row slice: the catalog's `kev=true`
+    assertions compare against the real catalogue and were failing only on the slice's coverage
+    (D8, item 61 trial). The configured source is `deploy/intel/kev-source.json` (the cisagov
+    mirror pinned to a commit, size and sha256); there is no fallback, so an unreachable or
+    changed export fails this run instead of quietly passing on a fixture that cannot satisfy the
+    catalog.
+    """
+    from aegis.m18_intel.sources import fetch_pinned, load_pinned_feed
     from aegis.m18_intel.sync import FeedSync
 
     present = support.count(connection, "SELECT count(*) FROM intel_snapshot")
@@ -323,7 +338,6 @@ def _ensure_intel(connection: Any) -> None:
     sync = FeedSync.from_env()
     for feed, path in (
         ("nvd", INTEL_FIXTURES / "nvd-slice.json"),
-        ("kev", INTEL_FIXTURES / "kev-slice.json"),
         ("epss", INTEL_FIXTURES / "epss-slice.csv"),
     ):
         report = sync.sync(
@@ -337,6 +351,13 @@ def _ensure_intel(connection: Any) -> None:
             f"  intel {feed}: records={report.records} written={report.written}"
             f" sha256={report.content_sha256[:12]}"
         )
+    pinned = load_pinned_feed("kev")
+    data = fetch_pinned(pinned)
+    report = sync.sync("kev", pinned.version, data, source_uri=pinned.url)
+    print(
+        f"  intel kev: records={report.records} written={report.written}"
+        f" catalog={pinned.catalog_version} sha256={report.content_sha256[:12]}"
+    )
 
 
 def _wait_for_candidates(campaign_id: str, expected: int, timeout_seconds: float = 90.0) -> None:

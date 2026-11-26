@@ -11,6 +11,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from aegis.m02_orchestrator.types import SessionOutcome, SessionRequest
 
@@ -27,6 +28,9 @@ class SessionScript:
     finished: list[SessionOutcome] = field(default_factory=list)
     cancelled: list[str] = field(default_factory=list)
     started: asyncio.Event = field(default_factory=asyncio.Event)
+    #: Raise this instead of returning an outcome - the real M03 refusal path (`SessionRefused`
+    #: becomes a non-retryable `ApplicationError` of type `SessionRefused`).
+    refuse_with: ApplicationError | None = None
 
     def next(self, request: SessionRequest) -> SessionOutcome:
         self.requests.append(request)
@@ -52,6 +56,12 @@ async def run_agent_session(request: SessionRequest) -> SessionOutcome:
     script = _SCRIPTS.get(request.campaign_id)
     if script is None:
         raise RuntimeError(f"no session script for campaign {request.campaign_id}")
+    if script.refuse_with is not None:
+        # A refusal is recorded like a real attempt (so a test can count it) and is raised as the
+        # non-retryable failure M03's activity produces from `SessionRefused`.
+        script.requests.append(request)
+        script.started.set()
+        raise script.refuse_with
     outcome = script.next(request)
     script.started.set()
     try:
