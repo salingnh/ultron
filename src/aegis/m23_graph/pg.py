@@ -50,6 +50,7 @@ __all__ = [
     "checkpoint",
     "configure_watermark_bound",
     "connect",
+    "current_matched_pairs",
     "emit_deltas",
     "prefetch_assets",
     "prefetch_evidence",
@@ -363,7 +364,7 @@ def prefetch_matches(
     rows = conn.execute(
         "SELECT m.match_id, m.package_asset_id, a.kind, a.canonical_key, m.vulnerability_id,"
         "       m.campaign_id, m.match_method, m.affected_range, m.confidence, m.snapshot_id,"
-        "       m.created_at"
+        "       m.created_at, m.matched"
         "  FROM package_vuln_match m JOIN asset a ON a.asset_id = m.package_asset_id"
         " WHERE m.match_id = ANY(%s::uuid[])",
         (ids,),
@@ -387,8 +388,35 @@ def prefetch_matches(
             confidence=float(row["confidence"] if row["confidence"] is not None else 0.0),
             snapshot_id=str(row["snapshot_id"]),
             observed_at=row["created_at"],
+            matched=bool(row["matched"]),
         )
     return matches
+
+
+def current_matched_pairs(
+    conn: psycopg.Connection[dict[str, Any]], asset_ids: Iterable[str]
+) -> set[tuple[str, str]]:
+    """The (asset, vulnerability) pairs whose newest decision is a match, for these assets.
+
+    A retraction is one campaign's decision, while the graph edge is one per pair: the projector
+    removes the edge only when PostgreSQL says no decision of that pair still matches, so a
+    campaign that retracted a candidate another campaign still holds cannot delete a live edge.
+    """
+    assets = _uuid_list(asset_ids)
+    if not assets:
+        return set()
+    rows = conn.execute(
+        "WITH latest AS ("
+        "  SELECT DISTINCT ON (package_asset_id, vulnerability_id)"
+        "         package_asset_id, vulnerability_id, matched"
+        "    FROM package_vuln_match"
+        "   WHERE package_asset_id = ANY(%s::uuid[])"
+        "   ORDER BY package_asset_id, vulnerability_id, created_at DESC, match_id DESC"
+        ")"
+        " SELECT package_asset_id, vulnerability_id FROM latest WHERE matched",
+        (assets,),
+    ).fetchall()
+    return {(str(row["package_asset_id"]), str(row["vulnerability_id"])) for row in rows}
 
 
 def _json_object(value: object) -> dict[str, Any]:

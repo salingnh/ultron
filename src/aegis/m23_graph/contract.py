@@ -46,6 +46,7 @@ __all__ = [
     "observation_upsert",
     "relationship_upsert",
     "templates",
+    "vulnerability_retract",
     "vulnerability_upsert",
 ]
 
@@ -134,13 +135,14 @@ def cypher_statements(text: str) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class Templates:
-    """The six statement groups of `projector-upserts.cypher`, in file order."""
+    """The seven statement groups of `projector-upserts.cypher`, in file order."""
 
     asset: str
     relationship: str
     finding: str
     evidence: str
     vulnerability: str
+    vulnerability_retract: str
     observation: str
 
 
@@ -176,6 +178,7 @@ def templates() -> Templates:
         finding=_only_one(statements, "MERGE (fd:Finding", "finding"),
         evidence=_only_one(statements, "MERGE (e:Evidence", "evidence"),
         vulnerability=_only_one(statements, "MERGE (v:Vulnerability", "vulnerability"),
+        vulnerability_retract=_only_one(statements, "DELETE r", "vulnerability retraction"),
         observation=_only_one(statements, "MERGE (o:Observation", "observation"),
     )
 
@@ -215,6 +218,11 @@ def evidence_upsert() -> str:
 def vulnerability_upsert() -> str:
     """Statement 4: the `:Vulnerability` node and the candidate `AFFECTED_BY` edge."""
     return templates().vulnerability
+
+
+def vulnerability_retract() -> str:
+    """Statement 4b: drop the `AFFECTED_BY` edge of a pair whose newest decision is a retraction."""
+    return templates().vulnerability_retract
 
 
 def affected_by_source(kind: str) -> str:

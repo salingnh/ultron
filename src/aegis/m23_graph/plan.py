@@ -220,6 +220,7 @@ def plan_round(
     vulnerabilities: Mapping[str, VulnerabilitySnapshot] | None = None,
     matches: Mapping[str, VulnerabilityMatchSnapshot] | None = None,
     observations: Mapping[str, ObservationSnapshot] | None = None,
+    current_matches: Set[tuple[str, str]] | None = None,
 ) -> RoundPlan:
     """The Neo4j work and the checkpoint facts of one batch.
 
@@ -249,7 +250,13 @@ def plan_round(
             _plan_finding(builder, event, assets, findings, evidence, partitions)
         elif event.type == VULNERABILITY_EVENT:
             _plan_vulnerability(
-                builder, event, matches or {}, vulnerabilities or {}, assets, partitions
+                builder,
+                event,
+                matches or {},
+                vulnerabilities or {},
+                assets,
+                partitions,
+                current_matches,
             )
         # Every other event has no statement in the committed template: the projector still
         # checkpoints past it (the node types it would feed - `:Target`/`:Campaign`/`:Job` - have
@@ -354,6 +361,7 @@ def _plan_vulnerability(
     vulnerabilities: Mapping[str, VulnerabilitySnapshot],
     assets: Mapping[str, AssetSnapshot],
     partitions: int,
+    current_matches: Set[tuple[str, str]] | None = None,
 ) -> None:
     """The `:Vulnerability` node and its candidate `AFFECTED_BY` edge, from PostgreSQL rows.
 
@@ -365,6 +373,9 @@ def _plan_vulnerability(
     """
     match = matches.get(str(event.payload.get("match_id") or ""))
     if match is None:
+        return
+    if not match.matched:
+        _plan_retraction(builder, match, assets, partitions, current_matches)
         return
     vulnerability = vulnerabilities.get(match.vulnerability_id)
     if vulnerability is None:
@@ -392,6 +403,39 @@ def _plan_vulnerability(
                 "campaign_id": match.campaign_id,
             },
             partition=partition,
+            phase=PHASE_GRAPH,
+            entity="vulnerability",
+        )
+    )
+
+
+def _plan_retraction(
+    builder: _Builder,
+    match: VulnerabilityMatchSnapshot,
+    assets: Mapping[str, AssetSnapshot],
+    partitions: int,
+    current_matches: Set[tuple[str, str]] | None,
+) -> None:
+    """Drop the `AFFECTED_BY` edge a retraction takes back, unless the pair still matches.
+
+    The edge is one per `(asset, vulnerability)` while the decision row carries a campaign, so the
+    removal only happens when no decision of the pair matches any more (`current_matched_pairs`).
+    Without that set - a caller that did not prefetch it - the retraction is planned as if it were
+    the only decision, because the alternative is an edge the newest decision contradicts.
+    """
+    contract.affected_by_source(match.asset_kind)
+    if current_matches is not None and (match.asset_id, match.vulnerability_id) in current_matches:
+        return
+    owner = assets.get(match.asset_id)
+    key = owner.canonical_key if owner is not None else match.canonical_key
+    builder.append(
+        CypherOp(
+            statement=contract.vulnerability_retract(),
+            parameters={
+                "asset_id": match.asset_id,
+                "vulnerability_id": match.vulnerability_id,
+            },
+            partition=partition_of(key, partitions),
             phase=PHASE_GRAPH,
             entity="vulnerability",
         )

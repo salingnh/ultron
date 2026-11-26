@@ -6,7 +6,7 @@ contracts/graph/projector-upserts.cypher - not a copy of them, and asserts the p
 PROGRESS.md claims for them:
 
   1. constraints.cypher is idempotent: both runs succeed.
-  2. The five projector upserts are idempotent: applied twice they keep 3 Asset, 1 Finding,
+  2. The projector upserts are idempotent: applied twice they keep 3 Asset, 1 Finding,
      1 Evidence, 1 Vulnerability and 3 edges carrying a job.
   3. Closing a relationship interval and opening a new one keeps two SUBDOMAIN_OF windows
      with exactly one current (valid_to IS NULL) edge.
@@ -151,7 +151,7 @@ def apply_file(path: Path) -> int:
 
 def apply_projector(relationship_id: str | None, valid_to: str | None) -> None:
     """Runs the projector upserts from the committed template, in file order."""
-    asset, edge, finding, evidence, vulnerability, observation = statements(PROJECTOR)
+    asset, edge, finding, evidence, vulnerability, retraction, observation = statements(PROJECTOR)
     run(asset, {
         "canonical_key": ROOT_CANONICAL, "asset_id": ROOT_ASSET, "kind": "domain",
         "first_seen": OBSERVED, "last_seen": OBSERVED,
@@ -197,6 +197,37 @@ def apply_projector(relationship_id: str | None, valid_to: str | None) -> None:
         "value_summary": '{"product": "nginx", "version": "1.29.8"}', "polarity": "present",
         "subject": SUB_CANONICAL, "observed_at": OBSERVED, "confidence": 0.8, "revision": 1,
     })
+
+
+def retraction_removes_the_edge_and_the_orphan_node() -> str:
+    """Statement 4b: a retracted candidate leaves no AFFECTED_BY edge and no orphan :Vulnerability.
+
+    The projector runs it only when PostgreSQL says no decision of the pair matches any more; here
+    the template is exercised on its own, then the upsert restores the edge for the checks after it.
+    """
+    _, _, _, _, vulnerability, retraction, _ = statements(PROJECTOR)
+    run(retraction, {"asset_id": SVC_ASSET, "vulnerability_id": CVE})
+    edges = scalars(
+        "MATCH (:Asset {asset_id: $asset})-[:AFFECTED_BY]->(:Vulnerability {vulnerability_id: $cve})"
+        " RETURN count(*)", {"asset": SVC_ASSET, "cve": CVE})[0]
+    nodes = scalars("MATCH (v:Vulnerability {vulnerability_id: $cve}) RETURN count(v)",
+                    {"cve": CVE})[0]
+    if (edges, nodes) != (0, 0):
+        raise AssertionError(f"retraction left {edges} edge(s) and {nodes} orphan node(s)")
+    # Idempotent: a replay of the same event removes nothing and must not fail.
+    run(retraction, {"asset_id": SVC_ASSET, "vulnerability_id": CVE})
+    run(vulnerability, {
+        "asset_id": SVC_ASSET, "vulnerability_id": CVE, "cvss_base": 9.8, "kev": True,
+        "epss": 0.94, "snapshot_id": SNAPSHOT, "node_snapshot_id": SNAPSHOT,
+        "match_method": "cpe_range",
+        "affected_range": ">= 2.0.0, < 2.15.0", "confidence": 0.6,
+        "observed_at": OBSERVED, "match_id": MATCH, "campaign_id": CAMPAIGN,
+    })
+    restored = scalars("MATCH (:Vulnerability {vulnerability_id: $cve}) RETURN count(*)",
+                       {"cve": CVE})[0]
+    if restored != 1:
+        raise AssertionError(f"the upsert did not restore the candidate: {restored} node(s)")
+    return "edge and orphan node removed, upsert restored them"
 
 
 def constraint_runs() -> str:
@@ -274,6 +305,7 @@ def main() -> int:
     check("projector upserts are idempotent", projector_twice)
     check("reopening a relationship keeps one current window", interval_reopen)
     check("asset_id uniqueness is enforced", duplicate_asset_id_rejected)
+    check("a retraction removes the edge and the orphan node", retraction_removes_the_edge_and_the_orphan_node)
 
     failed = [name for name, ok, _ in CHECKS if not ok]
     print(f"cypher smoke: {len(CHECKS) - len(failed)}/{len(CHECKS)} checks PASS")

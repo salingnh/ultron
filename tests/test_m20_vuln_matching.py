@@ -27,8 +27,10 @@ from aegis.m20_vuln.configurations import (
     VERSION_UNSPECIFIED_CODE,
 )
 from aegis.m20_vuln.matching import (
+    NO_LONGER_MATCHES_CODE,
     VERSION_UNKNOWN_CODE,
     VERSION_UNKNOWN_MESSAGE,
+    WITHDRAWN_CODE,
     Matcher,
     changed_vulnerabilities,
 )
@@ -36,7 +38,7 @@ from aegis.m23_graph.models import VULNERABILITY_EVENT
 from tests import db_support as support
 from tests import g16c_support as fixtures
 from tests.db_support import requires_postgres
-from tests.m23_support import connect, ingest, pipeline_database
+from tests.m23_support import CAMPAIGN_ID, connect, ingest, pipeline_database
 from tests.support_ingestion import asset, observation
 
 pytestmark = requires_postgres
@@ -276,6 +278,205 @@ def test_a_configuration_that_needs_an_unobserved_platform_is_not_a_candidate(
     # The range candidate keeps its bounds, so an operator can audit what matched.
     range_row = next(row for row in found if row["vulnerability_id"] == "CVE-2021-42013")
     assert range_row["affected_range"] == ">= 2.4.49, <= 2.4.50"
+
+
+def _current_candidates(connection: Any) -> set[str]:
+    """CVE ids whose newest decision per (asset, vulnerability) is a match (the read-model rule)."""
+    rows = connection.execute(
+        "WITH latest AS ("
+        "  SELECT DISTINCT ON (package_asset_id, vulnerability_id)"
+        "         vulnerability_id, matched"
+        "    FROM package_vuln_match"
+        "   ORDER BY package_asset_id, vulnerability_id, created_at DESC, match_id DESC"
+        ")"
+        " SELECT vulnerability_id FROM latest WHERE matched"
+    ).fetchall()
+    return {str(row["vulnerability_id"]) for row in rows}
+
+
+def _decisions(connection: Any, vulnerability_id: str) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        "SELECT match_id, matched, retraction_reason, vuln_rev_id, campaign_id, confidence"
+        "  FROM package_vuln_match WHERE vulnerability_id = %s"
+        " ORDER BY created_at, match_id",
+        (vulnerability_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def test_a_new_revision_that_stops_matching_retracts_the_candidate(
+    database: tuple[str, list[str]],
+) -> None:
+    """Item 61 retraction: a match at revision N, a non-match at N+1 -> the candidate is gone.
+
+    History stays (the positive decision at N is still a row), the retraction is a decision of its
+    own at N+1 with the reason, and it publishes the event M23 removes the edge from. A second run
+    at the same revision writes neither a row nor an event.
+    """
+    dsn, jobs = database
+    ingest_services(dsn, jobs[0])
+    with connect(dsn) as connection:
+        fixtures.seed_intel(dsn)
+        first = Matcher(connection).run()
+        assert first.new_matches == 3
+        events_before = len(fixtures.events(connection, VULNERABILITY_EVENT))
+
+        based = FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+            "nvd",
+            "2026-11-27",
+            fixtures.nvd_with_retracted_match(),
+            source_uri="nvd-retraction.json",
+            snapshot_at=fixtures.SNAPSHOT_AT,
+        )
+        report = Matcher(connection).run()
+        decisions = _decisions(connection, "CVE-2021-41773")
+        events = fixtures.events(connection, VULNERABILITY_EVENT)
+        found = _current_candidates(connection)
+
+    assert based.written == 1  # one revision: the re-analysed CVE
+    assert report.retracted == 1
+    assert report.new_matches == 0
+    assert report.retractions_blocked == 0
+    assert len(report.retractions) == 1
+    retraction = report.retractions[0]
+    assert retraction["asset"] == fixtures.SERVICE_KEY
+    assert retraction["vulnerability_id"] == "CVE-2021-41773"
+    assert retraction["reason"] == NO_LONGER_MATCHES_CODE
+    assert retraction["snapshot_id"] == based.snapshot_id
+    assert retraction["campaign_id"] == str(decisions[0]["campaign_id"])
+
+    # History: the match at the old revision and the retraction at the new one.
+    assert [row["matched"] for row in decisions] == [True, False]
+    assert decisions[1]["retraction_reason"] == NO_LONGER_MATCHES_CODE
+    assert decisions[1]["vuln_rev_id"] != decisions[0]["vuln_rev_id"]
+    assert decisions[1]["confidence"] is None
+    assert decisions[1]["campaign_id"] == decisions[0]["campaign_id"]
+
+    # The read model's newest row of the pair is the retraction, so the candidate is gone while
+    # both rows stay in the append-only history.
+    assert {"CVE-2021-23017", "CVE-2022-22965"} == found
+
+    # One event for the retraction, carrying the retraction's own match_id.
+    assert len(events) == events_before + 1
+    assert events[-1]["dedup_key"] == str(decisions[1]["match_id"])
+    assert events[-1]["payload"]["vulnerability_id"] == "CVE-2021-41773"
+    assert events[-1]["payload"]["campaign_id"] == str(decisions[1]["campaign_id"])
+
+    # Idempotent: the newest decision is already a retraction, so nothing is written again.
+    with connect(dsn) as connection:
+        again = Matcher(connection).run()
+        assert _decisions(connection, "CVE-2021-41773") == decisions
+        assert len(fixtures.events(connection, VULNERABILITY_EVENT)) == events_before + 1
+    assert again.retracted == 0 and again.retractions_blocked == 0
+
+
+def test_a_rejected_revision_retracts_the_candidate_it_withdraws(
+    database: tuple[str, list[str]],
+) -> None:
+    """A CVE NVD rejects after it matched is never a candidate again: reason WITHDRAWN."""
+    dsn, jobs = database
+    ingest_services(dsn, jobs[0])
+    with connect(dsn) as connection:
+        fixtures.seed_intel(dsn)
+        Matcher(connection).run()
+        FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+            "nvd",
+            "2026-11-27",
+            fixtures.nvd_with_rejected_cve(),
+            source_uri="nvd-rejected.json",
+            snapshot_at=fixtures.SNAPSHOT_AT,
+        )
+        report = Matcher(connection).run()
+        decisions = _decisions(connection, "CVE-2021-41773")
+        current = _current_candidates(connection)
+
+    assert report.retracted == 1
+    assert decisions[-1]["matched"] is False
+    assert decisions[-1]["retraction_reason"] == WITHDRAWN_CODE
+    assert "CVE-2021-41773" not in current
+
+
+def test_a_retraction_that_cannot_be_written_is_counted_for_the_next_sync(
+    database: tuple[str, list[str]],
+) -> None:
+    """A code change without a new intel revision cannot retract: the append-only key refuses it.
+
+    M20 counts that case instead of writing a row the unique index would drop, so an operator sees
+    that the candidate is stale only until the next sync instead of never.
+    """
+    dsn, jobs = database
+    ingest_services(dsn, jobs[0])
+    with connect(dsn) as connection:
+        fixtures.seed_intel(dsn)
+        Matcher(connection).run()
+        FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+            "nvd",
+            "2026-11-27",
+            fixtures.nvd_with_retracted_match(),
+            source_uri="nvd-retraction.json",
+            snapshot_at=fixtures.SNAPSHOT_AT,
+        )
+        # A match already recorded *at the current revision* (the state a previous run of another
+        # build left behind): the retraction would be the same (asset, vuln, rev, method) key.
+        current = connection.execute(
+            "SELECT vulnerability_id, vuln_rev_id, snapshot_id FROM vulnerability_current"
+            " WHERE source = 'nvd' AND vulnerability_id = 'CVE-2021-41773'"
+        ).fetchone()
+        owner = connection.execute(
+            "SELECT asset_id FROM asset WHERE canonical_key = %s", (fixtures.SERVICE_KEY,)
+        ).fetchone()
+        assert current is not None and owner is not None
+        asset_id = owner["asset_id"]
+        connection.execute(
+            "INSERT INTO package_vuln_match (match_id, package_asset_id, vulnerability_id,"
+            " vuln_rev_id, match_method, matched, confidence, snapshot_id, campaign_id)"
+            " VALUES (%s, %s, 'CVE-2021-41773', %s, 'cpe_range', TRUE, 0.7, %s, %s)",
+            (
+                "01900000-0000-7000-8000-0000000c0a99",
+                asset_id,
+                current["vuln_rev_id"],
+                current["snapshot_id"],
+                CAMPAIGN_ID,
+            ),
+        )
+        report = Matcher(connection).run()
+        rows = _decisions(connection, "CVE-2021-41773")
+
+    assert report.retractions_blocked == 1
+    assert report.retracted == 0
+    assert [row["matched"] for row in rows][-1] is True  # the stale decision stays the newest
+
+
+def test_a_revision_that_stops_naming_the_product_still_retracts(
+    database: tuple[str, list[str]],
+) -> None:
+    """The narrowed catalogue never shows this CVE to the run: the retraction decides it here."""
+    dsn, jobs = database
+    ingest_services(dsn, jobs[0])
+    with connect(dsn) as connection:
+        fixtures.seed_intel(dsn)
+        Matcher(connection).run()
+        FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+            "nvd",
+            "2026-11-27",
+            fixtures.nvd_without_the_product(),
+            source_uri="nvd-no-product.json",
+            snapshot_at=fixtures.SNAPSHOT_AT,
+        )
+        report = Matcher(connection).run()
+        decisions = _decisions(connection, "CVE-2021-41773")
+        current = _current_candidates(connection)
+
+    assert report.retracted == 1
+    assert [row["matched"] for row in decisions] == [True, False]
+    assert decisions[-1]["retraction_reason"] == NO_LONGER_MATCHES_CODE
+    assert "CVE-2021-41773" not in current
+
+    # A delta run scoped to another CVE leaves the tail alone: it did not look at it.
+    with connect(dsn) as connection:
+        assert _decisions(connection, "CVE-2021-41773")[-1]["matched"] is False
+        scoped = Matcher(connection).run(only_vulnerabilities={"CVE-2021-23017"})
+    assert scoped.retracted == 0
 
 
 def _ensure_0007(dsn: str) -> None:

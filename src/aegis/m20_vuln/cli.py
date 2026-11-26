@@ -2,10 +2,12 @@
 
 * `run` - match the current `service.product` / `http.technology` observations against the current
   NVD catalogue and store candidate `package_vuln_match` rows plus their `vulnerability.matched.v2`
-  events. `--campaign` narrows the targets, `--changed-since` narrows the catalogue to the CVE ids
-  of the `intel.revision.v2` events after that outbox cursor (the delta run), `--dry-run` prints
-  the candidates without writing.
-* `status` - candidate counts per asset (the operator's view of what matching produced).
+  events. A candidate the new revision no longer matches is taken back (`matched = false` at the
+  new revision, with the reason in `retractions`). `--campaign` narrows the targets,
+  `--changed-since` narrows the catalogue to the CVE ids of the `intel.revision.v2` events after
+  that outbox cursor (the delta run), `--dry-run` prints the decisions without writing.
+* `status` - candidate counts per asset (the operator's view of what matching produced: the
+  newest decision of every pair, so a retraction removes the pair from the count).
 
 Environment: `AEGIS_PG_DSN`. No network, no container.
 """
@@ -35,21 +37,35 @@ def _run(argv: argparse.Namespace) -> int:
         )
     finally:
         connection.close()
-    print(json.dumps({**report.as_dict(), "matches": report.matches}, indent=2))
+    print(
+        json.dumps(
+            {**report.as_dict(), "matches": report.matches, "retractions": report.retractions},
+            indent=2,
+        )
+    )
     return 0
 
 
 def _status() -> int:
     connection = connect_from_env()
     try:
+        # `package_vuln_match` is append-only history: a candidate is the newest decision of the
+        # pair, and a retraction (matched = false, 0008) means the pair is no longer a candidate.
         rows = connection.execute(
-            "SELECT a.canonical_key, count(*) AS candidates,"
+            "WITH latest AS ("
+            "  SELECT DISTINCT ON (package_asset_id, vulnerability_id)"
+            "         match_id, package_asset_id, vulnerability_id, created_at, matched"
+            "    FROM package_vuln_match"
+            "   ORDER BY package_asset_id, vulnerability_id, created_at DESC, match_id DESC"
+            ")"
+            " SELECT a.canonical_key, count(*) AS candidates,"
             "       count(*) FILTER (WHERE vc_kev.kev IS NOT NULL) AS kev,"
             "       max(m.created_at) AS newest"
-            "  FROM package_vuln_match m"
+            "  FROM latest m"
             "  JOIN asset a ON a.asset_id = m.package_asset_id"
             "  LEFT JOIN vulnerability_current vc_kev"
             "    ON vc_kev.vulnerability_id = m.vulnerability_id AND vc_kev.source = 'kev'"
+            " WHERE m.matched"
             " GROUP BY a.canonical_key ORDER BY candidates DESC"
         ).fetchall()
     finally:
