@@ -147,6 +147,96 @@ def nvd_with_rejected_cve() -> bytes:
     return json.dumps(document).encode("utf-8")
 
 
+HTTPD = ("a", "apache", "http_server")
+WINDOWS = ("o", "microsoft", "windows")
+
+
+def _cpe(product: tuple[str, str, str], version: str, **bounds: object) -> dict[str, object]:
+    """One NVD `cpeMatch` entry for the fixture's `(part, vendor, product)`."""
+    part, vendor, name = product
+    return {
+        "vulnerable": True,
+        "criteria": f"cpe:2.3:{part}:{vendor}:{name}:{version}:*:*:*:*:*:*:*",
+        **bounds,
+    }
+
+
+def _node(*matches: dict[str, object], operator: str = "OR") -> dict[str, object]:
+    return {"operator": operator, "negate": False, "cpeMatch": list(matches)}
+
+
+def _cve(
+    vulnerability_id: str, configurations: list[dict[str, object]], description: str
+) -> dict[str, object]:
+    return {
+        "cve": {
+            "id": vulnerability_id,
+            "vulnStatus": "Modified",
+            "lastModified": "2026-11-26T00:00:00.000",
+            "published": "2024-07-01T00:00:00.000",
+            "descriptions": [{"lang": "en", "value": description}],
+            "configurations": configurations,
+        }
+    }
+
+
+def nvd_with_configuration_cases() -> bytes:
+    """The NVD slice plus three real httpd configurations the matcher must tell apart (item 61).
+
+    * `CVE-2024-40898` - "SSRF in Apache HTTP Server on Windows": an `AND` configuration of
+      "http_server < 2.4.62" and the platform `microsoft:windows` (`vulnerable: false`). The
+      flattened reading made every httpd under 2.4.62 a candidate;
+    * `CVE-1999-0289` - `cpe:2.3:a:apache:http_server:-`, NVD published no version at all;
+    * `CVE-2021-42013` - an ordinary bounded range (2.4.49 and 2.4.50), which must still match.
+    """
+    import json
+
+    document = json.loads(NVD.read_text(encoding="utf-8"))
+    windows_platform = _cpe(WINDOWS, "-")
+    windows_platform["vulnerable"] = False
+    document["vulnerabilities"].extend(
+        [
+            _cve(
+                "CVE-2024-40898",
+                [
+                    {
+                        "operator": "AND",
+                        "nodes": [
+                            _node(_cpe(HTTPD, "*", versionEndExcluding="2.4.62")),
+                            _node(windows_platform),
+                        ],
+                    }
+                ],
+                "SSRF in Apache HTTP Server on Windows with mod_rewrite",
+            ),
+            _cve(
+                "CVE-1999-0289",
+                [{"nodes": [_node(_cpe(HTTPD, "-"))]}],
+                "A default configuration of Apache on Win32 may provide access to restricted files",
+            ),
+            _cve(
+                "CVE-2021-42013",
+                [
+                    {
+                        "nodes": [
+                            _node(
+                                _cpe(
+                                    HTTPD,
+                                    "*",
+                                    versionStartIncluding="2.4.49",
+                                    versionEndIncluding="2.4.50",
+                                )
+                            )
+                        ]
+                    }
+                ],
+                "Path traversal in httpd 2.4.49 and 2.4.50",
+            ),
+        ]
+    )
+    return json.dumps(document).encode("utf-8")
+
+
 def matches(connection: psycopg.Connection[Any]) -> list[dict[str, Any]]:
     rows = connection.execute(
         "SELECT m.vulnerability_id, a.canonical_key, m.match_method, m.confidence,"

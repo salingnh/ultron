@@ -44,7 +44,31 @@ def test_nvd_slice_parses_every_cve_with_cvss_and_cpe_ranges() -> None:
                 "version_end_excluding": None,
                 "match_criteria_id": "9F1E4F4C-1111-4A00-8000-000000000001",
             }
-        ]
+        ],
+        # The same criterion in NVD's tree, so M20 can honour operator/negate/vulnerable instead
+        # of guessing from the flattened list (item 61).
+        "configurations": [
+            {
+                "operator": "OR",
+                "nodes": [
+                    {
+                        "operator": "OR",
+                        "negate": False,
+                        "cpe_match": [
+                            {
+                                "criteria": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*",
+                                "vulnerable": True,
+                                "version_start_including": None,
+                                "version_start_excluding": None,
+                                "version_end_including": None,
+                                "version_end_excluding": None,
+                                "match_criteria_id": "9F1E4F4C-1111-4A00-8000-000000000001",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
     }
     assert apache.published_at is not None and apache.published_at.isoformat().startswith(
         "2021-10-05T14:15:10"
@@ -55,10 +79,113 @@ def test_nvd_slice_parses_every_cve_with_cvss_and_cpe_ranges() -> None:
     match = nginx.affected["cpe_match"][0]
     assert match["version_start_including"] == "0.6.18"
     assert match["version_end_excluding"] == "1.20.1"
-    # Two configurations of one CVE are flattened into one list, in document order.
+    # One node with two ranges is one node with two criteria, and both are also in the flattened
+    # list (one entry per criterion, in document order).
     spring = records[2].affected
     assert spring is not None
     assert len(spring["cpe_match"]) == 2
+    assert len(spring["configurations"]) == 1
+    node = spring["configurations"][0]["nodes"][0]
+    assert [entry["version_start_including"] for entry in node["cpe_match"]] == ["5.3.0", "2.5.0"]
+
+
+HTTPD_ALL = "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*"
+WINDOWS = "cpe:2.3:o:microsoft:windows:-:*:*:*:*:*:*:*"
+
+
+def test_an_and_configuration_keeps_its_operator_negate_and_platform_node() -> None:
+    """CVE-2024-40898's shape: httpd on Windows, an AND configuration with a `vulnerable: false`
+    platform node. Flattening it would turn "httpd < 2.4.62 on Windows" into "httpd < 2.4.62"."""
+    document = {
+        "vulnerabilities": [
+            {
+                "cve": {
+                    "id": "CVE-2024-40898",
+                    "vulnStatus": "Modified",
+                    "configurations": [
+                        {
+                            "operator": "AND",
+                            "nodes": [
+                                {
+                                    "operator": "OR",
+                                    "negate": False,
+                                    "cpeMatch": [
+                                        {
+                                            "vulnerable": True,
+                                            "criteria": HTTPD_ALL,
+                                            "versionEndExcluding": "2.4.62",
+                                        }
+                                    ],
+                                },
+                                {
+                                    "operator": "OR",
+                                    "negate": False,
+                                    "cpeMatch": [
+                                        {
+                                            "vulnerable": False,
+                                            "criteria": WINDOWS,
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+
+    affected = feeds.parse_nvd(document)[0].affected
+    assert affected is not None
+    assert len(affected["cpe_match"]) == 2
+    configuration = affected["configurations"][0]
+    assert configuration["operator"] == "AND"
+    httpd_node, platform_node = configuration["nodes"]
+    assert httpd_node["negate"] is False
+    assert httpd_node["cpe_match"][0]["version_end_excluding"] == "2.4.62"
+    assert platform_node["cpe_match"][0]["vulnerable"] is False
+
+
+def test_a_negated_child_node_is_stored_as_a_child() -> None:
+    document = {
+        "vulnerabilities": [
+            {
+                "cve": {
+                    "id": "CVE-2010-0002",
+                    "vulnStatus": "Analyzed",
+                    "configurations": [
+                        {
+                            "nodes": [
+                                {
+                                    "operator": "OR",
+                                    "negate": True,
+                                    "children": [
+                                        {
+                                            "operator": "OR",
+                                            "negate": False,
+                                            "cpeMatch": [
+                                                {
+                                                    "vulnerable": True,
+                                                    "criteria": "cpe:2.3:a:v:p:1.0:*:*:*:*:*:*:*",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+
+    affected = feeds.parse_nvd(document)[0].affected
+    assert affected is not None
+    node = affected["configurations"][0]["nodes"][0]
+    assert node["negate"] is True
+    assert node["cpe_match"] == []
+    assert node["children"][0]["cpe_match"][0]["criteria"].startswith("cpe:2.3:a:v:p:1.0")
 
 
 def test_nvd_rejected_status_is_withdrawn() -> None:

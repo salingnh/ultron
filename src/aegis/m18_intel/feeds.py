@@ -15,9 +15,16 @@ what the read API returns; they are JSONB, so the database does not constrain th
 `kev` = `{date_added, due_date, required_action, vendor_project, product, vulnerability_name,
 known_ransomware, catalog_version}`,
 `epss` = `{score, percentile, score_date}`,
-`affected` = `{cpe_match: [{criteria, vulnerable, version_start_including, version_start_excluding,
-version_end_including, version_end_excluding, match_criteria_id}]}` (NVD configurations flattened,
-`vulnerable: false` entries kept because they are the exclusion half of the range).
+`affected` = `{cpe_match: [...], configurations: [...]}`. `cpe_match` is every NVD criterion
+flattened into one list (`{criteria, vulnerable, version_start_including, version_start_excluding,
+version_end_including, version_end_excluding, match_criteria_id}`), because the PostgreSQL GIN
+index (`aegis.nvd_cpe_products`) narrows 400k revisions by `(part, vendor, product)` with it;
+`configurations` is the same criteria kept in NVD's tree (`{operator, nodes: [{operator, negate,
+cpe_match, children}]}`), because the flat list cannot say under which conditions a criterion
+applies and M20 must not treat an `AND` node or a negated node as a match (`vulnerable: false`
+entries also stay in both: they mark the platform half of a "runs on" node list and exclusions).
+The tree repeats the criteria, so an `affected` value costs roughly twice the flat list; it is the
+price of matching the published semantics instead of a projection of them.
 """
 
 from __future__ import annotations
@@ -173,28 +180,47 @@ def _cvss_from(metrics: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _criterion(match: dict[str, Any]) -> dict[str, Any]:
+    """One stored criterion; the same shape in the flat list and in the tree."""
+    criteria = match.get("criteria")
+    if not isinstance(criteria, str):
+        raise FeedError("a cpeMatch entry has no criteria string")
+    return {
+        "criteria": criteria,
+        "vulnerable": bool(match.get("vulnerable", False)),
+        "version_start_including": match.get("versionStartIncluding"),
+        "version_start_excluding": match.get("versionStartExcluding"),
+        "version_end_including": match.get("versionEndIncluding"),
+        "version_end_excluding": match.get("versionEndExcluding"),
+        "match_criteria_id": match.get("matchCriteriaId"),
+    }
+
+
 def _cpe_matches(node: object, found: list[dict[str, Any]]) -> None:
     """Flatten NVD `configurations[].nodes[]` (children included) into one cpe_match list."""
     if not isinstance(node, dict):
         raise FeedError("an NVD configuration node must be an object")
     for match in node.get("cpeMatch") or ():
-        match = _object(match, "cpeMatch entry")
-        criteria = match.get("criteria")
-        if not isinstance(criteria, str):
-            raise FeedError("a cpeMatch entry has no criteria string")
-        found.append(
-            {
-                "criteria": criteria,
-                "vulnerable": bool(match.get("vulnerable", False)),
-                "version_start_including": match.get("versionStartIncluding"),
-                "version_start_excluding": match.get("versionStartExcluding"),
-                "version_end_including": match.get("versionEndIncluding"),
-                "version_end_excluding": match.get("versionEndExcluding"),
-                "match_criteria_id": match.get("matchCriteriaId"),
-            }
-        )
+        found.append(_criterion(_object(match, "cpeMatch entry")))
     for child in node.get("children") or ():
         _cpe_matches(child, found)
+
+
+def _node_tree(node: object) -> dict[str, Any]:
+    """One NVD node as stored: its operator/negate, its criteria and its children."""
+    if not isinstance(node, dict):
+        raise FeedError("an NVD configuration node must be an object")
+    entry: dict[str, Any] = {
+        "operator": node.get("operator") or "OR",
+        "negate": bool(node.get("negate")),
+        "cpe_match": [
+            _criterion(_object(match, "cpeMatch entry")) for match in node.get("cpeMatch") or ()
+        ],
+    }
+    children = [_node_tree(child) for child in node.get("children") or ()]
+    if children:
+        entry["children"] = children
+    return entry
 
 
 def _affected(configurations: object) -> dict[str, Any] | None:
@@ -205,10 +231,21 @@ def _affected(configurations: object) -> dict[str, Any] | None:
     if not configurations:
         return None
     matches: list[dict[str, Any]] = []
+    tree: list[dict[str, Any]] = []
     for configuration in configurations:
-        for node in _object(configuration, "configuration").get("nodes") or ():
+        entry = _object(configuration, "configuration")
+        nodes = entry.get("nodes") or ()
+        for node in nodes:
             _cpe_matches(node, matches)
-    return {"cpe_match": matches} if matches else None
+        tree.append(
+            {
+                "operator": entry.get("operator") or "OR",
+                "nodes": [_node_tree(node) for node in nodes],
+            }
+        )
+    if not matches:
+        return None
+    return {"cpe_match": matches, "configurations": tree}
 
 
 def _cve_references(references: object) -> list[dict[str, Any]]:

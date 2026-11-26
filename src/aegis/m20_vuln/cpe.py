@@ -11,7 +11,9 @@ Matching an observation's CPE against that needs three things, and only these ar
   split into its components with the CPE escaping rules (`\\:` is a literal colon inside a part);
 * `compare_versions` - a deterministic version order, documented below, used for the bounds;
 * `CpeMatch.matches` - the four NVD bound fields and the exact-version form, with `vulnerable`
-  kept so an excluded configuration is visible.
+  kept so an excluded configuration is visible; a criterion without version evidence (`-`, `*` and
+  no bound) is *not* a version match - `has_version_evidence` says so, and deciding what to do with
+  such a criterion is the configuration's job (`aegis.m20_vuln.configurations`).
 
 Version order (deliberately small and documented, because NVD does not publish an algorithm):
 tokens split on `.`, `-`, `_` and `+`; two numeric tokens compare numerically, otherwise tokens
@@ -218,11 +220,16 @@ class CpeMatch:
         return parse_cpe(self.criteria)
 
     def matches(self, cpe: Cpe) -> bool:
-        """True when this entry's product and version bounds contain `cpe`."""
+        """True when this entry's product and version bounds contain `cpe`.
+
+        A criterion that carries no version evidence (`-`/`*` and no bound) matches nothing here:
+        `-` is CPE's "not applicable" and `*` is "any", so NVD published no version to compare
+        against - an unbounded criterion is a product statement, never a version match.
+        """
         target = parse_cpe(self.criteria)
         if target.part != cpe.part or target.product_key != cpe.product_key:
             return False
-        if not cpe.has_version:
+        if not cpe.has_version or not self.has_version_evidence:
             return False
         version = parse_version(cpe.effective_version)
         if target.has_version and target.version != "*":
@@ -243,6 +250,19 @@ class CpeMatch:
             if compare_versions(version, parse_version(self.version_end_excluding)) >= 0:
                 return False
         return True
+
+    @property
+    def has_version_evidence(self) -> bool:
+        """True when the criterion says which versions it is about (an exact version or bounds)."""
+        return (self.cpe.has_version and self.cpe.version != "*") or any(
+            bound is not None
+            for bound in (
+                self.version_start_including,
+                self.version_start_excluding,
+                self.version_end_including,
+                self.version_end_excluding,
+            )
+        )
 
     @property
     def exact(self) -> bool:
@@ -323,8 +343,23 @@ class CompiledCpeMatch:
             range_text=match.range_text(),
         )
 
+    @property
+    def version_evidence(self) -> bool:
+        """True when the criterion carries a version or bounds to decide a version with."""
+        return self.exact_version is not None or any(
+            bound is not None
+            for bound in (
+                self.start_including,
+                self.start_excluding,
+                self.end_including,
+                self.end_excluding,
+            )
+        )
+
     def matches_parsed(self, cpe: Cpe, version: CpeVersion) -> bool:
         if self.target.part != cpe.part or self.target.product_key != cpe.product_key:
+            return False
+        if not self.version_evidence:
             return False
         if self.exact_version is not None:
             return compare_versions(version, self.exact_version) == 0

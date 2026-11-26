@@ -5,11 +5,17 @@ The matcher reads the *current* state of PostgreSQL, never a payload or the netw
 * targets are the newest `service.product` / `http.technology` observation of every asset (one row
   per subject and predicate, `polarity = present`); only a value carrying a CPE and a version is a
   target - a bare product name is not matched by guesswork;
-* the catalogue is `vulnerability_current` for `source = nvd` (withdrawn excluded): NVD CPE match
-  criteria and their version bounds, indexed by `(vendor, product)` so a target looks at one bucket;
+* the catalogue is `vulnerability_current` for `source = nvd` (withdrawn excluded): NVD's
+  configurations and their version bounds, indexed by `(vendor, product)` so a target looks at one
+  bucket. M20 evaluates the published configuration, not the flattened criteria: an `AND` node that
+  requires a platform (a "runs on Windows" CVE) is not satisfied by an httpd banner, a negated node
+  never confirms, and a criterion with no version (`-`/`*`, no bound) is not a version match
+  (`aegis.m20_vuln.configurations`);
 * a hit becomes one `package_vuln_match` row (`cpe_range`, confidence 0.7 for an exact-version
   criterion and 0.6 for a range) and one `vulnerability.matched.v2` outbox event in the same
-  transaction, so M23 projects the candidate and the edge from the same commit.
+  transaction, so M23 projects the candidate and the edge from the same commit. A CVE that names
+  the observed product but cannot be decided is counted in the report's coverage
+  (`VERSION_UNSPECIFIED`, `PLATFORM_UNCONFIRMED`) instead of becoming a candidate.
 
 Candidates only: this module never writes `finding` and never raises a candidate to VERIFIED - that
 needs evidence and is G2's decision (AGENTS.md). Idempotency is the database's: migration 0004's
@@ -33,13 +39,21 @@ from uuid import uuid4
 
 import psycopg
 
+from aegis.m20_vuln.configurations import (
+    PLATFORM_UNCONFIRMED_CODE,
+    PLATFORM_UNCONFIRMED_MESSAGE,
+    VERSION_UNSPECIFIED_CODE,
+    VERSION_UNSPECIFIED_MESSAGE,
+    Configuration,
+    decide,
+    observe,
+    parse_configurations,
+    products,
+)
 from aegis.m20_vuln.cpe import (
-    CompiledCpeMatch,
     Cpe,
     CpeError,
-    CpeMatch,
     parse_cpe,
-    parse_version,
 )
 
 #: ids.v2 requires UUIDv7; M27 owns the generator today (one shared helper is a G1.4a proposal).
@@ -70,6 +84,9 @@ VERSION_UNKNOWN_MESSAGE = "version unknown, not matchable"
 CONFIDENCE_EXACT = 0.7
 CONFIDENCE_RANGE = 0.6
 _VERSION_HINT_RE = re.compile(r"[:/\s]v?\d")
+#: How much undecided detail a report keeps (the CLI prints it; the rest is a SQL question).
+LIMITATION_IDS = 100
+LIMITATION_SUBJECTS = 50
 
 Connection = psycopg.Connection[Any]
 Connect = Callable[[], Connection]
@@ -139,6 +156,10 @@ class MatchReport:
     new_matches: int = 0
     existing_matches: int = 0
     events: int = 0
+    #: Decisions rejected because NVD published the product with no version (`-`/`*`, no bound).
+    version_unspecified: int = 0
+    #: Decisions rejected because the configuration ANDs a product nobody observed (a platform).
+    platform_unconfirmed: int = 0
     dry_run: bool = False
     cursor: int | None = None
     vulnerabilities_filter: int | None = None
@@ -152,7 +173,7 @@ class MatchReport:
 
 
 class _Catalogue:
-    """NVD CPE criteria indexed by `(vendor, product)`, narrowed in PostgreSQL via GIN."""
+    """NVD configurations indexed by `(vendor, product)`, narrowed in PostgreSQL via GIN."""
 
     def __init__(
         self,
@@ -165,28 +186,24 @@ class _Catalogue:
         if (wanted is not None and not wanted) or (
             wanted_products is not None and not wanted_products
         ):
-            self.entries: dict[str, tuple[str, str, tuple[CompiledCpeMatch, ...]]] = {}
+            self.entries: dict[str, tuple[str, str, tuple[Configuration, ...]]] = {}
             self.by_product: dict[tuple[str, str], tuple[str, ...]] = {}
             return
         rows = self._query_rows(connection, wanted, wanted_products)
-        entries: dict[str, tuple[str, str, tuple[CompiledCpeMatch, ...]]] = {}
+        entries: dict[str, tuple[str, str, tuple[Configuration, ...]]] = {}
         by_product_lists: dict[tuple[str, str], list[str]] = {}
         for row in rows:
-            matches = _matches_of(row["affected"])
-            if not matches:
+            configurations = parse_configurations(row["affected"])
+            if not configurations:
                 continue
             vulnerability_id = str(row["vulnerability_id"])
             entries[vulnerability_id] = (
                 str(row["vuln_rev_id"]),
                 str(row["snapshot_id"]),
-                tuple(matches),
+                configurations,
             )
-            seen_products: set[tuple[str, str]] = set()
-            for compiled in matches:
-                key = compiled.target.product_key
-                if key not in seen_products:
-                    seen_products.add(key)
-                    by_product_lists.setdefault(key, []).append(vulnerability_id)
+            for key in products(configurations):
+                by_product_lists.setdefault(key, []).append(vulnerability_id)
         self.entries = entries
         self.by_product = {key: tuple(vids) for key, vids in by_product_lists.items()}
 
@@ -245,49 +262,51 @@ class _Catalogue:
 
     @property
     def criteria(self) -> int:
-        return sum(len(matches) for _, _, matches in self.entries.values())
+        return sum(
+            _criteria_count(configurations) for _, _, configurations in self.entries.values()
+        )
 
-    def candidates(self, cpes: Sequence[Cpe]) -> list[Candidate]:
-        """The strongest criterion per vulnerability for one target's CPEs."""
-        best: dict[str, Candidate] = {}
+    def decide(self, cpes: Sequence[Cpe]) -> tuple[list[Candidate], dict[str, str]]:
+        """The candidate of every CVE the observed CPEs satisfy, plus the undecided reasons.
+
+        The whole target is evaluated at once: one configuration can name the product of one
+        observed CPE and require the platform of another, so a per-CPE decision would answer a
+        different question than the CVE asks.
+        """
+        observed = observe(cpes)
+        wanted: set[str] = set()
         for cpe in cpes:
-            try:
-                parsed_version = parse_version(cpe.effective_version)
-            except CpeError:
+            wanted.update(self.by_product.get(cpe.product_key, ()))
+        best: dict[str, Candidate] = {}
+        reasons: dict[str, str] = {}
+        for vulnerability_id in sorted(wanted):
+            revision_id, snapshot_id, configurations = self.entries[vulnerability_id]
+            decision = decide(configurations, observed)
+            criterion = decision.criterion
+            if criterion is None:
+                if decision.reason is not None:
+                    reasons[vulnerability_id] = decision.reason
                 continue
-            for vulnerability_id in self.by_product.get(cpe.product_key, ()):
-                revision_id, snapshot_id, matches = self.entries[vulnerability_id]
-                for compiled in matches:
-                    if not compiled.vulnerable or not compiled.matches_parsed(cpe, parsed_version):
-                        continue
-                    confidence = CONFIDENCE_EXACT if compiled.exact else CONFIDENCE_RANGE
-                    previous = best.get(vulnerability_id)
-                    if previous is not None and previous.confidence >= confidence:
-                        continue
-                    best[vulnerability_id] = Candidate(
-                        asset_id="",
-                        vulnerability_id=vulnerability_id,
-                        vuln_rev_id=revision_id,
-                        snapshot_id=snapshot_id,
-                        confidence=confidence,
-                        affected_range=compiled.range_text,
-                    )
-        return list(best.values())
+            best[vulnerability_id] = Candidate(
+                asset_id="",
+                vulnerability_id=vulnerability_id,
+                vuln_rev_id=revision_id,
+                snapshot_id=snapshot_id,
+                confidence=CONFIDENCE_EXACT if criterion.exact else CONFIDENCE_RANGE,
+                affected_range=criterion.range_text,
+            )
+        return list(best.values()), reasons
 
 
-def _matches_of(affected: object) -> list[CompiledCpeMatch]:
-    if not isinstance(affected, dict):
-        return []
-    entries = affected.get("cpe_match")
-    if not isinstance(entries, list):
-        return []
-    matches: list[CompiledCpeMatch] = []
-    for entry in entries:
-        try:
-            matches.append(CompiledCpeMatch.compile(CpeMatch.from_json(entry)))
-        except (CpeError, KeyError):
-            continue  # a criterion this matcher cannot read is skipped, not guessed
-    return matches
+def _criteria_count(configurations: Iterable[Configuration]) -> int:
+    total = 0
+    for configuration in configurations:
+        stack = list(configuration.nodes)
+        while stack:
+            node = stack.pop()
+            total += len(node.criteria)
+            stack.extend(node.children)
+    return total
 
 
 def _dedupe_labels(labels: Iterable[str]) -> tuple[str, ...]:
@@ -535,8 +554,14 @@ class Matcher:
         catalogue = _Catalogue(self._conn, only_vulnerabilities, product_keys)
         report.catalogue_revisions = catalogue.revisions
         report.catalogue_criteria = catalogue.criteria
+        undecided: dict[str, dict[str, set[str]]] = {
+            VERSION_UNSPECIFIED_CODE: {},
+            PLATFORM_UNCONFIRMED_CODE: {},
+        }
         for target in targets:
-            candidates = catalogue.candidates(target.cpes)
+            candidates, reasons = catalogue.decide(target.cpes)
+            for vulnerability_id, reason in reasons.items():
+                undecided[reason].setdefault(vulnerability_id, set()).add(target.canonical_key)
             if not candidates:
                 continue
             report.considered += len(candidates)
@@ -570,6 +595,9 @@ class Matcher:
                     report.events += self._emit_batch(inserted_pairs, target)
                     for candidate, _ in inserted_pairs:
                         report.matches.append(_summary(candidate, target))
+        report.version_unspecified = _undecided_count(undecided[VERSION_UNSPECIFIED_CODE])
+        report.platform_unconfirmed = _undecided_count(undecided[PLATFORM_UNCONFIRMED_CODE])
+        _report_undecided(coverage, undecided)
         return report
 
     def _store_batch(self, candidates: Sequence[Candidate], target: Target) -> dict[str, str]:
@@ -645,6 +673,39 @@ class Matcher:
 
     def _emit(self, match_id: str, candidate: Candidate, target: Target) -> bool:
         return bool(self._emit_batch([(candidate, match_id)], target))
+
+
+def _undecided_count(undecided: dict[str, set[str]]) -> int:
+    """How many (asset, CVE) decisions a reason covers."""
+    return sum(len(subjects) for subjects in undecided.values())
+
+
+def _report_undecided(coverage: dict[str, Any], undecided: dict[str, dict[str, set[str]]]) -> None:
+    """Append the CVEs that name an observed product and still cannot be decided to `coverage`.
+
+    A candidate is evidence; a *non*-candidate is not, so the count and a bounded sample of the
+    ids go into the run report. That is how an operator sees "11 of the matches on httpd 2.4.49
+    are gone because NVD published no version" without reading the feed by hand (item 61).
+    """
+    messages = {
+        VERSION_UNSPECIFIED_CODE: VERSION_UNSPECIFIED_MESSAGE,
+        PLATFORM_UNCONFIRMED_CODE: PLATFORM_UNCONFIRMED_MESSAGE,
+    }
+    limitations = coverage.setdefault("limitations", [])
+    for code, message in messages.items():
+        decided = undecided.get(code) or {}
+        if not decided:
+            continue
+        subjects = sorted({subject for found in decided.values() for subject in found})
+        limitations.append(
+            {
+                "code": code,
+                "message": message,
+                "decisions": _undecided_count(decided),
+                "vulnerability_ids": sorted(decided)[:LIMITATION_IDS],
+                "subjects": subjects[:LIMITATION_SUBJECTS],
+            }
+        )
 
 
 def _summary(candidate: Candidate, target: Target) -> dict[str, Any]:
