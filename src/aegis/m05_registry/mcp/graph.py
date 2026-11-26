@@ -6,10 +6,12 @@ caps the contract states for the M23 side (<=2 hops, <=200 records, 2 s, <=8192 
 always composes `truncated` + `limits_applied` from the server's own caps, so a client cannot widen
 a limit and a caller can tell "everything" from "cut off".
 
-Until G1.4b lands there is no projection to read. The default service refuses loudly
-(`GraphUnavailable` -> `DEPENDENCY_MISSING`) instead of answering an empty page: `truncated=false`
-with no records is a claim that the campaign knows nothing, which would be a lie about an
-unbuilt component. G1.4b swaps in a provider; the interface and the limits do not change.
+Production wires `M23GraphQueries` (M23's projection: Neo4j for the neighbourhood, M23's SQL read
+model for the other five queries) in `aegis.m05_registry.mcp.main:create_production_app`. A service
+with no projection refuses loudly (`GraphUnavailable` -> `DEPENDENCY_MISSING`) instead of answering
+an empty page: `truncated=false` with no records is a claim that the campaign knows nothing, which
+would be a lie about an unavailable component. `UnavailableGraphQueries` is the fallback double the
+boundary tests use.
 """
 
 from __future__ import annotations
