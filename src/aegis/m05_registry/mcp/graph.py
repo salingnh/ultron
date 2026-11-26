@@ -20,7 +20,7 @@ from typing import Any, Protocol, cast
 
 import psycopg
 from neo4j import Driver
-from neo4j.exceptions import Neo4jError
+from neo4j.exceptions import AuthError, DriverError
 from psycopg.rows import dict_row
 
 from aegis.common.ports import EvidenceStore
@@ -166,7 +166,9 @@ class M23GraphQueries:
                     relationship_types=inputs.get("relationship_types"),
                     as_of=inputs.get("as_of"),
                 )
-            except Neo4jError as error:
+            except (DriverError, AuthError) as error:
+                # A deployment that cannot reach or authenticate to Neo4j is a missing dependency,
+                # not an empty graph; a server-side Cypher error stays an internal failure.
                 raise GraphUnavailable(f"graph.{query} unavailable: {error}") from error
         else:
             try:

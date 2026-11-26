@@ -66,35 +66,33 @@ def build_service(
     driver: Driver | None = None,
     store: EvidenceStore | None = None,
 ) -> McpToolService:
-    """M05 (registry, signing ring) + the session/policy readers + M23 graph query service."""
+    """M05 (registry, signing ring) + the session/policy readers + the M23 graph provider.
+
+    The Neo4j driver is the caller's: `create_production_app` builds it from the environment and
+    closes it with the app, so this function never opens a resource it cannot close. Without a
+    driver the five relational queries still answer; `graph.get_asset_neighbors` refuses with
+    `DEPENDENCY_MISSING` instead of pretending the graph is empty.
+    """
     resolved = dsn or os.environ.get(PG_DSN_ENV)
     if not resolved:
         raise RuntimeError(f"{PG_DSN_ENV} is required to run the MCP server")
     opener: Callable[[], Any] = connect or (lambda: psycopg.connect(resolved))
-    owned_driver: Driver | None = None
     if graph is None:
-        resolved_driver = driver if driver is not None else m23_graph.connect_from_env()
-        if driver is None and resolved_driver is not None:
-            owned_driver = resolved_driver
-        resolved_store = store if store is not None else _evidence_store_from_env()
-        graph = M23GraphQueries(opener, driver=resolved_driver, store=resolved_store)
-    try:
-        registry = PostgresManifestRegistry(opener)
-        manifests = adapter_manifests()
-        for raw in manifests:
-            registry.register(raw, registered_by={"kind": "module", "id": "M05"})
-        if not manifests and os.environ.get("AEGIS_ADAPTER_MANIFESTS"):
-            # An explicitly configured directory that yields nothing is a deployment error, not the
-            # pre-G1.3b state; without the setting an empty registry just publishes no capability
-            # tool.
-            raise RuntimeError(
-                "AEGIS_ADAPTER_MANIFESTS is set but no manifest.yaml was found under it"
-            )
-        jobs = PostgresJobService(opener, registry=registry, key_ring=KeyRing.from_env())
-    except Exception:
-        if owned_driver is not None:
-            owned_driver.close()
-        raise
+        graph = M23GraphQueries(
+            opener,
+            driver=driver,
+            store=store if store is not None else _evidence_store_from_env(),
+        )
+    registry = PostgresManifestRegistry(opener)
+    manifests = adapter_manifests()
+    for raw in manifests:
+        registry.register(raw, registered_by={"kind": "module", "id": "M05"})
+    if not manifests and os.environ.get("AEGIS_ADAPTER_MANIFESTS"):
+        # An explicitly configured directory that yields nothing is a deployment error, not the
+        # pre-G1.3b state; without the setting an empty registry just publishes no capability
+        # tool.
+        raise RuntimeError("AEGIS_ADAPTER_MANIFESTS is set but no manifest.yaml was found under it")
+    jobs = PostgresJobService(opener, registry=registry, key_ring=KeyRing.from_env())
     return McpToolService(
         registry=registry,
         jobs=jobs,
