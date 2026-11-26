@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Eye, Plus, Layers, Filter, Clock, DollarSign, Activity } from 'lucide-react';
-import { apiClient } from '../api/client';
-import type { Campaign, CampaignStatus } from '../api/types';
+import { Eye, Plus, Layers, Filter, Clock, DollarSign, Activity, Key } from 'lucide-react';
+import { ApiError, apiClient } from '../api/client';
+import type { AppError, Campaign, CampaignStatus } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay } from '../components/ErrorDisplay';
@@ -10,18 +10,25 @@ import { ErrorDisplay } from '../components/ErrorDisplay';
 export const CampaignListScreen: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | Error | string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
   const loadCampaigns = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      setErrorStatus(null);
       const params = statusFilter !== 'ALL' ? { status: statusFilter as CampaignStatus } : undefined;
       const res = await apiClient.listCampaigns(params);
       setCampaigns(res.items);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Không thể tải danh sách chiến dịch');
+      if (err instanceof ApiError) {
+        setErrorStatus(err.status);
+        setError(err.appError || err);
+      } else {
+        setError(err instanceof Error ? err.message : 'Không thể tải danh sách chiến dịch');
+      }
     } finally {
       setLoading(false);
     }
@@ -29,6 +36,16 @@ export const CampaignListScreen: React.FC = () => {
 
   useEffect(() => {
     loadCampaigns();
+  }, [loadCampaigns]);
+
+  useEffect(() => {
+    const handleTokenChanged = () => {
+      loadCampaigns();
+    };
+    window.addEventListener('ultron-token-changed', handleTokenChanged);
+    return () => {
+      window.removeEventListener('ultron-token-changed', handleTokenChanged);
+    };
   }, [loadCampaigns]);
 
   return (
@@ -56,24 +73,41 @@ export const CampaignListScreen: React.FC = () => {
             aria-label="Lọc theo trạng thái"
           >
             <option value="ALL">Tất cả trạng thái</option>
+            <option value="CREATED">Mới tạo (CREATED)</option>
             <option value="RUNNING">Đang thực thi (RUNNING)</option>
+            <option value="WAITING">Đang chờ (WAITING)</option>
             <option value="PAUSED">Tạm dừng (PAUSED)</option>
             <option value="COMPLETED">Hoàn thành (COMPLETED)</option>
+            <option value="FAILED">Thất bại (FAILED)</option>
             <option value="CANCELLED">Đã hủy (CANCELLED)</option>
           </select>
 
-          <button
-            type="button"
+          <Link
+            to="/campaigns/new"
             className="btn btn-primary"
-            title="Tính năng tạo chiến dịch mới tuân thủ Idempotency-Key"
-            onClick={() => alert('Chiến dịch mới được tạo thông qua API POST /campaigns với Idempotency-Key và bản chụp RoE Policy.')}
+            title="Tạo chiến dịch mới tuân thủ Idempotency-Key và RoE Policy"
           >
             <Plus size={15} /> Tạo chiến dịch
-          </button>
+          </Link>
         </div>
       </div>
 
-      {error && <ErrorDisplay error={error} onRetry={loadCampaigns} />}
+      {error && (
+        <div style={{ marginBottom: 16 }}>
+          <ErrorDisplay error={error} onRetry={loadCampaigns} />
+          {errorStatus === 401 && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => window.dispatchEvent(new CustomEvent('ultron-open-token-modal'))}
+              >
+                <Key size={13} /> Mở cấu hình Operator Token
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="state-box">

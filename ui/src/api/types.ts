@@ -14,6 +14,23 @@ export type CampaignPage = components['schemas']['CampaignPage'];
 export type CampaignStatus = components['schemas']['CampaignStatus'];
 export type RoEPolicy = Omit<components['schemas']['roe-policy.v2.schema'], '$defs'> & { $defs?: unknown };
 export type Targets = components['schemas']['Targets'];
+export type CreateCampaignRequest = Omit<
+  components['schemas']['campaign-create.v2.schema'],
+  '$defs' | 'policy' | 'targets'
+> & {
+  policy: RoEPolicy;
+  targets: Targets;
+};
+export type CreateCampaignResponse =
+  operations['createCampaign']['responses'][202]['content']['application/json'];
+export type UpdateCampaignPolicyRequest = Omit<
+  operations['updateCampaignPolicy']['requestBody']['content']['application/json'],
+  'policy'
+> & {
+  policy: RoEPolicy;
+};
+export type UpdateCampaignPolicyResponse =
+  operations['updateCampaignPolicy']['responses'][200]['content']['application/json'];
 
 // Job types
 export type ScanJob = Omit<components['schemas']['job.v2.schema'], '$defs' | 'error'> & {

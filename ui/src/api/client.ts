@@ -14,6 +14,10 @@ import type {
   CampaignStatus,
   JobStatus,
   AppError,
+  CreateCampaignRequest,
+  CreateCampaignResponse,
+  UpdateCampaignPolicyRequest,
+  UpdateCampaignPolicyResponse,
 } from './types';
 import { mockHandlers } from '../mock/handlers';
 import { subscribeToCampaignEvents, type SSEConnection, type SSEOptions } from './sse';
@@ -50,6 +54,8 @@ export class ApiError extends Error {
   public next_action?: string;
   public next_action_detail?: string;
   public technical_cause?: string;
+  public field?: string;
+  public trace_id?: string;
 
   constructor(
     public status: number,
@@ -63,11 +69,13 @@ export class ApiError extends Error {
       this.next_action = appError.next_action;
       this.next_action_detail = appError.next_action_detail;
       this.technical_cause = appError.technical_cause;
+      this.field = appError.field;
+      this.trace_id = appError.trace_id;
     }
   }
 }
 
-function generateIdempotencyKey(): string {
+export function generateIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
@@ -130,6 +138,33 @@ export const apiClient = {
   async getCampaign(id: string): Promise<Campaign> {
     if (this.isMock) return mockHandlers.getCampaign(id);
     return request<Campaign>(`/campaigns/${encodeURIComponent(id)}`);
+  },
+
+  async createCampaign(
+    payload: CreateCampaignRequest,
+    options?: { idempotencyKey?: string }
+  ): Promise<CreateCampaignResponse> {
+    const key = options?.idempotencyKey || generateIdempotencyKey();
+    if (this.isMock) return mockHandlers.createCampaign(payload, key);
+    return request<CreateCampaignResponse>('/campaigns', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateCampaignPolicy(
+    id: string,
+    payload: UpdateCampaignPolicyRequest,
+    options?: { idempotencyKey?: string }
+  ): Promise<UpdateCampaignPolicyResponse> {
+    const key = options?.idempotencyKey || generateIdempotencyKey();
+    if (this.isMock) return mockHandlers.updateCampaignPolicy(id, payload, key);
+    return request<UpdateCampaignPolicyResponse>(`/campaigns/${encodeURIComponent(id)}/policy`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify(payload),
+    });
   },
 
   async pauseCampaign(id: string, reason?: string): Promise<Campaign> {

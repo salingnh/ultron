@@ -30,9 +30,14 @@ export const Layout: React.FC = () => {
     const handleTokenChange = () => {
       setToken(getOperatorToken());
     };
+    const handleOpenTokenModal = () => {
+      setIsTokenModalOpen(true);
+    };
     window.addEventListener('ultron-token-changed', handleTokenChange);
+    window.addEventListener('ultron-open-token-modal', handleOpenTokenModal);
     return () => {
       window.removeEventListener('ultron-token-changed', handleTokenChange);
+      window.removeEventListener('ultron-open-token-modal', handleOpenTokenModal);
     };
   }, []);
 
@@ -146,6 +151,26 @@ export const Layout: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {!token && (
+        <div className="first-run-banner" role="region" aria-label="Hướng dẫn cấu hình Operator Token lần đầu">
+          <div>
+            <strong>Hướng dẫn chạy lần đầu (Operator Token):</strong>{' '}
+            {apiClient.isMock ? 'Đang ở chế độ MOCK MODE — khi chuyển sang API thật, cần ' : 'API thật yêu cầu Bearer token — '}
+            mở nút <code className="mono">Token: Chưa cấu hình</code> để nhập token lấy từ{' '}
+            <code className="mono">.local/operator-token</code> (do <code className="mono">make run-local</code> tạo; server chỉ lưu SHA-256 tại{' '}
+            <code className="mono">.local/operators.json</code>). Token được lưu trong trình duyệt tại{' '}
+            <code className="mono">localStorage[&apos;ultron-operator-token&apos;]</code>.
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => setIsTokenModalOpen(true)}
+          >
+            <Key size={13} /> Cấu hình Operator Token
+          </button>
+        </div>
+      )}
 
       <main className="page-content">
         <Outlet />

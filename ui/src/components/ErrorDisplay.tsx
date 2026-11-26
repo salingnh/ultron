@@ -34,9 +34,21 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) =>
 
       <div style={{ color: 'var(--ink)' }}>{message}</div>
 
+      {appError?.field && (
+        <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--danger)' }}>
+          Trường lỗi (field): {appError.field}
+        </div>
+      )}
+
       {appError?.technical_cause && (
         <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>
           Nguyên nhân kỹ thuật: {appError.technical_cause}
+        </div>
+      )}
+
+      {appError?.trace_id && (
+        <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>
+          Trace ID: {appError.trace_id}
         </div>
       )}
 
@@ -65,6 +77,50 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) =>
               Thực hiện lại <ArrowRight size={12} />
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface InlineFieldErrorProps {
+  clientError?: string;
+  serverError?: AppError | null;
+}
+
+export const InlineFieldError: React.FC<InlineFieldErrorProps> = ({ clientError, serverError }) => {
+  if (!clientError && !serverError) return null;
+
+  return (
+    <div
+      role="alert"
+      style={{
+        marginTop: 4,
+        padding: '6px 8px',
+        backgroundColor: 'var(--danger-bg)',
+        border: '1px solid var(--danger)',
+        borderRadius: 'var(--radius-sm)',
+        color: 'var(--danger)',
+        fontSize: 'var(--text-xs)',
+        lineHeight: 1.4,
+      }}
+    >
+      {clientError && <div>{clientError}</div>}
+      {serverError && (
+        <div>
+          <span className="mono" style={{ fontWeight: 600 }}>
+            [{serverError.code}]
+          </span>{' '}
+          {serverError.field && (
+            <span className="mono" style={{ fontWeight: 600 }}>
+              ({serverError.field})
+            </span>
+          )}{' '}
+          <span>{serverError.message}</span>
+          <div style={{ color: 'var(--ink)', marginTop: 2 }}>
+            <strong>Bước tiếp theo:</strong> {serverError.next_action}
+            {serverError.next_action_detail ? ` — ${serverError.next_action_detail}` : ''}
+          </div>
         </div>
       )}
     </div>

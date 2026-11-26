@@ -79,9 +79,18 @@ export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onCl
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
             <ShieldCheck size={14} style={{ color: 'var(--success)' }} />
-            <span>Bảo mật & Lưu trữ cục bộ:</span>
+            <span>Bảo mật &amp; Vị trí lưu trữ Operator Token:</span>
           </div>
-          Token chỉ được lưu trong <code>localStorage</code> của trình duyệt người dùng và không bao giờ được ghi hay commit vào repository.
+          <div>
+            • <strong>Trên trình duyệt:</strong> Token lưu cục bộ trong{' '}
+            <code className="mono">localStorage[&apos;ultron-operator-token&apos;]</code> (hoặc{' '}
+            <code className="mono">VITE_BEARER_TOKEN</code> khi build), không bao giờ commit vào repository.
+          </div>
+          <div style={{ marginTop: 4 }}>
+            • <strong>Trên stack backend cục bộ:</strong> chạy <code className="mono">make run-local</code> để sinh token tại{' '}
+            <code className="mono">.local/operator-token</code> (mode 0600); server chỉ lưu mã băm SHA-256 tại{' '}
+            <code className="mono">.local/operators.json</code> (<code className="mono">AEGIS_OPERATOR_TOKENS_FILE</code>).
+          </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
@@ -125,7 +134,8 @@ export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onCl
             </button>
           </div>
           <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 4 }}>
-            Mặc định môi trường dev: <code>token-of-soc-1-0123456789</code>
+            Lấy token từ <code className="mono">.local/operator-token</code> (hoặc xoay vòng bằng{' '}
+            <code className="mono">make run-local NEW_TOKEN=1</code>).
           </div>
         </div>
 
