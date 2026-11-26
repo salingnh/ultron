@@ -1,12 +1,19 @@
-"""Operator CLI of M18 (`python -m aegis.m18_intel <sync|sync-kev|sync-nvd|plan>`).
+"""Operator CLI of M18 (`python -m aegis.m18_intel <sync|sync-kev|sync-intel|sync-nvd|plan>`).
 
 * `sync` - store one feed snapshot in S3 and load it into PostgreSQL, then publish
   `intel.revision.v2`. `--source` is a local path (a committed fixture slice, the CI/demo path) or
   an `http(s)` URL (the operator's refresh). Exit 0 on success, 1 on a refused snapshot.
-* `sync-kev` - load the **one configured KEV source**: `deploy/intel/kev-source.json` (or
-  `AEGIS_KEV_SOURCE_FILE`) names the cisagov/kev-data mirror commit plus the export's size and
-  sha256. There is no fallback source: a mismatch is refused. `www.cisa.gov` answers HTTP 403 to
-  this deployment's egress (item 61 trial D8), which is why the mirror is the configured source.
+* `sync-kev` - **refresh** the one configured KEV source: `deploy/intel/kev-source.json` (or
+  `AEGIS_KEV_SOURCE_FILE`) names the `cisagov/kev-data` mirror; the refresh resolves the current
+  HEAD commit of its default branch through the GitHub API, downloads the export at that commit and
+  validates it (shape, size/count bounds, `catalogVersion` not older than the newest stored
+  snapshot), then writes it. There is no fallback source and a failed step is an error.
+  `--fixture PATH` loads a committed export instead (tests, CI, offline) with the same checks minus
+  the live size bounds. `www.cisa.gov` answers HTTP 403 to this deployment's egress (item 61 trial
+  D8), which is why the mirror is the configured source.
+* `sync-intel` - the scheduled/incremental refresh: NVD (`auto`), EPSS when a source is configured,
+  then KEV (`sync-kev`). It runs every leg, prints one JSON summary and exits 1 if any leg failed,
+  so a timer never reports success while a feed is stale.
 * `sync-nvd` - paged NVD CVE API 2.0 bulk (all years) and incremental (`lastModified`) sync,
   resumable and idempotent. Optional API key is read only from the file named by
   `AEGIS_NVD_API_KEY_FILE` (never in argv or logs).
@@ -14,8 +21,8 @@
   see which intel the matcher will use before running it.
 
 Environment: `AEGIS_PG_DSN`, S3 settings (`AEGIS_S3_ENDPOINT`, `AEGIS_S3_BUCKET`, optional
-`AEGIS_S3_ACCESS_KEY`/`AEGIS_S3_SECRET_KEY`), optional `AEGIS_NVD_API_KEY_FILE` and
-`AEGIS_KEV_SOURCE_FILE`.
+`AEGIS_S3_ACCESS_KEY`/`AEGIS_S3_SECRET_KEY`), optional `AEGIS_NVD_API_KEY_FILE`,
+`AEGIS_KEV_SOURCE_FILE`, `AEGIS_GITHUB_TOKEN_FILE`, `AEGIS_EPSS_SOURCE`/`AEGIS_EPSS_VERSION`.
 Nothing here starts or removes a container.
 """
 
@@ -23,8 +30,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from aegis.m18_intel import feeds
@@ -99,35 +107,120 @@ def _sync(argv: argparse.Namespace) -> int:
     return 0
 
 
-def _sync_kev(argv: argparse.Namespace) -> int:
-    """Load the one configured KEV source after checking its size, sha256 and catalogue version."""
-    from aegis.m18_intel.sources import PinnedFeedError, fetch_pinned, load_pinned_feed
+def _last_kev_version() -> str | None:
+    """The newest KEV `catalogVersion` already stored (the monotonic floor of a refresh)."""
+    from aegis.m18_intel.sources import latest_catalog_version
+    from aegis.m18_intel.sync import connect_from_env
 
+    connection = connect_from_env()
     try:
-        pinned = load_pinned_feed("kev", path=argv.source_file)
-        data = fetch_pinned(pinned)
-        report = FeedSync.from_env().sync(
-            "kev",
-            pinned.version,
-            data,
-            source_uri=pinned.url,
-            snapshot_at=_moment(argv.snapshot_at),
+        rows = connection.execute(
+            "SELECT version FROM intel_snapshot WHERE feed = 'kev'"
+        ).fetchall()
+    finally:
+        connection.close()
+    return latest_catalog_version(str(row["version"]) for row in rows)
+
+
+def _kev_report(fixture: str | None, source_file: str | None) -> dict[str, Any]:
+    """Refresh (or, with `fixture`, load) the configured KEV export and write it.
+
+    Raises on any failure (API, download, validation, sync); the caller turns that into exit 1.
+    """
+    from aegis.m18_intel.sources import KevSourceError, load_fixture, load_kev_source, refresh_kev
+
+    source = load_kev_source(source_file)
+    last_version = _last_kev_version()
+    try:
+        document = (
+            load_fixture(source, fixture, last_version=last_version)
+            if fixture is not None
+            else refresh_kev(source, last_version=last_version)
         )
-    except (FeedSyncError, feeds.FeedError, PinnedFeedError, ValueError, OSError) as error:
+    except KevSourceError as error:
+        raise FeedSyncError(f"kev: {error}") from error
+    report = FeedSync.from_env().sync(
+        "kev",
+        document.catalog_version,
+        document.data,
+        source_uri=document.source,
+        snapshot_at=document.released_at,
+    )
+    return {
+        **report.as_dict(),
+        "source_uri": document.source,
+        "commit": document.commit or None,
+        "branch": document.branch or None,
+        "size_bytes": document.size_bytes,
+        "catalog_version": document.catalog_version,
+        "count": document.count,
+    }
+
+
+def _sync_kev(argv: argparse.Namespace) -> int:
+    """Refresh the configured KEV source and write the validated export."""
+    try:
+        report = _kev_report(argv.fixture, argv.source_file)
+    except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
         print(f"kev sync refused: {error}", file=sys.stderr)
         return 1
-    print(
-        json.dumps(
-            {
-                **report.as_dict(),
-                "source_uri": pinned.url,
-                "size_bytes": len(data),
-                "catalog_version": pinned.catalog_version,
-            },
-            indent=2,
-            default=str,
-        )
+    print(json.dumps(report, indent=2, default=str))
+    return 0
+
+
+def _epss_refresh(argv: argparse.Namespace) -> dict[str, Any]:
+    source = (argv.epss_source or os.environ.get("AEGIS_EPSS_SOURCE", "")).strip()
+    if not source:
+        return {"status": "skipped", "reason": "no --epss-source or AEGIS_EPSS_SOURCE"}
+    version = (
+        argv.epss_version
+        or os.environ.get("AEGIS_EPSS_VERSION", "").strip()
+        or date.today().isoformat()
     )
+    data = read_source(source)
+    report = FeedSync.from_env().sync(
+        "epss", version, data, source_uri=source, snapshot_at=_moment(argv.snapshot_at)
+    )
+    return report.as_dict()
+
+
+def _sync_intel(argv: argparse.Namespace) -> int:
+    """The scheduled refresh: NVD, EPSS (when configured), KEV; exit 1 if any leg failed."""
+    legs: dict[str, Any] = {}
+    failed = False
+    if not argv.skip_nvd:
+        try:
+            report = NvdApiSync.from_env(api_url=argv.api_url).sync(
+                mode=argv.nvd_mode,
+                results_per_page=argv.results_per_page,
+            )
+            legs["nvd"] = report.as_dict()
+        except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
+            legs["nvd"] = {"error": str(error)}
+            failed = True
+    else:
+        legs["nvd"] = {"status": "skipped"}
+    try:
+        legs["epss"] = _epss_refresh(argv)
+    except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
+        legs["epss"] = {"error": str(error)}
+        failed = True
+    if not argv.skip_kev:
+        try:
+            legs["kev"] = _kev_report(argv.kev_fixture, argv.source_file)
+        except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
+            legs["kev"] = {"error": str(error)}
+            failed = True
+    else:
+        legs["kev"] = {"status": "skipped"}
+    print(json.dumps({"ok": not failed, "legs": legs}, indent=2, default=str))
+    if failed:
+        print(
+            "intel refresh failed: a feed is stale; fix the leg named above and re-run "
+            "(nothing is silently skipped)",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -177,17 +270,55 @@ def main(argv: list[str] | None = None) -> int:
     )
     sync_kev = sub.add_parser(
         "sync-kev",
-        help="load the configured, pinned CISA KEV mirror (no fallback source)",
+        help="refresh the configured CISA KEV mirror (HEAD via GitHub API, no fallback source)",
     )
     sync_kev.add_argument(
         "--source-file",
         default=None,
-        help="pin file (default: AEGIS_KEV_SOURCE_FILE or deploy/intel/kev-source.json)",
+        help="repository/limits config (default: AEGIS_KEV_SOURCE_FILE or "
+        "deploy/intel/kev-source.json)",
     )
     sync_kev.add_argument(
-        "--snapshot-at",
+        "--fixture",
         default=None,
-        help="override the snapshot date (default: the catalogue's own dateReleased)",
+        help="load this committed export instead of refreshing (tests/CI/offline)",
+    )
+    sync_intel = sub.add_parser(
+        "sync-intel",
+        help="scheduled/incremental refresh: NVD (auto), EPSS when configured, KEV",
+    )
+    sync_intel.add_argument(
+        "--nvd-mode",
+        choices=["auto", "full", "incremental"],
+        default="auto",
+        help="NVD sync mode (default auto: resume or incremental after a full run)",
+    )
+    sync_intel.add_argument("--api-url", default=None, help="override the NVD API endpoint")
+    sync_intel.add_argument(
+        "--results-per-page", type=int, default=DEFAULT_RESULTS_PER_PAGE, help="NVD page size"
+    )
+    sync_intel.add_argument("--skip-nvd", action="store_true", help="do not touch NVD")
+    sync_intel.add_argument("--skip-kev", action="store_true", help="do not touch KEV")
+    sync_intel.add_argument(
+        "--epss-source",
+        default=None,
+        help="EPSS CSV path or URL (default AEGIS_EPSS_SOURCE; none = EPSS is reported skipped)",
+    )
+    sync_intel.add_argument(
+        "--epss-version",
+        default=None,
+        help="EPSS score date (default AEGIS_EPSS_VERSION or today, UTC)",
+    )
+    sync_intel.add_argument("--snapshot-at", default=None, help="override the EPSS snapshot date")
+    sync_intel.add_argument(
+        "--source-file",
+        default=None,
+        help="KEV source config (default AEGIS_KEV_SOURCE_FILE or deploy/intel/kev-source.json)",
+    )
+    sync_intel.add_argument(
+        "--kev-fixture",
+        default=None,
+        help="KEV fixture path instead of the live refresh (offline tests only)",
     )
     sync_nvd = sub.add_parser(
         "sync-nvd",
@@ -229,6 +360,8 @@ def main(argv: list[str] | None = None) -> int:
         return _plan()
     if parsed.command == "sync-kev":
         return _sync_kev(parsed)
+    if parsed.command == "sync-intel":
+        return _sync_intel(parsed)
     if parsed.command == "sync-nvd":
         return _sync_nvd(parsed)
     return _sync(parsed)
