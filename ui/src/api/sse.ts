@@ -15,6 +15,7 @@ export interface SSEOptions {
   onEvent: (event: SSEEvent) => void;
   onStatusChange?: (status: SSEConnectionStatus) => void;
   lastEventId?: string;
+  types?: string[];
   apiBase?: string;
   reconnectDelayMs?: number;
 }
@@ -22,6 +23,94 @@ export interface SSEOptions {
 export interface SSEConnection {
   close: () => void;
   getLastEventId: () => string | null;
+}
+
+const latestSeqByCampaign = new Map<string, string>();
+
+function parsePositiveSeq(id: string | null | undefined): number | null {
+  if (!id) return null;
+  const trimmed = id.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const num = Number(trimmed);
+  return Number.isSafeInteger(num) && num > 0 ? num : null;
+}
+
+export function getLatestCampaignEventId(campaignId: string): string | null {
+  return latestSeqByCampaign.get(campaignId) ?? null;
+}
+
+export function recordCampaignEventId(campaignId: string, eventId: string | null | undefined): void {
+  const nextSeq = parsePositiveSeq(eventId);
+  if (nextSeq === null) return;
+  const currentSeq = parsePositiveSeq(latestSeqByCampaign.get(campaignId));
+  if (currentSeq === null || nextSeq > currentSeq) {
+    latestSeqByCampaign.set(campaignId, String(nextSeq));
+  }
+}
+
+export function clearCampaignEventId(campaignId: string): void {
+  latestSeqByCampaign.delete(campaignId);
+}
+
+export function clearAllCampaignEventIds(): void {
+  latestSeqByCampaign.clear();
+}
+
+export interface CoalescedRefresh {
+  trigger: () => void;
+  cancel: () => void;
+}
+
+/**
+ * Debounce bursts of SSE events and coalesce overlapping in-flight fetches into O(1) GETs.
+ */
+export function createCoalescedRefresh(
+  fn: () => Promise<void> | void,
+  delayMs: number = 250
+): CoalescedRefresh {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let inFlight = false;
+  let pendingFollowUp = false;
+  let cancelled = false;
+
+  const execute = async () => {
+    if (cancelled) return;
+    if (inFlight) {
+      pendingFollowUp = true;
+      return;
+    }
+    inFlight = true;
+    try {
+      await fn();
+    } finally {
+      inFlight = false;
+      if (pendingFollowUp && !cancelled) {
+        pendingFollowUp = false;
+        schedule();
+      }
+    }
+  };
+
+  const schedule = () => {
+    if (cancelled) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      void execute();
+    }, delayMs);
+  };
+
+  return {
+    trigger: schedule,
+    cancel: () => {
+      cancelled = true;
+      pendingFollowUp = false;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
 }
 
 /**
@@ -81,11 +170,14 @@ export function subscribeToCampaignEvents(options: SSEOptions): SSEConnection {
     campaignId,
     onEvent,
     onStatusChange,
+    types,
     apiBase = import.meta.env.VITE_API_BASE || '/api/v2',
     reconnectDelayMs = 1500,
   } = options;
 
-  let currentLastEventId: string | null = options.lastEventId || null;
+  const normalizedTypes = types && types.length > 0 ? Array.from(new Set(types)) : undefined;
+  let currentLastEventId: string | null =
+    options.lastEventId || getLatestCampaignEventId(campaignId) || null;
   let isClosed = false;
   let abortController: AbortController | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,7 +187,12 @@ export function subscribeToCampaignEvents(options: SSEOptions): SSEConnection {
     onStatusChange?.('connecting');
 
     abortController = new AbortController();
-    const url = `${apiBase}/campaigns/${encodeURIComponent(campaignId)}/events`;
+    const query = new URLSearchParams();
+    if (normalizedTypes && normalizedTypes.length > 0) {
+      query.set('types', normalizedTypes.join(','));
+    }
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const url = `${apiBase}/campaigns/${encodeURIComponent(campaignId)}/events${qs}`;
     const headers: Record<string, string> = {
       Accept: 'text/event-stream',
     };
@@ -115,6 +212,11 @@ export function subscribeToCampaignEvents(options: SSEOptions): SSEConnection {
       });
 
       if (!response.ok) {
+        if (response.status === 400 && currentLastEventId) {
+          // Stale or cross-generation checkpoint: reset so reconnect starts from current DB log
+          currentLastEventId = null;
+          clearCampaignEventId(campaignId);
+        }
         throw new Error(`SSE stream returned status ${response.status}: ${response.statusText}`);
       }
 
@@ -142,6 +244,7 @@ export function subscribeToCampaignEvents(options: SSEOptions): SSEConnection {
           if (parsed) {
             if (parsed.id) {
               currentLastEventId = parsed.id;
+              recordCampaignEventId(campaignId, parsed.id);
             }
             if (parsed.type !== 'heartbeat') {
               onEvent(parsed);

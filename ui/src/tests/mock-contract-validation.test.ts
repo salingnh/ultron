@@ -302,6 +302,7 @@ describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
     });
     expect(errors).toEqual({});
     expect(payload).toBeDefined();
+    expect(payload?.policy.budget?.max_agent_sessions).toBeUndefined();
 
     const createReqSchema = ajv.getSchema(
       'https://aegis.io/contracts/campaign/campaign-create.v2.schema.json'

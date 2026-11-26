@@ -11,6 +11,7 @@ import {
   type NodeTypes,
   Position,
   Handle,
+  useNodesState,
   useReactFlow,
   ReactFlowProvider,
 } from '@xyflow/react';
@@ -25,6 +26,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { apiClient, toUiError } from '../api/client';
+import { createCoalescedRefresh } from '../api/sse';
 import type { ScanJob, JobStatus, CampaignFlow, FlowNode, Campaign, UiError } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
@@ -151,30 +153,35 @@ const FlowGraphView: React.FC<{
 }> = ({ nodes, edges, nodeTypes, onNodeSelect }) => {
   const { fitView } = useReactFlow();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(nodes);
+
+  useEffect(() => {
+    setRfNodes(nodes);
+  }, [nodes, setRfNodes]);
 
   const handleFit = useCallback(() => {
     fitView({ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 });
   }, [fitView]);
 
   useEffect(() => {
-    if (nodes.length === 0) return;
+    if (rfNodes.length === 0) return;
     const raf = requestAnimationFrame(() => {
       fitView({ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 });
     });
     return () => cancelAnimationFrame(raf);
-  }, [nodes, fitView]);
+  }, [rfNodes.length, fitView]);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => {
-      if (nodes.length > 0) {
+      if (rfNodes.length > 0) {
         fitView({ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 });
       }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [nodes.length, fitView]);
+  }, [rfNodes.length, fitView]);
 
   return (
     <div
@@ -205,8 +212,9 @@ const FlowGraphView: React.FC<{
       </div>
 
       <ReactFlow
-        nodes={nodes}
+        nodes={rfNodes}
         edges={edges}
+        onNodesChange={onNodesChange}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 }}
@@ -219,6 +227,9 @@ const FlowGraphView: React.FC<{
         <Controls />
         <MiniMap
           className="flow-minimap"
+          pannable
+          zoomable
+          bgColor="var(--surface)"
           nodeColor={(node) => {
             const data = node.data as unknown as JobNodeData | undefined;
             if (data?.status === 'FAILED' || data?.status === 'rejected') return '#ef4444';
@@ -230,7 +241,7 @@ const FlowGraphView: React.FC<{
           nodeStrokeColor="var(--line)"
           nodeStrokeWidth={1}
           nodeBorderRadius={4}
-          maskColor="rgba(0, 0, 0, 0.15)"
+          maskColor="var(--minimap-mask, rgba(18, 32, 43, 0.14))"
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--line)',
@@ -243,6 +254,9 @@ const FlowGraphView: React.FC<{
     </div>
   );
 };
+
+const JOB_FLOW_SSE_TYPES = ['job.started.v2', 'job.completed.v2', 'policy.denied.v2'];
+const JOB_FLOW_SSE_TYPE_SET = new Set(JOB_FLOW_SSE_TYPES);
 
 export const JobTableFlowScreen: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -323,16 +337,21 @@ export const JobTableFlowScreen: React.FC = () => {
     }
   }, [effectiveCampaignId, statusFilter, urlJobId]);
 
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
+
   useEffect(() => {
     loadData(true);
   }, [loadData]);
 
-  // Subscribe to SSE events for real-time live updates (<2s)
+  // Subscribe to SSE events for real-time live updates (<2s), coalescing bursts into O(1) GETs
   useEffect(() => {
     if (!effectiveCampaignId) return;
 
+    const refresher = createCoalescedRefresh(() => loadDataRef.current(false), 250);
     const sub = apiClient.subscribeCampaignEvents({
       campaignId: effectiveCampaignId,
+      types: JOB_FLOW_SSE_TYPES,
       onEvent: (event) => {
         setLastLiveEvent({
           type: event.type,
@@ -379,8 +398,9 @@ export const JobTableFlowScreen: React.FC = () => {
           }
         }
 
-        // Silent background authoritative sync
-        loadData(false);
+        if (JOB_FLOW_SSE_TYPE_SET.has(event.type)) {
+          refresher.trigger();
+        }
       },
       onStatusChange: (status) => {
         setSseConnected(status === 'connected');
@@ -388,9 +408,10 @@ export const JobTableFlowScreen: React.FC = () => {
     });
 
     return () => {
+      refresher.cancel();
       sub.close();
     };
-  }, [effectiveCampaignId, loadData]);
+  }, [effectiveCampaignId]);
 
   const handleCancelJob = async (jobId: string) => {
     const reason = prompt('Nhập lý do hủy job:', 'Hủy thủ công qua giao diện');
@@ -484,12 +505,15 @@ export const JobTableFlowScreen: React.FC = () => {
 
       nodesInRank.forEach((n, idx) => {
         const x = startX + idx * (nodeWidth + nodeGapX);
+        const estimatedHeight = estimateNodeHeight(n);
         calculatedNodes.push({
           id: n.id,
           type: 'jobNode',
           position: { x, y: currentY },
-          width: 250,
-          style: { width: 250 },
+          initialWidth: nodeWidth,
+          initialHeight: estimatedHeight,
+          width: nodeWidth,
+          style: { width: nodeWidth },
           data: {
             ...n,
             type: n.type,

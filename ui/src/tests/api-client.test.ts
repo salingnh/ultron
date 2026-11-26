@@ -7,7 +7,13 @@ import {
   STORAGE_KEY_TOKEN,
 } from '../api/client';
 import { resetMockData } from '../mock/handlers';
-import { parseSSEBlock } from '../api/sse';
+import {
+  clearAllCampaignEventIds,
+  createCoalescedRefresh,
+  getLatestCampaignEventId,
+  parseSSEBlock,
+  subscribeToCampaignEvents,
+} from '../api/sse';
 
 describe('ApiClient (Mock & Contract Operations)', () => {
   beforeEach(() => {
@@ -348,5 +354,95 @@ describe('ApiClient (Mock & Contract Operations)', () => {
     });
     expect(page2.items.length).toBeGreaterThan(0);
     expect(page2.truncated).toBe(false);
+  });
+
+  it('tracks Last-Event-ID per campaign, sends types filter, and resets stale checkpoint on 400 (D1)', async () => {
+    clearAllCampaignEventIds();
+    const campaignId = '01934f6a-0000-7000-8000-0000000000aa';
+
+    const encoder = new TextEncoder();
+    const sseBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'id: 355\nevent: job.completed.v2\ndata: {"event_id":"e1","type":"job.completed.v2","payload":{}}\n\n'
+          )
+        );
+        controller.close();
+      },
+    });
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(sseBody, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 'INPUT_INVALID', message: 'resume point beyond head' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    try {
+      const sub1 = subscribeToCampaignEvents({
+        campaignId,
+        types: ['job.started.v2', 'job.completed.v2'],
+        onEvent: () => {},
+        reconnectDelayMs: 5000,
+      });
+
+      await vi.waitFor(() => {
+        expect(getLatestCampaignEventId(campaignId)).toBe('355');
+      });
+      expect(String(fetchSpy.mock.calls[0][0])).toContain(
+        'types=job.started.v2%2Cjob.completed.v2'
+      );
+      const firstHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(firstHeaders['Last-Event-ID']).toBeUndefined();
+      sub1.close();
+
+      // Second subscription starts from cached Last-Event-ID=355; 400 clears stale checkpoint
+      const sub2 = subscribeToCampaignEvents({
+        campaignId,
+        onEvent: () => {},
+        reconnectDelayMs: 5000,
+      });
+
+      await vi.waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+      const secondHeaders = fetchSpy.mock.calls[1][1]?.headers as Record<string, string>;
+      expect(secondHeaders['Last-Event-ID']).toBe('355');
+      await vi.waitFor(() => {
+        expect(getLatestCampaignEventId(campaignId)).toBeNull();
+      });
+      sub2.close();
+    } finally {
+      fetchSpy.mockRestore();
+      clearAllCampaignEventIds();
+    }
+  });
+
+  it('coalesces burst triggers and overlapping in-flight refreshes into O(1) calls (D1)', async () => {
+    vi.useFakeTimers();
+    try {
+      const fn = vi.fn().mockResolvedValue(undefined);
+      const refresher = createCoalescedRefresh(fn, 200);
+
+      for (let i = 0; i < 355; i++) {
+        refresher.trigger();
+      }
+      expect(fn).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(fn).toHaveBeenCalledTimes(1);
+      refresher.cancel();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

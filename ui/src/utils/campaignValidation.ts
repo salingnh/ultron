@@ -141,7 +141,7 @@ export const SAFE_LAB_POLICY_DEFAULTS: PolicyFormValues = {
   maxLlmCostUsd: '5',
   maxLlmTokens: '100000',
   maxJobs: '20',
-  maxAgentSessions: '5',
+  maxAgentSessions: '',
   idleCyclesBeforePause: '3',
   capabilityDenylistText: '',
   targetDenylistText: '',

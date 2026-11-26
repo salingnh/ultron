@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Pause,
@@ -16,6 +16,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { ApiError, apiClient, generateIdempotencyKey, toUiError } from '../api/client';
+import { createCoalescedRefresh } from '../api/sse';
 import type { AppError, Campaign, CapabilityItem, RoEPolicy, UiError } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
@@ -34,6 +35,15 @@ import {
   summarizeAssetCounters,
   summarizeJobCounters,
 } from '../utils/campaignStats';
+
+const CAMPAIGN_DETAIL_SSE_TYPES = [
+  'job.started.v2',
+  'job.completed.v2',
+  'policy.denied.v2',
+  'asset.discovered.v2',
+  'knowledge.delta.v2',
+];
+const CAMPAIGN_DETAIL_SSE_TYPE_SET = new Set(CAMPAIGN_DETAIL_SSE_TYPES);
 
 export const CampaignDetailScreen: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -78,6 +88,9 @@ export const CampaignDetailScreen: React.FC = () => {
     }
   }, []);
 
+  const loadCampaignRef = useRef(loadCampaign);
+  loadCampaignRef.current = loadCampaign;
+
   useEffect(() => {
     if (id) loadCampaign(id, true);
   }, [id, loadCampaign]);
@@ -99,12 +112,14 @@ export const CampaignDetailScreen: React.FC = () => {
     };
   }, [isEditingPolicy, capabilities.length]);
 
-  // Subscribe to SSE events for real-time live updates (<2s)
+  // Subscribe to SSE events for real-time live updates (<2s), coalescing historical bursts into O(1) GETs
   useEffect(() => {
     if (!id) return;
 
+    const refresher = createCoalescedRefresh(() => loadCampaignRef.current(id, false), 250);
     const sub = apiClient.subscribeCampaignEvents({
       campaignId: id,
+      types: CAMPAIGN_DETAIL_SSE_TYPES,
       onEvent: (event) => {
         setLastLiveEvent({
           type: event.type,
@@ -123,8 +138,9 @@ export const CampaignDetailScreen: React.FC = () => {
           }
         }
 
-        // Silent background authoritative sync
-        loadCampaign(id, false);
+        if (CAMPAIGN_DETAIL_SSE_TYPE_SET.has(event.type)) {
+          refresher.trigger();
+        }
       },
       onStatusChange: (status) => {
         setSseConnected(status === 'connected');
@@ -132,9 +148,10 @@ export const CampaignDetailScreen: React.FC = () => {
     });
 
     return () => {
+      refresher.cancel();
       sub.close();
     };
-  }, [id, loadCampaign]);
+  }, [id]);
 
   // Poll every 3s while campaign is non-terminal because campaign.status transitions
   // (e.g. RUNNING -> COMPLETED after final M03 session) emit no dedicated outbox SSE event.
