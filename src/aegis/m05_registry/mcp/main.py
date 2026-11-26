@@ -23,6 +23,7 @@ from neo4j import Driver
 from starlette.applications import Starlette
 
 from aegis.common.ports import EvidenceStore
+from aegis.m05_registry.egress import SystemTargetBinder, TargetBinder
 from aegis.m05_registry.mcp.campaign import PostgresCampaignPolicies
 from aegis.m05_registry.mcp.graph import GraphQueryService, M23GraphQueries
 from aegis.m05_registry.mcp.server import build_app
@@ -65,6 +66,7 @@ def build_service(
     graph: GraphQueryService | None = None,
     driver: Driver | None = None,
     store: EvidenceStore | None = None,
+    binder: TargetBinder | None = None,
 ) -> McpToolService:
     """M05 (registry, signing ring) + the session/policy readers + the M23 graph provider.
 
@@ -72,6 +74,12 @@ def build_service(
     closes it with the app, so this function never opens a resource it cannot close. Without a
     driver the five relational queries still answer; `graph.get_asset_neighbors` refuses with
     `DEPENDENCY_MISSING` instead of pretending the graph is empty.
+
+    The target binder is the system resolver (`SystemTargetBinder`), not `None`: an internet
+    target-bound job is signed only after M05 resolves the target name (wildcard probe and DNS
+    provenance), and with no binder every such job is refused as "target-bound provider needs a
+    server-side resolver" (item 61, internet-active-1). `binder` lets a test substitute a
+    deterministic resolver over this same production path.
     """
     resolved = dsn or os.environ.get(PG_DSN_ENV)
     if not resolved:
@@ -92,7 +100,12 @@ def build_service(
         # pre-G1.3b state; without the setting an empty registry just publishes no capability
         # tool.
         raise RuntimeError("AEGIS_ADAPTER_MANIFESTS is set but no manifest.yaml was found under it")
-    jobs = PostgresJobService(opener, registry=registry, key_ring=KeyRing.from_env())
+    jobs = PostgresJobService(
+        opener,
+        registry=registry,
+        key_ring=KeyRing.from_env(),
+        binder=binder or SystemTargetBinder(),
+    )
     return McpToolService(
         registry=registry,
         jobs=jobs,
