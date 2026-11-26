@@ -42,7 +42,7 @@ from . import graph as graph_contract
 from . import meta as meta_contract
 from . import schemas
 from .campaign import PolicySource
-from .graph import GraphQueryService, GraphUnavailable, UnavailableGraphQueries
+from .graph import GraphInputError, GraphQueryService, GraphUnavailable, UnavailableGraphQueries
 from .session import SessionContext, SessionDirectory
 
 __all__ = [
@@ -398,6 +398,15 @@ class McpToolService:
                     code="DEPENDENCY_MISSING",
                     message=str(error),
                     next_action="ESCALATE",
+                    trace_id=meta.trace_id,
+                )
+            )
+        except GraphInputError as error:
+            return self._graph_error(
+                error_object(
+                    code="INPUT_INVALID",
+                    message=str(error),
+                    next_action="FIX_INPUT",
                     trace_id=meta.trace_id,
                 )
             )

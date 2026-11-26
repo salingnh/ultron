@@ -13,7 +13,9 @@ M23 owns the projection (G1.4b). Here the boundary is pinned:
 
 from __future__ import annotations
 
+import json
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from mcp import types
@@ -199,3 +201,139 @@ def test_the_limits_are_the_contract_caps() -> None:
     assert CAPS == {"max_hops": 2, "limit": 200, "timeout_ms": 2000, "max_bytes": 8192}
     limits = GraphLimits(applied={"limit": 10})
     assert limits.as_json() == {"limit": 10}
+
+
+def test_m23_graph_queries_delegates_to_m23_and_pops_bookkeeping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from aegis.m05_registry.mcp.graph import M23GraphQueries
+    from aegis.m23_graph import queries as m23_queries
+
+    fake_conn = MagicMock()
+    ctx = MagicMock()
+    ctx.__enter__.return_value = fake_conn
+    ctx.__exit__.return_value = False
+
+    recorded: dict[str, Any] = {}
+
+    def fake_recent(conn: Any, **kwargs: Any) -> dict[str, Any]:
+        recorded["conn"] = conn
+        recorded["kwargs"] = kwargs
+        return {
+            "observations": [],
+            "revision": 4,
+            "truncated": True,
+            "limits_applied": {"limit": 200, "timeout_ms": 2000},
+        }
+
+    monkeypatch.setattr(m23_queries, "get_recent_observations", fake_recent)
+    service = make_service(graph=M23GraphQueries(lambda: ctx, driver=None))
+    value = structured(
+        graph_call(
+            service,
+            "graph.get_recent_observations",
+            graph_arguments(since_revision=2, limit=15),
+        )
+    )
+
+    assert recorded["conn"] is fake_conn
+    assert recorded["kwargs"]["campaign_id"] == "01934f6a-0000-7000-8000-000000000001"
+    assert recorded["kwargs"]["since_revision"] == 2
+    assert recorded["kwargs"]["limit"] == 15
+    assert value["revision"] == 4
+    assert value["truncated"] is True
+    assert value["limits_applied"] == {"limit": 15, "timeout_ms": 2000}
+
+
+def test_m23_graph_queries_refuses_neighbors_when_neo4j_driver_absent() -> None:
+    from aegis.m05_registry.mcp.graph import GraphUnavailable, M23GraphQueries
+
+    queries_svc = M23GraphQueries(MagicMock(), driver=None)
+    with pytest.raises(GraphUnavailable, match="AEGIS_NEO4J_PASSWORD"):
+        queries_svc.run(
+            "get_asset_neighbors",
+            {"campaign_id": "01934f6a-0000-7000-8000-000000000001", "canonical_key": "dns:a.test"},
+            campaign_id="01934f6a-0000-7000-8000-000000000001",
+            limits=GraphLimits(applied={"max_hops": 1, "limit": 50, "timeout_ms": 2000}),
+        )
+
+
+def test_connect_from_env_requires_uri_and_password() -> None:
+    from aegis.m23_graph import graph as m23_graph
+
+    assert m23_graph.connect_from_env({}) is None
+    with pytest.raises(RuntimeError, match=m23_graph.NEO4J_PASSWORD_ENV):
+        m23_graph.connect_from_env({m23_graph.NEO4J_URI_ENV: "bolt://127.0.0.1:7687"})
+
+
+def test_connect_from_env_builds_the_driver_from_complete_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aegis.m23_graph import graph as m23_graph
+
+    opened: list[tuple[str, str, str]] = []
+
+    def fake_connect(uri: str, user: str, password: str) -> object:
+        opened.append((uri, user, password))
+        return object()
+
+    monkeypatch.setattr(m23_graph, "connect", fake_connect)
+    driver = m23_graph.connect_from_env(
+        {
+            m23_graph.NEO4J_URI_ENV: "bolt://graph.internal:7687",
+            m23_graph.NEO4J_USER_ENV: "aegis",
+            m23_graph.NEO4J_PASSWORD_ENV: "secret",
+        }
+    )
+
+    assert driver is not None
+    assert opened == [("bolt://graph.internal:7687", "aegis", "secret")]
+
+
+def test_a_missing_evidence_id_is_input_invalid() -> None:
+    from aegis.m05_registry.mcp.graph import M23GraphQueries
+
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = None
+    opener = MagicMock()
+    opener.__enter__.return_value = conn
+    opener.__exit__.return_value = False
+    service = make_service(graph=M23GraphQueries(lambda: opener, driver=None))
+
+    result = graph_call(
+        service,
+        "graph.get_evidence_excerpt",
+        graph_arguments(evidence_id="01934f6a-0000-7000-8000-0000000000b1"),
+    )
+
+    assert result.is_error is True
+    body = result.content[0]
+    assert isinstance(body, types.TextContent)
+    assert json.loads(body.text)["code"] == "INPUT_INVALID"
+
+
+def test_an_unreachable_neo4j_is_a_missing_dependency() -> None:
+    from neo4j.exceptions import ServiceUnavailable
+
+    from aegis.m05_registry.mcp.graph import M23GraphQueries
+
+    driver = MagicMock()
+    driver.session.side_effect = ServiceUnavailable(  # type: ignore[no-untyped-call]
+        "cannot reach bolt://graph.internal:7687"
+    )
+    service = make_service(graph=M23GraphQueries(MagicMock(), driver=driver))
+
+    result = graph_call(
+        service,
+        "graph.get_asset_neighbors",
+        graph_arguments(canonical_key="dns:internal.example"),
+    )
+
+    assert result.is_error is True
+    body = result.content[0]
+    assert isinstance(body, types.TextContent)
+    text = body.text.replace(" ", "")
+    assert '"code":"DEPENDENCY_MISSING"' in text
+    assert "cannot reach bolt://graph.internal:7687" in body.text

@@ -423,7 +423,9 @@ def _collect(connection: Any, campaign_id: str) -> dict[str, Any]:
     for name, groups in duplicates.items():
         support.line(name, "duplicates:", len(groups))
     for name, groups in duplicates.items():
-        support.require(not groups, f"{name} has duplicates: {json.dumps(groups)[:800]}")
+        support.require(
+            not groups, f"{name} has duplicates: {json.dumps(groups, default=str)[:800]}"
+        )
 
     support.section("11. published events (SSE source) and flow read model")
     events = support.campaign_events(campaign_id)
@@ -593,8 +595,10 @@ def _duplicates(connection: Any, campaign_id: str) -> dict[str, list[dict[str, A
         "observations": support.duplicate_groups(
             connection,
             """
-            SELECT subject_asset_id, predicate, observed_at, count(*) AS n FROM observation
-             WHERE campaign_id = %s GROUP BY 1, 2, 3 HAVING count(*) > 1
+            SELECT subject_asset_id, predicate, value_hash, observed_at, count(*) AS n
+              FROM observation
+             WHERE campaign_id = %s
+             GROUP BY 1, 2, 3, 4 HAVING count(*) > 1
             """,
             (campaign_id,),
         ),

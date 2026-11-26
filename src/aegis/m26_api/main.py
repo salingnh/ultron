@@ -56,9 +56,9 @@ __all__ = [
 ]
 
 PG_DSN_ENV = "AEGIS_PG_DSN"
-NEO4J_URI_ENV = "AEGIS_NEO4J_URI"
-NEO4J_USER_ENV = "AEGIS_NEO4J_USER"
-NEO4J_PASSWORD_ENV = "AEGIS_NEO4J_PASSWORD"
+NEO4J_URI_ENV = graph.NEO4J_URI_ENV
+NEO4J_USER_ENV = graph.NEO4J_USER_ENV
+NEO4J_PASSWORD_ENV = graph.NEO4J_PASSWORD_ENV
 
 
 def build_registry() -> RouterRegistry:
@@ -80,14 +80,7 @@ def build_registry() -> RouterRegistry:
 
 def _graph_driver_from_env() -> Driver | None:
     """Build the Neo4j driver from env when configured; fail loudly on partial config."""
-    uri = (os.environ.get(NEO4J_URI_ENV) or "").strip()
-    password = (os.environ.get(NEO4J_PASSWORD_ENV) or "").strip()
-    user = (os.environ.get(NEO4J_USER_ENV) or "neo4j").strip() or "neo4j"
-    if uri and not password:
-        raise RuntimeError(f"{NEO4J_PASSWORD_ENV} is required when {NEO4J_URI_ENV} is set")
-    if not password:
-        return None
-    return graph.connect(uri or "bolt://127.0.0.1:7687", user, password)
+    return graph.connect_from_env()
 
 
 def create_production_app() -> FastAPI:
