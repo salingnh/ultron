@@ -86,6 +86,7 @@ def test_a_job_resolves_only_through_the_broker_and_is_audited(
         result = m06_support.podman(
             "run",
             "--rm",
+            *m06_support.ci_job_label_args(),
             "--network",
             job_network,
             "--user",
@@ -117,6 +118,7 @@ def test_a_job_resolves_only_through_the_broker_and_is_audited(
         resolv = m06_support.podman(
             "run",
             "--rm",
+            *m06_support.ci_job_label_args(),
             "--network",
             job_network,
             "--dns",
@@ -127,7 +129,7 @@ def test_a_job_resolves_only_through_the_broker_and_is_audited(
         ).stdout
         assert broker_ip in resolv
     finally:
-        m06_support.podman("rm", "-f", upstream_name, check=False)
+        m06_support.remove_container(upstream_name)
         runner.reconcile([])
         m06_support.podman("network", "rm", "-f", job_network, check=False)
         m06_support.remove_network(uplink)

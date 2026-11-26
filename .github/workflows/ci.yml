@@ -45,9 +45,16 @@ jobs:
           persist-credentials: false
           clean: true
 
+      - name: Record job volume scope
+        run: scripts/ci/check-volume-leak.sh --record
+
       - name: Python gate (make lint test codegen-check)
         run: scripts/ci/python-gate.sh
 
       - name: Remove CI containers
         if: always()
         run: scripts/ci/cleanup.sh
+
+      - name: Guard against leaked podman volumes
+        if: always()
+        run: scripts/ci/check-volume-leak.sh

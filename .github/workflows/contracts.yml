@@ -47,6 +47,9 @@ jobs:
           persist-credentials: false
           clean: true
 
+      - name: Record job volume scope
+        run: scripts/ci/check-volume-leak.sh --record
+
       - name: Cleanup is scoped to this run
         run: scripts/ci/test-cleanup.sh
 
@@ -59,3 +62,7 @@ jobs:
       - name: Remove this run's CI containers
         if: always()
         run: scripts/ci/cleanup.sh
+
+      - name: Guard against leaked podman volumes
+        if: always()
+        run: scripts/ci/check-volume-leak.sh

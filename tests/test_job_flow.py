@@ -525,7 +525,7 @@ def test_egress_job_reaches_only_its_broker(
         assert runner.list_jobs() == ()
         assert runner.layout(job_id).audit.joinpath("egress.jsonl").exists()
     finally:
-        m06_support.podman("rm", "-f", target_name, check=False)
+        m06_support.remove_container(target_name)
         runner.reconcile([])
         m06_support.remove_tree(runner.base_dir)
         m06_support.remove_network(uplink)

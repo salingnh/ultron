@@ -161,6 +161,29 @@ def _podman(*args: str) -> str:
     return completed.stdout.strip()
 
 
+def _ci_job_label_args() -> list[str]:
+    job = os.environ.get("AEGIS_CI_JOB", "").strip()
+    return ["--label", f"aegis.ci-job={job}"] if job else []
+
+
+def _record_container_volumes(name: str) -> None:
+    log_path = os.environ.get("AEGIS_CI_VOLUME_LOG", "").strip()
+    if not log_path:
+        return
+    mounts = _podman(
+        "container",
+        "inspect",
+        name,
+        "--format",
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}',
+    )
+    names = [line.strip() for line in mounts.splitlines() if line.strip()]
+    if names:
+        with open(log_path, "a", encoding="utf-8") as handle:
+            for volume in names:
+                handle.write(f"{volume}\n")
+
+
 def _start_container() -> tuple[str, str]:
     """Start a labelled, throwaway Neo4j from the pinned image; removed when this process exits."""
     password = secrets.token_urlsafe(18)
@@ -173,6 +196,11 @@ def _start_container() -> tuple[str, str]:
         name,
         "--label",
         CONTAINER_LABEL,
+        *_ci_job_label_args(),
+        "--tmpfs",
+        "/data:rw,size=1g,mode=1777",
+        "--tmpfs",
+        "/logs:rw,size=64m,mode=1777",
         "-e",
         f"NEO4J_AUTH=neo4j/{password}",
         "-e",
@@ -190,27 +218,33 @@ def _start_container() -> tuple[str, str]:
             f"podman could not start the harness Neo4j ({name}); see podman run"
         )
     _register_stop(name)
-    published = _podman("port", name, f"{BOLT_PORT}/tcp")
-    port = published.rsplit(":", 1)[-1].strip() if published else ""
-    if not port.isdigit():
-        _stop(name)
-        raise SharedGraphRefused(f"the harness Neo4j {name} published no bolt port ({published!r})")
-    deadline = time.monotonic() + READY_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        ready = subprocess.run(  # noqa: S603 - fixed podman exec
-            ["podman", "exec", name, "cypher-shell", "-u", "neo4j", "-p", password, "RETURN 1"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
+    try:
+        published = _podman("port", name, f"{BOLT_PORT}/tcp")
+        port = published.rsplit(":", 1)[-1].strip() if published else ""
+        if not port.isdigit():
+            raise SharedGraphRefused(
+                f"the harness Neo4j {name} published no bolt port ({published!r})"
+            )
+        deadline = time.monotonic() + READY_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            ready = subprocess.run(  # noqa: S603 - fixed podman exec
+                ["podman", "exec", name, "cypher-shell", "-u", "neo4j", "-p", password, "RETURN 1"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            if ready.returncode == 0:
+                return f"bolt://127.0.0.1:{port}", password
+            time.sleep(POLL_SECONDS)
+        raise SharedGraphRefused(
+            f"the harness Neo4j {name} did not become ready within {READY_TIMEOUT_SECONDS}s"
         )
-        if ready.returncode == 0:
-            return f"bolt://127.0.0.1:{port}", password
-        time.sleep(POLL_SECONDS)
-    _stop(name)
-    raise SharedGraphRefused(
-        f"the harness Neo4j {name} did not become ready within {READY_TIMEOUT_SECONDS}s"
-    )
+    except BaseException:
+        _stop(name)
+        if name in _STARTED:
+            _STARTED.remove(name)
+        raise
 
 
 def _pinned_image() -> str:
@@ -239,4 +273,5 @@ def stop_test_graph() -> None:
 
 
 def _stop(name: str) -> None:
-    _podman("rm", "-f", name)
+    _record_container_volumes(name)
+    _podman("rm", "-f", "-v", name)

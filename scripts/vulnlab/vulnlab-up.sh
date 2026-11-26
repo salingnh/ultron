@@ -51,14 +51,14 @@ while IFS= read -r container; do
 done < <(project_containers)
 if ((${#drifted[@]} > 0)); then
   log "TTL drift on ${drifted[*]}: recreating the project so --timeout ${VULNLAB_TTL_SECONDS}s is armed"
-  compose down --remove-orphans --timeout 20
+  compose down --volumes --remove-orphans --timeout 20
 fi
 
 # Turning publishing off must actually unpublish: a cloudflared container left over from an earlier
 # tunnel-enabled start is not part of a lab-only `compose up` and would keep forwarding traffic.
 if ! tunnel_enabled && container_exists "$VULNLAB_TUNNEL_CONTAINER"; then
   log "tunnel: OFF - removing this project's cloudflared container so nothing stays published"
-  podman rm -f "$VULNLAB_TUNNEL_CONTAINER" >/dev/null
+  podman rm -f -v "$VULNLAB_TUNNEL_CONTAINER" >/dev/null
 fi
 
 log "compose project $VULNLAB_PROJECT: starting $(tunnel_enabled && printf 'with the Cloudflare Tunnel' || printf 'lab-only')"

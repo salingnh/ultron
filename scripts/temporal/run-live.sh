@@ -53,10 +53,12 @@ cleanup() {
     kill "$TEMPORAL_PID" 2>/dev/null || true
     wait "$TEMPORAL_PID" 2>/dev/null || true
   fi
-  podman rm -f "$PG_NAME" >/dev/null 2>&1 || true
+  podman rm -f -v "$PG_NAME" >/dev/null 2>&1 || true
   rm -rf "$RUNTIME"
   exit "$status"
 }
+trap 'exit 130' INT
+trap 'exit 143' TERM
 trap cleanup EXIT
 
 printf '[live] PostgreSQL 16 on 127.0.0.1:%s as %s\n' "$PG_PORT" "$PG_NAME"

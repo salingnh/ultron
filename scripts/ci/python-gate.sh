@@ -29,6 +29,7 @@ export PATH="$(dirname "$UV"):$PATH"
 
 require_cmd podman
 
+: >"$AEGIS_CI_VOLUME_LOG"
 PG=$(ci_container pg-python)
 PG_PASSWORD=$(random_password)
 NEO4J=$(ci_container neo4j-python)
@@ -42,8 +43,14 @@ cleanup() {
   fi
   remove_container "$PG"
   remove_container "$NEO4J"
+  if ! check_job_volume_leaks "python gate" && ((status == 0)); then
+    status=1
+  fi
+  rm -f "$AEGIS_CI_VOLUME_LOG"
   exit "$status"
 }
+trap 'exit 130' INT
+trap 'exit 143' TERM
 trap cleanup EXIT
 
 log "python gate: $("$UV" --version), $(python3 -V 2>&1 || true)"
@@ -71,6 +78,8 @@ log "throwaway Neo4j 5.26 as $NEO4J (loopback bolt port, random password)"
 # hand-started Neo4j never has it, which is what stops a gate run from wiping a shared graph.
 start_container "$NEO4J" "$AEGIS_NEO4J_IMAGE" \
   --label aegis.test.graph=1 \
+  --tmpfs /data:rw,size=1g,mode=1777 \
+  --tmpfs /logs:rw,size=64m,mode=1777 \
   -e NEO4J_AUTH="neo4j/$NEO4J_PASSWORD" \
   -e NEO4J_server_memory_heap_initial__size=512m \
   -e NEO4J_server_memory_heap_max__size=1g \
