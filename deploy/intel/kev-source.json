@@ -1,0 +1,9 @@
+{
+  "feed": "kev",
+  "url": "https://raw.githubusercontent.com/cisagov/kev-data/51e0a777743fa06957afbaeb280f8735d292c1be/known_exploited_vulnerabilities.json",
+  "version": "2026.11.25",
+  "catalog_version": "2026.11.25",
+  "size_bytes": 1898186,
+  "sha256": "a76360009e4a65794a2b8073df5475f7a787a3bb83c3bfad2b0c3434a067631a",
+  "note": "CISA KEV, the official cisagov/kev-data mirror, pinned to the commit that added the 2026-11-25 catalogue. www.cisa.gov answers HTTP 403 to this deployment's egress for every path (Akamai IP denial; measured 2026-11-27), so it is not a configured source and nothing falls back to it. A refresh is a pin bump: commit in url, size_bytes, sha256, version and catalog_version together."
+}

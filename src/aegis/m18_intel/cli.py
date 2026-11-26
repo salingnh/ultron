@@ -1,8 +1,12 @@
-"""Operator CLI of M18 (`python -m aegis.m18_intel <sync|sync-nvd|plan>`).
+"""Operator CLI of M18 (`python -m aegis.m18_intel <sync|sync-kev|sync-nvd|plan>`).
 
 * `sync` - store one feed snapshot in S3 and load it into PostgreSQL, then publish
   `intel.revision.v2`. `--source` is a local path (a committed fixture slice, the CI/demo path) or
   an `http(s)` URL (the operator's refresh). Exit 0 on success, 1 on a refused snapshot.
+* `sync-kev` - load the **one configured KEV source**: `deploy/intel/kev-source.json` (or
+  `AEGIS_KEV_SOURCE_FILE`) names the cisagov/kev-data mirror commit plus the export's size and
+  sha256. There is no fallback source: a mismatch is refused. `www.cisa.gov` answers HTTP 403 to
+  this deployment's egress (item 61 trial D8), which is why the mirror is the configured source.
 * `sync-nvd` - paged NVD CVE API 2.0 bulk (all years) and incremental (`lastModified`) sync,
   resumable and idempotent. Optional API key is read only from the file named by
   `AEGIS_NVD_API_KEY_FILE` (never in argv or logs).
@@ -10,7 +14,8 @@
   see which intel the matcher will use before running it.
 
 Environment: `AEGIS_PG_DSN`, S3 settings (`AEGIS_S3_ENDPOINT`, `AEGIS_S3_BUCKET`, optional
-`AEGIS_S3_ACCESS_KEY`/`AEGIS_S3_SECRET_KEY`), and optional `AEGIS_NVD_API_KEY_FILE`.
+`AEGIS_S3_ACCESS_KEY`/`AEGIS_S3_SECRET_KEY`), optional `AEGIS_NVD_API_KEY_FILE` and
+`AEGIS_KEV_SOURCE_FILE`.
 Nothing here starts or removes a container.
 """
 
@@ -94,6 +99,38 @@ def _sync(argv: argparse.Namespace) -> int:
     return 0
 
 
+def _sync_kev(argv: argparse.Namespace) -> int:
+    """Load the one configured KEV source after checking its size, sha256 and catalogue version."""
+    from aegis.m18_intel.sources import PinnedFeedError, fetch_pinned, load_pinned_feed
+
+    try:
+        pinned = load_pinned_feed("kev", path=argv.source_file)
+        data = fetch_pinned(pinned)
+        report = FeedSync.from_env().sync(
+            "kev",
+            pinned.version,
+            data,
+            source_uri=pinned.url,
+            snapshot_at=_moment(argv.snapshot_at),
+        )
+    except (FeedSyncError, feeds.FeedError, PinnedFeedError, ValueError, OSError) as error:
+        print(f"kev sync refused: {error}", file=sys.stderr)
+        return 1
+    print(
+        json.dumps(
+            {
+                **report.as_dict(),
+                "source_uri": pinned.url,
+                "size_bytes": len(data),
+                "catalog_version": pinned.catalog_version,
+            },
+            indent=2,
+            default=str,
+        )
+    )
+    return 0
+
+
 def _sync_nvd(argv: argparse.Namespace) -> int:
     def _progress(event: NvdPageProgress) -> None:
         if not argv.quiet:
@@ -138,6 +175,20 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="when the feed says the set is from (default: the feed's own date, else now)",
     )
+    sync_kev = sub.add_parser(
+        "sync-kev",
+        help="load the configured, pinned CISA KEV mirror (no fallback source)",
+    )
+    sync_kev.add_argument(
+        "--source-file",
+        default=None,
+        help="pin file (default: AEGIS_KEV_SOURCE_FILE or deploy/intel/kev-source.json)",
+    )
+    sync_kev.add_argument(
+        "--snapshot-at",
+        default=None,
+        help="override the snapshot date (default: the catalogue's own dateReleased)",
+    )
     sync_nvd = sub.add_parser(
         "sync-nvd",
         help="paged NVD CVE 2.0 bulk + incremental sync (optional key via AEGIS_NVD_API_KEY_FILE)",
@@ -176,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parser.parse_args(argv)
     if parsed.command == "plan":
         return _plan()
+    if parsed.command == "sync-kev":
+        return _sync_kev(parsed)
     if parsed.command == "sync-nvd":
         return _sync_nvd(parsed)
     return _sync(parsed)

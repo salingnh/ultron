@@ -221,6 +221,47 @@ def test_graph_truncation_is_reported(client: TestClient, database: tuple[str, l
     assert response.json()["truncated"] is False  # one node is not a truncation
 
 
+def test_a_read_model_contract_violation_answers_with_a_code_not_a_500_dump(
+    client: TestClient, database: tuple[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D2/D3 (item 61 trial): a producer bug must be a clear code, not an opaque 500.
+
+    The old handler answered `INTERNAL_ERROR` with the JSON-schema validator's message, so the UI
+    printed a screenful of regex patterns. The operator now sees a short pointer list and the
+    `OUTPUT_INVALID` code (`error.v2`), and the response stays a 500 because the server is wrong.
+    """
+    dsn, jobs = database
+    bad = {
+        "nodes": [{"asset_id": "not-a-uuid", "canonical_key": "dns:x.test", "kind": "domain"}],
+        "edges": [],
+        "truncated": False,
+        "limits_applied": {"max_hops": 2, "limit": 200, "timeout_ms": 2000},
+    }
+    monkeypatch.setattr(
+        "aegis.m26_api.assets.queries.get_asset_neighbors", lambda *args, **kwargs: bad
+    )
+    with graph_driver() as driver:
+        ingest(dsn, jobs[0], assets=[{"kind": "domain", "canonical_key": "dns:broke.test"}])
+        project_all(dsn, driver, consumer="api#g1")
+        asset_id = str(
+            driver.execute_query(
+                "MATCH (a:Asset {canonical_key: 'dns:broke.test'}) RETURN a.asset_id AS id"
+            ).records[0]["id"]
+        )
+        response = client.get(
+            f"{API_PREFIX}/assets/{asset_id}/graph",
+            params={"campaign_id": CAMPAIGN_ID},
+            headers=support.auth(),
+        )
+    assert response.status_code == 500
+    body = response.json()
+    assert body["code"] == "OUTPUT_INVALID"
+    assert body["next_action"] == "REVIEW_QUARANTINE"
+    assert "/nodes/0/asset_id" in body["message"]
+    assert "pattern" not in body["message"] and "^" not in body["message"]
+    assert body["trace_id"]
+
+
 def test_history_validates_against_the_inline_asset_component(
     client: TestClient, database: tuple[str, list[str]]
 ) -> None:

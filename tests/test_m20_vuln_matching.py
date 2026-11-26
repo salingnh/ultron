@@ -22,6 +22,7 @@ import pytest
 
 from aegis import validation
 from aegis.m18_intel.sync import FeedSync
+from aegis.m20_vuln import cli
 from aegis.m20_vuln.configurations import (
     PLATFORM_UNCONFIRMED_CODE,
     VERSION_UNSPECIFIED_CODE,
@@ -204,6 +205,74 @@ def test_a_campaign_without_targets_matches_nothing(database: tuple[str, list[st
 
     assert report.targets == 0
     assert report.new_matches == 0
+
+
+def test_a_campaign_matches_the_assets_it_holds_not_the_ones_its_jobs_saw(
+    database: tuple[str, list[str]],
+) -> None:
+    """D5 (item 61 trial): `--campaign` narrows by asset membership, not by observer.
+
+    A candidate is one row per (asset, CVE, intel revision, method); a second campaign that
+    acquired the same asset must see the same decisions. Narrowing by `observation.campaign_id`
+    made it report `targets 0, new_matches 0` for an asset it holds.
+    """
+    dsn, jobs = database
+    ingest_services(dsn, jobs[0])
+    second = support.seed_campaign(dsn)
+    with connect(dsn) as connection:
+        fixtures.seed_intel(dsn)
+        connection.execute(
+            "INSERT INTO asset_campaign (asset_id, campaign_id, first_seen)"
+            " SELECT asset_id, %s, now() FROM asset WHERE canonical_key = ANY(%s)",
+            (
+                second.campaign_id,
+                [fixtures.SERVICE_KEY, fixtures.NGINX_SERVICE_KEY, fixtures.APP_KEY],
+            ),
+        )
+        report = Matcher(connection).run(campaign_id=second.campaign_id)
+        rows = fixtures.matches(connection)
+        second_run = Matcher(connection).run(campaign_id=second.campaign_id)
+
+    assert report.targets == 3
+    assert report.new_matches == 3 and report.events == 3
+    # The decision is one row per (asset, CVE, revision, method): the second campaign gets the
+    # same candidates back, not a second copy, and no new outbox event.
+    assert second_run.new_matches == 0 and second_run.existing_matches == 3
+    assert second_run.events == 0
+    assert {row["vulnerability_id"] for row in rows} == {
+        "CVE-2021-41773",
+        "CVE-2021-23017",
+        "CVE-2022-22965",
+    }
+
+
+def test_the_cli_path_persists_its_candidates(
+    database: tuple[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D6 (item 61 trial): the M20 CLI's rows must survive the process that wrote them.
+
+    The CLI's connection was not autocommit, so `with conn.transaction()` was a savepoint in an
+    implicit transaction and `close()` rolled back every candidate while the run printed
+    `new_matches 226`. The CLI now connects through `matching.connect` (autocommit), and this test
+    runs the real CLI entry point, then reads the rows from a fresh connection.
+    """
+    dsn, jobs = database
+    ingest_services(dsn, jobs[0])
+    with connect(dsn) as connection:
+        fixtures.seed_intel(dsn)
+        before = connection.execute("SELECT count(*) AS row FROM package_vuln_match").fetchone()
+
+    assert before is not None and before["row"] == 0
+    monkeypatch.setenv("AEGIS_PG_DSN", dsn)
+    assert cli.main(["run"]) == 0
+
+    with connect(dsn) as connection:
+        after = connection.execute("SELECT count(*) AS row FROM package_vuln_match").fetchone()
+        events = connection.execute(
+            "SELECT count(*) AS row FROM outbox_event WHERE type = %s", (VULNERABILITY_EVENT,)
+        ).fetchone()
+    assert after is not None and after["row"] == 3
+    assert events is not None and events["row"] == 3
 
 
 def test_a_dry_run_reports_without_writing(database: tuple[str, list[str]]) -> None:

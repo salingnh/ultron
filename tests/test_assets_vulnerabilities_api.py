@@ -23,9 +23,10 @@ from aegis.m26_api.operator import TokenAuthenticator
 from aegis.m26_api.registry import RouterRegistry
 from aegis.m27_ingestion.ids import uuid7
 from tests import campaign_support as support
+from tests import db_support
 from tests import g16c_support as fixtures
 from tests.db_support import requires_postgres
-from tests.m23_support import connect, ingest, pipeline_database
+from tests.m23_support import CAMPAIGN_ID, connect, ingest, pipeline_database
 
 pytestmark = requires_postgres
 
@@ -178,6 +179,59 @@ def test_kev_only_filters_and_pages(database: tuple[str, dict[str, str]]) -> Non
     page = _get(client, service, limit=1)
     assert page.status_code == 200
     assert "next_cursor" not in page.json()
+
+
+def test_campaign_visibility_comes_from_asset_membership(
+    database: tuple[str, dict[str, str]],
+) -> None:
+    """D5 (item 61 trial): one candidate row, visible to every campaign that holds the asset.
+
+    The match is unique on (asset, CVE, intel revision, method) without a campaign, so reading it
+    back through the row's `campaign_id` showed candidates only to the campaign that happened to
+    match first. `asset_campaign` is the membership that decides.
+    """
+    dsn, assets = database
+    second = db_support.seed_campaign(dsn)
+    outsider = db_support.seed_campaign(dsn)
+    service = assets[fixtures.SERVICE_KEY]
+    with connect(dsn) as connection:
+        connection.execute(
+            "INSERT INTO asset_campaign (asset_id, campaign_id, first_seen) VALUES (%s, %s, now())",
+            (service, second.campaign_id),
+        )
+        rows = connection.execute(
+            "SELECT campaign_id FROM package_vuln_match WHERE package_asset_id = %s",
+            (service,),
+        ).fetchall()
+    # The candidate row still names the campaign whose observation decided it: provenance, not
+    # visibility. Nothing wrote a second row for the second campaign.
+    assert {str(row["campaign_id"]) for row in rows} == {CAMPAIGN_ID}
+
+    client = _client(dsn)
+    first_page = _get(client, service, campaign_id=CAMPAIGN_ID)
+    second_page = _get(client, service, campaign_id=second.campaign_id)
+    outsider_page = _get(client, service, campaign_id=outsider.campaign_id)
+    assert first_page.status_code == 200 and second_page.status_code == 200
+    assert [item["vulnerability_id"] for item in first_page.json()["items"]] == ["CVE-2021-41773"]
+    assert second_page.json()["items"] == first_page.json()["items"]
+    assert outsider_page.status_code == 200
+    assert outsider_page.json()["items"] == []
+
+    # The two rules compose: a retraction of the newest revision hides the candidate from every
+    # campaign that holds the asset, not only from the one whose run recorded the row.
+    with connect(dsn) as connection:
+        FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+            "nvd",
+            "2026-11-27",
+            fixtures.nvd_with_retracted_match(),
+            source_uri="nvd-retraction.json",
+            snapshot_at=fixtures.SNAPSHOT_AT,
+        )
+        assert Matcher(connection).run().retracted == 1
+    for campaign in (CAMPAIGN_ID, second.campaign_id):
+        hidden = _get(client, service, campaign_id=campaign).json()
+        _validated(hidden)
+        assert hidden["items"] == []
 
 
 def test_the_operator_token_is_required(database: tuple[str, dict[str, str]]) -> None:

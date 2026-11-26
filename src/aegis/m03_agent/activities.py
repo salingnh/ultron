@@ -26,14 +26,27 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from aegis.common.ports import ModelClient
-from aegis.m02_orchestrator.types import SessionOutcome, SessionRequest
+from aegis.m02_orchestrator.types import SESSION_REFUSED_ERROR, SessionOutcome, SessionRequest
 from aegis.m03_agent import config as config_module
 from aegis.m03_agent import session as session_module
 from aegis.m03_agent.mcp import McpToolClient, ToolClient
+from aegis.m03_agent.store import SessionRefused
 
-__all__ = ["ACTIVITIES", "build_model", "configure", "configure_from_env", "run_agent_session"]
+__all__ = [
+    "ACTIVITIES",
+    "SESSION_REFUSED_ERROR",
+    "build_model",
+    "configure",
+    "configure_from_env",
+    "run_agent_session",
+]
+
+#: `SESSION_REFUSED_ERROR` (imported from the M02/M03 seam) is the `ApplicationError.type` of a
+#: business refusal: M02 reads `details[0].code` to decide what it means; retrying can only
+#: refuse again (D4, item 61 trial).
 
 #: Records the selected model mode once per worker process (never the credential: see G1.6).
 logger = logging.getLogger(__name__)
@@ -149,9 +162,22 @@ def _heartbeat(stage: str, fields: Mapping[str, Any]) -> None:
 
 @activity.defn(name="run_agent_session")
 async def run_agent_session(request: SessionRequest) -> SessionOutcome:
-    """M02's session seam: one campaign cycle, hosted here (G0.1 decision)."""
+    """M02's session seam: one campaign cycle, hosted here (G0.1 decision).
+
+    A `SessionRefused` is a campaign decision (budget spent, campaign not RUNNING), not a
+    transport failure: it becomes a non-retryable `ApplicationError` of type `SessionRefused`
+    carrying its `code`, so M02 can terminalise the campaign instead of retrying the activity.
+    """
     deps = _deps_or_fail()
-    run = await session_module.run_session(request, deps, beat=_heartbeat)
+    try:
+        run = await session_module.run_session(request, deps, beat=_heartbeat)
+    except SessionRefused as refusal:
+        raise ApplicationError(
+            str(refusal),
+            {"code": refusal.code},
+            type=SESSION_REFUSED_ERROR,
+            non_retryable=True,
+        ) from None
     return run.outcome
 
 

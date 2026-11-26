@@ -22,8 +22,13 @@ __all__ = [
     "CampaignStatusView",
     "CancelOutcome",
     "DispatchPlan",
+    "SESSION_REFUSED_ERROR",
     "SessionOutcome",
     "SessionRequest",
+    "REFUSAL_BUDGET_EXHAUSTED",
+    "REFUSAL_CAMPAIGN_MISSING",
+    "REFUSAL_INCONSISTENT",
+    "REFUSAL_NOT_RUNNING",
 ]
 
 #: The Temporal task queues of the interface (contracts/interfaces/README.md §7).
@@ -31,6 +36,16 @@ ORCHESTRATOR_QUEUE = "aegis-orchestrator"
 AGENT_QUEUE = "aegis-agent"
 #: Workflow id of a campaign, as the interface fixes it.
 WORKFLOW_ID_PREFIX = "campaign-"
+
+#: `ApplicationError.type` of a refused `run_agent_session`, and the `details[0].code` values: the
+#: seam between M03 (which refuses) and M02 (which decides what the refusal means). They live here
+#: because both sides must agree on them and the workflow may not import M03's store (which owns a
+#: database driver). A refusal is a campaign decision, never an activity to retry.
+SESSION_REFUSED_ERROR = "SessionRefused"
+REFUSAL_BUDGET_EXHAUSTED = "session_budget_exhausted"
+REFUSAL_NOT_RUNNING = "campaign_not_running"
+REFUSAL_CAMPAIGN_MISSING = "campaign_missing"
+REFUSAL_INCONSISTENT = "session_inconsistent"
 
 
 def workflow_id(campaign_id: str) -> str:

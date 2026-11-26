@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 from temporalio.client import Client, WorkflowHandle
+from temporalio.exceptions import ApplicationError
 from temporalio.worker import Replayer, Worker
 
 from aegis.m02_orchestrator import db
@@ -387,6 +388,65 @@ def test_continue_as_new_carries_the_cycle_and_cursor(temporal_target: str, dsn:
         # Two Temporal runs prove Continue-As-New; the carried cycle shows in the session requests.
         assert len(runs) == 2, [run.run_id for run in runs]
         assert [request.cycle for request in script.requests] == [0, 1, 2, 3]
+
+    asyncio.run(scenario())
+
+
+def test_a_session_budget_refusal_completes_the_campaign_once(
+    temporal_target: str, dsn: str
+) -> None:
+    """D4 (item 61 trial): the refusal terminalises the campaign instead of being retried.
+
+    The trial's UI campaign used exactly its `max_agent_sessions` and the next cycle was refused:
+    the activity was retried 926 times and the campaign stayed RUNNING with `status_reason = NULL`.
+    A refusal is now a campaign decision: one attempt, `COMPLETED` with `budget_exhausted`.
+    """
+    campaign = seed_campaign(
+        dsn,
+        policy=policy_document(
+            max_parallel_jobs=1,
+            budget={
+                "max_jobs": 50,
+                "max_llm_tokens": 100000,
+                "max_llm_cost_usd": 5,
+                "max_agent_sessions": 1,
+            },
+        ),
+    )
+    script = configure_script(
+        campaign.campaign_id,
+        SessionScript(
+            refuse_with=ApplicationError(
+                f"campaign {campaign.campaign_id} already used 1 of its 1 agent sessions "
+                "(policy budget.max_agent_sessions)",
+                {"code": "session_budget_exhausted"},
+                type="SessionRefused",
+                non_retryable=True,
+            )
+        ),
+    )
+
+    async def scenario() -> None:
+        client = await Client.connect(temporal_target)
+        stop = asyncio.Event()
+        handle = await client.start_workflow(
+            CampaignWorkflow.run,
+            CampaignRunInput(campaign_id=campaign.campaign_id, tick_seconds=0.1),
+            id=workflow_id(campaign.campaign_id),
+            task_queue=ORCHESTRATOR_QUEUE,
+        )
+        async with running(client, dsn, stop):
+            result = await asyncio.wait_for(handle.result(), timeout=30)
+            with connect(dsn) as conn:
+                row = conn.execute(
+                    "SELECT status, status_reason, ended_at FROM campaign WHERE campaign_id = %s",
+                    (campaign.campaign_id,),
+                ).fetchone()
+        assert result.status == "COMPLETED" and result.stop_reason == "budget_exhausted"
+        assert row is not None
+        assert row[0] == "COMPLETED" and row[1] == "budget_exhausted" and row[2] is not None
+        # The storm is the defect: one refused cycle, not 926 activity attempts.
+        assert len(script.requests) == 1
 
     asyncio.run(scenario())
 
