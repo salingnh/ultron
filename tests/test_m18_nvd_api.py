@@ -26,19 +26,6 @@ from tests import g16c_support as fixtures
 
 pytestmark = support.requires_postgres
 
-MIGRATION_0007 = support.REPO / "contracts/db/postgres/0007_intel_indexes.sql"
-
-
-def _ensure_0007(dsn: str) -> None:
-    """Ensure throwaway DB has 0007 until leader adds it to contracts/README.md."""
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        present = conn.execute(
-            "SELECT to_regclass('aegis.intel_sync_checkpoint') IS NOT NULL"
-        ).fetchone()
-        if present and present[0]:
-            return
-        conn.execute(MIGRATION_0007.read_text(encoding="utf-8"))
-
 
 def _cve_entry(cve_id: str, product: str, version: str, modified: str) -> dict[str, Any]:
     return {
@@ -167,7 +154,6 @@ def test_full_paged_sync_resume_and_incremental_by_last_modified(tmp_path: Path)
         return {"totalResults": len(subset), "vulnerabilities": page}
 
     with support.migrated_database() as dsn:
-        _ensure_0007(dsn)
         store = fixtures.MemoryStore()
         feed_sync = FeedSync(fixtures.connector(dsn), store)
         transport = _FakeNvdTransport(serve)
