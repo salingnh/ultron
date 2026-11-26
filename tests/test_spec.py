@@ -207,6 +207,7 @@ def test_egress_spec_carries_manifest_budget_and_source_binding() -> None:
         "api.hackertarget.com:443",
         "rapiddns.io:443",
         "web.archive.org:443",
+        "web.archive.org:80",
         "index.commoncrawl.org:443",
     }
     assert built.args[-4:] == ["-t", "2", "-rl", "1"]
@@ -303,6 +304,7 @@ def test_a_signed_binding_cannot_widen_the_declared_sources() -> None:
                 "api.hackertarget.com:443",
                 "rapiddns.io:443",
                 "web.archive.org:443",
+                "web.archive.org:80",
                 "index.commoncrawl.org:443",
                 "evil.example:443",
             ],

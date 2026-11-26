@@ -2,7 +2,7 @@ apiVersion: aegis.io/v2
 kind: CapabilityProvider
 metadata:
   name: httpx
-  version: 1.0.1
+  version: 1.0.2
   module: M08
   license: MIT
   upstream: https://github.com/projectdiscovery/httpx
@@ -21,6 +21,7 @@ spec:
     - /in/targets.txt
     - -json
     - -silent
+    - -duc
     - -o
     - /out/result.jsonl
     - -tech-detect

@@ -48,7 +48,8 @@ LAB_PROFILE="$REPO_ROOT/deploy/lab/runner-profile.json"
 # therefore its own copy of the profile (absolute paths, so the copy can live under .local/).
 LAB_PROFILE_LOCAL="$STATE_DIR/lab-runner-profile.json"
 INTERNET_PROFILE="$REPO_ROOT/deploy/internet/runner-profile.json"
-BROKER_IMAGE=${AEGIS_M06_BROKER_IMAGE:-localhost/aegis-broker:g16}
+DEFAULT_BROKER_IMAGE=$("$DEV_DIR/broker-image.sh" --tag-only)
+BROKER_IMAGE=${AEGIS_M06_BROKER_IMAGE:-$DEFAULT_BROKER_IMAGE}
 MCP_PORT=${MCP_PORT:-8105}
 
 # "Present" means anything of the project exists - a container (running or not) or a volume - so a

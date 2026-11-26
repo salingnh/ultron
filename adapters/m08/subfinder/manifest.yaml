@@ -2,7 +2,7 @@ apiVersion: aegis.io/v2
 kind: CapabilityProvider
 metadata:
   name: subfinder
-  version: 1.0.3
+  version: 1.0.4
   module: M08
   license: MIT
   upstream: https://github.com/projectdiscovery/subfinder
@@ -69,6 +69,7 @@ spec:
       hosts:
       - web.archive.org
       ports:
+      - 80
       - 443
       protocol: https
       purpose: passive URL/domain archive
