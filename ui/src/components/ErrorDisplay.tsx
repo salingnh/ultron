@@ -1,7 +1,8 @@
-import React from 'react';
-import { AlertCircle, HelpCircle, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, HelpCircle, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AppError, UiError } from '../api/types';
 import { toUiError } from '../api/client';
+import { summarizeOperatorError } from '../utils/errorSummary';
 
 interface ErrorDisplayProps {
   error: UiError | AppError | Error | string;
@@ -10,6 +11,9 @@ interface ErrorDisplayProps {
 
 export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) => {
   const uiError = toUiError(error);
+  const [showDetails, setShowDetails] = useState(false);
+  const { summary, technicalDetail } = summarizeOperatorError(uiError);
+  const hasTechnicalDetails = Boolean(technicalDetail || uiError.technical_cause || uiError.trace_id);
 
   return (
     <div
@@ -39,7 +43,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) =>
         )}
       </div>
 
-      <div style={{ color: 'var(--ink)' }}>{uiError.message}</div>
+      <div style={{ color: 'var(--ink)' }}>{summary}</div>
 
       {uiError.path && (
         <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--muted)', wordBreak: 'break-all' }}>
@@ -53,15 +57,60 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) =>
         </div>
       )}
 
-      {uiError.technical_cause && (
-        <div style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--muted)', wordBreak: 'break-word' }}>
-          Nguyên nhân kỹ thuật: {uiError.technical_cause}
-        </div>
-      )}
+      {hasTechnicalDetails && (
+        <div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-expanded={showDetails}
+            onClick={() => setShowDetails((prev) => !prev)}
+            style={{
+              fontSize: 'var(--text-xs)',
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--line)',
+              color: 'var(--muted)',
+            }}
+          >
+            {showDetails ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <span>{showDetails ? 'Ẩn chi tiết kỹ thuật' : 'Xem chi tiết kỹ thuật'}</span>
+          </button>
 
-      {uiError.trace_id && (
-        <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>
-          Trace ID: {uiError.trace_id}
+          {showDetails && (
+            <div
+              style={{
+                marginTop: 6,
+                padding: '8px 10px',
+                backgroundColor: 'var(--surface)',
+                border: '1px solid var(--line)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-xs)',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--muted)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                maxHeight: 240,
+                overflowY: 'auto',
+                wordBreak: 'break-word',
+              }}
+            >
+              {technicalDetail && (
+                <div>
+                  <strong>Thông điệp gốc:</strong> {technicalDetail}
+                </div>
+              )}
+              {uiError.technical_cause && (
+                <div>
+                  <strong>Nguyên nhân kỹ thuật:</strong> {uiError.technical_cause}
+                </div>
+              )}
+              {uiError.trace_id && (
+                <div>
+                  <strong>Trace ID:</strong> {uiError.trace_id}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

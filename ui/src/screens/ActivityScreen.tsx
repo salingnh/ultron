@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { apiClient, toUiError } from '../api/client';
+import { createCoalescedRefresh } from '../api/sse';
 import type { ActivityEntry, Campaign, UiError } from '../api/types';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay } from '../components/ErrorDisplay';
@@ -41,6 +42,9 @@ const SESSION_DECISION_LABELS: Record<string, string> = {
 function formatTargetRef(ref: { seed_id: string } | { canonical_key: string }): string {
   return 'canonical_key' in ref ? ref.canonical_key : `seed:${ref.seed_id}`;
 }
+
+const ACTIVITY_SSE_TYPES = ['job.started.v2', 'job.completed.v2', 'policy.denied.v2'];
+const ACTIVITY_SSE_TYPE_SET = new Set(ACTIVITY_SSE_TYPES);
 
 export const ActivityScreen: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -125,6 +129,9 @@ export const ActivityScreen: React.FC = () => {
     [effectiveCampaignId]
   );
 
+  const loadActivityRef = useRef(loadActivity);
+  loadActivityRef.current = loadActivity;
+
   const loadMore = async () => {
     if (!effectiveCampaignId || !nextCursor || loadingMore) return;
     const reqPath = `/campaigns/${encodeURIComponent(effectiveCampaignId)}/activity?cursor=${encodeURIComponent(nextCursor)}&limit=50`;
@@ -155,19 +162,23 @@ export const ActivityScreen: React.FC = () => {
     loadActivity(true);
   }, [loadActivity]);
 
-  // Listen to campaign SSE events to trigger background refresh of activity timeline
+  // Listen to campaign SSE events to trigger debounced/coalesced refresh of activity timeline
   // (openapi.v2: GET /campaigns/{id}/activity has no dedicated outbox stream, so SSE + polling keeps it fresh)
   useEffect(() => {
     if (!effectiveCampaignId) return;
 
+    const refresher = createCoalescedRefresh(() => loadActivityRef.current(false), 250);
     const sub = apiClient.subscribeCampaignEvents({
       campaignId: effectiveCampaignId,
+      types: ACTIVITY_SSE_TYPES,
       onEvent: (event) => {
         setLastLiveEvent({
           type: event.type,
           time: new Date().toLocaleTimeString('vi-VN'),
         });
-        loadActivity(false);
+        if (ACTIVITY_SSE_TYPE_SET.has(event.type)) {
+          refresher.trigger();
+        }
       },
       onStatusChange: (status) => {
         setSseConnected(status === 'connected');
@@ -175,9 +186,10 @@ export const ActivityScreen: React.FC = () => {
     });
 
     return () => {
+      refresher.cancel();
       sub.close();
     };
-  }, [effectiveCampaignId, loadActivity]);
+  }, [effectiveCampaignId]);
 
   // Poll every 5s while selected campaign is active (CREATED / RUNNING / WAITING)
   useEffect(() => {

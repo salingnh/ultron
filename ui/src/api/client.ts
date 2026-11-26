@@ -22,7 +22,12 @@ import type {
   UpdateCampaignPolicyResponse,
 } from './types';
 import { mockHandlers } from '../mock/handlers';
-import { subscribeToCampaignEvents, type SSEConnection, type SSEOptions } from './sse';
+import {
+  recordCampaignEventId,
+  subscribeToCampaignEvents,
+  type SSEConnection,
+  type SSEOptions,
+} from './sse';
 
 export type { UiError };
 
@@ -396,9 +401,13 @@ export const apiClient = {
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.types && params.types.length > 0) query.set('types', params.types.join(','));
     const qs = query.toString() ? `?${query.toString()}` : '';
-    return request<CampaignEventsResponse>(
+    const res = await request<CampaignEventsResponse>(
       `/campaigns/${encodeURIComponent(campaignId)}/events${qs}`
     );
+    if (res.next_cursor) {
+      recordCampaignEventId(campaignId, res.next_cursor);
+    }
+    return res;
   },
 
   async getCampaignActivity(

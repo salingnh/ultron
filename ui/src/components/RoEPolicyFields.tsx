@@ -25,6 +25,19 @@ export const RoEPolicyFields: React.FC<RoEPolicyFieldsProps> = ({
 }) => {
   const isInternet = values.networkProfile === 'internet';
   const selectedDeniedCaps = new Set(parseLines(values.capabilityDenylistText));
+  const enabledCapabilitiesCount = capabilities.filter(
+    (cap) => !selectedDeniedCaps.has(cap.capability)
+  ).length;
+  const minSessionsForChain = enabledCapabilitiesCount > 0 ? enabledCapabilitiesCount + 1 : null;
+  const parsedMaxSessions = values.maxAgentSessions.trim()
+    ? Number(values.maxAgentSessions.trim())
+    : null;
+  const showLowSessionWarning =
+    minSessionsForChain !== null &&
+    parsedMaxSessions !== null &&
+    Number.isInteger(parsedMaxSessions) &&
+    parsedMaxSessions >= 1 &&
+    parsedMaxSessions < minSessionsForChain;
 
   const toggleCapabilityDeny = (capId: string) => {
     const current = parseLines(values.capabilityDenylistText);
@@ -408,7 +421,7 @@ export const RoEPolicyFields: React.FC<RoEPolicyFieldsProps> = ({
 
           <div className="form-field" style={{ marginBottom: 8 }}>
             <label className="form-label" htmlFor={`${idPrefix}-max-sessions`}>
-              Số phiên agent tối đa
+              Số phiên agent tối đa (tùy chọn)
             </label>
             <input
               id={`${idPrefix}-max-sessions`}
@@ -416,11 +429,38 @@ export const RoEPolicyFields: React.FC<RoEPolicyFieldsProps> = ({
               min={1}
               step={1}
               className="form-input tabular"
+              placeholder="Bỏ trống để dùng mặc định API"
               value={values.maxAgentSessions}
               disabled={disabled}
               aria-invalid={Boolean(clientErrors.maxAgentSessions || serverErrors.maxAgentSessions)}
               onChange={(e) => onChange({ maxAgentSessions: e.target.value })}
             />
+            <span className="form-help">
+              Bỏ trống để API tự áp dụng mặc định (không gửi <code className="mono">max_agent_sessions</code>).{' '}
+              {minSessionsForChain !== null && (
+                <>
+                  Chuỗi {enabledCapabilitiesCount} capability đang bật cần tối thiểu{' '}
+                  <strong className="tabular">{minSessionsForChain}</strong> phiên (1 phiên mỗi bước + 1 phiên kết thúc).
+                </>
+              )}
+            </span>
+            {showLowSessionWarning && (
+              <div
+                role="note"
+                style={{
+                  marginTop: 4,
+                  padding: '4px 8px',
+                  backgroundColor: 'var(--warning-bg)',
+                  border: '1px solid var(--warning)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--warning)',
+                  fontSize: 'var(--text-xs)',
+                }}
+              >
+                Cảnh báo: {parsedMaxSessions} phiên thấp hơn tối thiểu {minSessionsForChain} phiên cho chuỗi{' '}
+                {enabledCapabilitiesCount} capability; chiến dịch có thể hết ngân sách trước khi kết thúc.
+              </div>
+            )}
             <InlineFieldError
               clientError={clientErrors.maxAgentSessions}
               serverError={serverErrors.maxAgentSessions}

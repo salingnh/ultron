@@ -15,7 +15,9 @@ import { CampaignListScreen } from '../screens/CampaignListScreen';
 import { CampaignCreateScreen } from '../screens/CampaignCreateScreen';
 import { CampaignDetailScreen } from '../screens/CampaignDetailScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
+import { JobTableFlowScreen } from '../screens/JobTableFlowScreen';
 import { ApiError, apiClient, getOperatorToken, setOperatorToken } from '../api/client';
+import type { SSEOptions } from '../api/sse';
 import type { Campaign } from '../api/types';
 import { resetMockData } from '../mock/handlers';
 
@@ -684,5 +686,227 @@ describe('Ultron UI Reusable Components', () => {
 
     listSpy.mockRestore();
     detailSpy.mockRestore();
+  });
+
+  it('collapses schema dump behind technical details toggle while keeping short operator summary (D3)', () => {
+    const schemaDumpError = new ApiError(
+      500,
+      {
+        code: 'INTERNAL_ERROR',
+        message:
+          "graph read model violates mcp/graph-queries.v2.schema.json#/$defs/get_asset_neighbors/properties/output: /edges/6/to: None is not valid under each of {'title': 'ip', 'pattern': '^ip:(?:[0-9]{1,3})'}",
+        next_action: 'ESCALATE',
+        trace_id: 'trace-abc-123',
+      },
+      undefined,
+      '/assets/01934f6a-0000-7000-8000-0000000000f3/graph?campaign_id=01934f6a-0000-7000-8000-000000000001'
+    );
+
+    render(<ErrorDisplay error={schemaDumpError} onRetry={() => {}} />);
+
+    expect(screen.getByText('Mã lỗi: INTERNAL_ERROR')).toBeInTheDocument();
+    expect(screen.getByText('HTTP 500')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Không thể dựng đồ thị tài sản vì dữ liệu trả về từ máy chủ không khớp hợp đồng/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Đường dẫn \(path\): \/assets\//)).toBeInTheDocument();
+    expect(screen.getByText(/ESCALATE/)).toBeInTheDocument();
+
+    // Schema regex dump must NOT be visible by default
+    expect(screen.queryByText(/None is not valid under each of/)).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole('button', { name: /Xem chi tiết kỹ thuật/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(/None is not valid under each of/)).toBeInTheDocument();
+    expect(screen.getByText(/trace-abc-123/)).toBeInTheDocument();
+  });
+
+  it('omits max_agent_sessions by default and shows capability-derived minimum hint (D4)', async () => {
+    resetMockData();
+    const createSpy = vi.spyOn(apiClient, 'createCampaign');
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/campaigns/new']}>
+          <Routes>
+            <Route path="/campaigns/new" element={<CampaignCreateScreen />} />
+            <Route path="/campaigns/:id" element={<div>Created Detail Screen</div>} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      const sessionsInput = screen.getByLabelText(/Số phiên agent tối đa/) as HTMLInputElement;
+      expect(sessionsInput.value).toBe('');
+
+      // Wait for capabilities (4 capabilities in mock) to render the derived minimum hint (4 + 1 = 5)
+      expect(await screen.findByText(/Chuỗi 4 capability đang bật cần tối thiểu/)).toBeInTheDocument();
+
+      // Entering < 5 shows non-blocking warning hint
+      fireEvent.change(sessionsInput, { target: { value: '4' } });
+      expect(screen.getByText(/Cảnh báo: 4 phiên thấp hơn tối thiểu 5 phiên/)).toBeInTheDocument();
+
+      // Clear back to blank -> payload omits max_agent_sessions so API default applies
+      fireEvent.change(sessionsInput, { target: { value: '' } });
+      fireEvent.change(screen.getByLabelText(/Tên chiến dịch/), { target: { value: 'Default Session Cap' } });
+      fireEvent.change(screen.getByLabelText(/Mục tiêu tác chiến/), { target: { value: 'Run full chain' } });
+      fireEvent.change(screen.getByLabelText(/Tên miền \(targets\.domains/), {
+        target: { value: 'lab.aegis.test' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /Tạo chiến dịch/ }));
+      expect(await screen.findByText('Created Detail Screen')).toBeInTheDocument();
+
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      const sentPayload = createSpy.mock.calls[0][0];
+      expect(sentPayload.policy.budget?.max_agent_sessions).toBeUndefined();
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
+
+  it('makes O(1) GETs on open when SSE replays 355 historical events across campaign screens (D1)', async () => {
+    resetMockData();
+    vi.useFakeTimers();
+
+    const campaignId = '01934f6a-0000-7000-8000-000000000003';
+    const getCampaignSpy = vi.spyOn(apiClient, 'getCampaign');
+    const getActivitySpy = vi.spyOn(apiClient, 'getCampaignActivity');
+    const listJobsSpy = vi.spyOn(apiClient, 'listJobs');
+    const getFlowSpy = vi.spyOn(apiClient, 'getCampaignFlow');
+
+    const capturedSubs: SSEOptions[] = [];
+    const subSpy = vi.spyOn(apiClient, 'subscribeCampaignEvents').mockImplementation((opts) => {
+      capturedSubs.push(opts);
+      opts.onStatusChange?.('connected');
+      return { close: vi.fn(), getLastEventId: () => '355' };
+    });
+
+    const emitBurst = (count: number) => {
+      const active = capturedSubs[capturedSubs.length - 1];
+      for (let i = 1; i <= count; i++) {
+        const type = i % 5 === 0 ? 'job.completed.v2' : 'observation.changed.v2';
+        active?.onEvent({
+          id: String(i),
+          type,
+          data: { event_id: `ev-${i}`, type, payload: {} },
+          raw: '{}',
+          timestamp: Date.now(),
+        });
+      }
+    };
+
+    try {
+      // 1. CampaignDetailScreen
+      const detailView = render(
+        <MemoryRouter initialEntries={[`/campaigns/${campaignId}`]}>
+          <Routes>
+            <Route path="/campaigns/:id" element={<CampaignDetailScreen />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      expect(getCampaignSpy).toHaveBeenCalledTimes(1);
+      emitBurst(355);
+      await vi.advanceTimersByTimeAsync(350);
+      expect(getCampaignSpy).toHaveBeenCalledTimes(2);
+      detailView.unmount();
+
+      // 2. ActivityScreen
+      const activityView = render(
+        <MemoryRouter initialEntries={[`/activity?campaign_id=${campaignId}`]}>
+          <Routes>
+            <Route path="/activity" element={<ActivityScreen />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      expect(getActivitySpy).toHaveBeenCalledTimes(1);
+      emitBurst(355);
+      await vi.advanceTimersByTimeAsync(350);
+      expect(getActivitySpy).toHaveBeenCalledTimes(2);
+      activityView.unmount();
+
+      // 3. JobTableFlowScreen (also verify irrelevant observation events trigger 0 extra GETs and filter change does not reopen SSE)
+      const jobsView = render(
+        <MemoryRouter initialEntries={[`/jobs?campaign_id=${campaignId}`]}>
+          <Routes>
+            <Route path="/jobs" element={<JobTableFlowScreen />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      const subCallsBeforeFilter = subSpy.mock.calls.length;
+      expect(listJobsSpy).toHaveBeenCalledTimes(1);
+      expect(getFlowSpy).toHaveBeenCalledTimes(1);
+
+      // Irrelevant events only -> 0 extra GETs
+      const activeJobSub = capturedSubs[capturedSubs.length - 1];
+      for (let i = 1; i <= 100; i++) {
+        activeJobSub?.onEvent({
+          id: String(400 + i),
+          type: 'vulnerability.matched.v2',
+          data: { event_id: `v-${i}`, type: 'vulnerability.matched.v2', payload: {} },
+          raw: '{}',
+          timestamp: Date.now(),
+        });
+      }
+      await vi.advanceTimersByTimeAsync(350);
+      expect(listJobsSpy).toHaveBeenCalledTimes(1);
+      expect(getFlowSpy).toHaveBeenCalledTimes(1);
+
+      // Relevant burst of 355 events -> O(1) coalesced refetch
+      emitBurst(355);
+      await vi.advanceTimersByTimeAsync(350);
+      expect(listJobsSpy).toHaveBeenCalledTimes(2);
+      expect(getFlowSpy).toHaveBeenCalledTimes(2);
+
+      // Changing status filter must not reopen SSE subscription
+      fireEvent.change(screen.getByLabelText('Lọc trạng thái job'), { target: { value: 'RUNNING' } });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(subSpy.mock.calls.length).toBe(subCallsBeforeFilter);
+      jobsView.unmount();
+    } finally {
+      vi.useRealTimers();
+      subSpy.mockRestore();
+      getCampaignSpy.mockRestore();
+      getActivitySpy.mockRestore();
+      listJobsSpy.mockRestore();
+      getFlowSpy.mockRestore();
+    }
+  });
+
+  it('renders non-empty React Flow MiniMap nodes in JobTableFlowScreen flow view (D7)', async () => {
+    resetMockData();
+    const origResizeObserver = globalThis.ResizeObserver;
+    if (typeof globalThis.ResizeObserver === 'undefined') {
+      globalThis.ResizeObserver = class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      };
+    }
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/jobs?campaign_id=01934f6a-0000-7000-8000-000000000001']}>
+          <Routes>
+            <Route path="/jobs" element={<JobTableFlowScreen />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      const flowBtn = await screen.findByRole('button', { name: /Đồ thị Luồng \(React Flow\)/ });
+      fireEvent.click(flowBtn);
+
+      const minimap = await screen.findByTestId('rf__minimap');
+      expect(minimap).toBeInTheDocument();
+      const minimapNodes = minimap.querySelectorAll('.react-flow__minimap-node');
+      expect(minimapNodes.length).toBeGreaterThan(0);
+    } finally {
+      globalThis.ResizeObserver = origResizeObserver;
+    }
   });
 });
