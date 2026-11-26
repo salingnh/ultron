@@ -5,10 +5,52 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, confloat, conint
 
 from ..common import ids_v2_schema
 from . import campaign_create_v2_schema, roe_policy_v2_schema
+
+
+class Limits(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    max_duration_hours: conint(ge=1)
+    max_llm_cost_usd: confloat(ge=0.0) | None = None
+    max_llm_tokens: conint(ge=0) | None = None
+    max_jobs: conint(ge=1) | None = None
+    max_agent_sessions: conint(ge=1) | None = None
+
+
+class Used(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    hours: confloat(ge=0.0)
+    llm_cost_usd: confloat(ge=0.0)
+    llm_tokens: conint(ge=0)
+    jobs: conint(ge=0)
+    agent_sessions: conint(ge=0)
+
+
+class Remaining(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    hours: confloat(ge=0.0)
+    llm_cost_usd: confloat(ge=0.0) | None = None
+    llm_tokens: conint(ge=0) | None = None
+    jobs: conint(ge=0) | None = None
+    agent_sessions: conint(ge=0) | None = None
+
+
+class Budget(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    limits: Limits
+    used: Used
+    remaining: Remaining
 
 
 class BudgetRemaining(BaseModel):
@@ -25,6 +67,8 @@ class Counters(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    jobs_by_status: dict[str, conint(ge=0)] | None = None
+    assets_by_kind: dict[str, conint(ge=0)] | None = None
     jobs_total: int | None = None
     jobs_running: int | None = None
     jobs_failed: int | None = None
@@ -63,5 +107,6 @@ class Campaign(BaseModel):
     created_at: ids_v2_schema.Timestamp
     started_at: ids_v2_schema.Timestamp | None = None
     ended_at: ids_v2_schema.Timestamp | None = None
+    budget: Budget | None = None
     budget_remaining: BudgetRemaining | None = None
     counters: Counters | None = None

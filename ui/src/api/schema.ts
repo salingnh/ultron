@@ -602,6 +602,29 @@ export interface components {
             created_at: components["schemas"]["Timestamp"];
             started_at?: components["schemas"]["Timestamp"];
             ended_at?: components["schemas"]["Timestamp"];
+            budget?: {
+                limits: {
+                    max_duration_hours: number;
+                    max_llm_cost_usd?: number;
+                    max_llm_tokens?: number;
+                    max_jobs?: number;
+                    max_agent_sessions?: number;
+                };
+                used: {
+                    hours: number;
+                    llm_cost_usd: number;
+                    llm_tokens: number;
+                    jobs: number;
+                    agent_sessions: number;
+                };
+                remaining: {
+                    hours: number;
+                    llm_cost_usd?: number;
+                    llm_tokens?: number;
+                    jobs?: number;
+                    agent_sessions?: number;
+                };
+            };
             budget_remaining?: {
                 llm_cost_usd?: number;
                 llm_tokens?: number;
@@ -609,6 +632,12 @@ export interface components {
                 hours?: number;
             };
             counters?: {
+                jobs_by_status?: {
+                    [key: string]: number;
+                };
+                assets_by_kind?: {
+                    [key: string]: number;
+                };
                 jobs_total?: number;
                 jobs_running?: number;
                 jobs_failed?: number;
