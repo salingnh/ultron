@@ -108,6 +108,13 @@ for (const theme of ['light', 'dark'] as const) {
         expect(box?.height ?? 0).toBeLessThan(36);
       }
 
+      // F2: verify contract budget & counters render on list
+      if ((await firstDetailBtn.count()) > 0) {
+        await expect(page.locator('table[aria-label="Bảng danh sách chiến dịch"]')).toContainText('tài sản');
+        await expect(page.getByText('Chưa có dữ liệu ngân sách')).toBeHidden();
+        await expect(page.getByText('Chưa có bộ đếm')).toBeHidden();
+      }
+
       // F6: verify TokenConfigModal focuses input and closes on Escape
       await page.getByRole('button', { name: 'Cấu hình Operator Bearer Token' }).click();
       const tokenInput = page.getByLabel('Nhập Operator Token');
@@ -142,6 +149,8 @@ for (const theme of ['light', 'dark'] as const) {
       await page.goto(`/campaigns/${campaignId}`);
       await expect(page.getByText('Mục tiêu đầu vào (Target Seeds)')).toBeVisible();
       await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
+      await expect(page.getByText('Ngân sách thực thi (Đã dùng / Giới hạn & Còn lại)')).toBeVisible();
+      await expect(page.getByText('Bộ đếm Job & Tài sản')).toBeVisible();
       await assertNoHorizontalOverflow(page);
       await captureScreen(page, `02-campaign-detail-${theme}.png`);
 
@@ -263,7 +272,9 @@ test.describe('Ultron Operations UI - 390px Responsive Verification', () => {
 
       await page.goto(`/campaigns/${campaignId}`);
       await expect(page.getByText('Chính sách Thực thi RoE (Policy)')).toBeVisible();
+      await expect(page.getByText('Ngân sách & Bộ đếm Tác chiến')).toBeVisible();
       await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `09e-mobile-390-campaign-detail-${theme}.png`);
 
       await page.goto(`/jobs?campaign_id=${campaignId}`);
       await expect(page.getByText('Kế hoạch & Luồng thực thi Job')).toBeVisible();

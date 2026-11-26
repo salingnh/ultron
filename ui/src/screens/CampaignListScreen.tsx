@@ -6,6 +6,7 @@ import type { Campaign, CampaignStatus, UiError } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay } from '../components/ErrorDisplay';
+import { assetKindLabel, summarizeAssetCounters, summarizeJobCounters } from '../utils/campaignStats';
 
 export const CampaignListScreen: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -128,8 +129,8 @@ export const CampaignListScreen: React.FC = () => {
                 <th>Chiến dịch</th>
                 <th>Trạng thái</th>
                 <th>Phiên bản RoE</th>
-                <th>Ngân sách còn lại</th>
-                <th>Bộ đếm tài sản & Job</th>
+                <th>Ngân sách (Dùng / Trần)</th>
+                <th>Bộ đếm tài sản &amp; Job</th>
                 <th>Thời điểm tạo</th>
                 <th style={{ textAlign: 'right' }}>Thao tác</th>
               </tr>
@@ -158,11 +159,56 @@ export const CampaignListScreen: React.FC = () => {
                     <span className="brand-badge">{camp.policy_version}</span>
                   </td>
                   <td>
-                    {camp.budget_remaining &&
-                    (camp.budget_remaining.llm_cost_usd !== undefined ||
-                      camp.budget_remaining.llm_tokens !== undefined ||
-                      camp.budget_remaining.hours !== undefined ||
-                      camp.budget_remaining.jobs !== undefined) ? (
+                    {camp.budget ? (
+                      <div style={{ fontSize: 'var(--text-xs)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span className="tabular">
+                          <Clock size={11} style={{ display: 'inline', verticalAlign: -1, marginRight: 3 }} />
+                          Còn{' '}
+                          {typeof camp.budget.remaining?.hours === 'number'
+                            ? `${camp.budget.remaining.hours.toFixed(1)}h`
+                            : '—'}{' '}
+                          /{' '}
+                          {typeof camp.budget.limits?.max_duration_hours === 'number'
+                            ? `${camp.budget.limits.max_duration_hours}h`
+                            : '—'}
+                        </span>
+                        <span className="tabular" style={{ color: 'var(--muted)' }}>
+                          {typeof camp.budget.used?.llm_cost_usd === 'number'
+                            ? `$${camp.budget.used.llm_cost_usd.toFixed(2)}`
+                            : '—'}
+                          {typeof camp.budget.limits?.max_llm_cost_usd === 'number'
+                            ? ` / $${camp.budget.limits.max_llm_cost_usd.toFixed(2)}`
+                            : ''}
+                          {' · '}
+                          {typeof camp.budget.used?.llm_tokens === 'number'
+                            ? camp.budget.used.llm_tokens.toLocaleString('en-US')
+                            : '—'}
+                          {typeof camp.budget.limits?.max_llm_tokens === 'number'
+                            ? `/${camp.budget.limits.max_llm_tokens.toLocaleString('en-US')}`
+                            : ''}{' '}
+                          tok
+                        </span>
+                        <span className="tabular" style={{ color: 'var(--muted)' }}>
+                          {typeof camp.budget.used?.jobs === 'number' ? camp.budget.used.jobs : '—'}
+                          {typeof camp.budget.limits?.max_jobs === 'number'
+                            ? `/${camp.budget.limits.max_jobs}`
+                            : ''}{' '}
+                          jobs
+                          {' · '}
+                          {typeof camp.budget.used?.agent_sessions === 'number'
+                            ? camp.budget.used.agent_sessions
+                            : '—'}
+                          {typeof camp.budget.limits?.max_agent_sessions === 'number'
+                            ? `/${camp.budget.limits.max_agent_sessions}`
+                            : ''}{' '}
+                          phiên
+                        </span>
+                      </div>
+                    ) : camp.budget_remaining &&
+                      (camp.budget_remaining.llm_cost_usd !== undefined ||
+                        camp.budget_remaining.llm_tokens !== undefined ||
+                        camp.budget_remaining.hours !== undefined ||
+                        camp.budget_remaining.jobs !== undefined) ? (
                       <div style={{ fontSize: 'var(--text-xs)', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {camp.budget_remaining.llm_cost_usd !== undefined && (
                           <span className="tabular">
@@ -194,20 +240,43 @@ export const CampaignListScreen: React.FC = () => {
                     )}
                   </td>
                   <td>
-                    {camp.counters ? (
-                      <div style={{ fontSize: 'var(--text-xs)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <span title="Tổng số job / đang chạy" className="tabular">
-                          <strong>{camp.counters.jobs_running ?? '—'}</strong> running /{' '}
-                          {camp.counters.jobs_total ?? '—'} total
-                        </span>
-                        <span style={{ color: 'var(--muted)' }}>•</span>
-                        <span title="Số tài sản phát hiện" className="tabular" style={{ color: 'var(--success)', fontWeight: 600 }}>
-                          {camp.counters.assets ?? '—'} assets
-                        </span>
-                      </div>
-                    ) : (
-                      <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Chưa có bộ đếm</span>
-                    )}
+                    {(() => {
+                      const jobSummary = summarizeJobCounters(camp.counters);
+                      const assetSummary = summarizeAssetCounters(camp.counters);
+                      if (!jobSummary.hasData && !assetSummary.hasData) {
+                        return (
+                          <span style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>Chưa có bộ đếm</span>
+                        );
+                      }
+                      return (
+                        <div style={{ fontSize: 'var(--text-xs)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span title="Tổng số job" className="tabular">
+                              <strong>{jobSummary.total ?? '—'}</strong> jobs
+                              {jobSummary.byStatus.length > 0
+                                ? ` (${jobSummary.byStatus.map((s) => `${s.status}: ${s.count}`).join(', ')})`
+                                : jobSummary.running !== undefined
+                                  ? ` (${jobSummary.running} running)`
+                                  : ''}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span
+                              title="Số tài sản phát hiện theo loại"
+                              className="tabular"
+                              style={{ color: 'var(--success)', fontWeight: 600 }}
+                            >
+                              {assetSummary.total ?? '—'} tài sản
+                            </span>
+                            {assetSummary.byKind.length > 0 && (
+                              <span className="tabular" style={{ color: 'var(--muted)' }}>
+                                ({assetSummary.byKind.map((k) => `${assetKindLabel(k.kind)}: ${k.count}`).join(' · ')})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td>
                     <span className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>

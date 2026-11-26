@@ -31,6 +31,10 @@ export const mockCampaigns: Campaign[] = [
       max_parallel_jobs: 5,
       max_duration_hours: 48,
       budget: {
+        max_llm_cost_usd: 150,
+        max_llm_tokens: 1000000,
+        max_jobs: 50,
+        max_agent_sessions: 20,
         idle_cycles_before_pause: 3,
       },
       rate_limits: {
@@ -41,21 +45,41 @@ export const mockCampaigns: Campaign[] = [
       },
       target_denylist: ['production-vault.internal.example'],
     },
-    budget_remaining: {
-      llm_cost_usd: 142.5,
-      llm_tokens: 850000,
-      jobs: 38,
-      hours: 36.5,
+    budget: {
+      limits: {
+        max_duration_hours: 48,
+        max_llm_cost_usd: 150,
+        max_llm_tokens: 1000000,
+        max_jobs: 50,
+        max_agent_sessions: 20,
+      },
+      used: {
+        hours: 11.5,
+        llm_cost_usd: 7.5,
+        llm_tokens: 150000,
+        jobs: 12,
+        agent_sessions: 3,
+      },
+      remaining: {
+        hours: 36.5,
+        llm_cost_usd: 142.5,
+        llm_tokens: 850000,
+        jobs: 38,
+        agent_sessions: 17,
+      },
     },
     counters: {
-      jobs_total: 12,
-      jobs_running: 2,
-      jobs_failed: 1,
-      policy_denials: 0,
-      assets: 28,
-      findings_open: 4,
-      agent_sessions: 3,
-      graph_revision: 14,
+      jobs_by_status: {
+        SUCCEEDED: 9,
+        RUNNING: 2,
+        FAILED: 1,
+      },
+      assets_by_kind: {
+        domain: 12,
+        ip: 8,
+        service: 6,
+        application: 2,
+      },
     },
   },
   {
@@ -83,21 +107,31 @@ export const mockCampaigns: Campaign[] = [
         idle_cycles_before_pause: 3,
       },
     },
-    budget_remaining: {
-      llm_cost_usd: 80.0,
-      llm_tokens: 420000,
-      jobs: 20,
-      hours: 18.0,
+    budget: {
+      limits: {
+        max_duration_hours: 24,
+      },
+      used: {
+        hours: 6.0,
+        llm_cost_usd: 2.15,
+        llm_tokens: 45000,
+        jobs: 6,
+        agent_sessions: 2,
+      },
+      remaining: {
+        hours: 18.0,
+      },
     },
     counters: {
-      jobs_total: 6,
-      jobs_running: 0,
-      jobs_failed: 0,
-      policy_denials: 1,
-      assets: 14,
-      findings_open: 2,
-      agent_sessions: 2,
-      graph_revision: 8,
+      jobs_by_status: {
+        SUCCEEDED: 5,
+        WAITING: 1,
+      },
+      assets_by_kind: {
+        domain: 8,
+        ip: 4,
+        service: 2,
+      },
     },
   },
   {
@@ -119,24 +153,39 @@ export const mockCampaigns: Campaign[] = [
       max_parallel_jobs: 2,
       max_duration_hours: 30,
       budget: {
+        max_llm_cost_usd: 30,
+        max_jobs: 15,
         idle_cycles_before_pause: 3,
       },
     },
-    budget_remaining: {
-      llm_cost_usd: 25.0,
-      llm_tokens: 150000,
-      jobs: 5,
-      hours: 5.0,
+    budget: {
+      limits: {
+        max_duration_hours: 30,
+        max_llm_cost_usd: 30,
+        max_jobs: 15,
+      },
+      used: {
+        hours: 25.0,
+        llm_cost_usd: 5.0,
+        llm_tokens: 150000,
+        jobs: 8,
+        agent_sessions: 1,
+      },
+      remaining: {
+        hours: 5.0,
+        llm_cost_usd: 25.0,
+        jobs: 7,
+      },
     },
     counters: {
-      jobs_total: 8,
-      jobs_running: 0,
-      jobs_failed: 0,
-      policy_denials: 0,
-      assets: 19,
-      findings_open: 1,
-      agent_sessions: 1,
-      graph_revision: 11,
+      jobs_by_status: {
+        SUCCEEDED: 8,
+      },
+      assets_by_kind: {
+        domain: 11,
+        ip: 5,
+        service: 3,
+      },
     },
   },
 ];

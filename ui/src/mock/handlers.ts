@@ -31,6 +31,7 @@ import type {
   AppError,
 } from '../api/types';
 import { ApiError } from '../api/client';
+import { buildBudgetFromPolicy } from '../utils/campaignStats';
 
 // In-memory clones for state mutation during interactive testing
 let campaigns: Campaign[] = JSON.parse(JSON.stringify(mockCampaigns));
@@ -150,6 +151,7 @@ export const mockHandlers = {
     const scopeId = makeUuidV7(1000 + campaignSeq);
     const policyVersion = `roe-${policySeq}`;
 
+    const clonedPolicy = JSON.parse(JSON.stringify(payload.policy));
     const newCampaign: Campaign = {
       campaign_id: campaignId,
       name: payload.name.trim(),
@@ -158,8 +160,13 @@ export const mockHandlers = {
       policy_version: policyVersion,
       scope_id: scopeId,
       created_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-      policy: JSON.parse(JSON.stringify(payload.policy)),
+      policy: clonedPolicy,
       targets: JSON.parse(JSON.stringify(payload.targets)),
+      counters: {
+        jobs_by_status: {},
+        assets_by_kind: {},
+      },
+      budget: buildBudgetFromPolicy(clonedPolicy),
     };
     campaigns = [newCampaign, ...campaigns];
 
@@ -222,8 +229,10 @@ export const mockHandlers = {
 
     policySeq += 1;
     const version = `roe-${policySeq}`;
-    campaign.policy = JSON.parse(JSON.stringify(payload.policy));
+    const clonedPolicy = JSON.parse(JSON.stringify(payload.policy));
+    campaign.policy = clonedPolicy;
     campaign.policy_version = version;
+    campaign.budget = buildBudgetFromPolicy(clonedPolicy, campaign.budget?.used);
 
     const response: UpdateCampaignPolicyResponse = { policy_version: version };
     idempotencyStore.set(storeKey, { fingerprint, response });

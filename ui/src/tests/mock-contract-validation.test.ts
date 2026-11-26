@@ -135,6 +135,11 @@ describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
       const valid = campaignSchema!(campaign);
       expect(campaignSchema!.errors, `Campaign ${campaign.campaign_id} validation failed`).toBeNull();
       expect(valid).toBe(true);
+      expect(campaign.budget?.limits.max_duration_hours).toBeGreaterThanOrEqual(1);
+      expect(campaign.budget?.used).toBeDefined();
+      expect(campaign.budget?.remaining.hours).toBeGreaterThanOrEqual(0);
+      expect(campaign.counters?.jobs_by_status).toBeDefined();
+      expect(campaign.counters?.assets_by_kind).toBeDefined();
     }
   });
 

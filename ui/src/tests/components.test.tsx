@@ -16,6 +16,7 @@ import { CampaignCreateScreen } from '../screens/CampaignCreateScreen';
 import { CampaignDetailScreen } from '../screens/CampaignDetailScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
 import { ApiError, apiClient, getOperatorToken, setOperatorToken } from '../api/client';
+import type { Campaign } from '../api/types';
 import { resetMockData } from '../mock/handlers';
 
 describe('Ultron UI Reusable Components', () => {
@@ -582,5 +583,106 @@ describe('Ultron UI Reusable Components', () => {
     });
     expect(screen.getByText('network.discover_services')).toBeInTheDocument();
     expect(screen.queryByText('dns.resolve')).not.toBeInTheDocument();
+  });
+
+  it('renders contract budget {limits,used,remaining} and counters {jobs_by_status,assets_by_kind} on list and detail (F2)', async () => {
+    resetMockData();
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/campaigns']}>
+        <Routes>
+          <Route path="/campaigns" element={<CampaignListScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Chiến dịch Recon Hạ tầng Vận hành Q4')).toBeInTheDocument();
+    expect(screen.getByText(/Còn 36\.5h \/ 48h/)).toBeInTheDocument();
+    expect(screen.getByText(/\$7\.50 \/ \$150\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/12\/50 jobs · 3\/20 phiên/)).toBeInTheDocument();
+    expect(screen.getAllByTitle('Tổng số job')[0]).toHaveTextContent(/12\s+jobs/);
+    expect(screen.getByText(/28\s+tài sản/)).toBeInTheDocument();
+    expect(screen.getByText(/domain: 12 · IP: 8 · service: 6 · app: 2/)).toBeInTheDocument();
+    unmount();
+
+    // Detail screen with partial/uncapped budget (01934f6a-...-0002 only caps max_duration_hours)
+    render(
+      <MemoryRouter initialEntries={['/campaigns/01934f6a-0000-7000-8000-000000000002']}>
+        <Routes>
+          <Route path="/campaigns/:id" element={<CampaignDetailScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Ngân sách & Bộ đếm Tác chiến')).toBeInTheDocument();
+    expect(screen.getByText('Ngân sách thực thi (Đã dùng / Giới hạn & Còn lại)')).toBeInTheDocument();
+    expect(screen.getByText('6.00h')).toBeInTheDocument();
+    expect(screen.getByText('Còn lại: 18.00h')).toBeInTheDocument();
+    expect(screen.getAllByText('Không giới hạn trần RoE').length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByText('Bộ đếm Job & Tài sản')).toBeInTheDocument();
+    expect(screen.getByText('SUCCEEDED: 5')).toBeInTheDocument();
+    expect(screen.getByText('WAITING: 1')).toBeInTheDocument();
+    expect(screen.getByText('domain: 8')).toBeInTheDocument();
+    expect(screen.getByText('IP: 4')).toBeInTheDocument();
+    expect(screen.getByText('service: 2')).toBeInTheDocument();
+  });
+
+  it('never fabricates numbers when budget or counters fields are absent (F2)', async () => {
+    const partialCampaign: Campaign = {
+      campaign_id: '01934f6a-0000-7000-8000-000000000099',
+      name: 'Chiến dịch thiếu trường ngân sách',
+      status: 'CREATED',
+      policy_version: 'roe-1',
+      scope_id: '01934f6a-0000-7000-8000-0000000000a9',
+      created_at: '2026-11-26T00:00:00Z',
+      budget: {
+        limits: {
+          max_duration_hours: 12,
+          max_llm_cost_usd: 50,
+        },
+        used: {
+          hours: 1,
+          llm_cost_usd: 0.5,
+          llm_tokens: 1000,
+          jobs: 2,
+          agent_sessions: 1,
+        },
+        remaining: {
+          hours: 11,
+        },
+      },
+    };
+    const listSpy = vi.spyOn(apiClient, 'listCampaigns').mockResolvedValueOnce({
+      items: [partialCampaign],
+      next_cursor: undefined,
+    });
+    const detailSpy = vi.spyOn(apiClient, 'getCampaign').mockResolvedValueOnce(partialCampaign);
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/campaigns']}>
+        <Routes>
+          <Route path="/campaigns" element={<CampaignListScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Chiến dịch thiếu trường ngân sách')).toBeInTheDocument();
+    expect(screen.getByText('Chưa có bộ đếm')).toBeInTheDocument();
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/campaigns/01934f6a-0000-7000-8000-000000000099']}>
+        <Routes>
+          <Route path="/campaigns/:id" element={<CampaignDetailScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Chiến dịch thiếu trường ngân sách')).toBeInTheDocument();
+    expect(screen.getByText('Chưa có dữ liệu bộ đếm')).toBeInTheDocument();
+    expect(screen.getByText('Còn lại: —')).toBeInTheDocument();
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+
+    listSpy.mockRestore();
+    detailSpy.mockRestore();
   });
 });

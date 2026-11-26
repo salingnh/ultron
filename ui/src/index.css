@@ -614,7 +614,13 @@ table.data-table tr:hover td {
   box-shadow: var(--shadow-lg);
 }
 
-/* Forms */
+/* Forms & Stats Grids */
+.stats-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .form-grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -795,6 +801,10 @@ table.data-table tr:hover td {
 
   .flow-minimap {
     display: none;
+  }
+
+  .stats-grid-2 {
+    grid-template-columns: 1fr;
   }
 
   .first-run-banner {
