@@ -124,12 +124,31 @@ class JobLayout:
         for directory in (self.output, self.input, self.audit):
             directory.mkdir(parents=True, exist_ok=True)
         # The job runs as uid/gid 65534 (contract), which is not the owner of these host
-        # directories. They are private to the job, and the sandbox user must be able to write its
-        # output and the broker its audit line, so both are world-writable (SELinux `Z` already
-        # relabels them for this container only).
+        # directories. `in/` must stay readable (0755 dir, 0644 files) regardless of umask, and
+        # `out/`/`audit/` must be writable (0777) (SELinux `Z` relabels them for this container).
+        self.ensure_input_permissions()
         for writable in (self.output, self.audit):
             writable.chmod(0o777)
         return self
+
+    def ensure_input_permissions(self) -> None:
+        """Keep `in/` at 0755 and its files at 0644 so uid 65534 can read under any umask."""
+        self.input.mkdir(parents=True, exist_ok=True)
+        self.input.chmod(0o755)
+        for entry in self.input.iterdir():
+            if entry.is_dir():
+                entry.chmod(0o755)
+            elif entry.is_file():
+                entry.chmod(0o644)
+
+    def write_input(self, filename: str, content: str) -> Path:
+        """Write one job input file into `in/` with mode 0644 regardless of process umask."""
+        self.input.mkdir(parents=True, exist_ok=True)
+        self.input.chmod(0o755)
+        path = self.input / filename
+        path.write_text(content, encoding="utf-8")
+        path.chmod(0o644)
+        return path
 
 
 @dataclass
@@ -660,6 +679,7 @@ class PodmanRunner(ContainerRunner):
         for key, value in self._egress_env(spec).items():
             argv += ["--env", f"{key}={value}"]
         argv += ["--mount", f"type=bind,src={layout.output},dst=/out,rw,Z"]
+        layout.ensure_input_permissions()
         if any(layout.input.iterdir()):
             argv += ["--mount", f"type=bind,src={layout.input},dst=/in,ro,Z"]
         # A deployment-profile job joins the profile's own network (`run`: the lab) and never

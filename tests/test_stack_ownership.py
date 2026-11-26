@@ -224,3 +224,121 @@ def test_the_dev_scripts_call_the_ownership_guard(script: str) -> None:
 def test_the_lab_scripts_apply_the_ownership_rule(script: str, guard: str) -> None:
     body = (REPO / "scripts/lab" / script).read_text(encoding="utf-8")
     assert guard in body
+
+
+def test_dev_lib_derives_lab_network_from_aegis_lab_project(tmp_path: Path) -> None:
+    default = _run(tmp_path, 'echo "$LAB_PROJECT/$LAB_NETWORK"')
+    assert default.returncode == 0, default.stderr
+    assert default.stdout.strip() == "aegis-lab/aegis-lab-lab"
+
+    custom = _run(
+        tmp_path,
+        'echo "$LAB_PROJECT/$LAB_NETWORK"',
+        env={"AEGIS_LAB_PROJECT": "aegis-lab-worker-b"},
+    )
+    assert custom.returncode == 0, custom.stderr
+    assert custom.stdout.strip() == "aegis-lab-worker-b/aegis-lab-worker-b-lab"
+
+
+def test_run_local_and_stop_local_load_env_before_project_checks() -> None:
+    run_local = (REPO / "scripts/dev/run-local.sh").read_text(encoding="utf-8")
+    stop_local = (REPO / "scripts/dev/stop-local.sh").read_text(encoding="utf-8")
+    # B4: load_env must run before dev_project_present / lab_project_present so AEGIS_DEV_PROJECT
+    # from .env is active when recording stack.started / lab.started.
+    load_idx = run_local.index("load_env")
+    dev_check_idx = run_local.index("dev_project_present &&")
+    assert load_idx < dev_check_idx
+    assert "UPLINK_MARKER=" in run_local
+    # stop-local must load .env before checking DEV_PROJECT / LAB_PROJECT.
+    assert "load_env" in stop_local
+    assert stop_local.index("load_env") < stop_local.index('"$STATE_DIR/stack.started"')
+
+
+def test_vulnlab_guard_skips_exited_and_created_projects_and_refuses_running(
+    tmp_path: Path,
+) -> None:
+    vulnlab_lib = REPO / "scripts/vulnlab/lib.sh"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "podman"
+    stub.write_text(
+        """#!/usr/bin/env bash
+case "$1" in
+  ps)
+    printf '%b' "${STUB_PS_OUTPUT:-}"
+    ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    base_env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "AEGIS_VULNLAB_PROJECT": "aegis-vulnlab-wt",
+    }
+
+    # Exited + created containers from a TTL-expired foreign project must NOT block.
+    exited_only = subprocess.run(
+        ["bash", "-c", f'. "{vulnlab_lib}"; set_vulnlab_names; require_no_other_vulnlab_stack'],
+        capture_output=True,
+        text=True,
+        env={
+            **base_env,
+            "STUB_PS_OUTPUT": (
+                "aegis-vulnlab-old\\texited\\t/tmp/old/deploy/vulnlab\\t\\n"
+                "aegis-vulnlab-old\\tcreated\\t/tmp/old/deploy/vulnlab\\t\\n"
+            ),
+        },
+        timeout=30,
+        check=False,
+    )
+    assert exited_only.returncode == 0, exited_only.stderr
+    combined = exited_only.stdout + exited_only.stderr
+    assert "aegis-vulnlab-old" in combined
+    assert "/tmp/old/deploy/vulnlab" in combined
+
+    # A running container in a foreign vulnlab project MUST still refuse.
+    running = subprocess.run(
+        ["bash", "-c", f'. "{vulnlab_lib}"; set_vulnlab_names; require_no_other_vulnlab_stack'],
+        capture_output=True,
+        text=True,
+        env={
+            **base_env,
+            "STUB_PS_OUTPUT": ("aegis-vulnlab-live\\trunning\\t/tmp/live/deploy/vulnlab\\t\\n"),
+        },
+        timeout=30,
+        check=False,
+    )
+    assert running.returncode == 1
+    assert "aegis-vulnlab-live" in running.stderr
+
+
+def test_demo_support_derives_neo4j_container_from_aegis_dev_project(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import sys
+
+    sys.path.insert(0, str(REPO / "scripts/demo"))
+    import support as demo_support
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="aegis-dev-wt-neo4j\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.delenv("AEGIS_NEO4J_CONTAINER", raising=False)
+    monkeypatch.setenv("AEGIS_DEV_PROJECT", "aegis-dev-wt")
+    assert demo_support._neo4j_container() == "aegis-dev-wt-neo4j"
+    assert "label=io.podman.compose.project=aegis-dev-wt" in calls[-1]
+
+    # Falls back to .env when AEGIS_DEV_PROJECT is not in os.environ.
+    monkeypatch.delenv("AEGIS_DEV_PROJECT", raising=False)
+    fake_repo = tmp_path / "repo"
+    fake_repo.mkdir()
+    (fake_repo / ".env").write_text('AEGIS_DEV_PROJECT="aegis-dev-dotenv"\n', encoding="utf-8")
+    monkeypatch.setattr(demo_support, "REPO", fake_repo)
+    assert demo_support._neo4j_container() == "aegis-dev-wt-neo4j"
+    assert "label=io.podman.compose.project=aegis-dev-dotenv" in calls[-1]

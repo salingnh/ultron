@@ -121,7 +121,7 @@ def _driver(request: Request) -> Any:
     if driver is None:
         raise RuntimeError(
             "the app has no graph driver: build it with create_app(graph_driver=...) or set "
-            "AEGIS_NEO4J_PASSWORD for create_production_app()"
+            "AEGIS_NEO4J_URI, AEGIS_NEO4J_USER and AEGIS_NEO4J_PASSWORD for create_production_app()"
         )
     return driver
 

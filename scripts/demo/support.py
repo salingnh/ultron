@@ -311,21 +311,42 @@ def _cell(raw: str) -> Any:
     return value
 
 
+def _dotenv_value(name: str) -> str:
+    """Read one unquoted `KEY=VALUE` from `.env` if present (never mutates `os.environ`)."""
+    env_file = REPO / ".env"
+    if not env_file.is_file():
+        return ""
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        entry = raw.strip()
+        if not entry or entry.startswith("#") or "=" not in entry:
+            continue
+        key, _, value = entry.partition("=")
+        if key.strip() != name:
+            continue
+        cleaned = value.strip()
+        if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in "\"'":
+            cleaned = cleaned[1:-1]
+        return cleaned
+    return ""
+
+
 def _neo4j_container() -> str:
     """The Neo4j container of the dev compose project (names live in scripts/dev/lib.sh).
 
-    `AEGIS_NEO4J_CONTAINER` names it explicitly, for a run against a stack of another compose
-    project (a task that must not touch the shared dev stack).
+    `AEGIS_NEO4J_CONTAINER` names it explicitly; otherwise the compose project comes from
+    `AEGIS_DEV_PROJECT` (environment or `.env`), defaulting to `aegis-dev`.
     """
     override = os.environ.get("AEGIS_NEO4J_CONTAINER", "").strip()
     if override:
         return override
+    project = os.environ.get("AEGIS_DEV_PROJECT", "").strip() or _dotenv_value("AEGIS_DEV_PROJECT")
+    project = project or "aegis-dev"
     completed = subprocess.run(
         [
             "podman",
             "ps",
             "--filter",
-            "label=io.podman.compose.project=aegis-dev",
+            f"label=io.podman.compose.project={project}",
             "--format",
             "{{.Names}}",
         ],
@@ -338,7 +359,8 @@ def _neo4j_container() -> str:
         if name.endswith("-neo4j"):
             return name
     raise DemoError(
-        "the dev Neo4j container is not running: run `make dev-up` (or `make run-local`)"
+        f"the dev Neo4j container for compose project {project!r} is not running: "
+        "run `make dev-up` (or `make run-local`)"
     )
 
 

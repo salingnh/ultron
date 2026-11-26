@@ -38,6 +38,8 @@ TEMPORAL_CONTAINER=
 # The lab is its own compose project (scripts/lab, which owns these names); scripts/dev only needs
 # the project name to tell whether run-local started it. Its network is `<project>-lab`.
 LAB_PROJECT=aegis-lab
+# shellcheck disable=SC2034 # used by sourcing scripts (e.g. run-local.sh)
+LAB_NETWORK=aegis-lab-lab
 
 # The project name and the names it derives; called at source time and again after `load_env`.
 set_dev_names() {
@@ -48,6 +50,9 @@ set_dev_names() {
   SEAWEEDFS_CONTAINER="$DEV_PROJECT-seaweedfs"
   # shellcheck disable=SC2034 # used by sourcing scripts
   TEMPORAL_CONTAINER="$DEV_PROJECT-temporal"
+  LAB_PROJECT=${AEGIS_LAB_PROJECT:-aegis-lab}
+  # shellcheck disable=SC2034 # used by sourcing scripts
+  LAB_NETWORK="$LAB_PROJECT-lab"
 }
 set_dev_names
 

@@ -54,3 +54,21 @@ def test_no_ports_file_is_staged_without_an_integer_ports_input(tmp_path: Path) 
         directory.mkdir()
         _write(directory, input_values)
         assert not (directory / "ports.txt").exists(), input_values
+
+
+def test_job_layout_sets_input_modes_independent_of_umask(tmp_path: Path) -> None:
+    import os
+    import stat
+
+    from aegis.m06_runner.podman import JobLayout
+
+    previous = os.umask(0o077)
+    try:
+        layout = JobLayout(tmp_path / "job-077").create()
+        _write(layout.input, {"targets": ["dns:lab.aegis.test"], "ports": [80, 443]})
+    finally:
+        os.umask(previous)
+
+    assert stat.S_IMODE(layout.input.stat().st_mode) == 0o755
+    assert stat.S_IMODE((layout.input / "targets.txt").stat().st_mode) == 0o644
+    assert stat.S_IMODE((layout.input / "ports.txt").stat().st_mode) == 0o644

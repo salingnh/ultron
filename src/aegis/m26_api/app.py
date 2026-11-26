@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from aegis.m04_model.deployment import model_status
-from aegis.m26_api.errors import install_error_handlers
+from aegis.m26_api.errors import UnhandledErrorMiddleware, install_error_handlers
 from aegis.m26_api.operator import OperatorAuthenticator
 from aegis.m26_api.registry import RouterRegistry
 
@@ -100,6 +100,9 @@ def create_app(
     app.state.graph_driver = graph_driver
     install_error_handlers(app)
     _drop_default_422(app)
+    # Added before CORSMiddleware so Starlette wraps UnhandledErrorMiddleware inside CORS: an
+    # unhandled 500 becomes an `error.v2` JSON response that still carries CORS headers.
+    app.add_middleware(UnhandledErrorMiddleware)
     if cors_origins:
         # An explicit allowlist, never "*": the operator token travels in a header, so a browser
         # origin that is not named here must not be able to read a response or send a preflight.
