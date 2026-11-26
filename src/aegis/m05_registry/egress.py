@@ -52,7 +52,14 @@ __all__ = [
 
 @runtime_checkable
 class TargetBinder(Protocol):
-    """Resolve a target name to the addresses M05 pins into the signed task."""
+    """Resolve a target name to the addresses M05 pins into the signed task.
+
+    A failure must say which failure it is, because the wildcard probe (F3 guardrail 4) may only
+    read "no such name" as "no wildcard": raise an `M05Error` with rule `target_unresolvable` when
+    the name does not exist (NXDOMAIN / no address), and any other rule - `target_lookup_failed` is
+    the conventional one - when the resolver could not be asked. A binder that collapses the two
+    into `target_unresolvable` makes an outage look like an empty zone (item 61 follow-up).
+    """
 
     def addresses(self, value: str) -> tuple[str, ...]: ...
 
@@ -67,8 +74,21 @@ def _address_literal(raw: str, *, prefix: str) -> str:
     return value
 
 
+#: `getaddrinfo` errors that mean "this name does not exist" (an NXDOMAIN answer), as opposed to a
+#: resolver that could not be asked. The wildcard probe treats only the former as "no wildcard".
+MISSING_NAME_ERRORS = frozenset(
+    getattr(socket, name) for name in ("EAI_NONAME", "EAI_NODATA") if hasattr(socket, name)
+)
+
+
 class SystemTargetBinder:
-    """The production binder: system resolver, A/AAAA, sorted and de-duplicated."""
+    """The production binder: system resolver, A/AAAA, sorted and de-duplicated.
+
+    The two failure modes are distinct, because the wildcard guardrail (F3 guardrail 4) may only
+    read "this name does not exist" as "no wildcard record": `target_unresolvable` is an NXDOMAIN
+    answer, `target_lookup_failed` is a resolver that could not be asked (timeout, SERVFAIL, no
+    resolver configured). A caller that must fail closed refuses on the latter (item 61 follow-up).
+    """
 
     def __init__(self, resolver: Any = None) -> None:
         self._resolver = resolver or socket.getaddrinfo
@@ -76,10 +96,22 @@ class SystemTargetBinder:
     def addresses(self, value: str) -> tuple[str, ...]:
         try:
             infos = self._resolver(value, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except socket.gaierror as error:
+            if error.errno in MISSING_NAME_ERRORS:
+                raise M05Error.policy_denied(
+                    "target_unresolvable",
+                    f"target {value!r} does not exist ({error})",
+                    next_action=NextAction.FIX_INPUT,
+                ) from error
+            raise M05Error.policy_denied(
+                "target_lookup_failed",
+                f"the resolver could not be asked about {value!r}: {error}",
+                next_action=NextAction.FIX_INPUT,
+            ) from error
         except OSError as error:
             raise M05Error.policy_denied(
-                "target_unresolvable",
-                f"target {value!r} cannot be resolved for a target-bound egress binding: {error}",
+                "target_lookup_failed",
+                f"the resolver could not be asked about {value!r}: {error}",
                 next_action=NextAction.FIX_INPUT,
             ) from error
         addresses: set[str] = set()
@@ -419,6 +451,16 @@ def _wildcard_parents(host: str, suffixes: Sequence[str]) -> list[str]:
     return sorted(keep)
 
 
+def _wildcard_unknown(parent: str, probe: str, error: BaseException) -> M05Error:
+    """The refusal for a wildcard probe whose answer is unknown (never "no wildcard")."""
+    return M05Error.policy_denied(
+        "target_wildcard_unknown",
+        f"the wildcard probe of {parent} ({probe}) cannot be checked ({error}); active signing "
+        "stays refused until the resolver answers",
+        next_action=NextAction.FIX_INPUT,
+    )
+
+
 def _wildcard_hit(
     host: str,
     *,
@@ -426,7 +468,15 @@ def _wildcard_hit(
     binder: TargetBinder,
     wildcard_zones: dict[str, tuple[str, str] | None],
 ) -> tuple[str, str, str] | None:
-    """Return `(parent, probe, answer)` if any parent zone of `host` answers a random label."""
+    """Return `(parent, probe, answer)` if any parent zone of `host` answers a random label.
+
+    Only a *missing* probe name is evidence that the zone has no wildcard: a resolver error is
+    unknown, and unknown must refuse rather than sign (item 61 follow-up: the same fail-open as
+    R5 - a failing lookup could skip the wildcard guardrail). A random label normally answers
+    NXDOMAIN, which the binder reports as `target_unresolvable`; a timeout, a SERVFAIL or no
+    resolver at all is `target_lookup_failed` (or a raw `OSError`) and refuses with
+    `target_wildcard_unknown`.
+    """
     for parent in _wildcard_parents(host, authorized_suffixes)[:2]:
         if parent in wildcard_zones:
             cached = wildcard_zones[parent]
@@ -436,9 +486,14 @@ def _wildcard_hit(
         probe = f"aegis-wildcard-{secrets.token_hex(4)}.{parent}"
         try:
             answers = binder.addresses(probe)
-        except M05Error:
-            wildcard_zones[parent] = None
-            continue
+        except M05Error as error:
+            if getattr(error.refusal, "rule", "") == "target_unresolvable":
+                # The name does not exist: the expected answer for a random label, so no wildcard.
+                wildcard_zones[parent] = None
+                continue
+            raise _wildcard_unknown(parent, probe, error) from error
+        except OSError as error:
+            raise _wildcard_unknown(parent, probe, error) from error
         if answers:
             first = sorted(answers)[0]
             wildcard_zones[parent] = (probe, first)
@@ -457,7 +512,8 @@ def _refuse_a_wildcard(
     """F3 guardrail 4: a wildcard under the target's zone makes every label resolve.
 
     A wildcard turns a single discovered name into an unbounded address set, so active signing is
-    refused and the campaign stays passive; the operator can narrow the target.
+    refused and the campaign stays passive; the operator can narrow the target. A probe the
+    resolver could not answer is a refusal too (`target_wildcard_unknown`): unknown is not clean.
     """
     hit = _wildcard_hit(
         host,

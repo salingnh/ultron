@@ -40,6 +40,8 @@ sys.path.insert(0, str(REPO / "scripts" / "demo"))
 
 import support  # noqa: E402 - the demo scripts' shared helpers, a sibling module
 
+from aegis.m06_runner.authorization import authorization_of  # noqa: E402
+
 #: Owner-authorized first targets (owner message, item 61, 2026-11-25). Widen explicitly, never
 #: by accident: this list is the reason the smoke cannot scan a third party's domain.
 AUTHORIZED = ("icomm.vn", "salingnh.com")
@@ -188,6 +190,22 @@ def envelope(connection: Any, job_id: str) -> dict[str, Any] | None:
     return None if row is None else dict(row["payload"])
 
 
+def authorization_line() -> str:
+    """The audit form of `SMOKE_POLICY["authorization"]` — what M06 signs and the broker audits.
+
+    The broker records the *rendered structured authorization* (`owner | reference | date |
+    suffixes`), never the free-text campaign label: comparing the audit against
+    `AUTHORIZATION = "owner, item 61, 2026-11-25"` failed on a correct run (item 61 follow-up).
+    Validating the same object here also fails the smoke loudly if its RoE drifts from what M06
+    accepts.
+    """
+    validated, problem = authorization_of(SMOKE_POLICY["authorization"])
+    if validated is None:
+        support.fail(f"the smoke RoE authorization is not valid: {problem}")
+        raise SystemExit(1)  # support.fail exits; this keeps a type checker from guessing
+    return validated.reference_line()
+
+
 def check_audit(records: list[dict[str, Any]]) -> dict[str, int]:
     histogram: dict[str, int] = {}
     for record in records:
@@ -198,9 +216,10 @@ def check_audit(records: list[dict[str, Any]]) -> dict[str, int]:
         {str(record.get("network_profile")) for record in records} == {"internet"},
         "an audit line does not carry network_profile=internet",
     )
+    expected = authorization_line()
     support.require(
-        {str(record.get("authorization")) for record in records} == {AUTHORIZATION},
-        "the audit line does not carry the owner's authorization reference",
+        {str(record.get("authorization")) for record in records} == {expected},
+        f"the audit line does not carry the signed authorization ({expected!r})",
     )
     denied = {reason for reason in histogram if reason in ALWAYS_DENY}
     support.require(
@@ -247,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     support.line("api", os.environ["AEGIS_API_URL"])
     support.line("target", domain)
-    support.line("authorization", AUTHORIZATION)
+    support.line("authorization", authorization_line())
     support.line("broker image", os.environ["AEGIS_M06_BROKER_IMAGE"])
     support.line(
         "provider config",
