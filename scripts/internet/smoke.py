@@ -123,13 +123,15 @@ def _connect(dsn: str) -> Any:
 
 def submit_job(dsn: str, campaign_id: str, domain: str) -> str:
     from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
+    from aegis.m05_registry.egress import SystemTargetBinder
     from aegis.m05_registry.registry import PostgresManifestRegistry
     from aegis.m05_registry.service import PostgresJobService
     from aegis.m05_registry.signing import KeyRing
 
     registry = PostgresManifestRegistry(lambda: _connect(dsn))
     service = PostgresJobService(
-        lambda: _connect(dsn), registry=registry, key_ring=KeyRing.from_env()
+        lambda: _connect(dsn), registry=registry, key_ring=KeyRing.from_env(),
+        binder=SystemTargetBinder(),
     )
     outcome = service.submit(
         JobSubmit.model_validate(
