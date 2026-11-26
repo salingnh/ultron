@@ -61,6 +61,7 @@ from aegis.m01_campaign.audit import record_audit
 from aegis.m05_registry.canonical import job_fingerprint, sha256_hex
 from aegis.m05_registry.caps import (
     CampaignPolicy,
+    check_campaign_address_budget,
     check_campaign_caps,
     merge_input,
     network_profile,
@@ -71,6 +72,7 @@ from aegis.m05_registry.egress import (
     TargetBinder,
     build_egress_binding,
     check_declared_destinations,
+    load_active_provenance,
 )
 from aegis.m05_registry.errors import M05Error, Refusal
 from aegis.m05_registry.ids import trace_id as new_trace_id
@@ -441,14 +443,37 @@ class PostgresJobService:
                 job_id=job_id,
                 depends_on=[str(_plain(item)) for item in request.depends_on or []],
             )
+            active_binder = self._binder or _MissingBinder()
+            active_provenance = None
+            if (
+                profile == "internet"
+                and str(record.permissions.get("targetBinding") or "none") == "required"
+            ):
+                active_provenance = load_active_provenance(
+                    conn,
+                    campaign_id=campaign.campaign_id,
+                    scope_id=campaign.scope_id,
+                    targets=targets,
+                    binder=active_binder,
+                )
             binding = build_egress_binding(
                 record,
                 merged_input=merged_input,
                 targets=targets,
-                binder=self._binder or _MissingBinder(),
-                network_profile=network_profile(campaign.policy),
+                binder=active_binder,
+                network_profile=profile,
                 platform_cidrs=self._platform_cidrs,
+                authorized_suffixes=_authorized_suffixes(campaign.policy),
+                provenance=active_provenance,
             )
+            if binding.target_addresses:
+                check_campaign_address_budget(
+                    conn,
+                    campaign_id=campaign.campaign_id,
+                    addresses=binding.target_addresses,
+                    actor={"kind": "module", "id": "M05"},
+                    trace_id=trace_id,
+                )
         except M05Error as error:
             return self._deny(
                 conn,
@@ -1222,3 +1247,14 @@ def _decode_cursor(cursor: str) -> tuple[str, str]:
         return str(document["created_at"]), str(document["job_id"])
     except (ValueError, KeyError, TypeError) as error:
         raise M05Error.input_invalid("cursor is not a job cursor", field="/cursor") from error
+
+
+def _authorized_suffixes(policy: Mapping[str, Any]) -> tuple[str, ...]:
+    """The RoE's authorized suffixes, for the wildcard probe (F3 guardrail 4)."""
+    authorization = policy.get("authorization")
+    if not isinstance(authorization, Mapping):
+        return ()
+    suffixes = authorization.get("authorized_suffixes")
+    if not isinstance(suffixes, list):
+        return ()
+    return tuple(str(value).strip(".").lower() for value in suffixes)

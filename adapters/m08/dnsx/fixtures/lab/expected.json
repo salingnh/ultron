@@ -115,6 +115,21 @@
       ]
     },
     {
+      "subject": "dns:vpn.lab.aegis.test",
+      "predicate": "dns.record",
+      "value": {
+        "type": "CNAME",
+        "value": "www.lab.aegis.test",
+        "ttl": 3600
+      },
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
       "subject": "dns:www.lab.aegis.test",
       "predicate": "dns.record",
       "value": {

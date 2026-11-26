@@ -2,7 +2,7 @@ apiVersion: aegis.io/v2
 kind: CapabilityProvider
 metadata:
   name: dnsx
-  version: 1.0.1
+  version: 1.0.2
   module: M08
   license: MIT
   upstream: https://github.com/projectdiscovery/dnsx
@@ -19,6 +19,9 @@ spec:
     - -silent
     - -duc
     - -json
+    - -a
+    - -aaaa
+    - -cname
     - -l
     - /in/targets.txt
     - -o

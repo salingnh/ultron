@@ -103,7 +103,7 @@ def test_envelope_carries_the_pins_and_the_dedup_key() -> None:
     provider = built.provider
     assert str(provider.name) == "subfinder"
     assert str(provider.version) == "v2.17.0"
-    assert str(provider.adapter_version.root) == "1.0.2"
+    assert str(provider.adapter_version.root) == str(task.adapter_version.root)
     assert str(provider.image_digest.root) == task.image_digest.root
     assert built.provenance.seed_targets[0].model_dump() == task.targets[0].model_dump()
     assert built.status == "succeeded"

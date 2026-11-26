@@ -123,7 +123,7 @@
     }
   ],
   "envelope_payload_hash": {
-    "valid/result-envelope.subfinder.json": "941e441d1c40fbe92eaefc0d9d67c570329ae54dc78b3a7c1e353b313d2dcb3b",
+    "valid/result-envelope.subfinder.json": "de1b4f15dfc9e06803eea6ebec03951f50e678d5c7cff83d1a697fdac41a176a",
     "valid/result-envelope.seed-provenance.json": "60b1a24e6ccbd68ac94556f24c1e51966cd539d30248b5d214ac2bba90529e5b"
   },
   "notes": "Canonicalization is pinned by the RFC 8785 §3.2.3 vector above; the envelope_payload_hash values lock the *projection* (which envelope fields are content) so an accidental exclusion or inclusion changes a test, not production hashes."

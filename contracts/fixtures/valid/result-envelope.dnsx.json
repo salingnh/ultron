@@ -9,7 +9,7 @@
   "provider": {
     "name": "dnsx",
     "version": "v1.2.2",
-    "adapter_version": "1.0.1",
+    "adapter_version": "1.0.2",
     "image_digest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec"
   },
   "policy_version": "roe-1",

@@ -66,6 +66,10 @@ def parse(output_dir: Path, task: dict[str, Any], evidence: list[dict[str, Any]]
         if key in targets or key in seen:
             # Discovering the seed back, or the same name twice, is not a new asset.
             continue
+        if not _under_targets(key, targets):
+            # N6: tool output is untrusted. A name outside every input domain is not ours, even
+            # if Subfinder's regex produced it; it must never become an asset (F3 guardrail).
+            continue
         seen.add(key)
         asset: dict[str, Any] = {
             "kind": "domain",
@@ -153,6 +157,15 @@ def _max_results(task: dict[str, Any]) -> int:
 def _domain_key(value: str) -> str:
     text = value.strip().lower().rstrip(".")
     return text if text.startswith("dns:") else f"dns:{text}"
+
+
+def _under_targets(key: str, targets: list[str]) -> bool:
+    host = key.removeprefix("dns:")
+    for target in targets:
+        root = target.removeprefix("dns:")
+        if host == root or host.endswith("." + root):
+            return True
+    return False
 
 
 def _aliases(key: str) -> list[dict[str, str]]:

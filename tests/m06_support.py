@@ -457,7 +457,13 @@ class StaticBinder:
         self.table = table
 
     def addresses(self, value: str) -> tuple[str, ...]:
-        return tuple(self.table.get(value, [value]))
+        if value not in self.table:
+            # The real binder raises for a name the resolver does not know; an unknown probe name
+            # (the wildcard check) must not look answered.
+            from aegis.m05_registry.errors import M05Error
+
+            raise M05Error.policy_denied("target_unresolvable", f"{value} does not resolve")
+        return tuple(self.table[value])
 
 
 def resolved_targets(rec: Any, values: list[str]) -> Any:
