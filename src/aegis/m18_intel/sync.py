@@ -14,13 +14,14 @@ One sync is one feed snapshot, in order (and in one transaction after the object
 4. if at least one revision was written, `intel.revision.v2` is published to the outbox in the same
    transaction, so M20 re-runs matching on new evidence and never on a snapshot that did not commit.
 
-The network is the CLI's job (`--source https://...`), not this module's: a test or a re-run from a
-downloaded file calls `sync_bytes` and the process never reaches a socket.
+The network is the CLI's job (`--source https://...` or `sync-nvd`), not this module's: a test or a
+re-run from a downloaded file calls `sync` and the process never reaches a socket.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -45,6 +46,7 @@ __all__ = [
     "SnapshotConflict",
     "SyncReport",
     "connect",
+    "connect_from_env",
     "object_key",
     "read_source",
 ]
@@ -184,17 +186,53 @@ class FeedSync:
         *,
         source_uri: str,
         snapshot_at: datetime | None = None,
+        after_load: Callable[[psycopg.Connection[Any], str, Sequence[VulnRecord]], None]
+        | None = None,
     ) -> SyncReport:
         if feed not in feeds.FEEDS:
             raise FeedSyncError(f"unknown feed {feed!r}; expected one of {', '.join(feeds.FEEDS)}")
         records = feeds.parse(feed, data, version=version)
+        return self.sync_records(
+            feed,
+            version,
+            data,
+            records,
+            source_uri=source_uri,
+            snapshot_at=snapshot_at,
+            after_load=after_load,
+        )
+
+    def sync_records(
+        self,
+        feed: str,
+        version: str,
+        data: bytes,
+        records: Sequence[VulnRecord],
+        *,
+        source_uri: str,
+        snapshot_at: datetime | None = None,
+        after_load: Callable[[psycopg.Connection[Any], str, Sequence[VulnRecord]], None]
+        | None = None,
+    ) -> SyncReport:
+        """Store raw feed bytes and load pre-parsed records in one atomic snapshot transaction."""
+        if feed not in feeds.FEEDS:
+            raise FeedSyncError(f"unknown feed {feed!r}; expected one of {', '.join(feeds.FEEDS)}")
         sha256 = hashlib.sha256(data).hexdigest()
         extension, media_type = EXTENSIONS[feed]
         key = object_key(feed, version, sha256, extension)
         if self._store.head(key) is None:
             self._store.put(key, data, content_type=media_type)
         moment = snapshot_at or feeds.snapshot_at_from(feed, data, fallback=datetime.now(UTC))
-        return self._load(feed, version, records, sha256, key, source_uri, moment)
+        return self._load(
+            feed,
+            version,
+            records,
+            sha256,
+            key,
+            source_uri,
+            moment,
+            after_load=after_load,
+        )
 
     # -- internals ---------------------------------------------------------------------
 
@@ -207,6 +245,9 @@ class FeedSync:
         key: str,
         source_uri: str,
         snapshot_at: datetime,
+        *,
+        after_load: Callable[[psycopg.Connection[Any], str, Sequence[VulnRecord]], None]
+        | None = None,
     ) -> SyncReport:
         connection = self._connect()
         try:
@@ -219,6 +260,8 @@ class FeedSync:
                 published = False
                 if impacted:
                     published = self._emit(connection, feed, version, snapshot_at, impacted, kinds)
+                if after_load is not None:
+                    after_load(connection, snapshot_id, records)
             return SyncReport(
                 feed=feed,
                 version=version,
@@ -307,38 +350,64 @@ class FeedSync:
         records: Sequence[VulnRecord],
         previous: Mapping[str, Mapping[str, Any]],
     ) -> tuple[list[str], set[str]]:
-        """The CVE ids of the revisions this sync wrote, and what kind of change each was."""
+        """Insert changed revisions in one batch SQL call and return impacted CVE ids + kinds."""
+        if not records:
+            return [], set()
+        batch_rows: list[dict[str, Any]] = []
+        by_id_hash: dict[tuple[str, str], VulnRecord] = {}
+        for record in records:
+            digest = record.content_hash()
+            by_id_hash[(record.vulnerability_id, digest)] = record
+            batch_rows.append(
+                {
+                    "vuln_rev_id": str(uuid7()),
+                    "vulnerability_id": record.vulnerability_id,
+                    "aliases": list(record.aliases),
+                    "cvss": record.cvss,
+                    "kev": record.kev,
+                    "epss": record.epss,
+                    "affected": record.affected,
+                    "references_": record.references,
+                    "published_at": _iso_or_none(record.published_at),
+                    "modified_at": _iso_or_none(record.modified_at),
+                    "withdrawn": record.withdrawn,
+                    "content_hash": digest,
+                }
+            )
+        inserted = connection.execute(
+            "INSERT INTO vulnerability_revision (vuln_rev_id, vulnerability_id, source,"
+            " snapshot_id, aliases, cvss, kev, epss, affected, references_, published_at,"
+            " modified_at, withdrawn, content_hash)"
+            " SELECT r.vuln_rev_id, r.vulnerability_id, %s, %s, r.aliases,"
+            "        r.cvss, r.kev, r.epss, r.affected, r.references_, r.published_at,"
+            "        r.modified_at, r.withdrawn, r.content_hash"
+            "   FROM jsonb_to_recordset(%s::jsonb) AS r("
+            "     vuln_rev_id uuid,"
+            "     vulnerability_id text,"
+            "     aliases text[],"
+            "     cvss jsonb,"
+            "     kev jsonb,"
+            "     epss jsonb,"
+            "     affected jsonb,"
+            "     references_ jsonb,"
+            "     published_at timestamptz,"
+            "     modified_at timestamptz,"
+            "     withdrawn boolean,"
+            "     content_hash character(64)"
+            "   )"
+            " ON CONFLICT (vulnerability_id, source, content_hash) DO NOTHING"
+            " RETURNING vulnerability_id, content_hash",
+            (feed, snapshot_id, json.dumps(batch_rows, ensure_ascii=False)),
+        ).fetchall()
         impacted: list[str] = []
         kinds: set[str] = set()
-        for record in records:
-            row = connection.execute(
-                "INSERT INTO vulnerability_revision (vuln_rev_id, vulnerability_id, source,"
-                " snapshot_id, aliases, cvss, kev, epss, affected, references_, published_at,"
-                " modified_at, withdrawn, content_hash)"
-                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-                " ON CONFLICT (vulnerability_id, source, content_hash) DO NOTHING"
-                " RETURNING vuln_rev_id",
-                (
-                    str(uuid7()),
-                    record.vulnerability_id,
-                    feed,
-                    snapshot_id,
-                    list(record.aliases),
-                    Jsonb(record.cvss) if record.cvss is not None else None,
-                    Jsonb(record.kev) if record.kev is not None else None,
-                    Jsonb(record.epss) if record.epss is not None else None,
-                    Jsonb(record.affected) if record.affected is not None else None,
-                    Jsonb(record.references),
-                    record.published_at,
-                    record.modified_at,
-                    record.withdrawn,
-                    record.content_hash(),
-                ),
-            ).fetchone()
-            if row is None:
-                continue
-            impacted.append(record.vulnerability_id)
-            kinds.add(_change_kind(feed, record, previous.get(record.vulnerability_id)))
+        for row in inserted:
+            vid = str(row["vulnerability_id"])
+            digest = str(row["content_hash"])
+            impacted.append(vid)
+            record_hit = by_id_hash.get((vid, digest))
+            if record_hit is not None:
+                kinds.add(_change_kind(feed, record_hit, previous.get(vid)))
         return impacted, kinds
 
     @staticmethod
@@ -382,6 +451,12 @@ class FeedSync:
 
         config = S3Config.from_env(env)
         return cls(lambda: connect_from_env(env), S3EvidenceClient(config), bucket=config.bucket)
+
+
+def _iso_or_none(moment: datetime | None) -> str | None:
+    if moment is None:
+        return None
+    return moment.astimezone(UTC).isoformat()
 
 
 def _change_kind(feed: str, record: VulnRecord, previous: Mapping[str, Any] | None) -> str:

@@ -564,7 +564,10 @@ def test_prepare_keeps_the_internet_profile_entry_and_checks_its_proxy_flag(
             "mode": "broker",
             "target_binding": "none",
             "entries": [
-                f"{source['hosts'][0]}:{source['ports'][0]}" for source in _sources_of(manifest)
+                f"{host}:{port}"
+                for source in _sources_of(manifest)
+                for host in source["hosts"]
+                for port in source["ports"]
             ],
             "target_addresses": [],
         },

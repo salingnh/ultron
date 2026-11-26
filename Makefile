@@ -270,8 +270,9 @@ demo-recovery:
 # one passive Subfinder job only. `make run-local` builds the image itself; this target is for a
 # runner started by hand, or after changing `aegis.m06_runner`.
 broker-image:
-	@podman build --file deploy/broker/Containerfile --tag localhost/aegis-broker:g16 .
-	@echo "broker image: localhost/aegis-broker:g16 (set AEGIS_M06_BROKER_IMAGE to it)"
+	@tag=$$(scripts/dev/broker-image.sh); \
+		podman tag "$$tag" localhost/aegis-broker:g16; \
+		echo "broker image: $$tag (alias localhost/aegis-broker:g16; set AEGIS_M06_BROKER_IMAGE to it)"
 
 internet-smoke:
 	@if [ -z "$(DOMAIN)" ]; then \

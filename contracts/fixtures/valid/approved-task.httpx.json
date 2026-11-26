@@ -7,8 +7,8 @@
   "capability": "web.probe_http",
   "provider": "httpx",
   "provider_version": "v1.12.0",
-  "adapter_version": "1.0.1",
-  "manifest_sha256": "e5513762137ae22fbd8ac93bbbb0942955bde549f8ace8e18758cfab7636f736",
+  "adapter_version": "1.0.2",
+  "manifest_sha256": "87ae69e951c73b187e514d02b9251f3ecf4472cdd800fdce5a50a8376a16b626",
   "image_digest": "sha256:f8275a7c6aaec187249df9eaf4ad9196f4677adfc6a51a47b4aaa1d4db4f8ffc",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
   "input": {

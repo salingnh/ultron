@@ -147,6 +147,7 @@ def test_acceptance_writes_decision_job_dependencies_and_a_verifiable_task() -> 
             "otx.alienvault.com:443",
             "rapiddns.io:443",
             "web.archive.org:443",
+            "web.archive.org:80",
         ]
         assert binding["target_addresses"] == []
         assert stored_task["trace"]["campaign_id"] == campaign.campaign_id

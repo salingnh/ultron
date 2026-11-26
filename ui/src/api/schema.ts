@@ -1627,6 +1627,11 @@ export interface components {
                 timeout_ms: number;
             };
         };
+        MatchLimitation: {
+            code: string;
+            message: string;
+            products?: string[];
+        };
         Candidate: {
             vulnerability_id: string;
             cvss_base?: number | null;
@@ -1644,6 +1649,10 @@ export interface components {
             snapshot_id?: components["schemas"]["Id"];
             candidate_since: components["schemas"]["Timestamp"];
         };
+        MatchCoverage: {
+            matchable: boolean;
+            limitations: components["schemas"]["MatchLimitation"][];
+        };
         /**
          * Ứng viên CVE của một tài sản
          * @description Phản hồi của listAssetVulnerabilities (M26): các hàng package_vuln_match hiện hành của một tài sản, kèm CVSS/KEV/EPSS của bản intel đã pin. Chỉ là ứng viên (AFFECTED_BY), không phải finding đã xác minh.
@@ -1656,8 +1665,19 @@ export interface components {
                 kind: components["schemas"]["AssetKind"];
             };
             items: components["schemas"]["Candidate"][];
+            /** @description Phạm vi so khớp CVE hiện hành của tài sản (vd sản phẩm thiếu phiên bản không thể so khớp). */
+            coverage?: components["schemas"]["MatchCoverage"];
             next_cursor?: string;
             $defs: {
+                MatchCoverage: {
+                    matchable: boolean;
+                    limitations: components["schemas"]["MatchLimitation"][];
+                };
+                MatchLimitation: {
+                    code: string;
+                    message: string;
+                    products?: string[];
+                };
                 Candidate: {
                     vulnerability_id: string;
                     cvss_base?: number | null;

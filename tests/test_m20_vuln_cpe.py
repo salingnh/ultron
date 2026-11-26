@@ -123,3 +123,40 @@ def test_a_malformed_entry_is_refused() -> None:
         CpeMatch.from_json({"vulnerable": True})
     with pytest.raises(CpeError):
         CpeMatch.from_json("cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*")
+
+
+def test_cpe_update_component_and_compiled_match_handle_openssh_versions() -> None:
+    from aegis.m20_vuln.cpe import CompiledCpeMatch
+
+    exact_89p1 = CpeMatch.from_json(
+        {"criteria": "cpe:2.3:a:openbsd:openssh:8.9:p1:*:*:*:*:*:*", "vulnerable": True}
+    )
+    exact_93_base = CpeMatch.from_json(
+        {"criteria": "cpe:2.3:a:openbsd:openssh:9.3:-:*:*:*:*:*:*", "vulnerable": True}
+    )
+    range_89_to_93 = CpeMatch.from_json(
+        {
+            "criteria": "cpe:2.3:a:openbsd:openssh:*:*:*:*:*:*:*:*",
+            "vulnerable": True,
+            "version_start_including": "8.9",
+            "version_end_excluding": "9.3",
+        }
+    )
+
+    banner_89p1 = parse_cpe("cpe:2.3:a:openbsd:openssh:8.9p1:*:*:*:*:*:*:*")
+    split_89p1 = parse_cpe("cpe:2.3:a:openbsd:openssh:8.9:p1:*:*:*:*:*:*")
+    banner_93p1 = parse_cpe("cpe:2.3:a:openbsd:openssh:9.3p1:*:*:*:*:*:*:*")
+    base_93 = parse_cpe("cpe:2.3:a:openbsd:openssh:9.3:*:*:*:*:*:*:*")
+
+    for criterion in (exact_89p1, exact_93_base, range_89_to_93):
+        compiled = CompiledCpeMatch.compile(criterion)
+        for target in (banner_89p1, split_89p1, banner_93p1, base_93):
+            parsed_ver = parse_version(target.effective_version)
+            assert compiled.matches_parsed(target, parsed_ver) == criterion.matches(target)
+
+    assert exact_89p1.matches(banner_89p1)
+    assert exact_89p1.matches(split_89p1)
+    assert not exact_93_base.matches(banner_93p1)
+    assert exact_93_base.matches(base_93)
+    assert range_89_to_93.matches(banner_89p1)
+    assert not range_89_to_93.matches(banner_93p1)

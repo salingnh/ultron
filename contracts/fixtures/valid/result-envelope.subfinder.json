@@ -9,7 +9,7 @@
   "provider": {
     "name": "subfinder",
     "version": "v2.17.0",
-    "adapter_version": "1.0.3",
+    "adapter_version": "1.0.4",
     "image_digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf"
   },
   "policy_version": "roe-1",
