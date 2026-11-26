@@ -39,6 +39,7 @@ def _policy(
     names: tuple[str, ...] = ("bound.example",),
     target_names: tuple[str, ...] = ("bound.example",),
     targets: tuple[str, ...] = (TARGET,),
+    private: tuple[str, ...] = (),
     profile: str = "internet",
 ) -> JobEgressPolicy:
     return JobEgressPolicy(
@@ -51,6 +52,8 @@ def _policy(
             for address in targets
         ),
         private_cidrs=tuple(ipaddress.ip_network(entry) for entry in PRIVATE),
+        # R4: a private answer needs the private seed CIDR the RoE lists, not just a signed target.
+        authorized_private_cidrs=tuple(ipaddress.ip_network(entry) for entry in private),
         dns_names=names,
         dns_target_names=target_names,
     )
@@ -137,6 +140,7 @@ def test_a_private_target_name_answers_only_when_the_campaign_targets_it(tmp_pat
         names=("internal.example",),
         target_names=("internal.example",),
         targets=(private_target,),
+        private=(f"{private_target}/32",),
     )
     stub = Stub({"internal.example": [private_target]})
     rcode, addresses = _answer(_forwarder(tmp_path, signed, stub), "internal.example")

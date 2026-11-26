@@ -100,6 +100,12 @@ def _policy(
         ),
         target_ports=target_ports,
         private_cidrs=tuple(ipaddress.ip_network(entry) for entry in PRIVATE),
+        # R4: a private target is reachable only with the RoE's private seed CIDR; the test policy
+        # authorizes exactly the addresses it declares as targets.
+        authorized_private_cidrs=tuple(
+            ipaddress.ip_network(f"{address}/{ipaddress.ip_address(address).max_prefixlen}")
+            for address in target_addresses
+        ),
         per_host_rps=rps,
         per_host_max_connections=max_connections,
         resolver=resolver,
@@ -222,7 +228,8 @@ def test_an_unbound_destination_is_refused(tmp_path: Path, monkeypatch: pytest.M
         with running_broker(policy, tmp_path, upstream, monkeypatch) as (port, _audit):
             client, head = _connect(port, "evil.example:443")
             assert head.startswith(b"HTTP/1.1 403"), head
-            assert _reason(head) == "PORT_NOT_ALLOWED"
+            # R2: a name outside the binding is refused before the broker resolves it.
+            assert _reason(head) == "NOT_BOUND_TO_JOB"
             client.close()
     finally:
         upstream.close()

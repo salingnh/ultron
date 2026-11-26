@@ -65,6 +65,11 @@ class EgressBinding(BaseModel):
         description="Địa chỉ IP đã phân giải và ghim của mục tiêu task (targetBinding=required); rỗng khi targetBinding=none. Là bằng chứng M05 đã kiểm đích, không phải nguồn sự thật về tài sản.",
         max_length=1000,
     )
+    authorized_private_cidrs: list[ids_v2_schema.IPOrCIDR] | None = Field(
+        None,
+        description="CIDR seed riêng tư (RFC1918, CGNAT, ULA) mà RoE của chiến dịch liệt kê tường minh và M05 đã ký cho task này (R4). Trên profile internet, một địa chỉ riêng tư chỉ được mở khi nằm trong một CIDR ở đây: M06 từ chối (`DENY_PRIVATE`) mọi dải riêng khác, kể cả khi địa chỉ đó có trong `target_addresses`; một entry không nằm trong dải riêng làm task bị từ chối. Rỗng là mặc định an toàn: không dải riêng nào được mở.",
+        max_length=100,
+    )
 
 
 class ApprovedTask(BaseModel):

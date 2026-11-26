@@ -481,8 +481,10 @@ class DnsForwarder:
             return "DENY_PLATFORM_NETWORK"
         if any(parsed in network for network in self.policy.deny_cidrs):
             return "DENY_TARGET_DENYLIST"
+        # R4: only a private range the RoE lists as a seed is reachable, not every private address
+        # some discovered name happens to answer with.
         if any(parsed in network for network in self.policy.private_cidrs) and not any(
-            parsed in network for network in self._targets
+            parsed in network for network in self.policy.authorized_private_cidrs
         ):
             return "DENY_PRIVATE"
         return None

@@ -38,6 +38,7 @@ def _policy(
     sources: tuple[SourceAllow, ...] = (),
     rps: float | None = None,
     max_connections: int | None = None,
+    private: tuple[str, ...] = (),
 ) -> JobEgressPolicy:
     return JobEgressPolicy(
         job_id="job-1",
@@ -52,6 +53,8 @@ def _policy(
         target_ports=ports,
         sources=sources,
         private_cidrs=tuple(ipaddress.ip_network(entry) for entry in PRIVATE),
+        # R4: a private target is only reachable when the RoE lists the private seed CIDR for it.
+        authorized_private_cidrs=tuple(ipaddress.ip_network(entry) for entry in private),
     )
 
 
@@ -89,12 +92,13 @@ def test_a_source_that_does_not_resolve_fails_the_install() -> None:
         )
 
 
-def test_a_private_target_stays_allowed_but_a_private_source_does_not() -> None:
+def test_a_private_target_inside_a_roe_seed_stays_allowed_but_a_private_source_does_not() -> None:
     stub = StubResolver({"intranet.example": ["10.1.2.3"]})
     policy = _policy(
         targets=("10.9.9.9",),
         ports=(8080,),
         sources=(SourceAllow(id="intranet", hosts=("intranet.example",), ports=(443,)),),
+        private=("10.9.9.9/32",),
     )
     rules = l3.allow_rules(policy, stub.resolve)
     addresses = {rule.address for rule in rules}

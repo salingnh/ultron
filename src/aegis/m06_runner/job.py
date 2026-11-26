@@ -36,6 +36,7 @@ from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import collector, parser_host
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner import spec as specs
+from aegis.m06_runner.authorization import Authorization
 from aegis.m06_runner.collector import CollectionError, CollectionResult
 from aegis.m06_runner.lifecycle import (
     TERMINAL_DB_STATUSES,
@@ -80,9 +81,9 @@ class JobPlan:
     #: them because it never uses the broker.
     per_host_rps: float | None = None
     per_host_max_connections: int | None = None
-    #: The campaign's authorization reference for the targets (operator-owned text), carried into
-    #: every egress audit line of the job.
-    authorization: str = ""
+    #: The campaign's structured authorization (`owner`, `reference`, `date`, suffixes) from the
+    #: signed RoE; `plan_for` validates it and renders its audit line (R6).
+    authorization: Authorization | None = None
     classification: Classification = Classification.INTERNAL
 
 

@@ -47,6 +47,7 @@ from aegis.m05_registry.manifest import ManifestRecord
 from aegis.m05_registry.registry import PostgresManifestRegistry
 from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import envelope as envelopes
+from aegis.m06_runner.authorization import authorization_of
 from aegis.m06_runner.job import JobOutcome, JobPlan, JobRunner
 from aegis.m06_runner.lifecycle import TERMINAL_DB_STATUSES, JobClaim, JobLifecycle, connect
 from aegis.m06_runner.podman import PodmanRunner
@@ -115,12 +116,28 @@ class LoopConfig:
     uplink_network: str | None = None
     #: Deployment-owned OCI hook that installs the L3 job's only default route.
     l3_hook: Path | None = None
-    #: Why the platform deny set could not be loaded (empty string when it was): an internet job
-    #: is refused while it is empty, and the reason is logged.
+    #: Why the platform deny set could not be loaded at start (empty string when it was): the
+    #: start-up snapshot is for the log only - every internet job recomputes the set (R1).
     platform_cidrs_error: str = ""
     poll_seconds: float = DEFAULT_POLL_SECONDS
     platform_cidrs: tuple[str, ...] = ()
+    #: The environment `AEGIS_M06_PLATFORM_CIDRS` is read from again for every internet job. The
+    #: rest of the set (podman networks, host addresses) is re-read from the host each time too, so
+    #: a network created after this process started is still denied (R1).
+    platform_env: Mapping[str, str] | None = None
     parser_python_path: tuple[str, ...] = field(default_factory=tuple)
+
+    def platform_deny_set(self) -> tuple[tuple[str, ...], str]:
+        """Recompute the platform deny set now; `(cidrs, error)` with an empty set on failure.
+
+        The set is a snapshot of the host: podman networks, compose projects and the host's own
+        addresses change while the runner is up, and a stale snapshot would sign and install rules
+        for a network that did not exist when the process started (R1).
+        """
+        try:
+            return platform_set.platform_cidrs(self.platform_env), ""
+        except platform_set.PlatformDenySetUnavailable as error:
+            return (), str(error)
 
     @property
     def uplink(self) -> str | None:
@@ -159,6 +176,7 @@ class LoopConfig:
             poll_seconds=float(poll) if poll else DEFAULT_POLL_SECONDS,
             platform_cidrs=platform_cidrs,
             platform_cidrs_error=platform_error,
+            platform_env=source,
             parser_python_path=(str(repository_root()),),
         )
 
@@ -216,7 +234,6 @@ def plan_for(
     ).fetchone()
     if row is None:
         raise JobPlanError("DEPENDENCY_MISSING", f"job {job_id} does not exist in scan_job")
-    campaign_id = str(_field(row, "campaign_id", 0))
     manifest_sha256 = _field(row, "manifest_sha256", 1)
     input_values = _field(row, "input", 2)
     approved = _field(row, "approved_task", 3)
@@ -238,6 +255,14 @@ def plan_for(
             "DEPENDENCY_MISSING", f"job {job_id}'s pinned manifest {pin} is not registered"
         ) from error
     limits, denylist = _signed_policy(conn, str(text(task.policy_version)))
+    # R6: the authorization is a structured object, never a rendered string. A mapping with missing
+    # fields used to render as " |  |  | " and pass a non-empty check.
+    authorization, problem = authorization_of(_authorization(conn, str(text(task.policy_version))))
+    if authorization is None and str(task.network_profile) == "internet":
+        raise JobPlanError(
+            "POLICY_DENIED",
+            f"job {job_id}'s signed RoE has no usable structured authorization: {problem}",
+        )
     return JobPlan(
         job_id=job_id,
         task=task,
@@ -248,7 +273,7 @@ def plan_for(
         target_denylist=denylist,
         per_host_rps=limits[0],
         per_host_max_connections=limits[1],
-        authorization=_authorization(conn, campaign_id, str(text(task.policy_version))),
+        authorization=authorization,
         classification=_classification(record.document),
     )
 
@@ -299,26 +324,20 @@ def _signed_policy(
     )
 
 
-def _authorization(conn: psycopg.Connection[Any], campaign_id: str, policy_version: str) -> str:
-    """The authorization reference of the **signed** RoE (audit line field).
+def _authorization(conn: psycopg.Connection[Any], policy_version: str) -> object | None:
+    """The structured `authorization` of the **signed** RoE, unvalidated.
 
-    It comes from the structured `authorization` object of the policy snapshot the task was signed
-    against (`owner`, `reference`, `date`, `authorized_suffixes`), never from a free-text campaign
-    label, so an audit line names the same authority the task was accepted under.
+    It comes from the policy snapshot the task was signed against (`owner`, `reference`, `date`,
+    `authorized_suffixes`), never from a free-text campaign label. Returning the raw value keeps
+    the validation in one place (`authorization.authorization_of`); the caller refuses an internet
+    job whose object is missing or malformed.
     """
     row = conn.execute(
         "SELECT policy -> 'authorization' AS authorization FROM policy_snapshot"
         " WHERE policy_version = %s",
         (policy_version,),
     ).fetchone()
-    value = _field(row, "authorization", 0) if row is not None else None
-    if not isinstance(value, Mapping):
-        return ""
-    suffixes = ", ".join(str(item) for item in value.get("authorized_suffixes") or [])
-    return (
-        f"{value.get('owner', '')} | {value.get('reference', '')} | "
-        f"{value.get('date', '')} | {suffixes}"
-    )
+    return _field(row, "authorization", 0) if row is not None else None
 
 
 def statuses_named(conn: psycopg.Connection[Any], statuses: Sequence[str]) -> list[str]:
@@ -406,7 +425,7 @@ def run_once(
             claim = claim_of(conn, job_id)
             if claim is None:
                 continue
-            plan = plan_for(conn, job_id, registry)
+            plan = _with_platform_deny_set(config, plan_for(conn, job_id, registry), log)
             log(f"resume: job {job_id} (adopting the container this runner already started)")
             outcome = job_runner.resume(plan, claim)
             resumed.append(job_id)
@@ -418,8 +437,7 @@ def run_once(
             if job_id in resumed:
                 continue
             try:
-                plan = plan_for(conn, job_id, registry)
-                plan = replace(plan, platform_cidrs=config.platform_cidrs)
+                plan = _with_platform_deny_set(config, plan_for(conn, job_id, registry), log)
             except JobPlanError as error:
                 # Every cause is definite, so this tick owns the refusal: terminalize the job with
                 # the contract code instead of leaving it VALIDATING for the next tick (proposal 5).
@@ -441,6 +459,22 @@ def run_once(
         failed=tuple(failed),
         reconciled_removed=removed,
     )
+
+
+def _with_platform_deny_set(
+    config: LoopConfig, plan: JobPlan, log: Callable[[str], None]
+) -> JobPlan:
+    """The plan with a platform deny set computed for **this** job (R1).
+
+    A lab job never uses the set (it has no broker), so it keeps an empty one: reading podman on
+    every lab job would make a lab tick depend on the host's network inventory.
+    """
+    if str(plan.task.network_profile) == "lab":
+        return plan
+    cidrs, error = config.platform_deny_set()
+    if error:
+        log(f"platform deny set unreadable for job {plan.job_id}: {error}")
+    return replace(plan, platform_cidrs=cidrs)
 
 
 def _log_outcome(job_id: str, outcome: JobOutcome, log: Callable[[str], None]) -> None:
@@ -527,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
             else config.poll_seconds,
             platform_cidrs=config.platform_cidrs,
             platform_cidrs_error=config.platform_cidrs_error,
+            platform_env=config.platform_env,
             parser_python_path=config.parser_python_path,
         )
     return run(config, once=args.once, ticks=args.ticks)

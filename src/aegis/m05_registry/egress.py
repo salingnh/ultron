@@ -31,10 +31,12 @@ import psycopg
 
 from aegis import validation
 from aegis.common import dns_cname
+from aegis.common.networks import PRIVATE, is_private, subnet_inside
 from aegis.contracts_gen.common.error_v2_schema import NextAction
 from aegis.m05_registry.errors import M05Error
 from aegis.m05_registry.manifest import ManifestRecord
 from aegis.m05_registry.targets import ResolvedTargets
+from aegis.m06_runner.denyset import checked_address
 
 __all__ = [
     "ActiveProvenance",
@@ -118,6 +120,9 @@ class EgressBinding:
     target_binding: str
     entries: tuple[str, ...]
     target_addresses: tuple[str, ...]
+    #: The private seed CIDRs the campaign's RoE lists: the only private ranges M06 may reach from
+    #: an internet job (R4). Signed with the rest of the binding, so M06 never infers it.
+    authorized_private_cidrs: tuple[str, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -125,6 +130,7 @@ class EgressBinding:
             "target_binding": self.target_binding,
             "entries": list(self.entries),
             "target_addresses": list(self.target_addresses),
+            "authorized_private_cidrs": list(self.authorized_private_cidrs),
         }
 
 
@@ -212,6 +218,12 @@ def build_egress_binding(
     On the internet profile a `protocol: dns` source is not signed: a raw tunnel to a public
     resolver would bypass the broker's DNS name binding (F4). Targets are checked against the
     platform's own networks (B1) and active-eligibility provenance (F3) before they can be signed.
+
+    Every address is normalised first (R3): an IPv4-mapped answer is the IPv4 destination the kernel
+    dials, so the platform/private checks must see it and the task must sign the IPv4 form; SIIT's
+    IPv4-translated form is refused. On the internet profile a private address is signed only when
+    the campaign's RoE lists a private *seed* CIDR that covers it (R4); the covering seed CIDRs are
+    signed into the binding so M06 enforces the same rule instead of trusting the address alone.
     """
     permissions = record.permissions
     if permissions.get("networkAccess") != "egress":
@@ -230,6 +242,11 @@ def build_egress_binding(
 
     wildcard_zones: dict[str, tuple[str, str] | None] = {}
     active_provenance = provenance or ActiveProvenance()
+    # R4: the private ranges the RoE authorizes for this campaign, as seed networks. A seed that is
+    # not itself completely inside a private range does not authorize one (no 0.0.0.0/0 loophole).
+    private_seeds = tuple(
+        network for network in active_provenance.seed_networks if subnet_inside(network, PRIVATE)
+    )
     target_binding = str(permissions.get("targetBinding") or "none")
     if network_profile == "internet" and dns_only and target_binding != "required":
         # A DNS-only provider on the internet profile (F4) resolves names through the broker's
@@ -279,6 +296,23 @@ def build_egress_binding(
                         f"target address {address} is inside the platform deny set",
                         next_action=NextAction.FIX_INPUT,
                     )
+                parsed_address = ipaddress.ip_address(address)
+                if network_profile == "internet" and is_private(parsed_address):
+                    # R4: the host's own private networks are not an internet target unless the
+                    # RoE lists the private seed CIDR that covers this address. This is what stops
+                    # a discovered name (split-horizon DNS, a dangling CNAME) from turning an
+                    # "internet" campaign into a scan of the owner's office LAN.
+                    covered = any(
+                        parsed_address.version == network.version and parsed_address in network
+                        for network in private_seeds
+                    )
+                    if not covered:
+                        raise M05Error.policy_denied(
+                            "target_private_network",
+                            f"target address {address} is private and the campaign RoE lists no "
+                            "private seed CIDR covering it; it stays passive-only",
+                            next_action=NextAction.FIX_INPUT,
+                        )
                 if network_profile == "internet" and kind in ("ip", "service"):
                     _require_active_eligible(
                         raw=raw,
@@ -311,6 +345,11 @@ def build_egress_binding(
         target_binding=target_binding,
         entries=tuple(sorted(entries)),
         target_addresses=tuple(sorted(set(addresses))),
+        authorized_private_cidrs=(
+            tuple(sorted({str(network) for network in private_seeds}))
+            if network_profile == "internet"
+            else ()
+        ),
     )
 
 
@@ -336,15 +375,21 @@ def _refuse_a_foreign_cname(host: str, *, authorized_suffixes: Sequence[str]) ->
     """F3 guardrail 2: a name that CNAMEs out of the authorized suffixes stays passive-only.
 
     The chain is what turns an owner name into a third-party address (a CDN, a SaaS endpoint, a
-    re-registered dangling target). An unknown chain (resolver down) is not a refusal; the target
-    addresses are still checked against the platform and deny sets.
+    re-registered dangling target). An unknown chain is a refusal too (R5): a resolver failure used
+    to sign the name, so an attacker who can make the lookup fail got the guardrail skipped. The
+    caller states its refusal reason instead ("the chain cannot be checked"), which is honest and
+    stable, instead of pretending the name has no foreign hop.
     """
     if not authorized_suffixes:
         return
     try:
         chain = dns_cname.cname_chain(host)
-    except (OSError, ValueError):
-        return
+    except (OSError, ValueError) as error:
+        raise M05Error.policy_denied(
+            "target_cname_lookup_failed",
+            f"the CNAME chain of {host} cannot be checked ({error}); the target stays passive-only",
+            next_action=NextAction.FIX_INPUT,
+        ) from error
     foreign = [name for name in chain if not _under_suffix(name, authorized_suffixes)]
     if foreign:
         raise M05Error.policy_denied(
@@ -669,11 +714,16 @@ def _target_addresses(
     (`ip:`/`service:`, capabilities/network/discover-services.v2). Reading only the bare literal
     refused every address-targeted job whose target was an asset the campaign had discovered;
     the key's own prefix and brackets are notation, so they are removed here, once.
+
+    The result is normalised (R3): an IPv4-mapped answer becomes its IPv4 address - the destination
+    the kernel actually dials - so every later check (platform, private, deny) sees it, and the
+    signed binding carries the same form M06 will compare against. SIIT's IPv4-translated form is
+    refused: it has no legitimate use here and no IPv4 rule would ever match it.
     """
     if kind == "ip":
         value = _address_literal(raw, prefix="ip:")
         try:
-            return (str(ipaddress.ip_address(value)),)
+            return _normalised_addresses([str(ipaddress.ip_address(value))], raw=raw)
         except ValueError as error:
             raise M05Error.policy_denied(
                 "target_not_bindable",
@@ -683,20 +733,43 @@ def _target_addresses(
     if kind == "domain":
         value = raw.strip().lower().rstrip(".")
         value = value[4:] if value.startswith("dns:") else value
-        return binder.addresses(value)
+        return _normalised_addresses(binder.addresses(value), raw=raw)
     if kind == "service":
         # service:<host>:<port>/<proto> (bracketed IPv6 host) - the address part is what the broker
         # pins. A literal address stays a literal; only a name goes through the binder.
         body = raw.split(":", 1)[1] if raw.startswith("service:") else raw
         host = body.rsplit("/", 1)[0] if "/" in body else body
         if host.startswith("["):
-            return (host[1 : host.index("]")],)
+            return _normalised_addresses([host[1 : host.index("]")]], raw=raw)
         address, sep, port = host.rpartition(":")
         if sep and port.isdigit():
-            return (address,)
-        return binder.addresses(host)
+            return _normalised_addresses([address], raw=raw)
+        return _normalised_addresses(binder.addresses(host), raw=raw)
     raise M05Error.policy_denied(
         "target_not_bindable",
         f"target kind {kind!r} cannot be bound to network addresses for a target-bound provider",
         next_action=NextAction.FIX_INPUT,
     )
+
+
+def _normalised_addresses(values: Sequence[str], *, raw: str) -> tuple[str, ...]:
+    """The addresses of one target in the form the task signs (R3)."""
+    normalised: list[str] = []
+    for value in values:
+        try:
+            parsed = ipaddress.ip_address(value)
+        except ValueError as error:
+            raise M05Error.policy_denied(
+                "target_not_bindable",
+                f"target {raw!r} resolved to {value!r}, which is not an address",
+                next_action=NextAction.FIX_INPUT,
+            ) from error
+        address, embedded = checked_address(parsed)
+        if embedded is not None:
+            raise M05Error.policy_denied(
+                "target_reserved_network",
+                f"target {raw!r} names {value}, a form the sandbox never dials ({embedded.value})",
+                next_action=NextAction.FIX_INPUT,
+            )
+        normalised.append(str(address))
+    return tuple(normalised)

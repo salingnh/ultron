@@ -37,6 +37,7 @@ valid:
   valid/approved-task.fingerprintx.json: capability/approved-task.v2.schema.json
   valid/approved-task.httpx.json: capability/approved-task.v2.schema.json
   valid/approved-task.dnsx-internet.json: capability/approved-task.v2.schema.json
+  valid/approved-task.internet-private.json: capability/approved-task.v2.schema.json
 invalid:
   invalid/result-envelope.bad-key.json: ingestion/result-envelope.v2.schema.json
   invalid/result-envelope.fake-keyword-asset.json: ingestion/result-envelope.v2.schema.json
@@ -71,3 +72,4 @@ invalid:
   invalid/roe-policy.internet-no-authorization.json: campaign/roe-policy.v2.schema.json
   invalid/manifest.egress-proxy-undeclared.yaml: capability/provider-manifest.v2.schema.json
   invalid/approved-task.broker-empty.json: capability/approved-task.v2.schema.json
+  invalid/approved-task.private-cidr-not-a-network.json: capability/approved-task.v2.schema.json

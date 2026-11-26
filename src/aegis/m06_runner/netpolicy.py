@@ -12,9 +12,12 @@ Rules (02-nen-tang §Sandbox "Egress đã khóa"):
   (loopback, link-local/metadata, multicast, unspecified, reserved, IPv4 embedded in IPv6), the
   platform's own control/data networks and the campaign target denylist. Composition is
   `(targets ∪ sources) − deny`, so the deny set wins.
-* Resolution happens in the control plane. Every address of the answer is checked and the
-  connection is pinned to the checked address; a name that resolves to one denied address is
-  denied as a whole (DNS rebinding), and a redirect is a new request that is checked again.
+* Resolution happens in the control plane, and only for a name the job is bound to: a source host
+  or a signed DNS target name (R2). A name outside the binding is refused before any lookup, so a
+  tool cannot use the broker as a resolver for arbitrary domains. Every address of the answer is
+  checked and the connection is pinned to the checked address; a name that resolves to one denied
+  address is denied as a whole (DNS rebinding), and a redirect is a new request that is checked
+  again.
 """
 
 from __future__ import annotations
@@ -95,9 +98,9 @@ class JobEgressPolicy:
 
     `profile` is the campaign's `network_profile` (signed in the task). `lab` jobs do not use a
     broker at all today; the field still travels so an audit line always names the profile that was
-    in force. On `internet`, `private_cidrs` are denied unless the address is one of the signed
-    target addresses (`target_ips`, i.e. the campaign explicitly targets it), and
-    `per_host_rps`/`per_host_max_connections` are the RoE safety caps the broker applies.
+    in force. On `internet`, `private_cidrs` are denied unless the address is inside one of the
+    task's `authorized_private_cidrs` (the private *seed* CIDRs the RoE lists and M05 signed, R4),
+    and `per_host_rps`/`per_host_max_connections` are the RoE safety caps the broker applies.
     """
 
     job_id: str
@@ -113,6 +116,9 @@ class JobEgressPolicy:
     platform_cidrs: tuple[IPNetwork, ...] = ()
     deny_cidrs: tuple[IPNetwork, ...] = ()
     private_cidrs: tuple[IPNetwork, ...] = ()
+    #: The private seed CIDRs the RoE lists for this task (signed in `egress_binding`): the only
+    #: private ranges an internet job may reach (R4). Empty is the safe default.
+    authorized_private_cidrs: tuple[IPNetwork, ...] = ()
     #: Names the job may resolve through the broker's DNS front end: the task's target names and the
     #: manifest's declared source hosts. `dns_target_names` is the subset whose answers are narrowed
     #: to the signed target addresses (a target name never resolves to something the broker would
@@ -137,6 +143,20 @@ class JobEgressPolicy:
                 for port in source.ports:
                     bound.append(f"{host}:{port}")
         return tuple(bound)
+
+    def binds_name(self, host: str) -> bool:
+        """Whether this job may resolve `host` at all (R2: a bound source/target name).
+
+        `decide` resolves a name to judge the address it pins, so the name itself must be part of
+        the signed binding first. Otherwise any name a tool sends becomes a DNS query through the
+        broker to the host's resolver - an exfiltration channel that bypasses the DNS front end's
+        name binding, and a lookup the job was never authorized to make.
+        """
+        key = host_key(host)
+        for source in self.sources:
+            if any(host_key(candidate) == key for candidate in source.hosts):
+                return True
+        return any(host_key(name) == key for name in (*self.dns_names, *self.dns_target_names))
 
 
 @dataclass(frozen=True)
@@ -206,6 +226,10 @@ def decide(
     if literal is not None:
         resolved = (str(literal),)
     else:
+        if not policy.binds_name(host):
+            # R2: never ask the resolver about a name the job is not bound to. The refusal is the
+            # same as for any other unbound destination, but it happens before any lookup.
+            return Decision(False, Reason.NOT_BOUND_TO_JOB, host, port)
         answer = resolver or policy.resolver or Resolver()
         try:
             resolved_values = answer.resolve(host)
@@ -239,9 +263,13 @@ def decide(
             return Decision(False, Reason.DENY_PLATFORM_NETWORK, host, port, resolved=resolved)
         if _in_any(address, policy.deny_cidrs):
             return Decision(False, Reason.DENY_TARGET_DENYLIST, host, port, resolved=resolved)
-        # Internet profile: the host's private networks are not reachable unless the campaign
-        # explicitly targets the address (a signed target address is the campaign's own choice).
-        if _in_any(address, policy.private_cidrs) and not _in_any(address, policy.target_ips):
+        # Internet profile: the host's private networks are not reachable unless the RoE lists the
+        # private seed CIDR that covers the address (R4). A signed target address alone is not the
+        # exemption: that would make every private target M05 signs reachable, including one that
+        # arrived through a split-horizon name resolving into the owner's own LAN.
+        if _in_any(address, policy.private_cidrs) and not _in_any(
+            address, policy.authorized_private_cidrs
+        ):
             return Decision(False, Reason.DENY_PRIVATE, host, port, resolved=resolved)
 
     # 2. Which binding covers the request: a declared provider source (by host and port) or the
@@ -324,6 +352,7 @@ def load_policy(raw: dict[str, object]) -> JobEgressPolicy:
         platform_cidrs=nets(raw.get("platform_cidrs")),
         deny_cidrs=nets(raw.get("deny_cidrs")),
         private_cidrs=nets(raw.get("private_cidrs")),
+        authorized_private_cidrs=nets(raw.get("authorized_private_cidrs")),
         dns_names=tuple(str(name) for name in _list(raw.get("dns_names"))),
         dns_target_names=tuple(str(name) for name in _list(raw.get("dns_target_names"))),
         dns_ttl=int(str(raw.get("dns_ttl", 30))),
@@ -360,6 +389,7 @@ def policy_document(policy: JobEgressPolicy) -> dict[str, object]:
         "platform_cidrs": [str(net) for net in policy.platform_cidrs],
         "deny_cidrs": [str(net) for net in policy.deny_cidrs],
         "private_cidrs": [str(net) for net in policy.private_cidrs],
+        "authorized_private_cidrs": [str(net) for net in policy.authorized_private_cidrs],
         "dns_names": list(policy.dns_names),
         "dns_target_names": list(policy.dns_target_names),
         "dns_ttl": policy.dns_ttl,

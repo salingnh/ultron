@@ -159,7 +159,7 @@ def _build(manifest: ProviderManifest, raw: bytes, **kwargs: Any) -> Any:
     denylist = kwargs.pop("target_denylist", ())
     kwargs.setdefault("per_host_rps", 5.0)
     kwargs.setdefault("per_host_max_connections", 2)
-    kwargs.setdefault("authorization", "owner | owner, item 61, 2026-11-25 | 2026-11-25 | x.test")
+    kwargs.setdefault("authorization", m06_support.AUTHORIZATION)
     return spec.build_spec(
         task,
         manifest,
@@ -181,12 +181,16 @@ def _binding(
     *,
     target_binding: str = "required",
     mode: str = "broker",
+    private_seed: str = "10.0.0.0/8",
 ) -> dict[str, Any]:
+    # The test target 10.1.2.3 is private, so the binding carries the private seed CIDR a RoE would
+    # list for it (R4): without it, an internet task with a private target is refused.
     return {
         "mode": mode,
         "target_binding": target_binding,
         "entries": entries,
         "target_addresses": addresses or [],
+        "authorized_private_cidrs": [private_seed] if addresses else [],
     }
 
 
@@ -487,7 +491,9 @@ def test_policy_includes_platform_cidrs_and_campaign_denylist() -> None:
     assert ipaddress.ip_network("10.50.0.0/16") in policy.deny_cidrs
     # A denied *name* cannot be a CIDR; the broker only reaches declared names, so it stays closed.
     assert len(policy.deny_cidrs) == 1
-    decision = netpolicy.decide(policy, "crt.sh", 443)
+    decision = netpolicy.decide(
+        policy, "crt.sh", 443, resolver=_StubResolver({"crt.sh": ["93.184.216.34"]})
+    )
     assert decision.allowed
 
 
@@ -624,7 +630,7 @@ def test_the_internet_profile_needs_the_roe_safety_caps() -> None:
             job_id="job-1",
             task_body=m06_support.body_of(task),
             key_ring=m06_support.ANY_RING,
-            authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example",
+            authorization=m06_support.AUTHORIZATION,
             platform_cidrs=("10.88.0.0/16",),
         )
     assert caught.value.code == "POLICY_DENIED"
@@ -640,7 +646,7 @@ def test_the_internet_profile_denies_private_ranges_except_signed_targets() -> N
         job_id="job-1",
         task_body=m06_support.body_of(task),
         key_ring=m06_support.ANY_RING,
-        authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | internal.example",
+        authorization=m06_support.AUTHORIZATION,
         platform_cidrs=("10.88.0.0/16",),
         per_host_rps=0.5,
         per_host_max_connections=1,
@@ -728,7 +734,7 @@ def test_the_port_list_is_capped_by_the_pinned_input_schema() -> None:
             key_ring=m06_support.ANY_RING,
             broker_proxy="http://10.97.0.2:3128",
             manifest_bytes=raw,
-            authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | 10.1.2.3",
+            authorization=m06_support.AUTHORIZATION,
             platform_cidrs=("10.88.0.0/16",),
             per_host_rps=0.5,
             per_host_max_connections=1,
@@ -852,7 +858,7 @@ def test_a_non_proxy_aware_provider_rides_the_l3_channel() -> None:
         task_body=m06_support.body_of(task),
         key_ring=m06_support.ANY_RING,
         manifest_bytes=raw,
-        authorization="owner | owner, item 61, 2026-11-25 | 2026-11-25 | 10.1.2.3",
+        authorization=m06_support.AUTHORIZATION,
         platform_cidrs=("10.88.0.0/16",),
         per_host_rps=1.0,
         per_host_max_connections=1,

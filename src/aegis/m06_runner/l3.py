@@ -20,8 +20,9 @@ Rules (all in the broker's namespace):
   network).
 * **input**: default drop, established accepted, and the broker's DNS listener (UDP/TCP 53) - the
   only service a job may reach at the gateway. The proxy ports are not needed on this channel.
-* The always-deny set is implied by the default drop, and M06 refuses a signed entry inside it, so
-  a rule can never be installed for metadata/loopback/link-local/platform networks.
+* The always-deny set is implied by the default drop, and `allow_rules` refuses a signed target
+  that the policy denies (metadata/loopback/link-local, a platform network, the campaign denylist,
+  a private range the RoE did not list), so such a rule is never installed (R1).
 
 Audit: the broker samples the nftables counters of its own ruleset and writes one `kind: l3` line
 per destination rule whose counters grew (destination, port, packets, bytes) and one for the drop
@@ -101,12 +102,24 @@ def allow_rules(
     manifest's declared hosts, resolved once here and pinned into the rule, so the packet path has
     no name resolution. A source that resolves to nothing fails the install (the broker refuses to
     start rather than installing a partial allow set).
+
+    Every signed pair goes through the same address checks as the broker path (`_address_allowed`):
+    the always-deny set, the platform networks, the campaign denylist and the internet private rule
+    (R1). A target address that fails is a refusal, not a skipped rule: silently dropping it would
+    leave the job running with a partial allow set, and every connection to the target would look
+    like a network failure instead of the policy refusal it is.
     """
     resolve = resolver or netpolicy.Resolver().resolve
     rules: set[Rule] = set()
     for network in policy.target_ips:
+        address = str(network.network_address)
+        if not _address_allowed(policy, address):
+            raise RuntimeError(
+                f"signed target {address} is denied by the policy (platform network, campaign "
+                "denylist or always-deny set); refusing to open an L3 gateway for it"
+            )
         for port in policy.target_ports:
-            rules.add(Rule(str(network.network_address), int(port)))
+            rules.add(Rule(address, int(port)))
     for source in policy.sources:
         for host in source.hosts:
             try:
@@ -141,7 +154,7 @@ def _address_allowed(policy: JobEgressPolicy, address: str) -> bool:
     if any(parsed in network for network in policy.deny_cidrs):
         return False
     if any(parsed in network for network in policy.private_cidrs) and not any(
-        parsed in network for network in policy.target_ips
+        parsed in network for network in policy.authorized_private_cidrs
     ):
         return False
     return True

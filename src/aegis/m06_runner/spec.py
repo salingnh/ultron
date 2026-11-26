@@ -42,12 +42,14 @@ from pathlib import Path
 from typing import Any
 
 from aegis import validation
+from aegis.common.networks import PRIVATE_NETWORKS, is_private, subnet_inside
 from aegis.common.ports import ContainerSpec
 from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
 from aegis.m05_registry.signing import DEV_KEY_ID, KeyRing, SignatureError
 from aegis.m06_runner import denyset, netpolicy
+from aegis.m06_runner.authorization import Authorization
 from aegis.m06_runner.values import TARGET_PREFIXES, text
 
 MIB = 1048576
@@ -68,16 +70,10 @@ SERVICE_VALUE = re.compile(
     r"^(?P<host>\[[0-9a-f:.]+\]|[^:/\s]+):(?P<port>[0-9]{1,5})/(?P<transport>tcp|udp)$"
 )
 
-#: Internet profile: the host's own private networks are not reachable unless the campaign names
-#: the address as a target (RFC 1918, CGNAT, IPv6 ULA). The always-deny set stays in `denyset.py`;
-#: this list is the *conditional* block: `private − signed targets`.
-PRIVATE_NETWORKS = (
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
-    "100.64.0.0/10",
-    "fc00::/7",
-)
+#: Internet profile: RFC 1918, CGNAT and ULA ranges are denied unless the address is inside a
+#: private *seed* CIDR the RoE lists (signed into the task as `authorized_private_cidrs`, R4).
+#: The list lives in `aegis.common.networks` because M05 applies the same rule when it signs.
+PRIVATE = tuple(ipaddress.ip_network(entry) for entry in PRIVATE_NETWORKS)
 
 
 class SpecError(RuntimeError):
@@ -590,6 +586,33 @@ def _denylist_networks(denylist: Sequence[str]) -> tuple[Any, ...]:
     return tuple(networks)
 
 
+def _signed_private_cidrs(binding: Any) -> tuple[Any, ...]:
+    """The RoE-authorized private seed CIDRs the task carries, validated against the private set.
+
+    M05 signs the campaign's private seed CIDRs (R4). M06 refuses one that is not itself inside a
+    private range: a forged or buggy signer must not be able to exempt a public range (or
+    `0.0.0.0/0`) from the internet private rule with one extra field.
+    """
+    declared = getattr(binding, "authorized_private_cidrs", None) or []
+    networks: list[Any] = []
+    for value in declared:
+        try:
+            network = ipaddress.ip_network(text(value), strict=False)
+        except ValueError as error:
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed authorized_private_cidrs entry {value!r} is not a CIDR: {error}",
+            ) from error
+        if not subnet_inside(network, PRIVATE):
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed authorized_private_cidrs entry {network} is not a private range "
+                f"({', '.join(PRIVATE_NETWORKS)})",
+            )
+        networks.append(network)
+    return tuple(networks)
+
+
 def check_proxy_wiring(manifest: ProviderManifest, entry_args: Sequence[str] | None) -> None:
     """Refuse a broker job whose tool needs its own proxy flag and whose profile omits it.
 
@@ -621,7 +644,7 @@ def build_policy(
     target_denylist: Sequence[str] = (),
     resolver: netpolicy.Resolver | None = None,
     schema: Mapping[str, Any] | None = None,
-    authorization: str = "",
+    authorization: Authorization | None = None,
     per_host_rps: float | None = None,
     per_host_max_connections: int | None = None,
 ) -> netpolicy.JobEgressPolicy:
@@ -634,16 +657,18 @@ def build_policy(
     disagreement is a `POLICY_DENIED` job rather than a silent rebuild.
 
     `task.network_profile` (also signed) decides the internet rules: private ranges are denied
-    unless the campaign names the address as a target, and the RoE safety caps are required.
-    Without a rate cap and a per-host concurrency cap an internet job has no bound on what it does
-    to a third party, so the job is refused (fail closed) instead of running uncapped.
+    unless the address is inside a private seed CIDR the RoE lists for this task, and the RoE safety
+    caps are required. Without a rate cap and a per-host concurrency cap an internet job has no
+    bound on what it does to a third party, so the job is refused (fail closed) instead of running
+    uncapped.
     """
     signing_key = verify_task(task_body, key_ring)
     profile = str(task.network_profile)
     if profile == "internet":
         # The authorization is the owner's statement that the targets are theirs; every internet
-        # audit line names it, and an empty one is refused here rather than audited as "" (F5).
-        if not authorization.strip():
+        # audit line names it. The caller validates the structured object, and this is the last
+        # gate: a rendered " |  |  | " string is not evidence (R6).
+        if authorization is None:
             raise SpecError(
                 "POLICY_DENIED",
                 "an internet job needs a structured authorization in its campaign RoE "
@@ -679,7 +704,7 @@ def build_policy(
             mode="none",
             profile=profile,
             campaign_id=text(task.campaign_id),
-            authorization=authorization,
+            authorization="" if authorization is None else authorization.reference_line(),
         )
     if not declared_egress:
         raise SpecError(
@@ -733,6 +758,49 @@ def build_policy(
             raise SpecError(
                 "POLICY_DENIED",
                 f"signed binding entry dns:{dns_name} is in the always-deny set ({denied.value})",
+            )
+
+    # 1b. The signed *target addresses* get the same checks (R1): a signed target is never a licence
+    #     to install a rule for the platform's own networks, the campaign denylist or a private
+    #     range the RoE did not list. The broker would re-check them per connection, but the L3
+    #     gateway installs one nft rule per signed pair, and its allow set must not contain them.
+    platform_networks = tuple(ipaddress.ip_network(entry, strict=False) for entry in platform_cidrs)
+    denylist_networks = _denylist_networks(target_denylist)
+    authorized_private = _signed_private_cidrs(binding)
+    for address in target_addresses:
+        parsed, embedded = denyset.checked_address(address)
+        if embedded is not None:
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed target address {address} is refused ({embedded.value})",
+            )
+        denied = denyset.deny_reason(parsed)
+        if denied is not None:
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed target address {address} is in the always-deny set ({denied.value})",
+            )
+        if any(parsed.version == net.version and parsed in net for net in platform_networks):
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed target address {address} is inside the platform deny set",
+            )
+        if any(parsed.version == net.version and parsed in net for net in denylist_networks):
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed target address {address} is inside the campaign target_denylist",
+            )
+        if (
+            profile == "internet"
+            and is_private(parsed)
+            and not any(
+                parsed.version == net.version and parsed in net for net in authorized_private
+            )
+        ):
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed target address {address} is private and the campaign RoE lists no "
+                "private seed CIDR covering it",
             )
 
     # 2. Every destination the pinned manifest declares must be inside the signed set (a manifest
@@ -851,7 +919,7 @@ def build_policy(
                 "the internet profile needs rate_limits.requests_per_second_per_host and "
                 "rate_limits.max_concurrent_connections_per_host from the campaign RoE",
             )
-        private_cidrs = tuple(ipaddress.ip_network(entry) for entry in PRIVATE_NETWORKS)
+        private_cidrs = PRIVATE
     else:
         private_cidrs = ()
     return netpolicy.JobEgressPolicy(
@@ -860,7 +928,7 @@ def build_policy(
         egress_mode=str(permissions.egressMode),
         profile=profile,
         campaign_id=text(task.campaign_id),
-        authorization=authorization,
+        authorization="" if authorization is None else authorization.reference_line(),
         target_ips=tuple(
             ipaddress.ip_network(f"{address}/{address.max_prefixlen}")
             for address in target_addresses
@@ -868,8 +936,9 @@ def build_policy(
         target_ports=target_ports,
         sources=tuple(sources),
         platform_cidrs=tuple(ipaddress.ip_network(entry) for entry in platform_cidrs),
-        deny_cidrs=_denylist_networks(target_denylist),
+        deny_cidrs=denylist_networks,
         private_cidrs=private_cidrs,
+        authorized_private_cidrs=authorized_private,
         dns_names=dns_names,
         dns_target_names=dns_target_names,
         per_host_rps=per_host_rps,
@@ -961,7 +1030,7 @@ def build_spec(
     target_denylist: Sequence[str] = (),
     manifest_bytes: bytes | None = None,
     resolver: netpolicy.Resolver | None = None,
-    authorization: str = "",
+    authorization: Authorization | None = None,
     per_host_rps: float | None = None,
     per_host_max_connections: int | None = None,
 ) -> ContainerSpec:

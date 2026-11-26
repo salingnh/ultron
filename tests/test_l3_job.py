@@ -84,6 +84,9 @@ def _policy(job_id: str, target_ip: str, *, port: int = 8080) -> netpolicy.JobEg
         target_ips=(ipaddress.ip_network(f"{target_ip}/32"),),
         target_ports=(port,),
         private_cidrs=tuple(ipaddress.ip_network(entry) for entry in PRIVATE),
+        # The target is a container address on the uplink: the test policy stands in for a RoE that
+        # lists exactly that address as its private seed (R4).
+        authorized_private_cidrs=(ipaddress.ip_network(f"{target_ip}/32"),),
     )
 
 
