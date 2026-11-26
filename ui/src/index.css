@@ -419,6 +419,12 @@ table.data-table tr:hover td {
   font-size: var(--text-sm);
 }
 
+.split-panel-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
 /* Provenance Drawer/Panel */
 .provenance-panel {
   width: 380px;
@@ -795,6 +801,14 @@ table.data-table tr:hover td {
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--line);
+  }
+
+  .split-panel-layout {
+    flex-direction: column;
+  }
+
+  .split-panel-layout > * {
+    width: 100%;
   }
 
   .flow-container,

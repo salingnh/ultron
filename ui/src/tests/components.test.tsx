@@ -909,4 +909,295 @@ describe('Ultron UI Reusable Components', () => {
       globalThis.ResizeObserver = origResizeObserver;
     }
   });
+
+  it('ranks ServiceTable CVEs (KEV -> EPSS -> CVSS), collapses after top 5 with +N expander, and shows KEV/Critical/High counts', () => {
+    const onSelect = vi.fn();
+    const candidates: import('../api/types').VulnerabilityCandidate[] = [
+      // Unsorted input order intentionally: low/alphabetical first, KEV buried in middle
+      {
+        vulnerability_id: 'CVE-1999-0001',
+        cvss_base: 5.0,
+        cvss_severity: 'MEDIUM',
+        kev: false,
+        epss: 0.01,
+        match_method: 'cpe_range',
+        confidence: 0.6,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+      {
+        vulnerability_id: 'CVE-2020-0002',
+        cvss_base: 7.5,
+        cvss_severity: 'HIGH',
+        kev: false,
+        epss: 0.45,
+        match_method: 'cpe_range',
+        confidence: 0.7,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+      {
+        vulnerability_id: 'CVE-2021-41773',
+        cvss_base: 7.5,
+        cvss_severity: 'HIGH',
+        kev: true,
+        epss: 0.05,
+        match_method: 'cpe_range',
+        confidence: 0.8,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+      {
+        vulnerability_id: 'CVE-2022-0003',
+        cvss_base: 9.8,
+        cvss_severity: 'CRITICAL',
+        kev: false,
+        epss: 0.1,
+        match_method: 'cpe_range',
+        confidence: 0.7,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+      {
+        vulnerability_id: 'CVE-2023-0004',
+        cvss_base: 9.1,
+        cvss_severity: 'CRITICAL',
+        kev: false,
+        epss: 0.8,
+        match_method: 'cpe_range',
+        confidence: 0.7,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+      {
+        vulnerability_id: 'CVE-2024-0005',
+        cvss_base: 8.2,
+        cvss_severity: 'HIGH',
+        kev: false,
+        epss: 0.3,
+        match_method: 'cpe_range',
+        confidence: 0.7,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+      {
+        vulnerability_id: 'CVE-2025-0006',
+        cvss_base: 9.9,
+        cvss_severity: 'CRITICAL',
+        kev: false,
+        epss: 0.3,
+        match_method: 'cpe_range',
+        confidence: 0.7,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+      {
+        vulnerability_id: 'CVE-2026-0007',
+        cvss_base: 4.3,
+        cvss_severity: 'MEDIUM',
+        kev: false,
+        epss: null,
+        match_method: 'cpe_range',
+        confidence: 0.5,
+        candidate_since: '2026-11-25T08:06:00Z',
+      },
+    ];
+
+    render(
+      <ServiceTable
+        rows={[
+          {
+            asset: {
+              asset_id: '01934f6a-0000-7000-8000-0000000000f8',
+              canonical_key: 'service:10.114.53.215:80/tcp',
+              kind: 'service',
+              first_seen: '2026-11-25T08:00:00Z',
+              last_seen: '2026-11-25T08:05:00Z',
+            },
+            host: '10.114.53.215',
+            port: '80',
+            transport: 'tcp',
+            protocol: 'http (tcp)',
+            product: 'http_server',
+            version: '2.4.49',
+            cpe: 'cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*',
+            candidates,
+            candidateCount: candidates.length,
+            kevCount: 1,
+            truncatedCandidates: false,
+          },
+        ]}
+        onSelectVulnerability={onSelect}
+        onFocusInGraph={() => {}}
+      />
+    );
+
+    // Count summary badges: total, KEV, Critical, High
+    expect(screen.getByText('8 ứng viên')).toBeInTheDocument();
+    expect(screen.getByText('1 KEV')).toBeInTheDocument();
+    expect(screen.getByText('3 Critical')).toBeInTheDocument();
+    expect(screen.getByText('3 High')).toBeInTheDocument();
+
+    // Expected top 5 ranking:
+    // 1. CVE-2021-41773 (KEV=true)
+    // 2. CVE-2023-0004 (EPSS 0.80)
+    // 3. CVE-2020-0002 (EPSS 0.45)
+    // 4. CVE-2025-0006 (EPSS 0.30, CVSS 9.9)
+    // 5. CVE-2024-0005 (EPSS 0.30, CVSS 8.2)
+    // Collapsed: CVE-2022-0003 (EPSS 0.10), CVE-1999-0001 (EPSS 0.01), CVE-2026-0007 (EPSS null)
+    const chipButtons = screen.getAllByRole('button', { name: /CVE-/ });
+    expect(chipButtons.map((b) => b.textContent)).toEqual([
+      'CVE-2021-41773KEV',
+      'CVE-2023-0004',
+      'CVE-2020-0002',
+      'CVE-2025-0006',
+      'CVE-2024-0005',
+    ]);
+    expect(screen.queryByText('CVE-1999-0001')).not.toBeInTheDocument();
+    expect(screen.queryByText('CVE-2022-0003')).not.toBeInTheDocument();
+
+    // Expander '+3' expands all 8, and 'Thu gọn' collapses back to top 5
+    const expandBtn = screen.getByRole('button', { name: /Hiện thêm 3 ứng viên CVE/ });
+    expect(expandBtn).toHaveTextContent('+3');
+    expect(expandBtn).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(expandBtn);
+
+    expect(screen.getByText('CVE-1999-0001')).toBeInTheDocument();
+    expect(screen.getByText('CVE-2022-0003')).toBeInTheDocument();
+    expect(screen.getByText('CVE-2026-0007')).toBeInTheDocument();
+
+    const collapseBtn = screen.getByRole('button', { name: /Thu gọn danh sách ứng viên CVE/ });
+    expect(collapseBtn).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(collapseBtn);
+    expect(screen.queryByText('CVE-1999-0001')).not.toBeInTheDocument();
+
+    // Clicking Critical badge opens highest-ranked CRITICAL candidate (CVE-2023-0004)
+    fireEvent.click(screen.getByRole('button', { name: '3 Critical' }));
+    expect(onSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ host: '10.114.53.215' }),
+      expect.objectContaining({ vulnerability_id: 'CVE-2023-0004' })
+    );
+  });
+
+  it('keeps the full sortable candidate list in VulnerabilityPanel', () => {
+    const siblings: import('../api/types').VulnerabilityCandidate[] = Array.from(
+      { length: 8 },
+      (_, idx) => ({
+        vulnerability_id: `CVE-202${idx}-100${idx}`,
+        cvss_base: idx === 2 ? 9.8 : 5.0 + idx * 0.4,
+        cvss_severity: idx === 2 ? 'CRITICAL' : 'MEDIUM',
+        kev: idx === 5,
+        epss: idx === 1 ? 0.92 : idx * 0.05,
+        match_method: 'cpe_range' as const,
+        confidence: 0.7,
+        candidate_since: '2026-11-25T08:06:00Z',
+      })
+    );
+    const onSelectCandidate = vi.fn();
+
+    render(
+      <VulnerabilityPanel
+        data={{
+          assetId: '01934f6a-0000-7000-8000-0000000000f8',
+          assetKey: 'service:10.114.53.215:80/tcp',
+          candidate: siblings[5],
+          siblings,
+        }}
+        onSelectCandidate={onSelectCandidate}
+        onClose={() => {}}
+      />
+    );
+
+    const listItems = screen.getAllByRole('listitem');
+    expect(listItems).toHaveLength(8);
+    // Default rank: KEV first (CVE-2025-1005), then highest EPSS (CVE-2021-1001)
+    expect(listItems[0]).toHaveTextContent('CVE-2025-1005');
+    expect(listItems[1]).toHaveTextContent('CVE-2021-1001');
+
+    // Switch sort to CVSS desc -> CVE-2022-1002 (9.8) first
+    const sortSelect = screen.getByLabelText('Sắp xếp ứng viên CVE');
+    fireEvent.change(sortSelect, { target: { value: 'cvss' } });
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('CVE-2022-1002');
+
+    // Switch sort to EPSS desc -> CVE-2021-1001 (0.92) first
+    fireEvent.change(sortSelect, { target: { value: 'epss' } });
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('CVE-2021-1001');
+
+    // Switch sort to CVE ID Z->A -> CVE-2027-1007 first
+    fireEvent.change(sortSelect, { target: { value: 'cve_desc' } });
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('CVE-2027-1007');
+
+    // Clicking an item calls onSelectCandidate
+    fireEvent.click(screen.getAllByRole('listitem')[0]);
+    expect(onSelectCandidate).toHaveBeenCalledWith(
+      expect.objectContaining({ vulnerability_id: 'CVE-2027-1007' })
+    );
+  });
+
+  it('collapses 99 CVE candidates to top 5 + +94 expander and keeps all 99 in VulnerabilityPanel', () => {
+    const many: import('../api/types').VulnerabilityCandidate[] = Array.from(
+      { length: 99 },
+      (_, idx) => ({
+        vulnerability_id: `CVE-2025-${String(1000 + idx).padStart(4, '0')}`,
+        cvss_base: idx === 50 ? 9.5 : 5.0,
+        cvss_severity: null,
+        kev: idx === 77,
+        epss: idx === 77 ? 0.2 : idx === 10 ? 0 : idx === 11 ? null : (idx % 10) * 0.05,
+        match_method: 'cpe_range' as const,
+        confidence: 0.7,
+        candidate_since: '2026-11-25T08:06:00Z',
+      })
+    );
+    const onSelect = vi.fn();
+
+    render(
+      <ServiceTable
+        rows={[
+          {
+            asset: {
+              asset_id: '01934f6a-0000-7000-8000-0000000000f9',
+              canonical_key: 'service:10.114.53.215:80/tcp',
+              kind: 'service',
+              first_seen: '2026-11-25T08:00:00Z',
+              last_seen: '2026-11-25T08:05:00Z',
+            },
+            host: '10.114.53.215',
+            port: '80',
+            transport: 'tcp',
+            protocol: 'http (tcp)',
+            product: 'http_server',
+            version: '2.4.49',
+            cpe: 'cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*',
+            candidates: many,
+            candidateCount: 99,
+            kevCount: 1,
+            truncatedCandidates: false,
+          },
+        ]}
+        onSelectVulnerability={onSelect}
+        onFocusInGraph={() => {}}
+      />
+    );
+
+    expect(screen.getByText('99 ứng viên')).toBeInTheDocument();
+    expect(screen.getByText('1 KEV')).toBeInTheDocument();
+    expect(screen.getByText('1 Critical')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /CVE-/ })).toHaveLength(5);
+    expect(screen.getByRole('button', { name: /Hiện thêm 94 ứng viên CVE/ })).toHaveTextContent('+94');
+
+    const { unmount } = render(
+      <VulnerabilityPanel
+        data={{
+          assetId: '01934f6a-0000-7000-8000-0000000000f9',
+          assetKey: 'service:10.114.53.215:80/tcp',
+          candidate: many[77],
+          siblings: many,
+        }}
+        onSelectCandidate={() => {}}
+        onClose={() => {}}
+      />
+    );
+    const allItems = screen.getAllByRole('listitem');
+    expect(allItems).toHaveLength(99);
+    // KEV first, and epss=0 (CVE-2025-1010) ranks ahead of epss=null (CVE-2025-1011)
+    expect(allItems[0]).toHaveTextContent('CVE-2025-1077');
+    const idxZero = allItems.findIndex((el) => el.textContent?.includes('CVE-2025-1010'));
+    const idxNull = allItems.findIndex((el) => el.textContent?.includes('CVE-2025-1011'));
+    expect(idxZero).toBeGreaterThan(-1);
+    expect(idxNull).toBeGreaterThan(idxZero);
+    unmount();
+  });
 });

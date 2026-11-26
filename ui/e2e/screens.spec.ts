@@ -211,12 +211,32 @@ for (const theme of ['light', 'dark'] as const) {
           page.getByText('Chưa phát hiện dịch vụ nào khớp bộ lọc trong chiến dịch')
         )
       ).toBeVisible();
-      const candidateBadge = page
-        .locator('table[aria-label="Bảng dịch vụ theo chiến dịch"] button', { hasText: /ứng viên/ })
-        .first();
+      const serviceTable = page.getByRole('table', { name: 'Bảng dịch vụ theo chiến dịch' });
+      const candidateBadge = serviceTable.locator('button', { hasText: /ứng viên/ }).first();
       if ((await candidateBadge.count()) > 0) {
+        const firstSummary = serviceTable.locator('[aria-label^="Tóm tắt ứng viên CVE"]').first();
+        await expect(firstSummary).toContainText(/KEV/);
+        await expect(firstSummary).toContainText(/Critical/);
+        await expect(firstSummary).toContainText(/High/);
+
+        const expanderBtn = serviceTable.locator('button[aria-expanded="false"]').first();
+        if ((await expanderBtn.count()) > 0) {
+          await expect(expanderBtn).toHaveText(/^\+\d+$/);
+          await expanderBtn.click();
+          const collapseBtn = serviceTable.locator('button[aria-expanded="true"]').first();
+          await expect(collapseBtn).toHaveText('Thu gọn');
+          await collapseBtn.click();
+          await expect(serviceTable.locator('button[aria-expanded="false"]').first()).toBeVisible();
+        }
+
         await candidateBadge.click();
-        await expect(page.getByLabel('Bảng chi tiết ứng viên CVE')).toBeVisible();
+        const vulnPanel = page.getByLabel('Bảng chi tiết ứng viên CVE');
+        await expect(vulnPanel).toBeVisible();
+        const sortSelect = vulnPanel.getByLabel('Sắp xếp ứng viên CVE');
+        if ((await sortSelect.count()) > 0) {
+          await sortSelect.selectOption('cvss');
+          await sortSelect.selectOption('rank');
+        }
       }
       await assertNoHorizontalOverflow(page);
       await captureScreen(page, `05b-service-table-${theme}.png`);
@@ -300,6 +320,21 @@ test.describe('Ultron Operations UI - 390px Responsive Verification', () => {
       ).toBeVisible({ timeout: 15000 });
       await assertNoHorizontalOverflow(page);
       await captureScreen(page, `09d-mobile-390-assets-${theme}.png`);
+
+      await page.getByRole('button', { name: /Bảng Dịch vụ/ }).click();
+      await expect(
+        page.getByRole('table', { name: 'Bảng dịch vụ theo chiến dịch' }).or(
+          page.getByText('Chưa phát hiện dịch vụ nào khớp bộ lọc trong chiến dịch')
+        )
+      ).toBeVisible();
+      const mobileSvcBadge = page
+        .locator('table[aria-label="Bảng dịch vụ theo chiến dịch"] button', { hasText: /ứng viên/ })
+        .first();
+      if ((await mobileSvcBadge.count()) > 0) {
+        await mobileSvcBadge.click();
+        await expect(page.getByLabel('Bảng chi tiết ứng viên CVE')).toBeVisible();
+      }
+      await assertNoHorizontalOverflow(page);
 
       await page.goto('/tools');
       await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
