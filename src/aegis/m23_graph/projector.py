@@ -290,6 +290,14 @@ class Projector:
         matches = pg.prefetch_matches(
             self._conn, pg.event_ids(batch, VULNERABILITY_EVENT, "match_id")
         )
+        # A retraction removes the pair's edge only when no decision of the pair still matches
+        # (a decision row carries a campaign, the edge does not), so the batch asks PostgreSQL once.
+        current_matches = pg.current_matched_pairs(
+            self._conn,
+            pg.event_ids(batch, VULNERABILITY_EVENT, "asset_id")
+            if any(not match.matched for match in matches.values())
+            else (),
+        )
         evidence = pg.prefetch_evidence(
             self._conn,
             [
@@ -315,6 +323,7 @@ class Projector:
             partitions=max(self.config.partitions, 1),
             vulnerabilities=vulnerabilities,
             matches=matches,
+            current_matches=current_matches,
         )
         applied_ops = 0
         phases = planned.phases()

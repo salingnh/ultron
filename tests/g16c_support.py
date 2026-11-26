@@ -180,6 +180,55 @@ def _cve(
     }
 
 
+def nvd_with_retracted_match() -> bytes:
+    """The NVD slice with a revision of CVE-2021-41773 that no longer matches httpd 2.4.49.
+
+    NVD moved the affected range to 2.4.50-2.4.54 (a re-analysis): the candidate the previous
+    revision produced is a match at revision N and no match at N+1, which is what a retraction is.
+    """
+    import json
+
+    document = json.loads(NVD.read_text(encoding="utf-8"))
+    for entry in document["vulnerabilities"]:
+        if entry["cve"]["id"] != "CVE-2021-41773":
+            continue
+        entry["cve"]["lastModified"] = "2026-11-27T00:00:00.000"
+        entry["cve"]["configurations"] = [
+            {
+                "nodes": [
+                    _node(
+                        _cpe(
+                            HTTPD,
+                            "*",
+                            versionStartIncluding="2.4.50",
+                            versionEndExcluding="2.4.55",
+                        )
+                    )
+                ]
+            }
+        ]
+    return json.dumps(document).encode("utf-8")
+
+
+def nvd_without_the_product() -> bytes:
+    """The NVD slice with CVE-2021-41773 re-analysed so it no longer mentions httpd at all.
+
+    The flattened catalogue narrows by product, so this revision never reaches the matcher's
+    catalogue for the httpd service; a retraction must still happen (full run only).
+    """
+    import json
+
+    document = json.loads(NVD.read_text(encoding="utf-8"))
+    for entry in document["vulnerabilities"]:
+        if entry["cve"]["id"] != "CVE-2021-41773":
+            continue
+        entry["cve"]["lastModified"] = "2026-11-27T01:00:00.000"
+        entry["cve"]["configurations"] = [
+            {"nodes": [_node(_cpe(("o", "fedoraproject", "fedora"), "34"))]}
+        ]
+    return json.dumps(document).encode("utf-8")
+
+
 def nvd_with_configuration_cases() -> bytes:
     """The NVD slice plus three real httpd configurations the matcher must tell apart (item 61).
 

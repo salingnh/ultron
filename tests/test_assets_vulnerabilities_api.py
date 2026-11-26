@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aegis import validation
+from aegis.m18_intel.sync import FeedSync
 from aegis.m20_vuln.matching import Matcher
 from aegis.m26_api import vulnerabilities as vulnerabilities_module
 from aegis.m26_api.app import API_PREFIX, create_app
@@ -124,6 +125,46 @@ def test_an_application_asset_is_a_candidate_source_too(
     _validated(body)
     assert body["asset"]["kind"] == "application"
     assert [item["vulnerability_id"] for item in body["items"]] == ["CVE-2022-22965"]
+
+
+def test_a_retracted_candidate_disappears_from_the_read_model(
+    database: tuple[str, dict[str, str]],
+) -> None:
+    """Item 61: the API follows the newest decision (`matched`), the same rule as the graph."""
+    dsn, assets = database
+    client = _client(dsn)
+    assert [
+        item["vulnerability_id"]
+        for item in _get(client, assets[fixtures.SERVICE_KEY]).json()["items"]
+    ] == ["CVE-2021-41773"]
+
+    with connect(dsn) as connection:
+        FeedSync(fixtures.connector(dsn), fixtures.MemoryStore()).sync(
+            "nvd",
+            "2026-11-27",
+            fixtures.nvd_with_retracted_match(),
+            source_uri="nvd-retraction.json",
+            snapshot_at=fixtures.SNAPSHOT_AT,
+        )
+        report = Matcher(connection).run()
+        history = connection.execute(
+            "SELECT matched, retraction_reason FROM package_vuln_match"
+            " WHERE vulnerability_id = 'CVE-2021-41773' ORDER BY created_at, match_id"
+        ).fetchall()
+    assert report.retracted == 1
+
+    body = _get(client, assets[fixtures.SERVICE_KEY]).json()
+    _validated(body)
+    assert body["items"] == []
+    assert (
+        body["coverage"]["matchable"] is True
+    )  # the service still has a CPE, it just matches nothing
+    assert [row["matched"] for row in history] == [True, False]
+    assert history[1]["retraction_reason"] == "NO_LONGER_MATCHES"
+
+    # The other asset's candidate is untouched by a retraction of this pair.
+    nginx = _get(client, assets[fixtures.NGINX_SERVICE_KEY]).json()
+    assert [item["vulnerability_id"] for item in nginx["items"]] == ["CVE-2021-23017"]
 
 
 def test_kev_only_filters_and_pages(database: tuple[str, dict[str, str]]) -> None:

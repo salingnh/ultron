@@ -5,9 +5,13 @@ Contract: `contracts/api/openapi.v2.yaml` operation `listAssetVulnerabilities` (
 `VulnerabilityCandidate` component.
 
 The candidates are M20's `package_vuln_match` rows, one per `(asset, vulnerability)` - the newest
-decision, because the table is append-only. CVSS/KEV/EPSS are read from `vulnerability_current`
-per source, so the API never shows a value the graph or the catalogue do not have. Nothing here
-raises a candidate to a finding: an operator reading "candidate + KEV" still has to verify.
+decision, because the table is append-only. A newest decision can be a retraction (`matched =
+false`, migration 0008: the intel changed and the CPE no longer matches), which is why the query
+filters `latest.matched`: the same rule the graph read model applies (`m23_graph/queries.py`), so
+the API and the graph never disagree about whether a pair is a candidate. CVSS/KEV/EPSS are read
+from `vulnerability_current` per source, so the API never shows a value the graph or the catalogue
+do not have. Nothing here raises a candidate to a finding: an operator reading "candidate + KEV"
+still has to verify.
 """
 
 from __future__ import annotations
@@ -58,7 +62,7 @@ QUERY = (
     "WITH latest AS ("
     "  SELECT DISTINCT ON (m.vulnerability_id)"
     "         m.match_id, m.vulnerability_id, m.match_method, m.affected_range, m.confidence,"
-    "         m.snapshot_id, m.campaign_id, m.created_at"
+    "         m.snapshot_id, m.campaign_id, m.matched, m.created_at"
     "    FROM package_vuln_match m"
     "   WHERE m.package_asset_id = %s"
     "     AND (%s::uuid IS NULL OR m.campaign_id = %s::uuid)"
@@ -77,7 +81,8 @@ QUERY = (
     "   LEFT JOIN vulnerability_current e"
     "     ON e.vulnerability_id = latest.vulnerability_id AND e.source = 'epss'"
     "    AND NOT e.withdrawn"
-    "  WHERE (%s::boolean = FALSE OR k.kev IS NOT NULL)"
+    "  WHERE latest.matched"
+    "    AND (%s::boolean = FALSE OR k.kev IS NOT NULL)"
     "  ORDER BY latest.vulnerability_id"
     "  LIMIT %s"
 )

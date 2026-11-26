@@ -22,9 +22,21 @@ needs evidence and is G2's decision (AGENTS.md). Idempotency is the database's: 
 unique `(package_asset_id, vulnerability_id, vuln_rev_id, match_method)` turns a re-run into
 `ON CONFLICT DO NOTHING`, and a new intel snapshot is a new `vuln_rev_id`, hence a new candidate.
 
+A candidate is a *decision*, and a new revision can take it back. When the newest decision of an
+(asset, vulnerability) pair was a match and this run decides otherwise, M20 stores the opposite
+decision at the new revision (`matched = false`, `retraction_reason`, migration 0008) and publishes
+the same `vulnerability.matched.v2` event in the same transaction, so M23 drops the AFFECTED_BY
+edge and M26's read model stops listing the candidate. History stays: rows are append-only, the
+positive decision at the old revision is still there. One retraction is written per pair (the
+unique key does not include the campaign: `campaign_id` is the provenance of the run that decided),
+and never at that decision's own revision (the key would refuse it): a code change without a new
+intel revision leaves the old candidate in place until the next sync, which is what
+`report.retractions_blocked` counts.
+
 A delta run (`--changed-since <seq>`) restricts the catalogue to the CVE ids of the
 `intel.revision.v2` events after that cursor, which is what "re-run matching when a feed snapshot
-loads" means without walking the whole catalogue.
+loads" means without walking the whole catalogue; such a run only retracts the CVEs it decided,
+plus any candidate whose CVE is now withdrawn (a fact about the feed, not a scope of the run).
 """
 
 from __future__ import annotations
@@ -64,6 +76,8 @@ __all__ = [
     "MatchReport",
     "Matcher",
     "ProductInspection",
+    "RETRACTION_CODES",
+    "Retraction",
     "Target",
     "TARGET_PREDICATES",
     "VERSION_UNKNOWN_CODE",
@@ -80,6 +94,17 @@ EVENT_TYPE = "vulnerability.matched.v2"
 TARGET_PREDICATES = ("service.product", "http.technology")
 VERSION_UNKNOWN_CODE = "VERSION_UNKNOWN"
 VERSION_UNKNOWN_MESSAGE = "version unknown, not matchable"
+#: The previous decision was a match and the current revision's configuration no longer contains it.
+NO_LONGER_MATCHES_CODE = "NO_LONGER_MATCHES"
+#: The current NVD revision is Rejected/Withdrawn: it can never be a candidate again.
+WITHDRAWN_CODE = "WITHDRAWN"
+#: Every `retraction_reason` 0008 accepts; the first two come from the configuration rules.
+RETRACTION_CODES = (
+    VERSION_UNSPECIFIED_CODE,
+    PLATFORM_UNCONFIRMED_CODE,
+    NO_LONGER_MATCHES_CODE,
+    WITHDRAWN_CODE,
+)
 #: Confidence of a candidate: an exact-version criterion beats a range, both stay candidates.
 CONFIDENCE_EXACT = 0.7
 CONFIDENCE_RANGE = 0.6
@@ -134,6 +159,53 @@ class Candidate:
 
 
 @dataclass(frozen=True, slots=True)
+class Retraction:
+    """One decision that takes a candidate back, before it is stored."""
+
+    asset_id: str
+    vulnerability_id: str
+    vuln_rev_id: str
+    snapshot_id: str
+    campaign_id: str
+    reason: str
+    match_method: str
+
+
+@dataclass(frozen=True, slots=True)
+class PreviousMatch:
+    """The newest positive decision of one (asset, vulnerability) pair, with its provenance."""
+
+    vulnerability_id: str
+    vuln_rev_id: str
+    match_method: str
+    campaign_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentRevision:
+    """The newest NVD revision of a CVE: where a retraction is written, and what it now says."""
+
+    vuln_rev_id: str
+    snapshot_id: str
+    withdrawn: bool
+    affected: object
+
+
+@dataclass(frozen=True, slots=True)
+class Decisions:
+    """What one catalogue pass decided for one target.
+
+    `matched` are the candidates; `reasons` says why the CVE a target names did not become one;
+    `decided` is the set this pass actually evaluated - a delta run narrows the catalogue, and a
+    retraction may only be written for a CVE the run looked at.
+    """
+
+    matched: tuple[Candidate, ...]
+    reasons: Mapping[str, str]
+    decided: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
 class ProductInspection:
     """Extracted matchable CPEs plus versionless products from product/tech observations."""
 
@@ -160,15 +232,22 @@ class MatchReport:
     version_unspecified: int = 0
     #: Decisions rejected because the configuration ANDs a product nobody observed (a platform).
     platform_unconfirmed: int = 0
+    #: Candidates this run took back (a `matched = false` row at the new revision).
+    retracted: int = 0
+    #: Retractions that cannot be written because the previous decision is still the newest
+    #: revision of that CVE: the append-only key refuses a second row until a sync lands.
+    retractions_blocked: int = 0
     dry_run: bool = False
     cursor: int | None = None
     vulnerabilities_filter: int | None = None
     coverage: dict[str, Any] = field(default_factory=dict)
     matches: list[dict[str, Any]] = field(default_factory=list)
+    retractions: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         document = dict(self.__dict__)
         document.pop("matches")
+        document.pop("retractions")
         return document
 
 
@@ -266,7 +345,7 @@ class _Catalogue:
             _criteria_count(configurations) for _, _, configurations in self.entries.values()
         )
 
-    def decide(self, cpes: Sequence[Cpe]) -> tuple[list[Candidate], dict[str, str]]:
+    def decide(self, cpes: Sequence[Cpe]) -> Decisions:
         """The candidate of every CVE the observed CPEs satisfy, plus the undecided reasons.
 
         The whole target is evaluated at once: one configuration can name the product of one
@@ -279,7 +358,9 @@ class _Catalogue:
             wanted.update(self.by_product.get(cpe.product_key, ()))
         best: dict[str, Candidate] = {}
         reasons: dict[str, str] = {}
+        decided: set[str] = set()
         for vulnerability_id in sorted(wanted):
+            decided.add(vulnerability_id)
             revision_id, snapshot_id, configurations = self.entries[vulnerability_id]
             decision = decide(configurations, observed)
             criterion = decision.criterion
@@ -295,7 +376,11 @@ class _Catalogue:
                 confidence=CONFIDENCE_EXACT if criterion.exact else CONFIDENCE_RANGE,
                 affected_range=criterion.range_text,
             )
-        return list(best.values()), reasons
+        return Decisions(
+            matched=tuple(best.values()),
+            reasons=reasons,
+            decided=frozenset(decided),
+        )
 
 
 def _criteria_count(configurations: Iterable[Configuration]) -> int:
@@ -558,13 +643,14 @@ class Matcher:
             VERSION_UNSPECIFIED_CODE: {},
             PLATFORM_UNCONFIRMED_CODE: {},
         }
+        previous = self._previous_matches([target.asset_id for target in targets])
+        retracted: list[dict[str, Any]] = []
+        blocked = 0
         for target in targets:
-            candidates, reasons = catalogue.decide(target.cpes)
-            for vulnerability_id, reason in reasons.items():
+            decisions = catalogue.decide(target.cpes)
+            for vulnerability_id, reason in decisions.reasons.items():
                 undecided[reason].setdefault(vulnerability_id, set()).add(target.canonical_key)
-            if not candidates:
-                continue
-            report.considered += len(candidates)
+            candidates = decisions.matched
             resolved = [
                 Candidate(
                     asset_id=target.asset_id,
@@ -577,24 +663,50 @@ class Matcher:
                 )
                 for candidate in candidates
             ]
+            report.considered += len(resolved)
+            taking_back, undecidable = self._retractions(
+                target,
+                decisions,
+                previous.get(target.asset_id, ()),
+                full_run=only_vulnerabilities is None,
+            )
+            blocked += undecidable
             if dry_run:
                 for candidate in resolved:
                     report.matches.append(_summary(candidate, target))
+                for retraction in taking_back:
+                    report.retractions.append(_retraction_summary(retraction, target))
                 report.new_matches += len(resolved)
+                report.retracted += len(taking_back)
                 continue
             with self._conn.transaction():
                 inserted_by_vuln = self._store_batch(resolved, target)
                 report.existing_matches += len(resolved) - len(inserted_by_vuln)
                 inserted_pairs = [
-                    (candidate, inserted_by_vuln[candidate.vulnerability_id])
+                    (candidate.vulnerability_id, match_id, target.campaign_id)
                     for candidate in resolved
-                    if candidate.vulnerability_id in inserted_by_vuln
+                    if (match_id := inserted_by_vuln.get(candidate.vulnerability_id)) is not None
                 ]
                 if inserted_pairs:
                     report.new_matches += len(inserted_pairs)
                     report.events += self._emit_batch(inserted_pairs, target)
-                    for candidate, _ in inserted_pairs:
-                        report.matches.append(_summary(candidate, target))
+                    for candidate in resolved:
+                        if candidate.vulnerability_id in inserted_by_vuln:
+                            report.matches.append(_summary(candidate, target))
+                if taking_back:
+                    inserted_retractions = self._store_retractions(taking_back)
+                    report.retracted += len(inserted_retractions)
+                    report.events += self._emit_batch(
+                        [
+                            (retraction.vulnerability_id, match_id, retraction.campaign_id)
+                            for retraction, match_id in inserted_retractions
+                        ],
+                        target,
+                    )
+                    for retraction, _ in inserted_retractions:
+                        retracted.append(_retraction_summary(retraction, target))
+        report.retractions = retracted
+        report.retractions_blocked = blocked
         report.version_unspecified = _undecided_count(undecided[VERSION_UNSPECIFIED_CODE])
         report.platform_unconfirmed = _undecided_count(undecided[PLATFORM_UNCONFIRMED_CODE])
         _report_undecided(coverage, undecided)
@@ -634,24 +746,25 @@ class Matcher:
         ).fetchall()
         return {str(row["vulnerability_id"]): str(row["match_id"]) for row in inserted}
 
-    def _emit_batch(self, pairs: Sequence[tuple[Candidate, str]], target: Target) -> int:
+    def _emit_batch(self, pairs: Sequence[tuple[str, str, str]], target: Target) -> int:
+        """One `vulnerability.matched.v2` per decision: `(vulnerability, match_id, campaign)`."""
         rows = [
             {
                 "event_id": str(uuid7()),
                 "type": EVENT_TYPE,
                 "producer": PRODUCER,
                 "dedup_key": match_id,
-                "campaign_id": target.campaign_id,
+                "campaign_id": campaign_id,
                 "payload": {
                     "match_id": match_id,
-                    "asset_id": candidate.asset_id,
+                    "asset_id": target.asset_id,
                     "canonical_key": target.canonical_key,
-                    "vulnerability_id": candidate.vulnerability_id,
-                    "campaign_id": target.campaign_id,
+                    "vulnerability_id": vulnerability_id,
+                    "campaign_id": campaign_id,
                 },
                 "trace": {"trace_id": uuid4().hex},
             }
-            for candidate, match_id in pairs
+            for vulnerability_id, match_id, campaign_id in pairs
         ]
         inserted = self._conn.execute(
             "INSERT INTO outbox_event ("
@@ -672,7 +785,161 @@ class Matcher:
         return self._store_batch([candidate], target).get(candidate.vulnerability_id)
 
     def _emit(self, match_id: str, candidate: Candidate, target: Target) -> bool:
-        return bool(self._emit_batch([(candidate, match_id)], target))
+        return bool(
+            self._emit_batch([(candidate.vulnerability_id, match_id, target.campaign_id)], target)
+        )
+
+    def _previous_matches(self, asset_ids: Sequence[str]) -> dict[str, list[PreviousMatch]]:
+        """The newest decision of every (asset, vulnerability) pair, when it is a match.
+
+        `package_vuln_match` is append-only and one row per `(asset, vuln, vuln_rev, method)`, so
+        the newest row of a pair is the decision in force: a pair that is already retracted is not
+        retracted twice. The campaign on the row is provenance of the decision (migration 0008's
+        unique key does not include it), so the newest row's campaign is the one a retraction keeps.
+        """
+        if not asset_ids:
+            return {}
+        rows = self._conn.execute(
+            "SELECT DISTINCT ON (package_asset_id, vulnerability_id)"
+            "       package_asset_id, vulnerability_id, vuln_rev_id, match_method, campaign_id,"
+            "       matched"
+            "  FROM package_vuln_match"
+            " WHERE package_asset_id = ANY(%s::uuid[]) AND campaign_id IS NOT NULL"
+            " ORDER BY package_asset_id, vulnerability_id, created_at DESC, match_id DESC",
+            (sorted(set(asset_ids)),),
+        ).fetchall()
+        found: dict[str, list[PreviousMatch]] = {}
+        for row in rows:
+            if not row["matched"]:
+                continue
+            found.setdefault(str(row["package_asset_id"]), []).append(
+                PreviousMatch(
+                    vulnerability_id=str(row["vulnerability_id"]),
+                    vuln_rev_id=str(row["vuln_rev_id"]),
+                    match_method=str(row["match_method"]),
+                    campaign_id=str(row["campaign_id"]),
+                )
+            )
+        return found
+
+    def _retractions(
+        self,
+        target: Target,
+        decisions: Decisions,
+        previous: Sequence[PreviousMatch],
+        full_run: bool,
+    ) -> tuple[list[Retraction], int]:
+        """The decisions this run takes back, and how many it could not write.
+
+        A retraction is planned for a CVE the run decided, for a candidate whose current revision is
+        withdrawn (a fact about the feed, not a scope), and - on a full run - for a revision that no
+        longer mentions any observed product and therefore never reached the narrowed catalogue. A
+        delta run only takes back what it decided. The new revision is the current one, so the
+        append-only unique key `(asset, vuln, vuln_rev, method)` cannot collide with the decision
+        it takes back; when the current revision *is* the previous decision's revision nothing can
+        be written and the count says a sync is needed.
+        """
+        matched = {candidate.vulnerability_id for candidate in decisions.matched}
+        revisions = self._current_nvd_revisions(row.vulnerability_id for row in previous)
+        planned: list[Retraction] = []
+        blocked = 0
+        for row in previous:
+            if row.vulnerability_id in matched:
+                continue
+            revision = revisions.get(row.vulnerability_id)
+            if revision is None:
+                continue  # no NVD revision for it any more: nothing to decide at
+            if revision.withdrawn:
+                reason = WITHDRAWN_CODE
+            elif row.vulnerability_id in decisions.decided:
+                reason = decisions.reasons.get(row.vulnerability_id) or NO_LONGER_MATCHES_CODE
+            elif not full_run:
+                continue  # a delta run only takes back what it decided, plus withdrawals
+            else:
+                # The current revision no longer mentions any observed product, so the narrowed
+                # catalogue never showed it to this run: decide it here instead of leaving it.
+                decision = decide(parse_configurations(revision.affected), observe(target.cpes))
+                if decision.criterion is not None:
+                    continue
+                reason = decision.reason or NO_LONGER_MATCHES_CODE
+            if revision.vuln_rev_id == row.vuln_rev_id:
+                blocked += 1  # same revision: the append-only key refuses a second decision
+                continue
+            planned.append(
+                Retraction(
+                    asset_id=target.asset_id,
+                    vulnerability_id=row.vulnerability_id,
+                    vuln_rev_id=revision.vuln_rev_id,
+                    snapshot_id=revision.snapshot_id,
+                    campaign_id=row.campaign_id,
+                    reason=reason,
+                    match_method=row.match_method,
+                )
+            )
+        return planned, blocked
+
+    def _current_nvd_revisions(
+        self, vulnerability_ids: Iterable[str]
+    ) -> dict[str, CurrentRevision]:
+        """The newest NVD revision of each CVE; withdrawn ones are included on purpose."""
+        wanted = sorted({value for value in vulnerability_ids})
+        if not wanted:
+            return {}
+        rows = self._conn.execute(
+            "SELECT DISTINCT ON (vulnerability_id)"
+            "       vulnerability_id, vuln_rev_id, snapshot_id, withdrawn, affected"
+            "  FROM vulnerability_current"
+            " WHERE source = 'nvd' AND vulnerability_id = ANY(%s::text[])"
+            " ORDER BY vulnerability_id, created_at DESC, vuln_rev_id DESC",
+            (wanted,),
+        ).fetchall()
+        return {
+            str(row["vulnerability_id"]): CurrentRevision(
+                vuln_rev_id=str(row["vuln_rev_id"]),
+                snapshot_id=str(row["snapshot_id"]),
+                withdrawn=bool(row["withdrawn"]),
+                affected=row["affected"],
+            )
+            for row in rows
+        }
+
+    def _store_retractions(self, retractions: Sequence[Retraction]) -> list[tuple[Retraction, str]]:
+        """Store `matched = false` decisions; a re-run is `ON CONFLICT DO NOTHING`."""
+        rows = [
+            {
+                "match_id": str(uuid7()),
+                "package_asset_id": retraction.asset_id,
+                "vulnerability_id": retraction.vulnerability_id,
+                "vuln_rev_id": retraction.vuln_rev_id,
+                "match_method": retraction.match_method,
+                "snapshot_id": retraction.snapshot_id,
+                "campaign_id": retraction.campaign_id,
+                "retraction_reason": retraction.reason,
+            }
+            for retraction in retractions
+        ]
+        inserted = self._conn.execute(
+            "INSERT INTO package_vuln_match ("
+            "  match_id, package_asset_id, vulnerability_id, vuln_rev_id, match_method,"
+            "  matched, snapshot_id, campaign_id, retraction_reason"
+            ")"
+            " SELECT x.match_id, x.package_asset_id, x.vulnerability_id, x.vuln_rev_id,"
+            "        x.match_method, FALSE, x.snapshot_id, x.campaign_id, x.retraction_reason"
+            "   FROM jsonb_to_recordset(%s::jsonb) AS x("
+            "     match_id uuid, package_asset_id uuid, vulnerability_id text, vuln_rev_id uuid,"
+            "     match_method text, snapshot_id uuid, campaign_id uuid, retraction_reason text"
+            "   )"
+            " ON CONFLICT (package_asset_id, vulnerability_id, vuln_rev_id, match_method)"
+            " DO NOTHING RETURNING match_id, vulnerability_id, campaign_id",
+            (json.dumps(rows),),
+        ).fetchall()
+        by_key = {(item.vulnerability_id, item.campaign_id): item for item in retractions}
+        stored: list[tuple[Retraction, str]] = []
+        for row in inserted:
+            retraction = by_key.get((str(row["vulnerability_id"]), str(row["campaign_id"])))
+            if retraction is not None:
+                stored.append((retraction, str(row["match_id"])))
+        return stored
 
 
 def _undecided_count(undecided: dict[str, set[str]]) -> int:
@@ -706,6 +973,17 @@ def _report_undecided(coverage: dict[str, Any], undecided: dict[str, dict[str, s
                 "subjects": subjects[:LIMITATION_SUBJECTS],
             }
         )
+
+
+def _retraction_summary(retraction: Retraction, target: Target) -> dict[str, Any]:
+    return {
+        "asset": target.canonical_key,
+        "asset_id": retraction.asset_id,
+        "campaign_id": retraction.campaign_id,
+        "vulnerability_id": retraction.vulnerability_id,
+        "reason": retraction.reason,
+        "snapshot_id": retraction.snapshot_id,
+    }
 
 
 def _summary(candidate: Candidate, target: Target) -> dict[str, Any]:

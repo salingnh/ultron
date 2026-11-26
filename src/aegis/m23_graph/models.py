@@ -159,6 +159,8 @@ class VulnerabilityMatchSnapshot:
     confidence: float
     snapshot_id: str
     observed_at: datetime
+    #: `False` on a retraction row (migration 0008): the edge must go, history stays in PostgreSQL.
+    matched: bool = True
 
 
 @dataclass(frozen=True, slots=True)
