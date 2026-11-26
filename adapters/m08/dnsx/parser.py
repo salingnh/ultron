@@ -12,20 +12,17 @@ name, with the record sets it was asked for (`a`, `aaaa`, `cname`, ...) and `ttl
 `provenance`, so nothing here depends on when or where the job ran.
 
 Mapping (the manifest's `emits` block: domain, ip / `asset.seen`, `dns.record`, `dns.resolves`):
-  * `A` and `AAAA` answers become `dns.record` observations `{type, value, ttl}`;
-  * each answer is an `ip` asset (first host that produced it is `discovered_from`) with
+  * `A`, `AAAA`, and `CNAME` answers become `dns.record` observations `{type, value, ttl}`;
+  * each A/AAAA answer is an `ip` asset (first host that produced it is `discovered_from`) with
     `asset.seen: true` and a `RESOLVES_TO` edge from the queried name;
   * `dns.resolves: true` only for a name this run actually resolved: a name with the answer code
     NXDOMAIN/REFUSED (or no address at all) produces no observation. Claiming it resolves would be a
     false statement in the graph, and "did not resolve" is an absence claim (`polarity: absent`)
     that belongs to whoever owns that policy decision, not to a parser default.
 
-Not emitted, on purpose (both need a contract decision first, see the adapter README):
-  * `cname`/`mx`/`ns`/`txt` answers: the pinned manifest's `argsTemplate` never asks DNSx for them
-    (`record_types` is not rendered into argv), so a production run cannot produce them; mapping a
-    CNAME target to an asset or an edge is an S1.5b shape decision.
-  * `soa`/`ns`/`raw_resp` noise the tool writes with `-json`: not identity, and the SOA belongs to
-    the zone, not to the queried name.
+Not emitted, on purpose:
+  * `mx`/`ns`/`txt`/`soa`/`raw_resp` noise the tool writes with `-json`: not identity or routing
+    provenance, and the SOA belongs to the zone, not to the queried name.
 
 Canonical keys follow `aegis-norm/1`: addresses are taken through `ipaddress` (so `2001:DB8::10`
 and `::ffff:203.0.113.10` become `2001:db8::10` and `203.0.113.10`, the IPv4-mapped form M27 also
@@ -107,6 +104,20 @@ def parse(output_dir: Path, task: dict[str, Any], evidence: list[dict[str, Any]]
                         "evidence_refs": _evidence_refs(),
                     }
                 answered = True
+        for cname_target in _cnames(record, line_number):
+            observations.append(
+                {
+                    "subject": host_key,
+                    "predicate": "dns.record",
+                    "value": {
+                        "type": "CNAME",
+                        "value": cname_target,
+                        "ttl": ttl,
+                    },
+                    "confidence": RECORD_CONFIDENCE,
+                    "evidence_refs": _evidence_refs(),
+                }
+            )
         if answered and host_key not in resolved:
             resolved.append(host_key)
     assets.extend(seen_ips.values())
@@ -191,6 +202,26 @@ def _addresses(record: dict[str, Any], field: str, line_number: int) -> list[str
                 f"{RESULT_FILE}:{line_number} field {field!r} holds a non-string entry"
             )
         out.append(value)
+    return out
+
+
+def _cnames(record: dict[str, Any], line_number: int) -> list[str]:
+    values = record.get("cname")
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise ParserInputError(f"{RESULT_FILE}:{line_number} field 'cname' is not a list")
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise ParserInputError(
+                f"{RESULT_FILE}:{line_number} field 'cname' holds a non-string entry"
+            )
+        normalized = _domain_key(value).removeprefix("dns:")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            out.append(normalized)
     return out
 
 

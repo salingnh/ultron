@@ -172,6 +172,36 @@ def test_another_qtype_is_not_implemented(tmp_path: Path) -> None:
     assert _audit(tmp_path)[-1]["reason"] == "QTYPE_UNSUPPORTED"
 
 
+def test_cname_query_is_allowed_for_bound_name_and_refused_for_unbound(tmp_path: Path) -> None:
+    audit = broker_mod.AuditLog(
+        tmp_path / "egress.jsonl",
+        "job-1",
+        profile="internet",
+        campaign_id="01934f6a-0000-7000-8000-000000000001",
+        authorization=AUTHORIZATION,
+    )
+    seen: list[str] = []
+
+    def fake_cname(name: str) -> list[str]:
+        seen.append(name)
+        return ["edge.cloudflare.net"] if name == "bound.example" else []
+
+    forwarder = dns_wire.DnsForwarder(
+        _policy(), audit, resolver=Stub({"bound.example": [TARGET]}), cname_resolver=fake_cname
+    )
+    reply = forwarder.handle(_query("bound.example", qtype=dns_wire.TYPE_CNAME))
+    assert reply is not None
+    assert dns_wire.parse_cnames(reply) == ["edge.cloudflare.net"]
+    assert _audit(tmp_path)[-1]["qtype"] == "CNAME"
+    assert _audit(tmp_path)[-1]["answers"] == ["edge.cloudflare.net"]
+
+    refused = forwarder.handle(_query("evil.example", qtype=dns_wire.TYPE_CNAME))
+    assert refused is not None
+    (_qid, flags, *_rest) = struct.unpack_from("!HHHHHH", refused)
+    assert flags & 0x000F == dns_wire.RCODE_REFUSED
+    assert seen == ["bound.example"]
+
+
 def test_a_malformed_packet_gets_formerr_and_no_audit(tmp_path: Path) -> None:
     forwarder = _forwarder(tmp_path, _policy(), Stub({}))
     reply = forwarder.handle(struct.pack("!HHHHHH", 5, 0x0100, 0, 0, 0, 0))

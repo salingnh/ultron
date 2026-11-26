@@ -285,9 +285,9 @@ def test_an_l3_job_is_refused_without_a_deployment_hook(tmp_path: Path) -> None:
 
 
 def test_the_l3_ruleset_carries_the_roe_caps_per_destination() -> None:
-    """F2: the L3 channel had no limiter; 200/200 connections succeeded with rps=1, max=2."""
+    """F2: the L3 channel caps by destination address (not per port) via dynamic sets/meters."""
     policy = _policy(
-        sources=(SourceAllow(id="crtsh", hosts=("93.184.216.34",), ports=(443,)),),
+        sources=(SourceAllow(id="crtsh", hosts=("93.184.216.34",), ports=(80, 443)),),
         rps=1.0,
         max_connections=2,
     )
@@ -297,13 +297,67 @@ def test_the_l3_ruleset_carries_the_roe_caps_per_destination() -> None:
         rate_per_second=policy.per_host_rps,
         max_connections=policy.per_host_max_connections,
     )
-    pair = "ip daddr 93.184.216.34 tcp dport 443"
-    assert f"{pair} ct state new limit rate over 60/minute counter drop" in script
-    assert f"{pair} ct count over 2 counter drop" in script
-    # The drop rules precede the accept of the same pair.
-    assert script.index(f"{pair} ct count over 2") < script.index(
-        f"{pair} ct state new counter accept"
+    assert "set rl4" in script and "set cc4" in script
+    rl_rule = (
+        "ip daddr @allowed4 ct state new update @rl4 "
+        "{ ip daddr limit rate over 60/minute } counter drop"
     )
+    cc_rule = "ip daddr @allowed4 ct state new add @cc4 { ip daddr ct count over 2 } counter drop"
+    assert script.count(rl_rule) == 1
+    assert script.count(cc_rule) == 1
+    # Both ports share one meter evaluated before either accept rule.
+    assert script.index(cc_rule) < script.index("ip daddr 93.184.216.34 tcp dport 80")
+    assert script.index(cc_rule) < script.index("ip daddr 93.184.216.34 tcp dport 443")
+    assert "tcp dport 80 ct state new limit" not in script
+    assert "tcp dport 443 ct state new limit" not in script
     assert l3.per_minute_cap(0.5) == 30
     assert l3.per_minute_cap(2.5) == 150
     assert l3.per_minute_cap(None) is None
+
+
+def test_l3_ruleset_emits_ip6_meters_and_sums_meter_drops() -> None:
+    policy = _policy(
+        targets=("2001:db8::10",),
+        ports=(80, 443),
+        rps=1.0,
+        max_connections=3,
+    )
+    script = l3.nft_script(
+        l3.allow_rules(policy),
+        uplink="eth1",
+        rate_per_second=policy.per_host_rps,
+        max_connections=policy.per_host_max_connections,
+    )
+    assert "table ip6 aegis_l3" in script
+    assert "set rl6" in script and "set cc6" in script
+    rl6_rule = (
+        "ip6 daddr @allowed6 ct state new update @rl6 "
+        "{ ip6 daddr limit rate over 60/minute } counter drop"
+    )
+    cc6_rule = (
+        "ip6 daddr @allowed6 ct state new add @cc6 { ip6 daddr ct count over 3 } counter drop"
+    )
+    assert script.count(rl6_rule) == 1
+    assert script.count(cc6_rule) == 1
+    assert script.index(cc6_rule) < script.index("ip6 daddr 2001:db8::10 tcp dport 80")
+
+    doc = json.dumps(
+        {
+            "nftables": [
+                {
+                    "rule": {
+                        "chain": "forward",
+                        "expr": [{"counter": {"packets": 5, "bytes": 300}}, {"drop": None}],
+                    }
+                },
+                {
+                    "rule": {
+                        "chain": "forward",
+                        "expr": [{"counter": {"packets": 2, "bytes": 120}}, {"drop": None}],
+                    }
+                },
+            ]
+        }
+    )
+    snapshot = l3.parse_nft_counters(doc)
+    assert snapshot.dropped_packets == 7 and snapshot.dropped_bytes == 420

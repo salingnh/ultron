@@ -8,15 +8,14 @@ rules and the forwarding live.
 
 Rules (all in the broker's namespace):
 
-* **forward**: `policy drop`, established/related accepted, then, per **signed** destination pair,
-  a rate drop (`ct state new limit rate over <cap>/minute`), a concurrency drop
-  (`ct count over <max>`), and the accept. The cap is the RoE's new-connections-per-second per
-  destination **address**, expressed per minute because nft has no sub-second bucket and a
-  fractional value (0.5/s) is exact there; the pair granularity means one bucket per address and
-  port, which is never wider than the signed binding. A target address is the address M05 pinned
-  into the signed `egress_binding.target_addresses`; a source is the pinned manifest's declared
-  source host, resolved now in the control plane and pinned into a rule, so no name is resolved at
-  packet time.
+* **forward**: `policy drop`, established/related accepted, then one per-destination-address
+  rate meter (`update @rl4 { ip daddr limit rate over <cap>/minute }`, and `rl6` for IPv6) and one
+  per-destination-address concurrency meter (`add @cc4 { ip daddr ct count over <max> }`, and `cc6`
+  for IPv6) evaluated once before any signed destination pair accepts. All ports of the same
+  address share one bucket and one live connection count (F2). A target address is the address M05
+  pinned into the signed `egress_binding.target_addresses`; a source is the pinned manifest's
+  declared source host, resolved now in the control plane and pinned into a rule, so no name is
+  resolved at packet time.
 * **postrouting**: masquerade on the uplink interface (the job's addresses are private to the job
   network).
 * **input**: default drop, established accepted, and the broker's DNS listener (UDP/TCP 53) - the
@@ -42,7 +41,7 @@ import json
 import shutil
 import subprocess
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -188,36 +187,71 @@ def per_minute_cap(rps: float | None) -> int | None:
     return max(1, int(-(-rps * 60 // 1)))
 
 
-def nft_script(
-    rules: Iterable[Rule],
+def _family_block(
     *,
+    family: str,
+    rules: Sequence[Rule],
     uplink: str,
-    dns_port: int = 53,
-    rate_per_second: float | None = None,
-    max_connections: int | None = None,
-) -> str:
-    """The whole ruleset, applied atomically in one `nft -f` call."""
-    rate = per_minute_cap(rate_per_second)
-    lines = [
-        f"table ip {TABLE} {{",
-        "  chain input {",
-        "    type filter hook input priority filter; policy drop;",
-        '    iifname "lo" accept',
-        "    ct state established,related accept",
-        f"    udp dport {dns_port} accept",
-        f"    tcp dport {dns_port} accept",
-        "  }",
+    dns_port: int | None,
+    rate: int | None,
+    max_conn: int | None,
+) -> list[str]:
+    suffix = "6" if family == "ip6" else "4"
+    addr_type = "ipv6_addr" if family == "ip6" else "ipv4_addr"
+    daddr = "ip6 daddr" if family == "ip6" else "ip daddr"
+    unique_addresses = sorted({rule.address for rule in rules})
+    lines = [f"table {family} {TABLE} {{"]
+    if rules and (rate is not None or max_conn is not None):
+        elements = ", ".join(unique_addresses)
+        lines += [
+            f"  set allowed{suffix} {{",
+            f"    type {addr_type}",
+            f"    elements = {{ {elements} }}",
+            "  }",
+        ]
+    if rules and rate is not None:
+        lines += [
+            f"  set rl{suffix} {{",
+            f"    type {addr_type}",
+            "    size 4096",
+            "    flags dynamic,timeout",
+            "    timeout 5m",
+            "  }",
+        ]
+    if rules and max_conn is not None:
+        lines += [
+            f"  set cc{suffix} {{",
+            f"    type {addr_type}",
+            "    size 4096",
+            "    flags dynamic",
+            "  }",
+        ]
+    if dns_port is not None:
+        lines += [
+            "  chain input {",
+            "    type filter hook input priority filter; policy drop;",
+            '    iifname "lo" accept',
+            "    ct state established,related accept",
+            f"    udp dport {dns_port} accept",
+            f"    tcp dport {dns_port} accept",
+            "  }",
+        ]
+    lines += [
         "  chain forward {",
         "    type filter hook forward priority filter; policy drop;",
         "    ct state established,related accept",
     ]
+    if rules and rate is not None:
+        lines.append(
+            f"    {daddr} @allowed{suffix} ct state new "
+            f"update @rl{suffix} {{ {daddr} limit rate over {rate}/minute }} counter drop"
+        )
+    if rules and max_conn is not None:
+        lines.append(
+            f"    {daddr} @allowed{suffix} ct state new "
+            f"add @cc{suffix} {{ {daddr} ct count over {max_conn} }} counter drop"
+        )
     for rule in rules:
-        family = "ip6" if ipaddress.ip_address(rule.address).version == 6 else "ip"
-        pair = f"{family} daddr {rule.address} {rule.protocol} dport {rule.port}"
-        if rate is not None:
-            lines.append(f"        {pair} ct state new limit rate over {rate}/minute counter drop")
-        if max_connections is not None:
-            lines.append(f"        {pair} ct count over {int(max_connections)} counter drop")
         lines.append(rule.nft())
     lines += [
         "        counter drop",
@@ -228,6 +262,42 @@ def nft_script(
         "  }",
         "}",
     ]
+    return lines
+
+
+def nft_script(
+    rules: Iterable[Rule],
+    *,
+    uplink: str,
+    dns_port: int = 53,
+    rate_per_second: float | None = None,
+    max_connections: int | None = None,
+) -> str:
+    """The whole ruleset, applied atomically in one `nft -f` call."""
+    rate = per_minute_cap(rate_per_second)
+    max_conn = int(max_connections) if max_connections is not None else None
+    all_rules = list(rules)
+    v4_rules = [rule for rule in all_rules if ipaddress.ip_address(rule.address).version == 4]
+    v6_rules = [rule for rule in all_rules if ipaddress.ip_address(rule.address).version == 6]
+    lines = _family_block(
+        family="ip",
+        rules=v4_rules,
+        uplink=uplink,
+        dns_port=dns_port,
+        rate=rate,
+        max_conn=max_conn,
+    )
+    if v6_rules:
+        lines.extend(
+            _family_block(
+                family="ip6",
+                rules=v6_rules,
+                uplink=uplink,
+                dns_port=None,
+                rate=rate,
+                max_conn=max_conn,
+            )
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -235,12 +305,13 @@ def parse_nft_counters(document: str) -> CounterSnapshot:
     """Read the counters of the generated ruleset from `nft -j list table`.
 
     One counter per destination pair (the rule the binding produced) plus the aggregate drop
-    counter. A rule without a counter, or in another chain, is ignored: the audit is exactly the
-    forwarding decision.
+    counter (summing meter drops and the final policy drop). A rule without a counter, or in
+    another chain, is ignored: the audit is exactly the forwarding decision.
     """
     data = json.loads(document or "{}")
     rules: list[RuleCounter] = []
-    dropped = (0, 0)
+    dropped_packets = 0
+    dropped_bytes = 0
     for item in data.get("nftables", []):
         rule = item.get("rule")
         if not rule or rule.get("chain") != "forward":
@@ -266,10 +337,11 @@ def parse_nft_counters(document: str) -> CounterSnapshot:
         packets = int(counter.get("packets", 0))
         octets = int(counter.get("bytes", 0))
         if is_drop:
-            dropped = (packets, octets)
+            dropped_packets += packets
+            dropped_bytes += octets
         elif address is not None and port is not None:
             rules.append(RuleCounter(address, port, packets, octets))
-    return CounterSnapshot(tuple(rules), dropped[0], dropped[1])
+    return CounterSnapshot(tuple(rules), dropped_packets, dropped_bytes)
 
 
 class L3Gateway:
@@ -317,15 +389,16 @@ class L3Gateway:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
-        try:
-            subprocess.run(  # noqa: S603 - fixed binary from the broker image
-                [self._nft, "delete", "table", "ip", TABLE],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except OSError:
-            pass
+        for family in ("ip", "ip6"):
+            try:
+                subprocess.run(  # noqa: S603 - fixed binary from the broker image
+                    [self._nft, "delete", "table", family, TABLE],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except OSError:
+                pass
 
     # -- audit -------------------------------------------------------------------------------
 
@@ -337,15 +410,26 @@ class L3Gateway:
                 return
 
     def counters(self) -> CounterSnapshot:
-        read = subprocess.run(  # noqa: S603 - fixed binary from the broker image
-            [self._nft, "-j", "list", "table", "ip", TABLE],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if read.returncode != 0:
-            raise RuntimeError(f"cannot read the L3 counters: {read.stderr.strip()[:400]}")
-        return parse_nft_counters(read.stdout)
+        families = ["ip"]
+        if any(ipaddress.ip_address(rule.address).version == 6 for rule in self.rules):
+            families.append("ip6")
+        combined_rules: list[RuleCounter] = []
+        dropped_packets = 0
+        dropped_bytes = 0
+        for family in families:
+            read = subprocess.run(  # noqa: S603 - fixed binary from the broker image
+                [self._nft, "-j", "list", "table", family, TABLE],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if read.returncode != 0:
+                raise RuntimeError(f"cannot read the L3 counters: {read.stderr.strip()[:400]}")
+            part = parse_nft_counters(read.stdout)
+            combined_rules.extend(part.rules)
+            dropped_packets += part.dropped_packets
+            dropped_bytes += part.dropped_bytes
+        return CounterSnapshot(tuple(combined_rules), dropped_packets, dropped_bytes)
 
     def sample(self, snapshot: CounterSnapshot | None = None) -> None:
         """One counter snapshot: emit a line per rule whose packets grew, and for the drop rule."""

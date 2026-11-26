@@ -72,6 +72,7 @@ from aegis.m05_registry.egress import (
     TargetBinder,
     build_egress_binding,
     check_declared_destinations,
+    load_active_provenance,
 )
 from aegis.m05_registry.errors import M05Error, Refusal
 from aegis.m05_registry.ids import trace_id as new_trace_id
@@ -442,14 +443,28 @@ class PostgresJobService:
                 job_id=job_id,
                 depends_on=[str(_plain(item)) for item in request.depends_on or []],
             )
+            active_binder = self._binder or _MissingBinder()
+            active_provenance = None
+            if (
+                profile == "internet"
+                and str(record.permissions.get("targetBinding") or "none") == "required"
+            ):
+                active_provenance = load_active_provenance(
+                    conn,
+                    campaign_id=campaign.campaign_id,
+                    scope_id=campaign.scope_id,
+                    targets=targets,
+                    binder=active_binder,
+                )
             binding = build_egress_binding(
                 record,
                 merged_input=merged_input,
                 targets=targets,
-                binder=self._binder or _MissingBinder(),
-                network_profile=network_profile(campaign.policy),
+                binder=active_binder,
+                network_profile=profile,
                 platform_cidrs=self._platform_cidrs,
                 authorized_suffixes=_authorized_suffixes(campaign.policy),
+                provenance=active_provenance,
             )
             if binding.target_addresses:
                 check_campaign_address_budget(

@@ -24,8 +24,10 @@ import ipaddress
 import secrets
 import socket
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
+
+import psycopg
 
 from aegis import validation
 from aegis.common import dns_cname
@@ -35,11 +37,14 @@ from aegis.m05_registry.manifest import ManifestRecord
 from aegis.m05_registry.targets import ResolvedTargets
 
 __all__ = [
+    "ActiveProvenance",
+    "DomainProvenance",
     "EgressBinding",
     "SystemTargetBinder",
     "TargetBinder",
     "build_egress_binding",
     "check_declared_destinations",
+    "load_active_provenance",
 ]
 
 
@@ -88,6 +93,23 @@ class SystemTargetBinder:
                 next_action=NextAction.FIX_INPUT,
             )
         return tuple(sorted(addresses))
+
+
+@dataclass(frozen=True, slots=True)
+class DomainProvenance:
+    """One domain that resolved to an `ip` asset in a campaign, with its recorded CNAME chain."""
+
+    name: str
+    cname_targets: tuple[str, ...] = ()
+    wildcard_observed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveProvenance:
+    """Seed IP/CIDR networks and DB DNS provenance used to gate active targets on internet."""
+
+    seed_networks: tuple[Network, ...] = ()
+    by_address: Mapping[str, tuple[DomainProvenance, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,12 +205,13 @@ def build_egress_binding(
     network_profile: str = "internet",
     platform_cidrs: Sequence[str] = (),
     authorized_suffixes: Sequence[str] = (),
+    provenance: ActiveProvenance | None = None,
 ) -> EgressBinding:
     """Compute the signed allow-set; refuse a binding that would be empty or unbounded.
 
     On the internet profile a `protocol: dns` source is not signed: a raw tunnel to a public
     resolver would bypass the broker's DNS name binding (F4). Targets are checked against the
-    platform's own networks (B1) before they can be signed.
+    platform's own networks (B1) and active-eligibility provenance (F3) before they can be signed.
     """
     permissions = record.permissions
     if permissions.get("networkAccess") != "egress":
@@ -203,7 +226,8 @@ def build_egress_binding(
             for port in source.get("ports") or []:
                 entries.add(f"{_format_host(str(host))}:{int(port)}")
 
-    wildcard_checked = False
+    wildcard_zones: dict[str, tuple[str, str] | None] = {}
+    active_provenance = provenance or ActiveProvenance()
     target_binding = str(permissions.get("targetBinding") or "none")
     addresses: list[str] = []
     if target_binding == "required":
@@ -215,11 +239,22 @@ def build_egress_binding(
                 field="/input/ports",
             )
         for ref, kind, raw in zip(targets.refs, targets.kinds, targets.raw, strict=True):
-            if network_profile == "internet" and _is_host_name(raw):
-                _refuse_a_foreign_cname(raw, authorized_suffixes=authorized_suffixes)
-            if network_profile == "internet" and not wildcard_checked and _is_host_name(raw):
-                _refuse_a_wildcard(raw, authorized_suffixes=authorized_suffixes, binder=binder)
-                wildcard_checked = True
+            if network_profile == "internet" and (kind == "domain" or _is_host_name(raw)):
+                host = raw.strip().lower().rstrip(".").removeprefix("dns:")
+                if authorized_suffixes and not _under_suffix(host, authorized_suffixes):
+                    raise M05Error.policy_denied(
+                        "target_passive_only",
+                        f"target {raw!r} is outside the authorized suffixes "
+                        f"{sorted(authorized_suffixes)}; it stays passive-only",
+                        next_action=NextAction.FIX_INPUT,
+                    )
+                _refuse_a_foreign_cname(host, authorized_suffixes=authorized_suffixes)
+                _refuse_a_wildcard(
+                    host,
+                    authorized_suffixes=authorized_suffixes,
+                    binder=binder,
+                    wildcard_zones=wildcard_zones,
+                )
             resolved = _target_addresses(ref=ref, kind=kind, raw=raw, binder=binder)
             for address in resolved:
                 if _denied(address):
@@ -231,6 +266,15 @@ def build_egress_binding(
                         "target_platform_network",
                         f"target address {address} is inside the platform deny set",
                         next_action=NextAction.FIX_INPUT,
+                    )
+                if network_profile == "internet" and kind in ("ip", "service"):
+                    _require_active_eligible(
+                        raw=raw,
+                        address=address,
+                        authorized_suffixes=authorized_suffixes,
+                        binder=binder,
+                        provenance=active_provenance,
+                        wildcard_zones=wildcard_zones,
                     )
                 addresses.append(address)
                 for port in ports:
@@ -328,27 +372,289 @@ def _wildcard_parents(host: str, suffixes: Sequence[str]) -> list[str]:
     return sorted(keep)
 
 
+def _wildcard_hit(
+    host: str,
+    *,
+    authorized_suffixes: Sequence[str],
+    binder: TargetBinder,
+    wildcard_zones: dict[str, tuple[str, str] | None],
+) -> tuple[str, str, str] | None:
+    """Return `(parent, probe, answer)` if any parent zone of `host` answers a random label."""
+    for parent in _wildcard_parents(host, authorized_suffixes)[:2]:
+        if parent in wildcard_zones:
+            cached = wildcard_zones[parent]
+            if cached is not None:
+                return parent, cached[0], cached[1]
+            continue
+        probe = f"aegis-wildcard-{secrets.token_hex(4)}.{parent}"
+        try:
+            answers = binder.addresses(probe)
+        except M05Error:
+            wildcard_zones[parent] = None
+            continue
+        if answers:
+            first = sorted(answers)[0]
+            wildcard_zones[parent] = (probe, first)
+            return parent, probe, first
+        wildcard_zones[parent] = None
+    return None
+
+
 def _refuse_a_wildcard(
-    host: str, *, authorized_suffixes: Sequence[str], binder: TargetBinder
+    host: str,
+    *,
+    authorized_suffixes: Sequence[str],
+    binder: TargetBinder,
+    wildcard_zones: dict[str, tuple[str, str] | None],
 ) -> None:
     """F3 guardrail 4: a wildcard under the target's zone makes every label resolve.
 
     A wildcard turns a single discovered name into an unbounded address set, so active signing is
     refused and the campaign stays passive; the operator can narrow the target.
     """
-    for parent in _wildcard_parents(host, authorized_suffixes)[:2]:
-        probe = f"aegis-wildcard-{secrets.token_hex(4)}.{parent}"
+    hit = _wildcard_hit(
+        host,
+        authorized_suffixes=authorized_suffixes,
+        binder=binder,
+        wildcard_zones=wildcard_zones,
+    )
+    if hit is not None:
+        parent, probe, answer = hit
+        raise M05Error.policy_denied(
+            "wildcard_dns",
+            f"{parent} answers a random label ({probe} -> {answer}); active "
+            "scanning of a wildcard zone is refused",
+            next_action=NextAction.FIX_INPUT,
+        )
+
+
+def _require_active_eligible(
+    *,
+    raw: str,
+    address: str,
+    authorized_suffixes: Sequence[str],
+    binder: TargetBinder,
+    provenance: ActiveProvenance,
+    wildcard_zones: dict[str, tuple[str, str] | None],
+) -> None:
+    """F3 guardrail 2 & 4 for ip/service targets on the internet profile.
+
+    An address is active-eligible only if (a) it sits inside a seed IP/CIDR of the campaign's
+    authorized scope, or (b) DB resolution provenance shows at least one domain under
+    `authorized_suffixes` that resolved to it with no CNAME hop outside `authorized_suffixes` and
+    not via a wildcard zone. Otherwise the target stays passive-only and is refused at M05.
+    """
+    parsed = ipaddress.ip_address(address)
+    if any(parsed.version == net.version and parsed in net for net in provenance.seed_networks):
+        return
+    domains = provenance.by_address.get(address, ())
+    if not domains:
+        raise M05Error.policy_denied(
+            "target_passive_only",
+            f"target {raw!r} ({address}) is not inside a seed IP/CIDR and has no authorized DNS "
+            "resolution provenance; it stays passive-only",
+            next_action=NextAction.FIX_INPUT,
+        )
+    cname_failure: tuple[str, str] | None = None
+    wildcard_failure: str | None = None
+    for domain in domains:
+        if not authorized_suffixes or not _under_suffix(domain.name, authorized_suffixes):
+            continue
+        foreign = [
+            hop for hop in domain.cname_targets if not _under_suffix(hop, authorized_suffixes)
+        ]
+        if foreign:
+            if cname_failure is None:
+                cname_failure = (domain.name, foreign[0])
+            continue
+        if domain.wildcard_observed or (
+            _wildcard_hit(
+                domain.name,
+                authorized_suffixes=authorized_suffixes,
+                binder=binder,
+                wildcard_zones=wildcard_zones,
+            )
+            is not None
+        ):
+            if wildcard_failure is None:
+                wildcard_failure = domain.name
+            continue
+        return  # At least one clean authorized non-CNAME-escaping non-wildcard name resolved to it.
+    if cname_failure is not None:
+        source_name, hop = cname_failure
+        raise M05Error.policy_denied(
+            "target_cname_outside_authorization",
+            f"target {raw!r} ({address}) only resolved through {source_name} -> {hop}, outside "
+            f"the authorized suffixes {sorted(authorized_suffixes)}; the target stays passive-only",
+            next_action=NextAction.FIX_INPUT,
+        )
+    if wildcard_failure is not None:
+        raise M05Error.policy_denied(
+            "wildcard_dns",
+            f"target {raw!r} ({address}) only resolved through wildcard-matching name "
+            f"{wildcard_failure}; active scanning of a wildcard zone is refused (passive-only)",
+            next_action=NextAction.FIX_INPUT,
+        )
+    raise M05Error.policy_denied(
+        "target_passive_only",
+        f"target {raw!r} ({address}) has no provenance under the authorized suffixes "
+        f"{sorted(authorized_suffixes)}; it stays passive-only",
+        next_action=NextAction.FIX_INPUT,
+    )
+
+
+def _seed_networks(conn: psycopg.Connection[Any], scope_id: str) -> tuple[Network, ...]:
+    rows = conn.execute(
+        "SELECT kind, raw_value FROM campaign_target "
+        "WHERE scope_id = %s AND kind IN ('ip', 'cidr')",
+        (scope_id,),
+    ).fetchall()
+    networks: list[Network] = []
+    for kind, raw_value in rows:
+        text_val = str(raw_value or "").strip()
+        if not text_val:
+            continue
         try:
-            answers = binder.addresses(probe)
+            if str(kind) == "ip":
+                addr = ipaddress.ip_address(_address_literal(text_val, prefix="ip:"))
+                networks.append(ipaddress.ip_network(f"{addr}/{addr.max_prefixlen}", strict=False))
+            else:
+                networks.append(ipaddress.ip_network(text_val, strict=False))
+        except ValueError:
+            continue
+    return tuple(networks)
+
+
+def _cname_chain_from_db(
+    conn: psycopg.Connection[Any],
+    *,
+    campaign_id: str,
+    domain_key: str,
+    max_hops: int = 5,
+) -> tuple[str, ...]:
+    hops: list[str] = []
+    visited = {domain_key}
+    queue = [domain_key]
+    while queue and len(hops) < max_hops:
+        current = queue.pop(0)
+        rows = conn.execute(
+            "SELECT o.value ->> 'value' FROM observation o "
+            "JOIN asset a ON a.asset_id = o.subject_asset_id "
+            "WHERE o.campaign_id = %s AND a.canonical_key = %s "
+            "AND o.predicate = 'dns.record' AND o.polarity = 'present' "
+            "AND (o.value ->> 'type') = 'CNAME'",
+            (campaign_id, current),
+        ).fetchall()
+        for (target_raw,) in rows:
+            target = str(target_raw or "").strip().lower().rstrip(".")
+            if not target:
+                continue
+            hops.append(target)
+            next_key = f"dns:{target}"
+            if next_key not in visited:
+                visited.add(next_key)
+                queue.append(next_key)
+    return tuple(hops)
+
+
+def _wildcard_observed_in_db(
+    conn: psycopg.Connection[Any], *, campaign_id: str, domain_key: str
+) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM observation o "
+        "JOIN asset a ON a.asset_id = o.subject_asset_id "
+        "WHERE o.campaign_id = %s AND a.canonical_key = %s "
+        "AND o.predicate = 'dns.wildcard' AND o.polarity = 'present' "
+        "AND o.value = 'true'::jsonb LIMIT 1",
+        (campaign_id, domain_key),
+    ).fetchone()
+    return row is not None
+
+
+def load_active_provenance(
+    conn: psycopg.Connection[Any],
+    *,
+    campaign_id: str,
+    scope_id: str,
+    targets: ResolvedTargets,
+    binder: TargetBinder,
+) -> ActiveProvenance:
+    """Load seed IP/CIDRs and campaign DNS provenance for `ip`/`service` targets."""
+    seeds = _seed_networks(conn, scope_id)
+    addresses: list[str] = []
+    for ref, kind, raw in zip(targets.refs, targets.kinds, targets.raw, strict=True):
+        if kind not in ("ip", "service"):
+            continue
+        try:
+            resolved = _target_addresses(ref=ref, kind=kind, raw=raw, binder=binder)
         except M05Error:
             continue
-        if answers:
-            raise M05Error.policy_denied(
-                "wildcard_dns",
-                f"{parent} answers a random label ({probe} -> {sorted(answers)[0]}); active "
-                "scanning of a wildcard zone is refused",
-                next_action=NextAction.FIX_INPUT,
+        for addr in resolved:
+            if addr not in addresses:
+                addresses.append(addr)
+
+    by_address: dict[str, tuple[DomainProvenance, ...]] = {}
+    for addr in addresses:
+        try:
+            parsed = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if any(parsed.version == net.version and parsed in net for net in seeds):
+            continue
+        ip_key = f"ip:{parsed}"
+        domain_rows = conn.execute(
+            """
+            SELECT DISTINCT d.canonical_key
+              FROM asset d
+             WHERE d.kind = 'domain'
+               AND (
+                 EXISTS (
+                   SELECT 1
+                     FROM relationship r
+                     JOIN asset ip ON ip.asset_id = r.to_asset_id
+                    WHERE r.campaign_id = %s
+                      AND r.type = 'RESOLVES_TO'
+                      AND r.valid_to IS NULL
+                      AND r.from_asset_id = d.asset_id
+                      AND ip.canonical_key = %s
+                 )
+                 OR EXISTS (
+                   SELECT 1
+                     FROM observation o
+                    WHERE o.campaign_id = %s
+                      AND o.subject_asset_id = d.asset_id
+                      AND o.predicate = 'dns.record'
+                      AND o.polarity = 'present'
+                      AND (o.value ->> 'type') IN ('A', 'AAAA')
+                      AND (o.value ->> 'value') = %s
+                 )
+               )
+             ORDER BY d.canonical_key
+            """,
+            (campaign_id, ip_key, campaign_id, str(parsed)),
+        ).fetchall()
+        provenance_list: list[DomainProvenance] = []
+        for (domain_key_raw,) in domain_rows:
+            domain_key = str(domain_key_raw)
+            cnames = _cname_chain_from_db(conn, campaign_id=campaign_id, domain_key=domain_key)
+            wildcard = _wildcard_observed_in_db(
+                conn, campaign_id=campaign_id, domain_key=domain_key
             )
+            if not wildcard:
+                wildcard = any(
+                    _wildcard_observed_in_db(conn, campaign_id=campaign_id, domain_key=f"dns:{hop}")
+                    for hop in cnames
+                )
+            provenance_list.append(
+                DomainProvenance(
+                    name=domain_key.removeprefix("dns:"),
+                    cname_targets=cnames,
+                    wildcard_observed=wildcard,
+                )
+            )
+        if provenance_list:
+            by_address[addr] = tuple(provenance_list)
+    return ActiveProvenance(seed_networks=seeds, by_address=by_address)
 
 
 def _target_addresses(

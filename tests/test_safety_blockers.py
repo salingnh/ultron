@@ -21,6 +21,7 @@ from aegis.m05_registry.signing import DEV_KEY_ID
 from aegis.m06_runner import denyset, netpolicy
 from aegis.m06_runner.broker import AuditLog
 from aegis.m06_runner.netpolicy import JobEgressPolicy, Resolver, SourceAllow
+from tests.db_support import requires_postgres
 
 from . import m06_support
 
@@ -288,7 +289,7 @@ def test_the_l3_plan_refuses_a_platform_address() -> None:
 
 
 def test_a_wildcard_zone_refuses_active_signing() -> None:
-    from aegis.m05_registry.egress import build_egress_binding
+    from aegis.m05_registry.egress import ActiveProvenance, build_egress_binding
 
     record = m06_support.record("manifest.naabu.yaml")
     binder = m06_support.StaticBinder({"10.0.0.5": ["93.184.216.34"]})
@@ -308,6 +309,7 @@ def test_a_wildcard_zone_refuses_active_signing() -> None:
         targets=targets,
         binder=binder,
         authorized_suffixes=("icomm.vn",),
+        provenance=ActiveProvenance(seed_networks=(ipaddress.ip_network("10.0.0.5/32"),)),
     )
     assert binding.target_addresses == ("10.0.0.5",)
     with pytest.raises(M05Error) as error:
@@ -400,3 +402,444 @@ def test_a_foreign_cname_refuses_active_signing(monkeypatch: pytest.MonkeyPatch)
         authorized_suffixes=("icomm.vn",),
     )
     assert binding.target_addresses == ("93.184.216.34",)
+
+
+# --- F2: L3 per-address meter across multiple ports -----------------------------------------
+
+
+def test_l3_two_ports_on_one_address_share_one_meter() -> None:
+    from aegis.m06_runner import l3
+
+    rules = (
+        l3.Rule("203.0.113.10", 80),
+        l3.Rule("203.0.113.10", 443),
+    )
+    script = l3.nft_script(rules, uplink="eth1", rate_per_second=1.0, max_connections=2)
+    assert script.count("update @rl4 { ip daddr limit rate over 60/minute }") == 1
+    assert script.count("add @cc4 { ip daddr ct count over 2 }") == 1
+    assert script.index("add @cc4") < script.index("ip daddr 203.0.113.10 tcp dport 80")
+    assert script.index("add @cc4") < script.index("ip daddr 203.0.113.10 tcp dport 443")
+
+
+# --- F3: ip/service targets require seed CIDR or clean authorized provenance ----------------
+
+
+def test_ip_and_service_targets_enforce_cname_wildcard_and_seed_provenance() -> None:
+    from aegis.m05_registry.egress import ActiveProvenance, DomainProvenance, build_egress_binding
+    from aegis.m05_registry.targets import ResolvedTargets
+
+    naabu = m06_support.record("manifest.naabu.yaml")
+    httpx = m06_support.record("manifest.httpx.yaml")
+    binder = m06_support.StaticBinder({})
+
+    # 1. Unseeded IP with no provenance -> passive-only refusal.
+    with pytest.raises(M05Error) as unseeded:
+        build_egress_binding(
+            naabu,
+            merged_input={"ports": [443]},
+            targets=ResolvedTargets(
+                refs=({"canonical_key": "ip:104.16.1.2"},),
+                kinds=("ip",),
+                raw=("ip:104.16.1.2",),
+            ),
+            binder=binder,
+            authorized_suffixes=("icomm.vn",),
+        )
+    assert unseeded.value.refusal.rule == "target_passive_only"
+
+    # 2. Foreign CNAME provenance on ip: and service: -> refused as passive-only.
+    foreign_prov = ActiveProvenance(
+        by_address={
+            "104.16.1.2": (
+                DomainProvenance(name="cdn.icomm.vn", cname_targets=("edge.cloudflare.net",)),
+            )
+        }
+    )
+    for rec, target_key, kind, input_data in (
+        (naabu, "ip:104.16.1.2", "ip", {"ports": [443]}),
+        (httpx, "service:104.16.1.2:443/tcp", "service", {"ports": [443]}),
+    ):
+        with pytest.raises(M05Error) as caught:
+            build_egress_binding(
+                rec,
+                merged_input=input_data,
+                targets=ResolvedTargets(
+                    refs=({"canonical_key": target_key},),
+                    kinds=(kind,),
+                    raw=(target_key,),
+                ),
+                binder=binder,
+                authorized_suffixes=("icomm.vn",),
+                provenance=foreign_prov,
+            )
+        assert caught.value.refusal.rule == "target_cname_outside_authorization"
+        assert "passive-only" in caught.value.refusal.message
+
+    # 3. Wildcard-only provenance -> refused.
+    wildcard_prov = ActiveProvenance(
+        by_address={
+            "198.51.100.77": (DomainProvenance(name="rand.wild.icomm.vn", wildcard_observed=True),)
+        }
+    )
+    with pytest.raises(M05Error) as wild:
+        build_egress_binding(
+            naabu,
+            merged_input={"ports": [443]},
+            targets=ResolvedTargets(
+                refs=({"canonical_key": "ip:198.51.100.77"},),
+                kinds=("ip",),
+                raw=("ip:198.51.100.77",),
+            ),
+            binder=binder,
+            authorized_suffixes=("icomm.vn",),
+            provenance=wildcard_prov,
+        )
+    assert wild.value.refusal.rule == "wildcard_dns"
+
+    # 4. Seed CIDR (a) or clean authorized provenance alongside a bad alias (b) -> allowed.
+    mixed_prov = ActiveProvenance(
+        seed_networks=(ipaddress.ip_network("198.51.100.0/24"),),
+        by_address={
+            "203.0.113.10": (
+                DomainProvenance(name="cdn.icomm.vn", cname_targets=("edge.cloudflare.net",)),
+                DomainProvenance(name="api.icomm.vn", cname_targets=("gw.icomm.vn",)),
+            )
+        },
+    )
+    for addr in ("198.51.100.5", "203.0.113.10"):
+        binding = build_egress_binding(
+            naabu,
+            merged_input={"ports": [443]},
+            targets=ResolvedTargets(
+                refs=({"canonical_key": f"ip:{addr}"},),
+                kinds=("ip",),
+                raw=(f"ip:{addr}",),
+            ),
+            binder=binder,
+            authorized_suffixes=("icomm.vn",),
+            provenance=mixed_prov,
+        )
+        assert binding.target_addresses == (addr,)
+
+
+@requires_postgres
+def test_dnsx_parser_emits_cname_observations_and_m05_refuses_resulting_targets(
+    tmp_path: Path,
+) -> None:
+    """End-to-end DB repro: DNSx CNAME observation -> M05 refuses ip:/service: and audits."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from adapters.m08.dnsx import parser as dnsx_parser
+    from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
+    from aegis.m01_campaign.campaigns import create_campaign
+    from aegis.m01_campaign.status import apply_workflow_action
+    from aegis.m05_registry.ids import uuid7
+    from aegis.m05_registry.registry import PostgresManifestRegistry
+    from aegis.m05_registry.service import PostgresJobService
+    from aegis.m06_runner import envelope as envelopes
+    from aegis.m27_ingestion.service import IngestionService
+    from tests.db_support import OPERATOR, connect, migrated_database, policy_document
+
+    raw_line = (
+        json.dumps(
+            {
+                "host": "cdn.icomm.vn",
+                "ttl": 60,
+                "a": ["104.16.1.2"],
+                "cname": ["edge.cloudflare.net"],
+                "status_code": "NOERROR",
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "host": "api.icomm.vn",
+                "ttl": 60,
+                "a": ["203.0.113.10"],
+                "status_code": "NOERROR",
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "host": "random.wild.icomm.vn",
+                "ttl": 60,
+                "a": ["198.51.100.88"],
+                "status_code": "NOERROR",
+            }
+        )
+        + "\n"
+    )
+    out_dir = tmp_path / "dnsx-out"
+    out_dir.mkdir()
+    (out_dir / "result.jsonl").write_text(raw_line, encoding="utf-8")
+    parsed = dnsx_parser.parse(
+        out_dir,
+        {"input": {"targets": ["cdn.icomm.vn", "api.icomm.vn", "random.wild.icomm.vn"]}},
+        [{"local_ref": "raw"}],
+    )
+    cname_obs = [
+        obs
+        for obs in parsed["observations"]
+        if obs["predicate"] == "dns.record" and obs["value"]["type"] == "CNAME"
+    ]
+    assert len(cname_obs) == 1
+    assert cname_obs[0]["subject"] == "dns:cdn.icomm.vn"
+    assert cname_obs[0]["value"]["value"] == "edge.cloudflare.net"
+
+    class WildcardForWildZone(m06_support.StaticBinder):
+        def addresses(self, value: str) -> tuple[str, ...]:
+            if value.endswith(".wild.icomm.vn"):
+                return ("198.51.100.88",)
+            return super().addresses(value)
+
+    with migrated_database() as dsn:
+        from psycopg.types.json import Jsonb
+
+        from aegis.m05_registry.canonical import sha256_hex
+
+        lab_policy = policy_document(network_profile="lab")
+        internet_policy = policy_document(
+            network_profile="internet",
+            authorization={
+                "owner": "icomm",
+                "reference": "item-61",
+                "date": "2026-11-26",
+                "authorized_suffixes": ["icomm.vn"],
+            },
+            rate_limits={
+                "requests_per_second_per_host": 1.0,
+                "max_concurrent_connections_per_host": 1,
+                "jobs_per_minute": 100,
+            },
+        )
+        with psycopg.connect(dsn, row_factory=dict_row) as dict_conn, dict_conn.transaction():
+            created = create_campaign(
+                dict_conn,
+                body={
+                    "name": "internet-provenance",
+                    "objective": "verify cname/wildcard guard",
+                    "targets": {
+                        "domains": ["cdn.icomm.vn", "api.icomm.vn", "random.wild.icomm.vn"],
+                        "ips": ["192.0.2.0/24"],
+                    },
+                    "policy": lab_policy,
+                },
+                actor=OPERATOR,
+                trace_id="a" * 32,
+            )
+            apply_workflow_action(
+                dict_conn,
+                campaign_id=created.campaign_id,
+                action="start",
+                reason="test",
+                actor={"kind": "module", "id": "M02"},
+                trace_id="a" * 32,
+            )
+
+        registry = PostgresManifestRegistry(lambda: connect(dsn))
+        for manifest_name in ("manifest.dnsx.yaml", "manifest.naabu.yaml", "manifest.httpx.yaml"):
+            registry.register(
+                (m06_support.FIXTURES / manifest_name).read_bytes(),
+                registered_by={"kind": "module", "id": "M05"},
+            )
+        jobs = PostgresJobService(
+            lambda: connect(dsn),
+            registry=registry,
+            key_ring=m06_support.INTERNET_RING,
+            binder=WildcardForWildZone({}),
+            platform_cidrs=("10.88.0.0/16",),
+        )
+        dnsx_job = jobs.submit(
+            JobSubmit.model_validate(
+                {
+                    "campaign_id": created.campaign_id,
+                    "capability": "dns.resolve",
+                    "input": {"targets": ["cdn.icomm.vn", "api.icomm.vn", "random.wild.icomm.vn"]},
+                    "rationale": "resolve subdomains",
+                }
+            ),
+            requested_by=OPERATOR,
+            idempotency_key="dnsx-1",
+        )
+        with connect(dsn) as conn, conn.transaction():
+            conn.execute(
+                "INSERT INTO policy_snapshot (policy_version, campaign_id, policy, policy_hash, "
+                "created_by) VALUES ('roe-999', %s, %s, %s, %s)",
+                (
+                    created.campaign_id,
+                    Jsonb(internet_policy),
+                    sha256_hex(internet_policy),
+                    Jsonb(OPERATOR),
+                ),
+            )
+            conn.execute(
+                "UPDATE campaign SET current_policy_version = 'roe-999' WHERE campaign_id = %s",
+                (created.campaign_id,),
+            )
+        with connect(dsn) as conn, conn.transaction():
+            task_row = conn.execute(
+                "SELECT approved_task FROM scan_job WHERE job_id = %s",
+                (dnsx_job.job["job_id"],),
+            ).fetchone()
+            assert task_row is not None
+            from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
+
+            task = ApprovedTask.model_validate(task_row[0])
+            sha = "c" * 64
+            ev_id = uuid7()
+            uri = f"s3://evidence/{created.campaign_id}/{dnsx_job.job['job_id']}/{sha}"
+            conn.execute(
+                "INSERT INTO evidence (evidence_id, sha256, storage_uri, campaign_id, job_id, "
+                "size_bytes, media_type, classification, source_tool) "
+                "VALUES (%s, %s, %s, %s, %s, 10, 'application/x-ndjson', 'INTERNAL', 'dnsx')",
+                (ev_id, sha, uri, created.campaign_id, dnsx_job.job["job_id"]),
+            )
+        manifest_dnsx, _ = m06_support.manifest("manifest.dnsx.yaml")
+        env = envelopes.build_envelope(
+            task=task,
+            manifest=manifest_dnsx,
+            job_id=dnsx_job.job["job_id"],
+            input_values=dnsx_job.job["input"] if "input" in dnsx_job.job else task.input,
+            results=parsed,
+            evidence=[
+                envelopes.EnvelopeEvidence(
+                    local_ref="raw",
+                    sha256="c" * 64,
+                    uri=uri,
+                    size_bytes=10,
+                    media_type="application/x-ndjson",
+                    classification="INTERNAL",
+                )
+            ],
+            status="succeeded",
+            started_at="2026-11-26T00:00:00Z",
+            finished_at="2026-11-26T00:00:05Z",
+            exit_code=0,
+        )
+        receipt = IngestionService(lambda: connect(dsn)).submit(env)
+        assert receipt.accepted and not receipt.quarantined
+
+        # Seed a service asset on the CDN IP to prove service: targets are gated identically.
+        with connect(dsn) as conn, conn.transaction():
+            svc_id = uuid7()
+            conn.execute(
+                "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen, "
+                "normalization_version) VALUES (%s, 'service:104.16.1.2:443/tcp', 'service', "
+                "now(), now(), 'aegis-norm/1')",
+                (svc_id,),
+            )
+            conn.execute(
+                "INSERT INTO asset_service (asset_id, ip, port, transport) "
+                "VALUES (%s, '104.16.1.2', 443, 'tcp')",
+                (svc_id,),
+            )
+            conn.execute(
+                "INSERT INTO asset_campaign (asset_id, campaign_id, first_seen) "
+                "VALUES (%s, %s, now())",
+                (svc_id, created.campaign_id),
+            )
+            # Also seed an IP inside the authorized seed CIDR (192.0.2.0/24).
+            seed_cidr_ip = uuid7()
+            conn.execute(
+                "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen, "
+                "normalization_version) VALUES (%s, 'ip:192.0.2.5', 'ip', now(), now(), "
+                "'aegis-norm/1')",
+                (seed_cidr_ip,),
+            )
+            conn.execute(
+                "INSERT INTO asset_campaign (asset_id, campaign_id, first_seen) "
+                "VALUES (%s, %s, now())",
+                (seed_cidr_ip, created.campaign_id),
+            )
+
+        # Foreign-CNAME IP -> refused + audited.
+        with pytest.raises(M05Error) as cdn_ip_err:
+            jobs.submit(
+                JobSubmit.model_validate(
+                    {
+                        "campaign_id": created.campaign_id,
+                        "capability": "network.discover_services",
+                        "input": {"targets": ["ip:104.16.1.2"], "ports": [443]},
+                        "rationale": "scan cdn ip",
+                    }
+                ),
+                requested_by=OPERATOR,
+                idempotency_key="naabu-cdn-ip",
+            )
+        assert cdn_ip_err.value.refusal.rule == "target_cname_outside_authorization"
+
+        # Foreign-CNAME service -> refused + audited.
+        with pytest.raises(M05Error) as cdn_svc_err:
+            jobs.submit(
+                JobSubmit.model_validate(
+                    {
+                        "campaign_id": created.campaign_id,
+                        "capability": "web.probe_http",
+                        "input": {"targets": ["service:104.16.1.2:443/tcp"], "ports": [443]},
+                        "rationale": "probe cdn service",
+                    }
+                ),
+                requested_by=OPERATOR,
+                idempotency_key="httpx-cdn-svc",
+            )
+        assert cdn_svc_err.value.refusal.rule == "target_cname_outside_authorization"
+
+        # Wildcard-only IP -> refused + audited.
+        with pytest.raises(M05Error) as wild_ip_err:
+            jobs.submit(
+                JobSubmit.model_validate(
+                    {
+                        "campaign_id": created.campaign_id,
+                        "capability": "network.discover_services",
+                        "input": {"targets": ["ip:198.51.100.88"], "ports": [443]},
+                        "rationale": "scan wildcard ip",
+                    }
+                ),
+                requested_by=OPERATOR,
+                idempotency_key="naabu-wild-ip",
+            )
+        assert wild_ip_err.value.refusal.rule == "wildcard_dns"
+
+        # Verify audit_log + policy_decision recorded all 3 refusals.
+        with connect(dsn) as conn:
+            denied_rules = [
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT rule FROM policy_decision "
+                    "WHERE campaign_id = %s AND decision = 'denied' "
+                    "ORDER BY created_at",
+                    (created.campaign_id,),
+                ).fetchall()
+            ]
+            audit_rules = [
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT details ->> 'rule' FROM audit_log WHERE campaign_id = %s "
+                    "AND action = 'job.refuse' ORDER BY audit_id",
+                    (created.campaign_id,),
+                ).fetchall()
+            ]
+        assert denied_rules == [
+            "target_cname_outside_authorization",
+            "target_cname_outside_authorization",
+            "wildcard_dns",
+        ]
+        assert audit_rules == denied_rules
+
+        # Clean authorized provenance IP (api.icomm.vn) + seed CIDR IP (192.0.2.5) -> accepted!
+        for target_key, key in (("ip:203.0.113.10", "ok-prov"), ("ip:192.0.2.5", "ok-cidr")):
+            accepted = jobs.submit(
+                JobSubmit.model_validate(
+                    {
+                        "campaign_id": created.campaign_id,
+                        "capability": "network.discover_services",
+                        "input": {"targets": [target_key], "ports": [443]},
+                        "rationale": "scan authorized target",
+                    }
+                ),
+                requested_by=OPERATOR,
+                idempotency_key=key,
+            )
+            assert accepted.job["status"] == "QUEUED"

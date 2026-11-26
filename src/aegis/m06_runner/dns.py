@@ -33,7 +33,7 @@ import os
 import socket
 import struct
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -44,14 +44,17 @@ __all__ = [
     "Answer",
     "DnsForwarder",
     "Question",
+    "build_cname_response",
     "build_query",
     "build_response",
+    "parse_cnames",
     "parse_question",
     "parse_addresses",
     "rcode_name",
 ]
 
 TYPE_A = 1
+TYPE_CNAME = 5
 TYPE_AAAA = 28
 CLASS_IN = 1
 RCODE_NOERROR = 0
@@ -182,12 +185,99 @@ def parse_question(message: bytes) -> Question:
     )
 
 
+def _encode_name(name: str) -> bytes:
+    encoded = [label.encode("idna") for label in name.strip(".").split(".") if label]
+    return b"".join(bytes([len(label)]) + label for label in encoded) + b"\x00"
+
+
+def _read_name(message: bytes, offset: int) -> tuple[str, int]:
+    labels: list[str] = []
+    jumped = False
+    end = offset
+    seen = 0
+    while True:
+        if offset >= len(message):
+            raise ValueError("truncated name")
+        size = message[offset]
+        if size == 0:
+            return ".".join(labels), (end if jumped else offset + 1)
+        if size & 0xC0 == 0xC0:
+            if offset + 2 > len(message):
+                raise ValueError("truncated pointer")
+            if not jumped:
+                end = offset + 2
+                jumped = True
+            offset = struct.unpack_from("!H", message, offset)[0] & 0x3FFF
+            seen += 1
+            if seen > 128:
+                raise ValueError("runaway pointer")
+            continue
+        if size & 0xC0:
+            raise ValueError("reserved label type")
+        offset += 1
+        if offset + size > len(message):
+            raise ValueError("truncated label")
+        labels.append(message[offset : offset + size].decode("ascii", "replace"))
+        offset += size
+        seen += 1
+        if seen > 128:
+            raise ValueError("runaway name")
+
+
 def build_query(qid: int, name: str, qtype: int) -> bytes:
     """A standard recursive query, used to forward to the deployment's resolver."""
-    encoded = [label.encode("idna") for label in name.split(".") if label]
-    labels = b"".join(bytes([len(label)]) + label for label in encoded)
-    question = labels + b"\x00" + struct.pack("!HH", qtype, CLASS_IN)
+    question = _encode_name(name) + struct.pack("!HH", qtype, CLASS_IN)
     return _HEADER.pack(qid, 0x0100, 1, 0, 0, 0) + question
+
+
+def parse_cnames(message: bytes) -> list[str]:
+    """CNAME targets of an answer message, in answer order."""
+    if len(message) < _HEADER.size:
+        raise ValueError("short DNS message")
+    _qid, flags, qdcount, ancount, _ns, _ar = _HEADER.unpack_from(message)
+    if not flags & 0x8000:
+        raise ValueError("not a response")
+    offset = _HEADER.size
+    for _ in range(qdcount):
+        offset = skip_name(message, offset) + 4
+    targets: list[str] = []
+    for _ in range(ancount):
+        offset = skip_name(message, offset)
+        if offset + 10 > len(message):
+            raise ValueError("truncated record")
+        rtype, rclass, _ttl, rdlength = struct.unpack_from("!HHIH", message, offset)
+        offset += 10
+        rdata_offset = offset
+        offset += rdlength
+        if rclass != CLASS_IN or rtype != TYPE_CNAME:
+            continue
+        target, _ = _read_name(message, rdata_offset)
+        normalized = target.strip(".").lower()
+        if normalized:
+            targets.append(normalized)
+    return targets
+
+
+def build_cname_response(
+    question: Question,
+    targets: Iterable[str],
+    *,
+    rcode: int = RCODE_NOERROR,
+    ttl: int = DEFAULT_TTL,
+) -> bytes:
+    """A DNS response carrying CNAME hops starting at `question.name`."""
+    records = b""
+    count = 0
+    if rcode == RCODE_NOERROR:
+        previous = ""
+        for index, target in enumerate(targets):
+            owner = b"\xc0\x0c" if index == 0 else _encode_name(previous)
+            rdata = _encode_name(target)
+            records += owner + struct.pack("!HHIH", TYPE_CNAME, CLASS_IN, ttl, len(rdata)) + rdata
+            previous = target
+            count += 1
+    flags = 0x8180 | (rcode & 0x000F)
+    return _HEADER.pack(question.id, flags, 1, count, 0, 0) + question.section + records
 
 
 def parse_addresses(message: bytes) -> list[str]:
@@ -264,15 +354,25 @@ class UpstreamResolver:
             addresses.extend(self._ask(name, qtype))
         return addresses
 
-    def _ask(self, name: str, qtype: int) -> list[str]:
+    def _ask_wire(self, name: str, qtype: int) -> bytes:
         query = build_query(int.from_bytes(os.urandom(2), "big"), name, qtype)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
             client.settimeout(self.timeout)
             client.sendto(query, (self.host, self.port))
             data, _ = client.recvfrom(4096)
         if len(data) >= _HEADER.size and struct.unpack_from("!H", data, 2)[0] & 0x0200:
-            return parse_addresses(self._ask_tcp(query))
-        return parse_addresses(data)
+            return self._ask_tcp(query)
+        return data
+
+    def _ask(self, name: str, qtype: int) -> list[str]:
+        return parse_addresses(self._ask_wire(name, qtype))
+
+    def _ask_cname_once(self, name: str) -> list[str]:
+        return parse_cnames(self._ask_wire(name, TYPE_CNAME))
+
+    def cnames(self, name: str) -> list[str]:
+        """Follow up to 5 CNAME hops for `name` against the pinned upstream."""
+        return _follow_cnames(name, self._ask_cname_once)
 
     def _ask_tcp(self, query: bytes) -> bytes:
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as client:
@@ -280,6 +380,51 @@ class UpstreamResolver:
             header = _read_exact(client, 2)
             (length,) = struct.unpack("!H", header)
             return _read_exact(client, length)
+
+
+def _system_nameserver(path: str = "/etc/resolv.conf") -> str | None:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                fields = line.split()
+                if len(fields) >= 2 and fields[0] == "nameserver":
+                    try:
+                        ipaddress.ip_address(fields[1])
+                    except ValueError:
+                        continue
+                    return fields[1]
+    except OSError:
+        return None
+    return None
+
+
+def _follow_cnames(name: str, query_once: Callable[[str], list[str]]) -> list[str]:
+    current = _normalize(name)
+    hops: list[str] = []
+    seen = {current}
+    for _ in range(5):
+        targets = query_once(current)
+        if not targets:
+            break
+        added = False
+        for target in targets:
+            normalized = _normalize(target)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                hops.append(normalized)
+                current = normalized
+                added = True
+        if not added:
+            break
+    return hops
+
+
+def system_cname_resolver(name: str) -> list[str]:
+    """CNAME chain from the control plane's system resolver (stdlib-only, no external imports)."""
+    server = _system_nameserver()
+    if server is None:
+        return []
+    return _follow_cnames(name, UpstreamResolver(server, 53, timeout=2.0)._ask_cname_once)
 
 
 def system_resolver(name: str) -> list[str]:
@@ -306,6 +451,7 @@ class DnsForwarder:
     policy: JobEgressPolicy
     audit: object  # AuditLog, injected to keep this module importable without the broker
     resolver: Callable[[str], list[str]] = system_resolver
+    cname_resolver: Callable[[str], Sequence[str]] | None = None
     ttl: int = DEFAULT_TTL
     clock: Callable[[], float] = time.monotonic
     _targets: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = field(init=False)
@@ -341,12 +487,31 @@ class DnsForwarder:
             return "DENY_PRIVATE"
         return None
 
+    def _resolve_cnames(self, name: str) -> Sequence[str]:
+        if self.cname_resolver is not None:
+            return self.cname_resolver(name)
+        if isinstance(self.resolver, UpstreamResolver):
+            return self.resolver.cnames(name)
+        if self.resolver is system_resolver:
+            return system_cname_resolver(name)
+        return ()
+
     def decide(self, question: Question) -> Answer:
         name = _normalize(question.name)
-        if question.qtype not in (TYPE_A, TYPE_AAAA):
+        if question.qtype not in (TYPE_A, TYPE_AAAA, TYPE_CNAME):
             return Answer((), (), "QTYPE_UNSUPPORTED", RCODE_NOTIMP)
         if name not in self._names:
             return Answer((), (), "NAME_NOT_BOUND", RCODE_REFUSED)
+        if question.qtype == TYPE_CNAME:
+            try:
+                cnames = tuple(
+                    _normalize(str(item))
+                    for item in self._resolve_cnames(name)
+                    if _normalize(str(item))
+                )
+            except OSError:
+                return Answer((), (), "RESOLVE_FAILED", RCODE_SERVFAIL)
+            return Answer(cnames, (), "OK", RCODE_NOERROR)
         try:
             resolved = self.resolver(name)
         except OSError:
@@ -383,7 +548,11 @@ class DnsForwarder:
                 return head
             return None
         answer = self.decide(question)
-        response = build_response(question, answer.allowed, rcode=answer.rcode, ttl=self.ttl)
+        response = (
+            build_cname_response(question, answer.allowed, rcode=answer.rcode, ttl=self.ttl)
+            if question.qtype == TYPE_CNAME
+            else build_response(question, answer.allowed, rcode=answer.rcode, ttl=self.ttl)
+        )
         self._audit(question, answer)
         return response
 
@@ -391,13 +560,16 @@ class DnsForwarder:
         write = getattr(self.audit, "write_dns", None)
         if write is None:  # pragma: no cover - the broker always passes an AuditLog
             return
+        qtype_name = {
+            TYPE_A: "A",
+            TYPE_AAAA: "AAAA",
+            TYPE_CNAME: "CNAME",
+        }.get(question.qtype, str(question.qtype))
         write(
             {
                 "kind": "dns",
                 "name": question.name,
-                "qtype": "A"
-                if question.qtype == TYPE_A
-                else ("AAAA" if question.qtype == TYPE_AAAA else str(question.qtype)),
+                "qtype": qtype_name,
                 "answers": list(answer.allowed),
                 "dropped": list(answer.denied),
                 "decision": "allow" if answer.rcode == RCODE_NOERROR else "deny",
