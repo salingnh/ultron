@@ -30,15 +30,17 @@ class TargetBinding(StrEnum):
 class BindingEntry(
     RootModel[
         constr(
-            pattern=r"^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+            pattern=r"^(?:(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])|dns:([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)$",
+            max_length=260,
         )
     ]
 ):
     root: constr(
-        pattern=r"^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+        pattern=r"^(?:(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])|dns:([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)$",
+        max_length=260,
     ) = Field(
         ...,
-        description="Một đích được broker mở: host (tên DNS, IPv4 hoặc IPv6 trong ngoặc vuông) và cổng 1–65535. Tên luôn viết thường, không wildcard.",
+        description="Một đích được broker mở: `host:port` (tên DNS, IPv4 hoặc IPv6 trong ngoặc vuông với cổng 1–65535), hoặc `dns:<tên>` cho tên miền được phân giải qua DNS front end của broker. Tên luôn viết thường, không wildcard.",
     )
 
 
@@ -55,7 +57,7 @@ class EgressBinding(BaseModel):
     )
     entries: list[BindingEntry] = Field(
         ...,
-        description="Tập đích được mở, dạng host:port, đã sắp xếp và không trùng. IPv6 viết trong ngoặc vuông.",
+        description="Tập đích được mở, dạng host:port (IPv6 viết trong ngoặc vuông) hoặc dns:<tên> cho tên được phân giải qua DNS front end của broker, đã sắp xếp và không trùng.",
         max_length=256,
     )
     target_addresses: list[ids_v2_schema.IPAddress] = Field(

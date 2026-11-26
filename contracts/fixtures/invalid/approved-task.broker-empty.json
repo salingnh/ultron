@@ -1,0 +1,48 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c7",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000c6",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "network_profile": "internet",
+  "capability": "dns.resolve",
+  "provider": "dnsx",
+  "provider_version": "v1.2.2",
+  "adapter_version": "1.0.2",
+  "manifest_sha256": "2f6d0a4b0cb32b9fbcd110e5d92b635583a93bbf39a074132d1b727147abc16a",
+  "image_digest": "sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
+  "input": {
+    "targets": [
+      "dns:internal.example"
+    ],
+    "record_types": [
+      "A",
+      "AAAA"
+    ]
+  },
+  "targets": [
+    {
+      "seed_id": "01934f6a-0000-7000-8000-0000000000b1"
+    }
+  ],
+  "idempotency_key": "fixture:broker-empty",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Invalid fixture: mode=broker requires at least one signed entry",
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "signature": "hmac-sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "none",
+    "entries": [],
+    "target_addresses": []
+  },
+  "priority": 50,
+  "depends_on": []
+}

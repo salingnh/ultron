@@ -364,6 +364,16 @@ class ActorAttribution(unittest.TestCase):
         self.assertIn("fe80::/10", sandbox)
         self.assertIn("− tập luôn chặn", sandbox)
 
+    def test_broker_dns_entry_binding_is_required_non_empty(self):
+        v = validator("capability/approved-task.v2.schema.json")
+        dnsx_inet = load("fixtures/valid/approved-task.dnsx-internet.json")
+        self.assertEqual(list(v.iter_errors(dnsx_inet)), [])
+        empty_broker = load("fixtures/invalid/approved-task.broker-empty.json")
+        self.assertFalse(v.is_valid(empty_broker))
+        wildcard_dns = copy.deepcopy(dnsx_inet)
+        wildcard_dns["egress_binding"]["entries"] = ["dns:*.internal.example"]
+        self.assertFalse(v.is_valid(wildcard_dns))
+
     def test_requests_carry_no_execution_authority(self):
         request = json.loads((ROOT / "mcp/capability-request.v2.schema.json").read_text())
         for field in ["actor", "requested_by", "proposed_by", "operator", "session_id"]:

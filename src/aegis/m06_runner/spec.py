@@ -418,7 +418,19 @@ def _canonical_key(reference: Any) -> str | None:
 
 
 def _binding_entries(task: ApprovedTask) -> tuple[tuple[str, int], ...]:
-    return tuple(_split_entry(text(entry)) for entry in task.egress_binding.entries)
+    return tuple(
+        _split_entry(text(entry))
+        for entry in task.egress_binding.entries
+        if not text(entry).startswith("dns:")
+    )
+
+
+def _binding_dns_entries(task: ApprovedTask) -> tuple[str, ...]:
+    return tuple(
+        text(entry)[4:].rstrip(".").lower()
+        for entry in task.egress_binding.entries
+        if text(entry).startswith("dns:")
+    )
 
 
 def _binding_target_addresses(task: ApprovedTask) -> tuple[Any, ...]:
@@ -692,13 +704,18 @@ def build_policy(
             f"({permissions.targetBinding!r})",
         )
     entries = _binding_entries(task)
-    if not entries:
-        declared = permissions.egressSources or []
-        dns_only = bool(declared) and all(str(source.protocol) == "dns" for source in declared)
-        if not (profile == "internet" and dns_only):
-            raise SpecError(
-                "POLICY_DENIED", "a broker binding with no destination is not a valid policy"
-            )
+    dns_entries = _binding_dns_entries(task)
+    if not entries and not dns_entries:
+        raise SpecError(
+            "POLICY_DENIED", "a broker binding with no destination is not a valid policy"
+        )
+    declared = permissions.egressSources or []
+    dns_only = bool(declared) and all(str(source.protocol) == "dns" for source in declared)
+    if profile == "internet" and dns_only and not dns_entries:
+        raise SpecError(
+            "POLICY_DENIED",
+            "a dns-only internet job requires signed dns: entries in egress_binding",
+        )
     entry_keys = {f"{denyset.host_key(host)}:{port}" for host, port in entries}
     target_addresses = _binding_target_addresses(task)
 
@@ -709,6 +726,13 @@ def build_policy(
             raise SpecError(
                 "POLICY_DENIED",
                 f"signed binding entry {host}:{port} is in the always-deny set ({denied.value})",
+            )
+    for dns_name in dns_entries:
+        denied = denyset.denied_host(dns_name)
+        if denied is not None:
+            raise SpecError(
+                "POLICY_DENIED",
+                f"signed binding entry dns:{dns_name} is in the always-deny set ({denied.value})",
             )
 
     # 2. Every destination the pinned manifest declares must be inside the signed set (a manifest
@@ -805,7 +829,21 @@ def build_policy(
         sources.append(
             netpolicy.SourceAllow(id=source_id, hosts=(denyset.host_key(host),), ports=(port,))
         )
-    dns_names, dns_target_names = _dns_binding(task, sources, input_values)
+    if dns_entries:
+        literal_dns = {
+            key[4:].rstrip(".").lower()
+            for key in (_canonical_key(reference) for reference in task.targets)
+            if key is not None and key.startswith("dns:")
+        }
+        missing_dns = literal_dns - set(dns_entries)
+        if missing_dns:
+            raise SpecError(
+                "POLICY_DENIED",
+                "the signed binding omits task DNS target(s) " + ", ".join(sorted(missing_dns)),
+            )
+    dns_names, dns_target_names = _dns_binding(
+        task, sources, input_values, signed_dns_names=dns_entries
+    )
     if profile == "internet":
         if per_host_rps is None or per_host_max_connections is None:
             raise SpecError(
@@ -841,31 +879,37 @@ def build_policy(
 
 
 def _dns_binding(
-    task: ApprovedTask, sources: Sequence[netpolicy.SourceAllow], input_values: Mapping[str, Any]
+    task: ApprovedTask,
+    sources: Sequence[netpolicy.SourceAllow],
+    input_values: Mapping[str, Any],
+    *,
+    signed_dns_names: Sequence[str] = (),
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Names the broker may resolve for this job, and which of them are targets.
 
-    Allowed = the task's target names (`dns:` refs and domain-shaped input targets) plus the pinned
-    manifest's source hosts; anything else is refused by the broker's DNS front end (G1.6 item 4).
-    A target name's answers are narrowed to the signed target addresses, so DNS can never hand the
-    job an address the signed binding would refuse to connect to.
+    When the task carries signed `dns:<name>` entries in `egress_binding`, those are authoritative
+    (E-1: M06 never widens from unsigned input). Otherwise fall back to target refs + declared
+    source hosts. Anything outside this set is refused by the broker's DNS front end (G1.6 item 4).
     """
-    targets: set[str] = set()
-    for reference in task.targets:
-        key = _canonical_key(reference)
-        if key is not None and key.startswith("dns:"):
-            targets.add(key[4:].rstrip(".").lower())
-    raw = input_values.get("targets")
-    if isinstance(raw, list):
-        for value in raw:
-            if not isinstance(value, str):
-                continue
-            try:
-                projection = project_target(value)
-            except SpecError:
-                continue
-            if projection.startswith("dns:"):
-                targets.add(projection[4:].rstrip(".").lower())
+    if signed_dns_names:
+        targets = {name.rstrip(".").lower() for name in signed_dns_names if name}
+    else:
+        targets = set()
+        for reference in task.targets:
+            key = _canonical_key(reference)
+            if key is not None and key.startswith("dns:"):
+                targets.add(key[4:].rstrip(".").lower())
+        raw = input_values.get("targets")
+        if isinstance(raw, list):
+            for value in raw:
+                if not isinstance(value, str):
+                    continue
+                try:
+                    projection = project_target(value)
+                except SpecError:
+                    continue
+                if projection.startswith("dns:"):
+                    targets.add(projection[4:].rstrip(".").lower())
     declared: set[str] = set()
     for source in sources:
         for host in source.hosts:
