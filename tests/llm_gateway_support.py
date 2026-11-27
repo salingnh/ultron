@@ -411,7 +411,7 @@ class GatewayProcess:
                     with ready as answer:
                         if answer.status == 200:
                             return self
-                except (urllib.error.URLError, OSError):
+                except urllib.error.URLError, OSError:
                     pass
                 time.sleep(1)
             logs = self.logs()

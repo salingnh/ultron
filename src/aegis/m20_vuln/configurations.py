@@ -242,7 +242,7 @@ class Node:
         for item in raw or ():
             try:
                 criteria.append(Criterion.from_json(item))
-            except (CpeError, KeyError):
+            except CpeError, KeyError:
                 continue  # a criterion this matcher cannot read is skipped, not guessed
         children: list[Node] = []
         for child in entry.get("children") or ():
@@ -387,7 +387,7 @@ def _flat_configurations(entries: object) -> tuple[Configuration, ...]:
     for entry in entries:
         try:
             criterion = Criterion.from_json(entry)
-        except (CpeError, KeyError):
+        except CpeError, KeyError:
             continue
         configurations.append(
             Configuration(

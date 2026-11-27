@@ -299,7 +299,7 @@ def _alive(pid: int) -> bool:
         return False
     try:
         state = (Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()[2],)
-    except (OSError, IndexError):
+    except OSError, IndexError:
         return True
     return state[0] != "Z"
 

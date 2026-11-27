@@ -320,9 +320,7 @@ def test_an_unreachable_neo4j_is_a_missing_dependency() -> None:
     from aegis.m05_registry.mcp.graph import M23GraphQueries
 
     driver = MagicMock()
-    driver.session.side_effect = ServiceUnavailable(  # type: ignore[no-untyped-call]
-        "cannot reach bolt://graph.internal:7687"
-    )
+    driver.session.side_effect = ServiceUnavailable("cannot reach bolt://graph.internal:7687")
     service = make_service(graph=M23GraphQueries(MagicMock(), driver=driver))
 
     result = graph_call(

@@ -36,7 +36,7 @@ def _http_status(url: str) -> tuple[int, bytes]:
     try:
         with urllib.request.urlopen(url, timeout=2.0) as response:
             return response.status, response.read()
-    except (urllib.error.HTTPError, urllib.error.URLError, http.client.HTTPException, OSError):
+    except urllib.error.HTTPError, urllib.error.URLError, http.client.HTTPException, OSError:
         return 0, b""
 
 

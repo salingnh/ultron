@@ -53,7 +53,7 @@ GENERATOR_ARGS = [
     "--output-model-type",
     "pydantic_v2.BaseModel",
     "--target-python-version",
-    "3.12",
+    "3.14",
     "--disable-timestamp",
     "--formatters",
     "ruff-check",
