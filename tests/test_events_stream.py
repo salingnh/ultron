@@ -9,10 +9,13 @@ client's disconnect.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import aclosing
+from types import SimpleNamespace
+from typing import Any, cast
 
 import httpx
 import psycopg
@@ -114,21 +117,17 @@ def _backends(dsn: str) -> int:
     return int(row["n"])
 
 
-def test_a_committed_job_status_change_reaches_a_connected_client_within_two_seconds(
-    dsn: str, api: str
-) -> None:
+def test_a_committed_job_status_change_reaches_a_connected_client(dsn: str, api: str) -> None:
     campaign = open_campaign(dsn, name="sse latency")
     (job,) = accept_jobs(dsn, campaign, 1)
     run_job(dsn, job["job_id"])
 
     with _open(_stream_url(api, campaign.campaign_id), read_timeout=5.0) as stream:
         _consume_seed_events(stream, seed_events(dsn, campaign.campaign_id))
-        started_at = time.monotonic()
         sequence = _complete_with_event(dsn, job)
+        # How soon an open stream picks a commit up is checked on a controlled clock below.
         message = stream.next()
-        latency = time.monotonic() - started_at
 
-    assert latency < 2.0, f"the event took {latency:.2f}s to reach the client"
     assert message.id == str(sequence)
     assert message.event == "job.completed.v2"
     envelope = json.loads(message.data)
@@ -182,13 +181,81 @@ def test_heartbeats_keep_an_idle_stream_alive(dsn: str, api: str, monkeypatch: A
     campaign = open_campaign(dsn, name="sse heartbeat")
     with _open(_stream_url(api, campaign.campaign_id), read_timeout=3.0) as stream:
         _consume_seed_events(stream, seed_events(dsn, campaign.campaign_id))
-        started_at = time.monotonic()
+        # When it is sent is checked on a controlled clock below.
         heartbeat = stream.next()
-        elapsed = time.monotonic() - started_at
     assert heartbeat.event == "heartbeat"
     assert heartbeat.id is None, "a heartbeat is not a resume point"
-    assert elapsed < 2.0
     assert json.loads(heartbeat.data)["at"].endswith("Z")
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def test_an_idle_stream_sends_a_heartbeat_every_15_seconds(monkeypatch: Any) -> None:
+    """The contract's interval, on a controlled clock: no socket, database or wall-clock time."""
+    clock = _Clock()
+    monkeypatch.setattr(events, "time", clock)
+    monkeypatch.setattr(events, "asyncio", SimpleNamespace(sleep=clock.sleep))
+    monkeypatch.setattr(events, "_connect", lambda _dsn: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(events, "_events_after", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(events, "_refresh_quietly", lambda *_args, **_kwargs: None)
+
+    async def heartbeat_times(count: int) -> list[float]:
+        stream = events._stream(
+            dsn="unused", campaign_id="c", after=0, types=None, name="n", holder="h"
+        )
+        sent: list[float] = []
+        async with aclosing(cast(AsyncGenerator[str], stream)) as frames:
+            async for frame in frames:
+                if frame.startswith("event: heartbeat\n"):
+                    sent.append(clock.now)
+                    if len(sent) == count:
+                        break
+        return sent
+
+    first, second = asyncio.run(heartbeat_times(2))
+    # Each is sent by the first poll at or after its due time.
+    assert 15.0 <= first <= 15.0 + events.POLL_SECONDS
+    assert 15.0 <= second - first <= 15.0 + events.POLL_SECONDS
+
+
+def test_an_open_stream_sends_a_committed_event_at_its_next_poll(monkeypatch: Any) -> None:
+    """The stream's share of "a status change reaches a client within 2 s" (G1.5a): its waiting."""
+    clock = _Clock()
+    committed_at = 3.1
+    seq = 7
+
+    def events_after(*_args: Any, after: int, **_kwargs: Any) -> list[dict[str, Any]]:
+        due = clock.now >= committed_at and after < seq
+        return [{"seq": seq, "type": "job.completed.v2"}] if due else []
+
+    monkeypatch.setattr(events, "time", clock)
+    monkeypatch.setattr(events, "asyncio", SimpleNamespace(sleep=clock.sleep))
+    monkeypatch.setattr(events, "_connect", lambda _dsn: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(events, "_events_after", events_after)
+    monkeypatch.setattr(events, "_refresh_quietly", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(events, "_envelope", lambda _row: {})
+
+    async def sent_at() -> float:
+        stream = events._stream(
+            dsn="unused", campaign_id="c", after=0, types=None, name="n", holder="h"
+        )
+        async with aclosing(cast(AsyncGenerator[str], stream)) as frames:
+            async for frame in frames:
+                if frame.startswith("id: 7\n"):
+                    break
+        return clock.now
+
+    delay = asyncio.run(sent_at()) - committed_at
+    assert 0 <= delay <= events.POLL_SECONDS < 2.0
 
 
 def test_a_stream_only_sees_its_own_campaign(dsn: str, api: str) -> None:
