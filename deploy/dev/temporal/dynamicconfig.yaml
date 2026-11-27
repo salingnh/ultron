@@ -1,0 +1,2 @@
+# Temporal dynamic config of the dev server: no overrides (server defaults). The server refuses to
+# start without this file, and temporalio/server does not ship one.

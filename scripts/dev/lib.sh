@@ -107,6 +107,18 @@ record_dev_stack_identity() {
 
 container_exists() { podman container exists "$1" 2>/dev/null; }
 
+# Runs a script of deploy/dev/temporal/ in a one-shot admin-tools container on the dev network.
+# It is piped in (no bind mount); the password travels in the environment, never in argv.
+temporal_admin() {
+  SQL_PASSWORD="$AEGIS_PG_PASSWORD" podman run --rm -i --name "$DEV_PROJECT-temporal-admin" \
+    --network "${DEV_PROJECT}_default" \
+    -e SQL_PLUGIN=postgres12 -e SQL_HOST=pg -e SQL_PORT=5432 \
+    -e SQL_USER="$AEGIS_PG_USER" -e SQL_PASSWORD \
+    -e TEMPORAL_ADDRESS=temporal:7233 \
+    "${AEGIS_TEMPORAL_ADMIN_TOOLS_IMAGE:?deploy/dev/images.env}" sh -s \
+    <"$REPO_ROOT/deploy/dev/temporal/$1"
+}
+
 # Waits until every named container reports a healthy healthcheck.
 # Fails with the container's last log lines when it stops or exits early.
 wait_healthy() {
