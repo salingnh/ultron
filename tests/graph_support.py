@@ -184,9 +184,15 @@ def _record_container_volumes(name: str) -> None:
                 handle.write(f"{volume}\n")
 
 
+def _new_password() -> str:
+    # Hex only: `neo4j-admin set-initial-password` reads a leading `-` as an option and the
+    # container exits, which a URL-safe token starts with once in 64 times.
+    return secrets.token_hex(18)
+
+
 def _start_container() -> tuple[str, str]:
     """Start a labelled, throwaway Neo4j from the pinned image; removed when this process exits."""
-    password = secrets.token_urlsafe(18)
+    password = _new_password()
     name = f"{CONTAINER_PREFIX}{secrets.token_hex(6)}"
     image = _pinned_image()
     started = _podman(
@@ -242,15 +248,33 @@ def _start_container() -> tuple[str, str]:
             )
             if ready.returncode == 0:
                 return f"bolt://127.0.0.1:{port}", password
+            state = _podman("inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", name)
+            if state.startswith("exited"):
+                raise SharedGraphRefused(
+                    f"the harness Neo4j {name} stopped while starting ({state}):\n{_log_tail(name)}"
+                )
             time.sleep(POLL_SECONDS)
         raise SharedGraphRefused(
-            f"the harness Neo4j {name} did not become ready within {READY_TIMEOUT_SECONDS}s"
+            f"the harness Neo4j {name} did not become ready within {READY_TIMEOUT_SECONDS}s:\n"
+            f"{_log_tail(name)}"
         )
     except BaseException:
         _stop(name)
         if name in _STARTED:
             _STARTED.remove(name)
         raise
+
+
+def _log_tail(name: str) -> str:
+    """The container's last output: it is removed right after, and this is the only evidence."""
+    logs = subprocess.run(  # noqa: S603 - fixed podman query
+        ["podman", "logs", "--tail", "40", name],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    return (logs.stdout + logs.stderr)[-4000:]
 
 
 def _pinned_image() -> str:
