@@ -82,9 +82,11 @@ Service tách khỏi transport (`service.py`) để test chạy đúng đường
 - **`graph.*`**: schema lấy nguyên từ `graph-queries.v2`, giới hạn do server áp (2 bước nhảy, 200 bản
   ghi, 2000 ms, 8192 byte) và `limits_applied` là trần hiệu lực của lần gọi (client xin nhỏ hơn thì
   ghi giá trị nhỏ hơn); `truncated` do M23 trả. `campaign_id` trong input phải trùng campaign đã bind.
-  Chưa có M23 (G1.4b) nên provider mặc định trả `isError` `DEPENDENCY_MISSING`/`ESCALATE`, **không**
-  trả trang rỗng: `truncated=false` với 0 bản ghi là khẳng định "không có gì", sai về một thành phần
-  chưa tồn tại.
+  Provider của `graph.*` là M23 (`M23GraphQueries`): `get_asset_neighbors` đọc Neo4j (chỉ node
+  `:Asset` và cạnh asset↔asset), năm truy vấn còn lại đọc read model SQL của M23;
+  `AEGIS_NEO4J_URI`/`AEGIS_NEO4J_USER`/`AEGIS_NEO4J_PASSWORD` cấu hình driver. Thiếu cấu hình hoặc
+  không kết nối được = `isError` `DEPENDENCY_MISSING`/`ESCALATE`, **không** trả trang rỗng:
+  `truncated=false` với 0 bản ghi là khẳng định "không có gì", sai về một thành phần không sẵn sàng.
 - **Lỗi**: `_meta`/schema sai → `-32602` + `error.v2` (HTTP 400 ở tầng transport 2.3.0); quyết định
   registry/policy và xung đột idempotency → `isError=true` + `capability-response.v2`, `field` chỉ có
   ở `INPUT_INVALID`. Xung đột giờ là `IDEMPOTENCY_CONFLICT` (đóng mục còn mở của spike).

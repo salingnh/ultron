@@ -37,6 +37,7 @@ Một schema chỉ được coi là đã phát hành khi biết ai phát và ai 
 | [agent/model-message.v2](agent/model-message.v2.schema.json) | M03, M04 | M03, M04 | |
 | [agent/model-response.v2](agent/model-response.v2.schema.json) | M04 | M03 | |
 | [agent/hypothesis-update.v2](agent/hypothesis-update.v2.schema.json) | M03 (Analyst) | M03 (sổ giả thuyết), M26 (hiển thị) | bên nhận trước đây không khai |
+| [agent/activity.v2](agent/activity.v2.schema.json) | M26 (read model từ `agent_session`, `policy_decision`+`scan_job`, `campaign_ledger`) | UI (màn hình hoạt động) | read model REST, không phải event; chỉ dữ liệu có cấu trúc, không rationale/prompt/model output |
 | [finding/finding.v2](finding/finding.v2.schema.json), [finding-status.v2](finding/finding-status.v2.schema.json) | M20/M21/M24 | M26 (UI), M25 (alert) | |
 | [finding/severity-assessment.v2](finding/severity-assessment.v2.schema.json) | M20/M21/M24 | M26, M25 | |
 | [finding/transition-request.v2](finding/transition-request.v2.schema.json) + [transitions.v2.yaml](finding/transitions.v2.yaml) | UI → M26 | M20 | body REST, không mang actor (OI-10) |

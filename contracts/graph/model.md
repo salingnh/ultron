@@ -40,7 +40,7 @@ Mọi cạnh mang `observed_at`, `valid_from`, `valid_to`, `source_job_id`, `con
 | `DISCOVERED_FROM` | Asset → Asset hoặc Target | M27 (cổng G5) | cạnh nguồn gốc bắt buộc cho mọi tài sản tìm thêm; đích là `:Target` khi nguồn gốc là seed keyword/CIDR (TargetRef `{seed_id}`), không tạo asset giả |
 | `SNAPSHOT_OF` | RepoSnapshot → Repo | adapter |  |
 | `ALIAS_OF` | Asset → Asset | M07 | vd domain CNAME tới domain khác |
-| `AFFECTED_BY` | Package → Vulnerability | M20 | Chỉ là ứng viên (`package_vuln_match`) |
+| `AFFECTED_BY` | Package → Vulnerability | M20 | Chỉ là ứng viên (`package_vuln_match`); cạnh chỉ tồn tại khi quyết định mới nhất của cặp là khớp. Rút ứng viên xóa cạnh và `:Vulnerability` mồ côi, lịch sử ở PostgreSQL |
 | `HAS_FINDING` | Asset → Finding | M20 | |
 | `SUPPORTED_BY` | Finding → Evidence | M20, M21 | |
 | `DERIVED_FROM` | Observation → Job | M27 | |
