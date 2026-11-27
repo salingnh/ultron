@@ -53,6 +53,12 @@ STATUS_SCRIPT = REPO / "scripts" / "llm-gateway" / "status.py"
 
 #: The one credential: the key ultron sends and the gateway's master key (AEGIS_MODEL_API_KEY).
 MASTER_KEY = "sk-llm-gateway-test-master-key-not-a-real-secret"
+#: What an upstream says when the account behind it is out of credits (opencode.ai's own body, from
+#: the owner's live run): HTTP 402 with a generic `invalid_request_error` type, which is why LiteLLM
+#: classifies it as a bad request unless the gateway rotates on it.
+PAYMENT_MESSAGE = (
+    "Insufficient balance. This request is pay-as-you-go, billed to OpenCode Models credits."
+)
 OWNER_KEYS = {
     "LLM_KEY_A": "sk-test-upstream-a",
     "LLM_KEY_B": "sk-test-upstream-b",
@@ -136,7 +142,7 @@ def _messages(text: str) -> dict[str, Any]:
 class FakeUpstream:
     """One fake upstream on `127.0.0.1:<port>`; `mode` decides what the next request answers."""
 
-    mode: str = "ok"  # ok | rate (429 quota) | server (500)
+    mode: str = "ok"  # ok | rate (429 quota) | payment (402 no credits) | server (500)
     hits: list[dict[str, Any]] = field(default_factory=list)
     _server: ThreadingHTTPServer | None = field(default=None, repr=False)
     _thread: threading.Thread | None = field(default=None, repr=False)
@@ -194,6 +200,17 @@ class FakeUpstream:
                                 }
                             },
                         )
+                    return
+                if upstream.mode == "payment":
+                    self._send(
+                        402,
+                        {
+                            "error": {
+                                "type": "invalid_request_error",
+                                "message": PAYMENT_MESSAGE,
+                            }
+                        },
+                    )
                     return
                 if upstream.mode == "server":
                     self._send(

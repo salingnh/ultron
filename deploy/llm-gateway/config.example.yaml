@@ -10,9 +10,9 @@
 # như LLM_KEY_A; file này chỉ ghi TÊN biến dưới dạng os.environ/<TÊN>.
 #
 # Thứ tự = thứ tự trong danh sách `endpoints` bên dưới: trên cùng thử trước. Khi endpoint đầu hết
-# quota (429), lỗi 5xx hoặc timeout, gateway gọi endpoint kế tiếp và cho endpoint lỗi nghỉ
-# `cooldown_time` giây (300). Hết cả nhóm thì trả 429 kèm danh sách endpoint đang nghỉ - ultron ghi
-# đó là lỗi provider, không crash.
+# quota (429), hết credit (402), lỗi 5xx hoặc timeout, gateway gọi endpoint kế tiếp và cho endpoint
+# lỗi nghỉ `cooldown_time` giây (300). Hết cả nhóm thì trả 429 kèm danh sách endpoint đang nghỉ -
+# ultron ghi đó là lỗi provider (RATE_LIMITED), không crash.
 #
 # group: tên nhóm, chính là AEGIS_MODEL_NAME trong .env (client chỉ gọi tên nhóm này).
 group: aegis-smart
@@ -38,6 +38,9 @@ endpoints:
     output_cost_per_token: 0.0000006
 
   # Endpoint Anthropic: không cần api_base (mặc định của hãng).
+  # Cùng cách đó, image gateway biết sẵn các provider native: openrouter/<model> (OpenRouter) và
+  # opencode_go/<model> (gói OpenCode Go - gateway tự gửi session id mà provider này yêu cầu).
+  # Chỉ cần tên model, không cần api_base.
   # Ultron gọi chuẩn nào cũng qua được: lời gọi OpenAI được dịch sang Anthropic Messages và ngược
   # lại. Upstream chỉ nói /v1/chat/completions thì đặt AEGIS_MODEL_PROVIDER=openai trong .env.
   - name: aegis-endpoint-c

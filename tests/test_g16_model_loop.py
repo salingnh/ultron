@@ -30,6 +30,7 @@ from aegis.m03_agent.session import SessionRun, run_session
 from aegis.m04_model import deployment
 from aegis.m04_model.deployment import ModelDeployment
 from aegis.m04_model.raw import usage_tokens
+from aegis.m04_model.tool_names import PORTABLE_NAME, provider_tool_name
 from aegis.m04_model.transport import HttpAnswer
 from aegis.m04_model.usage import InMemoryUsageSink, ModelUsage
 from tests.m03_support import (
@@ -101,14 +102,23 @@ class RecordedHttp:
 
 
 def tool_call_body(provider: Provider, arguments: Mapping[str, Any]) -> dict[str, Any]:
-    """The recorded tool-call answer with the arguments a test wants the model to have produced."""
+    """The recorded tool-call answer with the arguments a test wants the model to have produced.
+
+    The name is the one the provider was given: a provider echoes the wire name it was sent, which
+    is the capability id only when that id is already inside the function-name grammar
+    (`dns.enumerate_subdomains` is not - it is published as `dns__enumerate_subdomains`). Answering
+    with the wire name is what makes this test prove the round trip back to the capability id.
+    """
     name = "openai-plan-tool-call" if provider is Provider.openai else "anthropic-plan-tool-use"
     raw = recorded(name)
+    wire_name = provider_tool_name(ENUMERATE)
     if provider is Provider.openai:
         function = raw["choices"][0]["message"]["tool_calls"][0]["function"]
+        function["name"] = wire_name
         function["arguments"] = json.dumps(dict(arguments), sort_keys=True)
     else:
         block = next(item for item in raw["content"] if item["type"] == "tool_use")
+        block["name"] = wire_name
         block["input"] = dict(arguments)
     return raw
 
@@ -138,7 +148,8 @@ def run_live_loop(
     return live, http, sink, deps, run
 
 
-def tool_names(provider: Provider, wire: Mapping[str, Any]) -> set[str]:
+def wire_tool_names(provider: Provider, wire: Mapping[str, Any]) -> set[str]:
+    """Every function name the provider will see in the tool catalogue."""
     catalog = wire.get("tools") or []
     if provider is Provider.openai:
         return {str(tool["function"]["name"]) for tool in catalog}
@@ -209,8 +220,13 @@ def test_the_live_client_drives_the_mcp_tool_loop(
         assert "authorization" not in first["headers"]
         assert first["wire"]["system"].startswith("You are the planner of one AEGIS agent session")
         assert "response_format" not in first["wire"]
-    # The catalogue came from MCP `tools/list`, not from anything the model said.
-    assert {ENUMERATE, "dns.resolve"} <= tool_names(provider, first["wire"])
+    # The catalogue came from MCP `tools/list`, not from anything the model said - in the provider's
+    # own function-name grammar, which every OpenAI-compatible provider validates (`dns.resolve` is
+    # refused there; the capability id is what the caller sees, below).
+    published = wire_tool_names(provider, first["wire"])
+    assert {provider_tool_name(ENUMERATE), provider_tool_name("dns.resolve")} <= published
+    for name in published:
+        assert PORTABLE_NAME.fullmatch(name), name
     assert first["timeout"] == 120.0
 
     # The refusal reached the next provider request as untrusted data, not as an instruction.

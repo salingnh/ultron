@@ -20,8 +20,9 @@ from this process's environment (the checkout's `.env`, which the calling script
 
 Two files land in `--out-dir`:
 
-    config.yaml    the effective LiteLLM config (variable NAMES only, no secrets)
-    gateway.env    KEY=VALUE for the referenced names only, mode 0600
+    config.yaml    the effective LiteLLM config (variable NAMES only, no secrets) - mode 0644, read
+                   by the proxy's own non-root user inside the container
+    gateway.env    KEY=VALUE for the referenced names only, mode 0600 (podman reads it on the host)
 
 Every refusal names the line to fix and exits 2, because a gateway that starts with a silently
 ignored setting is worse than one that does not start at all.
@@ -296,10 +297,16 @@ def main(argv: list[str]) -> int:
         return 2
 
     arguments.out_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(arguments.out_dir, 0o700)
-    (arguments.out_dir / "config.yaml").write_text(
+    # The config is read by the proxy, which runs as a non-root user inside the container: it holds
+    # variable NAMES only, so it is world-readable and the directory is traversable. The environment
+    # file next to it is the one with values, and it stays 0600 (podman reads it on the host, as the
+    # invoking user, and passes the variables to the container).
+    os.chmod(arguments.out_dir, 0o755)
+    config_path = arguments.out_dir / "config.yaml"
+    config_path.write_text(
         yaml.safe_dump(document, sort_keys=False, allow_unicode=True), encoding="utf-8"
     )
+    config_path.chmod(0o644)
     write_private(arguments.out_dir / "gateway.env", environment)
 
     group = document["router_settings"]["routing_groups"][0]

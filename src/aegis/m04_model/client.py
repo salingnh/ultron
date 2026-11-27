@@ -30,6 +30,12 @@ from aegis.m04_model.drivers import (
     ProviderDriver,
     provider_error_response,
 )
+from aegis.m04_model.tool_names import (
+    portable_request,
+    request_tool_names,
+    restore_tool_names,
+    wire_tool_names,
+)
 from aegis.m04_model.transport import ProviderTransport, TransportError
 from aegis.m04_model.usage import UsageSink, UsageStatus, model_usage_row
 
@@ -72,6 +78,7 @@ class ModelClient:
         usage: UsageSink,
         config: ModelConfig | None = None,
         drivers: Mapping[Provider, ProviderDriver] | None = None,
+        session_header: str | None = None,
     ) -> None:
         self.transport = transport
         self.usage = usage
@@ -79,6 +86,11 @@ class ModelClient:
         self.drivers: Mapping[Provider, ProviderDriver] = drivers or {
             driver.provider: driver for driver in DEFAULT_DRIVERS
         }
+        #: Header that carries the agent session id to a self-hosted gateway (LiteLLM forwards
+        #: `x-litellm-session-id` to a provider that needs a session, e.g. opencode_go's
+        #: `x-opencode-session`). None for a direct provider call: it is the gateway's contract,
+        #: not the provider's.
+        self.session_header = session_header
 
     async def complete(self, request: ModelRequest, budget: Budget) -> ModelResponse:
         validation.validate_model(REQUEST_SCHEMA, request)
@@ -100,10 +112,18 @@ class ModelClient:
             )
 
         validate = output_validator(request.response_schema) if request.response_schema else None
+        # A capability id (`dns.resolve`) is not a provider function name: the wire carries the
+        # provider-safe form and the answer comes back with the capability id M03 dispatches on.
+        mapping = wire_tool_names(request_tool_names(request))
+        renamed = {name: wire for name, wire in mapping.items() if name != wire}
+        reverse = {wire: name for name, wire in mapping.items()}
+        wire_request = portable_request(request, renamed) if renamed else request
+        session_id = getattr(request.session_id, "root", request.session_id)
+        headers = {self.session_header: str(session_id)} if self.session_header else None
         response: ModelResponse | None = None
         for index, spec in enumerate(self.config.attempts(request)):
             driver = self.drivers[spec.provider]
-            wire = driver.to_wire(request, model=spec.model)
+            wire = driver.to_wire(wire_request, model=spec.model)
             status: UsageStatus
             error_code: ErrorCode | None
             started = time.perf_counter()
@@ -113,6 +133,7 @@ class ModelClient:
                     spec.model,
                     wire,
                     timeout_seconds=float(request.timeout_seconds or 120),
+                    headers=headers,
                 )
             except TransportError as error:
                 latency_ms = int((time.perf_counter() - started) * 1000)
@@ -121,12 +142,15 @@ class ModelClient:
                 )
                 status, error_code = "error", error.code
             else:
-                response = driver.normalize(
-                    answer.raw,
-                    model=spec.model,
-                    validate=validate,
-                    latency_ms=answer.latency_ms,
-                    cost_usd=answer.cost_usd,
+                response = restore_tool_names(
+                    driver.normalize(
+                        answer.raw,
+                        model=spec.model,
+                        validate=validate,
+                        latency_ms=answer.latency_ms,
+                        cost_usd=answer.cost_usd,
+                    ),
+                    reverse,
                 )
                 status = "fallback" if index > 0 else "ok"
                 error_code = response.error.code if response.error is not None else None

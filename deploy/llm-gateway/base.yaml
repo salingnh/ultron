@@ -16,7 +16,10 @@
 #   * no spend log and no database: this is the MIT core, and cost/usage live in `aegis.model_usage`,
 #     which M04 writes from the gateway's `x-litellm-response-cost` header;
 #   * the master key is `AEGIS_MODEL_API_KEY` - the same `.env` value ultron sends, so there is one
-#     key to set and no second copy that can drift out of sync.
+#     key to set and no second copy that can drift out of sync;
+#   * an answer a provider refuses (an account out of credits answers 402, which LiteLLM classifies
+#     as a bad request) advances to the next endpoint instead of failing the group, because being
+#     out of credits is an exhausted quota like a 429, not a reason to stop rotating.
 #
 # Changing anything here is a repository change: `make llm-gateway-test` (tests/llm_gateway_support.py
 # renders this file exactly like up.sh does) and `scripts/llm-gateway/validate.py` both refuse a
@@ -25,6 +28,13 @@
 router_settings:
   # The next endpoint in the group is the retry.
   num_retries: 0
+  # An answer a provider refuses is still an answer from *that* endpoint: advance to the next order
+  # level instead of handing the refusal to the agent. This is what makes an account out of credits
+  # rotate - LiteLLM classifies an upstream 402 ("Insufficient balance" with a generic
+  # invalid_request_error body) as a bad request, and without this flag a 4xx-class answer stops the
+  # group even when a healthy endpoint is next to it. It is the library's default; set here so a
+  # version bump cannot silently take the rotation away, and `validate.py` requires it to be true.
+  fallback_on_unsupported_params: true
   # A 429 is usually a spent quota window: cool the endpoint for five minutes and move on.
   allowed_fails: 0
   cooldown_time: 300
