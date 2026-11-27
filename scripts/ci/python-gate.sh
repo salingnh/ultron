@@ -65,11 +65,13 @@ start_container "$PG" "$AEGIS_PG_IMAGE" \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_USER=aegis -e POSTGRES_DB=postgres \
   --tmpfs /var/lib/postgresql -p 127.0.0.1::5432
 
+# Over TCP: the image's init server answers on the unix socket only and is stopped again, so a
+# socket probe can report ready just before the database goes away.
 for _ in $(seq 1 60); do
-  podman exec "$PG" pg_isready -U aegis -d postgres >/dev/null 2>&1 && break
+  podman exec "$PG" pg_isready -h 127.0.0.1 -U aegis -d postgres >/dev/null 2>&1 && break
   sleep 1
 done
-podman exec "$PG" pg_isready -U aegis -d postgres >/dev/null 2>&1 || die "PostgreSQL did not become ready"
+podman exec "$PG" pg_isready -h 127.0.0.1 -U aegis -d postgres >/dev/null 2>&1 || die "PostgreSQL did not become ready"
 PG_PORT=$(podman port "$PG" 5432/tcp | head -1 | sed 's/.*://')
 [[ -n $PG_PORT ]] || die "cannot read the published PostgreSQL port"
 log "postgres $(podman exec "$PG" psql -tAc 'SHOW server_version' -U aegis -d postgres) on 127.0.0.1:$PG_PORT"
