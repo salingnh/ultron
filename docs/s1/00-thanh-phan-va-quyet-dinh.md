@@ -10,7 +10,7 @@ Phạm vi nghiệp vụ vẫn gồm pentest chủ động, xác minh động và
 
 ## Lựa chọn triển khai giữ lại
 
-Python 3.12; Temporal + LangGraph; Podman rootless; UUIDv7; PostgreSQL metadata; Neo4j projection; SeaweedFS/S3; collector tải raw và parser cô lập; evidence SHA-256; lịch sử append-only và trạng thái có history; React/TypeScript cho UI. Các lựa chọn này đã có trong thiết kế, chưa có bằng chứng triển khai dịch vụ.
+Python 3.14; Temporal + LangGraph; Podman rootless; UUIDv7; PostgreSQL metadata; Neo4j projection; SeaweedFS/S3; collector tải raw và parser cô lập; evidence SHA-256; lịch sử append-only và trạng thái có history; React/TypeScript cho UI. Các lựa chọn này đã có trong thiết kế, chưa có bằng chứng triển khai dịch vụ.
 
 `policy_version`, `policy_snapshot`, `policy_decision` và ApprovedTask là tên kỹ thuật cho cấu hình/kiểm hợp đồng thực thi, không tạo quy trình phê duyệt thủ công. Actor áp dụng cho mọi job.
 

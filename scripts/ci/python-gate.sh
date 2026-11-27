@@ -10,7 +10,7 @@
 #     exported as AEGIS_TEST_PG_DSN, so the migration-runner database tests really run instead of
 #     being skipped;
 #   * pytest runs in PYTEST_WORKERS parallel workers (pytest-xdist). Each worker that runs the M23
-#     projector tests (G1.4b) starts its own throwaway Neo4j 5.26 (the pinned image the contract
+#     projector tests (G1.4b) starts its own throwaway Neo4j 2026.10 (the pinned image the contract
 #     gate uses), so the committed Cypher runs against a real graph; AEGIS_TEST_NEO4J_URI is unset;
 #   * AEGIS_NO_SKIPS=1 turns every skip into a failure: a check that did not run is not evidence
 #     (tests/conftest.py implements the rule).

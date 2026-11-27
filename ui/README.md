@@ -68,7 +68,7 @@ Dành cho người vận hành khảo sát toàn diện giao diện Ultron Opera
 #### 1. Khởi động Backend API & Ngăn xếp dịch vụ phụ trợ
 
 ```bash
-# Khởi động PostgreSQL 16, Neo4j 5.26, SeaweedFS, Temporal và uvicorn M26 API
+# Khởi động PostgreSQL 18, Neo4j 2026.10, SeaweedFS, Temporal và uvicorn M26 API
 make run-local
 
 # (Tùy chọn) Dữ liệu mẫu chạy thật trên lab
