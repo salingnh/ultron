@@ -27,6 +27,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from aegis.contracts_gen.events.knowledge_delta_v2_schema import KnowledgeDelta
+from aegis.m20_vuln import visibility
 from aegis.m23_graph import deltas
 from aegis.m23_graph.contract import RELATIONSHIP_TYPES
 from aegis.m23_graph.models import (
@@ -401,22 +402,10 @@ def current_matched_pairs(
     A retraction is one campaign's decision, while the graph edge is one per pair: the projector
     removes the edge only when PostgreSQL says no decision of that pair still matches, so a
     campaign that retracted a candidate another campaign still holds cannot delete a live edge.
+    The newest-decision rule itself lives in `aegis.m20_vuln.visibility`, shared with M26 and the
+    G1.6c demo so the readers cannot drift apart.
     """
-    assets = _uuid_list(asset_ids)
-    if not assets:
-        return set()
-    rows = conn.execute(
-        "WITH latest AS ("
-        "  SELECT DISTINCT ON (package_asset_id, vulnerability_id)"
-        "         package_asset_id, vulnerability_id, matched"
-        "    FROM package_vuln_match"
-        "   WHERE package_asset_id = ANY(%s::uuid[])"
-        "   ORDER BY package_asset_id, vulnerability_id, created_at DESC, match_id DESC"
-        ")"
-        " SELECT package_asset_id, vulnerability_id FROM latest WHERE matched",
-        (assets,),
-    ).fetchall()
-    return {(str(row["package_asset_id"]), str(row["vulnerability_id"])) for row in rows}
+    return visibility.current_matched_pairs(conn, asset_ids)
 
 
 def _json_object(value: object) -> dict[str, Any]:

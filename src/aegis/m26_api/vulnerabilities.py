@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi import status as http_status
 
 from aegis import validation
+from aegis.m20_vuln import visibility
 from aegis.m20_vuln.matching import (
     TARGET_PREDICATES,
     VERSION_UNKNOWN_CODE,
@@ -61,20 +62,14 @@ _ERROR_404 = {"description": "Lỗi chuẩn (error.v2): tài sản không tồn 
 
 router = APIRouter(tags=["graph"])
 
+#: The newest-decision rule is `aegis.m20_vuln.visibility.LATEST_DECISION_CTE` (one definition,
+#: shared with M23's projector and the G1.6c demo); this query only projects and paginates it.
 QUERY = (
-    "WITH latest AS ("
-    "  SELECT DISTINCT ON (m.vulnerability_id)"
-    "         m.match_id, m.vulnerability_id, m.match_method, m.affected_range, m.confidence,"
-    "         m.snapshot_id, m.matched, m.created_at"
-    "    FROM package_vuln_match m"
-    "   WHERE m.package_asset_id = %s"
-    "     AND (%s::uuid IS NULL OR EXISTS ("
-    "           SELECT 1 FROM asset_campaign ac"
-    "            WHERE ac.asset_id = m.package_asset_id AND ac.campaign_id = %s::uuid))"
-    "     AND (%s::text IS NULL OR m.vulnerability_id > %s::text)"
-    "   ORDER BY m.vulnerability_id, m.created_at DESC, m.match_id DESC"
-    ")"
-    " SELECT latest.*,"
+    "WITH "
+    + visibility.LATEST_DECISION_CTE
+    + " SELECT latest.match_id, latest.vulnerability_id, latest.match_method,"
+    "        latest.affected_range, latest.confidence, latest.snapshot_id, latest.matched,"
+    "        latest.created_at,"
     "        nvd.cvss AS nvd_cvss, k.kev AS kev_json, e.epss AS epss_json"
     "   FROM latest"
     "   LEFT JOIN vulnerability_current nvd"
@@ -86,7 +81,12 @@ QUERY = (
     "   LEFT JOIN vulnerability_current e"
     "     ON e.vulnerability_id = latest.vulnerability_id AND e.source = 'epss'"
     "    AND NOT e.withdrawn"
-    "  WHERE latest.matched"
+    "  WHERE latest.package_asset_id = %s"
+    "    AND (%s::uuid IS NULL OR EXISTS ("
+    "          SELECT 1 FROM asset_campaign ac"
+    "           WHERE ac.asset_id = latest.package_asset_id AND ac.campaign_id = %s::uuid))"
+    "    AND (%s::text IS NULL OR latest.vulnerability_id > %s::text)"
+    "    AND latest.matched"
     "    AND (%s::boolean = FALSE OR k.kev IS NOT NULL)"
     "  ORDER BY latest.vulnerability_id"
     "  LIMIT %s"
@@ -201,7 +201,17 @@ def list_asset_vulnerabilities(
     after = decode_cursor(cursor) if cursor else None
     rows = db.execute(
         QUERY,
-        (asset_id, campaign_id, campaign_id, after, after, kev_only, limit + 1),
+        (
+            [asset_id],
+            [asset_id],
+            asset_id,
+            campaign_id,
+            campaign_id,
+            after,
+            after,
+            kev_only,
+            limit + 1,
+        ),
     ).fetchall()
     page = rows[:limit]
     body: dict[str, Any] = {

@@ -19,6 +19,7 @@ Design goals:
 from __future__ import annotations
 
 import gzip
+import http.client
 import json
 import os
 import time
@@ -230,7 +231,17 @@ class UrllibNvdTransport:
                     ) from error
                 delay = _retry_delay(error.headers.get("Retry-After"), attempt)
                 self._sleep(delay)
-            except (urllib.error.URLError, TimeoutError, OSError, EOFError) as error:
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                OSError,
+                EOFError,
+                # A dropped connection can surface *after* the status line: a chunked body cut
+                # mid-read raises `http.client.IncompleteRead`, which is an `HTTPException` and
+                # not an `OSError`. Without this, one truncated page aborted a 25-minute sync
+                # (P2, item 61 trial) even though the request itself was a plain transient.
+                http.client.HTTPException,
+            ) as error:
                 last_error = error
                 if attempt >= self._max_retries:
                     raise FeedSyncError(f"NVD API request failed for {url}: {error}") from error
