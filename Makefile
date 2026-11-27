@@ -60,7 +60,7 @@ make vulnlab-test    PROFILE=lab|internet: one campaign per catalog case, assert
 make contracts-gate  README contract gate: validator, tests, PostgreSQL 18 chains
 make graph-check     Neo4j Cypher smoke (CI: neo4j step)
 make ci-local        contracts-gate + graph-check
-make deps            create/refresh the locked Python 3.12 environment (uv sync --frozen)
+make deps            create/refresh the locked Python 3.14 environment (uv sync --frozen)
 make lint            ruff check + ruff format --check + mypy over src/tests/adapters
 make test            pytest (database tests run when AEGIS_TEST_PG_DSN is set)
 make codegen         regenerate src/aegis/contracts_gen from contracts/

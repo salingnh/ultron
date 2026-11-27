@@ -427,6 +427,6 @@ def snapshot_at_from(feed: str, data: bytes, *, fallback: datetime) -> datetime:
             moment = _moment(timestamp) if isinstance(timestamp, str) else None
             if moment is not None:
                 return moment
-    except (FeedError, ValueError, json.JSONDecodeError):
+    except FeedError, ValueError, json.JSONDecodeError:
         return fallback
     return fallback
