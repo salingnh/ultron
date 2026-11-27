@@ -1,7 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Server, ShieldAlert, Network } from 'lucide-react';
 import type { ServiceRowData, VulnerabilityCandidate } from '../api/types';
 import { CopyableId } from './CopyableId';
+import {
+  rankCandidates,
+  resolveCandidateSeverity,
+  summarizeCandidateCounts,
+} from '../utils/cveCandidates';
+
+const TOP_CVE_CHIP_LIMIT = 5;
+
+function formatCandidateTitle(cand: VulnerabilityCandidate): string {
+  const parts = [cand.vulnerability_id];
+  if (cand.kev) parts.push('CISA KEV');
+  if (typeof cand.epss === 'number') parts.push(`EPSS ${(cand.epss * 100).toFixed(2)}%`);
+  if (typeof cand.cvss_base === 'number') {
+    parts.push(
+      `CVSS ${cand.cvss_base.toFixed(1)}${cand.cvss_severity ? ` (${cand.cvss_severity})` : ''}`
+    );
+  }
+  return `Mở bảng ứng viên ${parts.join(' · ')} (chưa xác minh)`;
+}
 
 interface ServiceTableProps {
   rows: ServiceRowData[];
@@ -18,6 +37,12 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
   onSelectVulnerability,
   onFocusInGraph,
 }) => {
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+
+  const toggleRowExpanded = (assetId: string) => {
+    setExpandedRows((prev) => ({ ...prev, [assetId]: !prev[assetId] }));
+  };
+
   if (rows.length === 0) {
     return (
       <div className="state-box" style={{ padding: '40px 20px' }}>
@@ -57,15 +82,57 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
         <tbody>
           {rows.map((row) => {
             const isSelected = selectedAssetId === row.asset.asset_id;
-            const firstCandidate = row.candidates[0];
-            const firstKevCandidate = row.candidates.find((c) => c.kev) || firstCandidate;
-            const hasCandidates = row.candidates.length > 0;
+            const rankedCandidates = rankCandidates(row.candidates);
+            const counts = summarizeCandidateCounts(rankedCandidates);
+            const kevCount = row.kevCount ?? counts.kevCount;
+            const criticalCount = row.criticalCount ?? counts.criticalCount;
+            const highCount = row.highCount ?? counts.highCount;
+            const firstCandidate = rankedCandidates[0];
+            const firstKevCandidate = rankedCandidates.find((c) => c.kev);
+            const firstCriticalCandidate = rankedCandidates.find(
+              (c) => resolveCandidateSeverity(c) === 'CRITICAL'
+            );
+            const firstHighCandidate = rankedCandidates.find(
+              (c) => resolveCandidateSeverity(c) === 'HIGH'
+            );
+            const summaryBadges = [
+              {
+                key: 'kev',
+                count: kevCount,
+                label: 'KEV',
+                variant: 'danger' as const,
+                candidate: firstKevCandidate,
+                title: 'Mở ứng viên CVE ưu tiên trong CISA KEV',
+              },
+              {
+                key: 'critical',
+                count: criticalCount,
+                label: 'Critical',
+                variant: 'danger' as const,
+                candidate: firstCriticalCandidate,
+                title: 'Mở ứng viên CVE mức CRITICAL',
+              },
+              {
+                key: 'high',
+                count: highCount,
+                label: 'High',
+                variant: 'warning' as const,
+                candidate: firstHighCandidate,
+                title: 'Mở ứng viên CVE mức HIGH',
+              },
+            ];
+            const hasCandidates = rankedCandidates.length > 0;
+            const isExpanded = Boolean(expandedRows[row.asset.asset_id]);
+            const hiddenCount = Math.max(0, rankedCandidates.length - TOP_CVE_CHIP_LIMIT);
+            const visibleCandidates = isExpanded
+              ? rankedCandidates
+              : rankedCandidates.slice(0, TOP_CVE_CHIP_LIMIT);
             return (
               <tr
                 key={row.asset.asset_id}
                 onClick={() => {
-                  if (firstKevCandidate) {
-                    onSelectVulnerability(row, firstKevCandidate);
+                  if (firstCandidate) {
+                    onSelectVulnerability(row, firstCandidate);
                   }
                 }}
                 style={{
@@ -120,14 +187,17 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
                     <span style={{ color: 'var(--muted)' }}>—</span>
                   )}
                 </td>
-                <td style={{ ...tdStyle, minWidth: 155 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <td style={{ ...tdStyle, minWidth: 210 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}
+                      aria-label={`Tóm tắt ứng viên CVE cho ${row.host}:${row.port}`}
+                    >
                       {hasCandidates && firstCandidate ? (
                         <button
                           type="button"
                           className={`status-chip ${
-                            row.kevCount > 0 ? 'danger' : row.candidateCount > 0 ? 'warning' : 'neutral'
+                            kevCount > 0 || criticalCount > 0 ? 'danger' : 'warning'
                           }`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -149,31 +219,43 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
                           </span>
                         </span>
                       )}
-                      {row.kevCount > 0 && firstKevCandidate && (
-                        <button
-                          type="button"
-                          className="status-chip danger"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectVulnerability(row, firstKevCandidate);
-                          }}
-                          style={{ cursor: 'pointer' }}
-                          title="Mở bảng chi tiết ứng viên CVE trong CISA KEV"
-                        >
-                          <span className="tabular">{row.kevCount} KEV</span>
-                        </button>
-                      )}
+                      {hasCandidates &&
+                        summaryBadges.map((badge) =>
+                          badge.count > 0 && badge.candidate ? (
+                            <button
+                              key={badge.key}
+                              type="button"
+                              className={`status-chip ${badge.variant}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectVulnerability(row, badge.candidate!);
+                              }}
+                              style={{ cursor: 'pointer' }}
+                              title={badge.title}
+                            >
+                              <span className="tabular">
+                                {badge.count} {badge.label}
+                              </span>
+                            </button>
+                          ) : (
+                            <span key={badge.key} className="status-chip neutral">
+                              <span className="tabular">
+                                0 {badge.label}
+                              </span>
+                            </span>
+                          )
+                        )}
                     </div>
-                    {row.candidates.length > 0 && (
+                    {visibleCandidates.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {row.candidates.map((cand) => {
+                        {visibleCandidates.map((cand) => {
                           const active =
                             isSelected && selectedCveId === cand.vulnerability_id;
                           return (
                             <button
                               key={cand.vulnerability_id}
                               type="button"
-                              className={`btn btn-sm ${active ? 'btn-primary' : ''}`}
+                              className="btn btn-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onSelectVulnerability(row, cand);
@@ -183,15 +265,54 @@ export const ServiceTable: React.FC<ServiceTableProps> = ({
                                 fontSize: '11px',
                                 padding: '2px 6px',
                                 whiteSpace: 'nowrap',
+                                backgroundColor: active ? 'var(--accent-bg)' : undefined,
+                                borderColor: active ? 'var(--accent)' : undefined,
+                                color: active ? 'var(--accent)' : undefined,
+                                fontWeight: active ? 700 : 500,
                               }}
-                              title={`Mở bảng ứng viên ${cand.vulnerability_id} (chưa xác minh)`}
+                              title={formatCandidateTitle(cand)}
                             >
                               <ShieldAlert size={11} />
                               <span>{cand.vulnerability_id}</span>
-                              {cand.kev ? <span style={{ color: active ? '#fff' : 'var(--danger)', fontWeight: 700 }}>KEV</span> : null}
+                              {cand.kev ? (
+                                <span style={{ color: 'var(--danger)', fontWeight: 700 }}>KEV</span>
+                              ) : null}
                             </button>
                           );
                         })}
+                        {hiddenCount > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            aria-expanded={isExpanded}
+                            aria-label={
+                              isExpanded
+                                ? `Thu gọn danh sách ứng viên CVE cho ${row.host}:${row.port}`
+                                : `Hiện thêm ${hiddenCount} ứng viên CVE cho ${row.host}:${row.port}`
+                            }
+                            title={
+                              isExpanded
+                                ? 'Thu gọn về 5 ứng viên CVE ưu tiên hàng đầu'
+                                : `Mở rộng toàn bộ ${rankedCandidates.length} ứng viên CVE`
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleRowExpanded(row.asset.asset_id);
+                            }}
+                            style={{
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              padding: '2px 8px',
+                              whiteSpace: 'nowrap',
+                              color: 'var(--accent)',
+                              borderColor: 'var(--accent)',
+                              backgroundColor: 'var(--accent-bg)',
+                            }}
+                          >
+                            {isExpanded ? 'Thu gọn' : `+${hiddenCount}`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

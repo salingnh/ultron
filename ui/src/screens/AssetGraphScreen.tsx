@@ -35,6 +35,7 @@ import { VulnerabilityPanel } from '../components/VulnerabilityPanel';
 import { ServiceTable } from '../components/ServiceTable';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay } from '../components/ErrorDisplay';
+import { rankCandidates, summarizeCandidateCounts } from '../utils/cveCandidates';
 
 interface GraphVulnerabilityNode {
   id: string;
@@ -585,8 +586,8 @@ export const AssetGraphScreen: React.FC = () => {
         const parsed = parseServiceCanonicalKey(asset.canonical_key);
         const enr = enrichments[asset.asset_id];
         const vulnEntry = vulnerabilitiesByAsset[asset.asset_id];
-        const candidates = vulnEntry?.items || [];
-        const kevCount = candidates.filter((c) => c.kev).length;
+        const candidates = rankCandidates(vulnEntry?.items || []);
+        const counts = summarizeCandidateCounts(candidates);
         const protocol = enr?.protocol
           ? `${enr.protocol} (${parsed.transport})`
           : parsed.transport;
@@ -602,7 +603,9 @@ export const AssetGraphScreen: React.FC = () => {
           cpe: enr?.product?.cpe || '',
           candidates,
           candidateCount: candidates.length,
-          kevCount,
+          kevCount: counts.kevCount,
+          criticalCount: counts.criticalCount,
+          highCount: counts.highCount,
           truncatedCandidates: Boolean(vulnEntry?.truncated),
         };
       })
@@ -836,7 +839,7 @@ export const AssetGraphScreen: React.FC = () => {
           <div className="state-title">Đang nạp dữ liệu đồ thị tài sản...</div>
         </div>
       ) : viewMode === 'services' ? (
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        <div className="split-panel-layout">
           <div style={{ flex: 1, minWidth: 0 }}>
             <ServiceTable
               rows={serviceRows}
@@ -1141,7 +1144,8 @@ export const AssetGraphScreen: React.FC = () => {
                           handleSelectVulnerability(
                             edge.candidate,
                             edge.sourceAssetId,
-                            edge.from
+                            edge.from,
+                            rankCandidates(vulnerabilitiesByAsset[edge.sourceAssetId]?.items || [])
                           )
                         }
                         style={{ cursor: 'pointer' }}
@@ -1435,7 +1439,8 @@ export const AssetGraphScreen: React.FC = () => {
                           handleSelectVulnerability(
                             candidate,
                             vn.sourceAssetId,
-                            vn.sourceAssetKey
+                            vn.sourceAssetKey,
+                            rankCandidates(vulnerabilitiesByAsset[vn.sourceAssetId]?.items || [])
                           )
                         }
                         style={{ cursor: 'pointer' }}

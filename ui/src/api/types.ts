@@ -161,6 +161,8 @@ export interface ServiceRowData {
   candidates: VulnerabilityCandidate[];
   candidateCount: number;
   kevCount: number;
+  criticalCount?: number;
+  highCount?: number;
   truncatedCandidates: boolean;
 }
 
