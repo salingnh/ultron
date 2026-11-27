@@ -12,7 +12,7 @@
 #   * no `pull_request_target`, no expression is interpolated into a `run:` shell line.
 #
 # The job runs `scripts/ci/python-gate.sh`, which is `make lint test codegen-check` plus a
-# throwaway PostgreSQL 16 (the migration-runner tests must run, not skip).
+# throwaway PostgreSQL 18 (the migration-runner tests must run, not skip).
 name: python
 
 on:

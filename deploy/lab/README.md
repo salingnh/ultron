@@ -72,7 +72,7 @@ All images are pinned by registry manifest-list digest in `images.env`; `dnsx` a
 | Image | Version | Released | License | Why |
 | --- | --- | --- | --- | --- |
 | `docker.io/coredns/coredns` | 1.15.0 | 2026-10-21 | Apache-2.0 | lab DNS, infrastructure only (not a capability provider) |
-| `docker.io/library/python` | 3.12.16-slim-trixie | 2026-11-05 | PSF-2.0 | passive stub and its health check; same pin as `deploy/dev/images.env` (`AEGIS_PYTHON_IMAGE`) |
+| `docker.io/library/python` | 3.14.10-slim-trixie | 2026-11-24 | PSF-2.0 | passive stub and its health check; same pin as `deploy/dev/images.env` (`AEGIS_PYTHON_IMAGE`) |
 | `docker.io/projectdiscovery/dnsx` | v1.2.2 | 2025-02-01 | MIT | G0.2 pin, the only resolver client used here |
 | `docker.io/projectdiscovery/subfinder` | v2.17.0 | 2026-10-08 | MIT | G0.2 pin, queries only the local stub |
 
