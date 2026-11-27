@@ -84,18 +84,25 @@ services:
       pg:
         condition: service_healthy
     environment:
-      # auto-setup creates the `temporal` and `temporal_visibility` databases in the dev
-      # PostgreSQL instance and then runs the Temporal server with that persistence.
+      # The server only renders its embedded config template from these. It creates no database,
+      # schema or namespace: `make dev-up` runs temporal-sql-tool on `temporal` and
+      # `temporal_visibility` in the dev PostgreSQL before this starts, and registers the
+      # `default` namespace after (deploy/dev/temporal/). Start the stack through `make dev-up`.
       DB: postgres12
       DB_PORT: "5432"
       POSTGRES_SEEDS: pg
       POSTGRES_USER: ${AEGIS_PG_USER:-aegis}
       POSTGRES_PWD: ${AEGIS_PG_PASSWORD:?set in .env - see .env.example}
+      # The dev frontend has no authorizer and is published on loopback only; said explicitly.
+      TEMPORAL_ALLOW_NO_AUTH: "true"
     ports:
       - "127.0.0.1:${AEGIS_TEMPORAL_PORT:-17233}:7233"
+    volumes:
+      - ./temporal/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro,z
     healthcheck:
-      # The image's docker config binds the frontend to the container address, not loopback.
-      test: ["CMD-SHELL", "temporal operator cluster health --address $$(hostname):7233 >/dev/null 2>&1"]
+      # The server image has no Temporal CLI, so this only shows that the frontend listens (it
+      # binds the container address, not loopback). `make dev-up` then waits for cluster health.
+      test: ["CMD-SHELL", "nc -z $$(hostname) 7233"]
       interval: 10s
       timeout: 10s
       retries: 30
