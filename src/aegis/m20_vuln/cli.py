@@ -19,6 +19,7 @@ import json
 import sys
 from typing import Any
 
+from aegis.m20_vuln import visibility
 from aegis.m20_vuln.matching import Matcher, changed_vulnerabilities, connect_from_env
 
 
@@ -52,13 +53,9 @@ def _status() -> int:
         # `package_vuln_match` is append-only history: a candidate is the newest decision of the
         # pair, and a retraction (matched = false, 0008) means the pair is no longer a candidate.
         rows = connection.execute(
-            "WITH latest AS ("
-            "  SELECT DISTINCT ON (package_asset_id, vulnerability_id)"
-            "         match_id, package_asset_id, vulnerability_id, created_at, matched"
-            "    FROM package_vuln_match"
-            "   ORDER BY package_asset_id, vulnerability_id, created_at DESC, match_id DESC"
-            ")"
-            " SELECT a.canonical_key, count(*) AS candidates,"
+            "WITH "
+            + visibility.LATEST_DECISION_CTE
+            + " SELECT a.canonical_key, count(*) AS candidates,"
             "       count(*) FILTER (WHERE vc_kev.kev IS NOT NULL) AS kev,"
             "       max(m.created_at) AS newest"
             "  FROM latest m"
@@ -66,7 +63,8 @@ def _status() -> int:
             "  LEFT JOIN vulnerability_current vc_kev"
             "    ON vc_kev.vulnerability_id = m.vulnerability_id AND vc_kev.source = 'kev'"
             " WHERE m.matched"
-            " GROUP BY a.canonical_key ORDER BY candidates DESC"
+            " GROUP BY a.canonical_key ORDER BY candidates DESC",
+            (None, None),
         ).fetchall()
     finally:
         connection.close()

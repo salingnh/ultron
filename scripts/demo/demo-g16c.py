@@ -274,28 +274,13 @@ def _sync_intel(connection: Any) -> dict[str, Any]:
 
 
 def _candidates(connection: Any, assets: dict[str, str]) -> list[dict[str, Any]]:
-    return support.rows(
-        connection,
-        """
-        SELECT a.canonical_key, m.vulnerability_id, m.match_method, m.confidence,
-               m.affected_range, m.snapshot_id,
-               nvd.cvss->>'base_score' AS cvss_base,
-               nvd.cvss->>'base_severity' AS cvss_severity,
-               (k.kev IS NOT NULL) AS kev,
-               e.epss->>'score' AS epss
-          FROM package_vuln_match m
-          JOIN asset a ON a.asset_id = m.package_asset_id
-          LEFT JOIN vulnerability_current nvd
-            ON nvd.vulnerability_id = m.vulnerability_id AND nvd.source = 'nvd'
-          LEFT JOIN vulnerability_current k
-            ON k.vulnerability_id = m.vulnerability_id AND k.source = 'kev'
-          LEFT JOIN vulnerability_current e
-            ON e.vulnerability_id = m.vulnerability_id AND e.source = 'epss'
-         WHERE m.package_asset_id = ANY(%s::uuid[])
-         ORDER BY a.canonical_key, m.vulnerability_id
-        """,
-        (list(assets.values()),),
-    )
+    # The candidate set is the graph's rule, not a copy of it: the newest decision of a pair
+    # (`aegis.m20_vuln.visibility`), which is what M23 projects and M26 lists. Reading every
+    # `package_vuln_match` row here made the demo disagree with the graph on any stack where a
+    # newer intel revision retracted an old candidate (P8, item 61 trial).
+    from aegis.m20_vuln.visibility import candidate_rows
+
+    return candidate_rows(connection, list(assets.values()))
 
 
 def _activity(connection: Any, campaign_id: str) -> dict[str, Any]:
