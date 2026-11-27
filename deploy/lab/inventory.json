@@ -89,7 +89,7 @@
       "role": "lab service on httpd.lab.aegis.test: Apache httpd 80, the exact CPE/version CVE-2021-41773 matches (G1.6a/G1.6c)"
     },
     "fingerprintx": {
-      "ref": "localhost/aegis/fingerprintx:v1.1.19@sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+      "ref": "localhost/aegis/fingerprintx:v1.1.19@sha256:48ce97d72380bad8eaba16ec8c3e54e9225b450b146d7572a39d9f14013b54fe",
       "version": "v1.1.19",
       "released": "2026-01-01",
       "license": "Apache-2.0",
