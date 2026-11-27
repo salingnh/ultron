@@ -1,4 +1,4 @@
-"""Production MCP context graph regression tests against PostgreSQL 16 and Neo4j 5.26.
+"""Production MCP context graph regression tests against PostgreSQL 18 and Neo4j 5.26.
 
 Verifies the production MCP entrypoint (`aegis.m05_registry.mcp.main:create_production_app`) wires
 `M23GraphQueries` and a Neo4j driver from env, closes the driver on shutdown, serves live

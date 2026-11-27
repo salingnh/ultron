@@ -17,7 +17,7 @@ Two modes answer the two different questions behind NFR-03:
 
 Usage (from the repository root, with a PostgreSQL and a Neo4j to use):
 
-    export AEGIS_TEST_PG_DSN=postgresql://...      # any PostgreSQL 16 server
+    export AEGIS_TEST_PG_DSN=postgresql://...      # any PostgreSQL 18 server
     export AEGIS_NEO4J_URI=bolt://127.0.0.1:7687
     export AEGIS_NEO4J_PASSWORD=...
     uv run --frozen python scripts/bench/projector_throughput.py backlog \

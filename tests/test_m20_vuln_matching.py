@@ -1,4 +1,4 @@
-"""M20 matcher against PostgreSQL 16 (G1.6 slice C): candidates, idempotency, the intel delta.
+"""M20 matcher against PostgreSQL 18 (G1.6 slice C): candidates, idempotency, the intel delta.
 
 The observations are ingested by M27 from an envelope whose values carry CPEs (the shape G1.6
 slice A's fingerprinters will send); the intel is the committed fixture slices loaded by the real

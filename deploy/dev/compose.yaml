@@ -23,7 +23,10 @@ services:
     ports:
       - "127.0.0.1:${AEGIS_PG_PORT:-15432}:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      # PostgreSQL 18 keeps its cluster under /var/lib/postgresql/<major>/docker and declares
+      # /var/lib/postgresql as its volume; the pre-18 /var/lib/postgresql/data path is no longer
+      # the data directory, so mount the declared volume instead.
+      - pg_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-aegis} -d $${POSTGRES_DB:-aegis}"]
       interval: 5s

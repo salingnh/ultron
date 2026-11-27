@@ -61,9 +61,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap cleanup EXIT
 
-printf '[live] PostgreSQL 16 on 127.0.0.1:%s as %s\n' "$PG_PORT" "$PG_NAME"
+printf '[live] PostgreSQL 18 on 127.0.0.1:%s as %s\n' "$PG_PORT" "$PG_NAME"
 podman run -d --name "$PG_NAME" \
-  --tmpfs /var/lib/postgresql/data \
+  --tmpfs /var/lib/postgresql \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_USER=aegis -e POSTGRES_DB=postgres \
   -p "127.0.0.1:$PG_PORT:5432" \
   "$(grep -E '^AEGIS_PG_IMAGE=' deploy/dev/images.env | cut -d= -f2-)" >/dev/null

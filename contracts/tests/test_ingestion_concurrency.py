@@ -9,7 +9,7 @@ The reference flow below is the executable form of contracts/ingestion/canonical
     python3 -I contracts/tests/test_ingestion_concurrency.py
 
 Every test provisions its own throwaway database: it applies 0001..0006 and drops the database at
-the end, so the DSN only needs a PostgreSQL 16 server, not a migrated schema, and nothing touches a
+the end, so the DSN only needs a PostgreSQL 18 server, not a migrated schema, and nothing touches a
 shared database. A missing DSN skips (the gate sets it); once the DSN is set, any provisioning
 failure fails the test instead of skipping, so the gate cannot pass without running it.
 """
@@ -243,7 +243,7 @@ def attempts(conn, dedup_key: str) -> list[tuple[str, str]]:
 
 def setUpModule():
     if not DSN:
-        raise unittest.SkipTest("AEGIS_TEST_PG_DSN is not set: the C03 harness needs a PostgreSQL 16 server")
+        raise unittest.SkipTest("AEGIS_TEST_PG_DSN is not set: the C03 harness needs a PostgreSQL 18 server")
     if psycopg is None:
         # The gate installs requirements-db.txt; a DSN without the driver is a broken gate, not a skip.
         raise RuntimeError("psycopg is not installed: pip install -r contracts/tests/requirements-db.txt")

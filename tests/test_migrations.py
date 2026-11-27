@@ -1,6 +1,6 @@
 """The migration runner applies the README chain, records what it applied and refuses drift.
 
-The database tests need a PostgreSQL 16 server (`AEGIS_TEST_PG_DSN`, the same variable the contract
+The database tests need a PostgreSQL 18 server (`AEGIS_TEST_PG_DSN`, the same variable the contract
 harnesses use). They create their own throwaway database and drop it again; they never touch a
 shared schema.
 """
@@ -41,7 +41,7 @@ from tests.pg import drop_throwaway_database
 DSN_ENV = "AEGIS_TEST_PG_DSN"
 requires_postgres = pytest.mark.skipif(
     not os.environ.get(DSN_ENV),
-    reason=f"set {DSN_ENV} to a PostgreSQL 16 server to run the migration database tests",
+    reason=f"set {DSN_ENV} to a PostgreSQL 18 server to run the migration database tests",
 )
 
 

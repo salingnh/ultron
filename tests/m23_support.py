@@ -1,6 +1,6 @@
 """Fixtures for the M23 projector/query tests (G1.4b): a throwaway database and graph.
 
-Two external services are needed, and both are **throwaway**: a PostgreSQL 16 the test may
+Two external services are needed, and both are **throwaway**: a PostgreSQL 18 the test may
 create and drop databases on (`AEGIS_TEST_PG_DSN`, the same variable the other DB tests use) and
 a Neo4j 5.26 that the test may wipe. The graph is not taken from whatever `AEGIS_TEST_NEO4J_URI`
 happens to point at: `tests/graph_support.ensure_test_graph` accepts only a container carrying the
