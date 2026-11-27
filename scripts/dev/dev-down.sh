@@ -10,7 +10,10 @@ require_cmd podman-compose
 
 if [ ! -f "$ENV_FILE" ]; then
   cp "$ENV_EXAMPLE" "$ENV_FILE"
-  log "created .env from .env.example so the compose file can be resolved"
+  # .env is the one file that holds secrets (model keys, gateway upstream keys): private from the
+  # first write, never after a key was already in it.
+  chmod 600 "$ENV_FILE"
+  log "created .env from .env.example so the compose file can be resolved (mode 600)"
 fi
 load_env
 

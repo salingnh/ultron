@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # What the gateway is doing right now: `make llm-gateway-status`.
 #
-# Container state, readiness, the model groups ultron may ask for, and - per endpoint - whether it
-# is healthy or cooling down (and how often it was cooled, from the proxy's own counters). No
-# request is sent to an upstream, so a status run cannot spend quota or reset anything.
+# Container state, readiness, the model groups ultron may ask for, and - per endpoint - whether it is
+# healthy or cooling down (and how often it was cooled, from the proxy's own counters). No request is
+# sent to an upstream, so a status run cannot spend quota or reset anything.
+#
+# The endpoint table is read from the rendered config the container booted with (`.local/llm-gateway/
+# config.yaml`), not from the owner's file: those are only the same thing until the owner edits it,
+# and after that the note below says so.
 #
 # Exit code: 0 when the container is running and ready, 1 otherwise (like dev-status).
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 require_cmd podman "install rootless podman 5.x"
+require_env_file
 load_images
-export AEGIS_LLM_GATEWAY_CONFIG_DIR="$CONFIG_DIR" AEGIS_LLM_GATEWAY_PORT="$PORT" \
-  AEGIS_LLM_GATEWAY_PROJECT="$PROJECT"
+export_gateway_env
 
 if ! container_exists "$CONTAINER"; then
   log "project $PROJECT: no container (start it with make llm-gateway-up)"
@@ -28,7 +32,9 @@ if ! container_running; then
   podman logs --tail 20 "$CONTAINER" >&2 || true
   die "the container is not running"
 fi
-[ -f "$CONFIG_FILE" ] || die "$CONFIG_FILE is missing; the running container keeps its old config"
+[ -f "$RENDERED_CONFIG" ] ||
+  die "$RENDERED_CONFIG is missing; the running container has a config this checkout did not render
+  (start it with make llm-gateway-up)"
 
 readiness=$(health /health/readiness)
 liveliness=$(health /health/liveliness)
@@ -40,11 +46,7 @@ log "readiness HTTP $readiness  liveliness HTTP $liveliness"
 
 # The owner's files may have been edited since the container started; say so, because the running
 # router still uses the config it booted with.
-recorded=$(sed -n 's/^fingerprint=//p' "$IDENTITY_FILE" 2>/dev/null || true)
-if [ -n "$recorded" ] && [ "$recorded" != "$(gateway_fingerprint)" ]; then
-  log "note: $CONFIG_FILE or $SECRETS_FILE changed since this container started"
-  log "      apply it with: make llm-gateway-reload"
-fi
+report_drift
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -53,4 +55,4 @@ api /metrics/ >"$tmp/metrics.txt" || die "cannot read /metrics"
 api /v1/models |
   python3 -c 'import json,sys; print("[llm-gateway] model groups: " + ", ".join(m["id"] for m in json.load(sys.stdin).get("data",[])))'
 
-python3 "$LLM_GATEWAY_SCRIPTS/status.py" "$CONFIG_FILE" "$tmp/model-info.json" "$tmp/metrics.txt"
+python3 "$LLM_GATEWAY_SCRIPTS/status.py" "$RENDERED_CONFIG" "$tmp/model-info.json" "$tmp/metrics.txt"

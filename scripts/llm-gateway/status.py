@@ -6,9 +6,10 @@
 The proxy does not expose a "cooling down" API, but the Prometheus callback it is configured with
 does: `litellm_deployment_state` is 0 (healthy), 1 (partial) or 2 (complete outage / cooling down)
 per deployment, and `litellm_deployment_cooled_down_total` counts how often each one was cooled and
-why. Both are keyed by the `model_info.id` this repository's example config sets, so the table below
-matches the owner's YAML line by line. No request is sent from here: reading the state costs
-nothing and cannot spend quota.
+why. Both are keyed by the `model_info.id` the renderer sets from each endpoint's `name`, so the
+table below matches the rendered config line by line. `status.sh` passes the rendered document (what
+the container booted with), not the owner's file. No request is sent from here: reading the state
+costs nothing and cannot spend quota.
 """
 
 from __future__ import annotations

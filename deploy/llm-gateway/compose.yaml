@@ -1,23 +1,32 @@
 # LLM gateway for AEGIS-Vanguard (G1.6): one local LiteLLM proxy in front of the owner's model
 # endpoints, which rotates to the next endpoint when one runs out of quota (429), fails with 5xx or
-# times out. ultron reaches only this proxy; the endpoints, their keys and the routing order are
-# the owner's configuration, which lives OUTSIDE the checkout
-# (`/home/admin/.config/ultron/llm-gateway/{config.yaml,secrets.env}`, 0600).
+# times out. ultron reaches only this proxy.
+#
+# Two inputs, and neither is mounted as-is:
+#   * the owner's endpoints - outside every checkout
+#     (`/home/admin/.config/ultron/llm-gateway/config.yaml`, edited by hand);
+#   * every key and setting - the checkout's `.env`, the same file ultron reads.
+# `make llm-gateway-up` renders them into `.local/llm-gateway/` (the owner's endpoints merged over
+# the fixed `deploy/llm-gateway/base.yaml`, plus an environment file holding ONLY the variables that
+# config references, never the whole .env) and the container gets those two files. Nothing in the
+# owner's directory is visible to the container, and a stale render cannot be mounted: up/reload
+# regenerate before they create anything.
 #
 # Run it through `make llm-gateway-up` / `llm-gateway-down` / `llm-gateway-status` /
-# `llm-gateway-reload` (scripts/llm-gateway/*.sh): they validate the owner's files before a
-# container exists, keep the compose project to this checkout (scripts/lib/stack.sh, the #71 rule),
-# wait for readiness and read the routing state back. Direct `podman-compose up` runs skip all of it.
+# `llm-gateway-reload` (scripts/llm-gateway/*.sh): they validate the inputs before a container
+# exists, keep the compose project to this checkout (scripts/lib/stack.sh, the #71 rule), wait for
+# readiness and read the routing state back. Direct `podman-compose up` runs skip all of it.
 #
 # Isolation, in one place:
 #   * project name `aegis-llm-gateway` is the only stack these scripts create or remove;
 #   * published on 127.0.0.1 only, so no other host on the network can spend the owner's quota;
 #     the one network it joins (`<project>-net`) is how a containerised ultron reaches it;
 #   * rootless podman, read-only rootfs, cap_drop ALL, no-new-privileges, memory/CPU/PID caps;
-#   * the only host mount is the owner's config directory, read-only;
-#   * request/response bodies are never logged (config.example.yaml: turn_off_message_logging);
-#     the metadata an operator needs (model, endpoint, status, tokens, cost, latency) comes from
-#     the gateway's /metrics and from `aegis.model_usage`, which M04 writes from the gateway's
+#   * the only host mount is the rendered config directory, read-only; the environment file is
+#     readable by the container's user and is 0600 on the host;
+#   * request/response bodies are never logged (base.yaml: turn_off_message_logging); the metadata an
+#     operator needs (model, endpoint, status, tokens, cost, latency) comes from the gateway's
+#     /metrics and from `aegis.model_usage`, which M04 writes from the gateway's
 #     x-litellm-response-cost header.
 #
 # The image is pinned by digest (deploy/llm-gateway/images.env) and is the MIT-licensed LiteLLM
@@ -39,9 +48,9 @@ services:
     mem_limit: 2g
     cpus: 1.0
     pids_limit: 256
-    # The owner's config and secrets are the only inputs; nothing is rendered or written by this
-    # repository at run time. `config.yaml` is read once at boot, which is what
-    # `make llm-gateway-reload` recreates this one container for - ultron keeps running.
+    # `config.yaml` here is the RENDERED document (owner's endpoints + fixed base); it is read once
+    # at boot, which is what `make llm-gateway-reload` recreates this one container for - ultron
+    # keeps running.
     command:
       - --config
       - /app/config/config.yaml
@@ -50,23 +59,24 @@ services:
       - --port
       - "4000"
     environment:
-      # Non-secret settings only. Endpoint keys and the master key come from the owner's
-      # secrets.env through env_file, so an upstream key is added by editing that file alone.
+      # Non-secret settings only. Every key - the master key and each upstream key - comes through
+      # the generated environment file below, which holds exactly the variables config.yaml
+      # references and nothing else from .env.
       LITELLM_LOG: INFO
       LITELLM_MODE: PRODUCTION
-      # A proxy needs a master key to answer clients at all; config.yaml reads the same variable
-      # through `os.environ/LITELLM_MASTER_KEY` (so a missing key is a start-up error, not an open
-      # proxy).
+      # A proxy needs a master key to answer clients at all; the rendered config reads the same
+      # variable through `os.environ/AEGIS_MODEL_API_KEY` (so a missing key is a start-up error, not
+      # an open proxy).
       DISABLE_SCHEMA_UPDATE: "True"
     env_file:
-      - ${AEGIS_LLM_GATEWAY_CONFIG_DIR:?owner config dir missing}/secrets.env
+      - ${AEGIS_LLM_GATEWAY_ENV_FILE:?run through make llm-gateway-up so the rendered environment file is set}
     ports:
       # Loopback only: a published 0.0.0.0 port would let any peer on the network spend the quota.
       - "127.0.0.1:${AEGIS_LLM_GATEWAY_PORT:-4000}:4000"
     volumes:
-      # The owner's directory, read-only and shared-labelled (`z`, never `Z`: the owner must keep
-      # reading and editing these files).
-      - ${AEGIS_LLM_GATEWAY_CONFIG_DIR:?owner config dir missing}:/app/config:ro,z
+      # The rendered config directory, read-only and shared-labelled (`z`, never `Z`: the next render
+      # in this checkout must still be able to write it).
+      - ${AEGIS_LLM_GATEWAY_RENDER_DIR:?run through make llm-gateway-up so the rendered config dir is set}:/app/config:ro,z
     tmpfs:
       # Python writes nothing but temporary files; the rootfs stays read-only.
       - /tmp:rw,size=64m,mode=1777
