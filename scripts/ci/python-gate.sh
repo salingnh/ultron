@@ -2,9 +2,10 @@
 # The Python gate of the `python` workflow (G1.1a): exactly `make lint test codegen-check`.
 #
 # Differences from a plain `make` run on the host:
-#   * uv is required and resolved even when the runner service did not inherit ~/.local/bin in
-#     PATH; `uv sync --frozen` installs the committed lockfile for the exact Python in
-#     .python-version (uv fails when it can neither find nor download that release);
+#   * nothing of the host's uv or python is used: every run installs the checksum-verified uv
+#     release of scripts/ci/uv.env, and that uv provides the exact Python in .python-version
+#     itself (uv-managed only; it fails when it cannot) before `uv sync --frozen` installs the
+#     committed lockfile;
 #   * a throwaway PostgreSQL 16 container is published on a random loopback port and its DSN is
 #     exported as AEGIS_TEST_PG_DSN, so the migration-runner database tests really run instead of
 #     being skipped;
@@ -20,20 +21,15 @@
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
-UV=${UV:-$(command -v uv || true)}
-if [[ -z $UV && -x $HOME/.local/bin/uv ]]; then
-  UV=$HOME/.local/bin/uv
-fi
-[[ -n $UV ]] || die "uv is not installed - install uv (https://docs.astral.sh/uv/) and re-run"
-export PATH="$(dirname "$UV"):$PATH"
-
 require_cmd podman
+require_cmd curl
 
 : >"$AEGIS_CI_VOLUME_LOG"
 PG=$(ci_container pg-python)
 PG_PASSWORD=$(random_password)
 NEO4J=$(ci_container neo4j-python)
 NEO4J_PASSWORD=$(random_password)
+UV_DIR=$(mktemp -d -t aegis-ci-uv-XXXXXX)
 
 cleanup() {
   local status=$?
@@ -43,6 +39,7 @@ cleanup() {
   fi
   remove_container "$PG"
   remove_container "$NEO4J"
+  rm -rf "$UV_DIR"
   if ! check_job_volume_leaks "python gate" && ((status == 0)); then
     status=1
   fi
@@ -53,11 +50,15 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap cleanup EXIT
 
-log "python gate: $("$UV" --version), $(python3 -V 2>&1 || true)"
+UV=$("$CI_DIR/install-uv.sh" "$UV_DIR")
+export PATH="$UV_DIR:$PATH"
+export UV_PYTHON_PREFERENCE=only-managed UV_PYTHON_DOWNLOADS=automatic
+log "python gate: $("$UV" --version) installed for this run"
 PYTHON_VERSION=$(<"$REPO_ROOT/.python-version")
 log "locked environment (uv sync --frozen --python $PYTHON_VERSION)"
 "$UV" sync --frozen --python "$PYTHON_VERSION"
-log "project interpreter: $(uv run --frozen python -V 2>&1)"
+log "project interpreter: $("$UV" run --frozen python -c \
+  'import platform, sys; print("Python", platform.python_version(), "from", sys.base_prefix)')"
 
 log "throwaway PostgreSQL 16 as $PG (loopback port, random password)"
 start_container "$PG" "$AEGIS_PG_IMAGE" \
