@@ -52,6 +52,22 @@ Những giá trị không được đổi (không log nội dung request/respons
 sau master key, không spend log) nằm ở `deploy/llm-gateway/base.yaml`; `make llm-gateway-up` trộn file
 đó với `config.yaml` của bạn, và từ chối nếu bạn đặt lại một trong các khoá đó (không bỏ qua im lặng).
 
+Gateway cũng xoay vòng khi một endpoint **hết credit** (HTTP 402): LiteLLM coi câu trả lời đó là lỗi
+request, nên `deploy/llm-gateway/base.yaml` bật `fallback_on_unsupported_params` và `validate.py` từ
+chối cấu hình thiếu khoá đó - một endpoint hết credit được cho nghỉ như 429 và lời gọi sang endpoint
+kế tiếp.
+
+Cổng và tên project của gateway cũng nằm trong `.env` (`AEGIS_LLM_GATEWAY_PORT`,
+`AEGIS_LLM_GATEWAY_PROJECT`); để trống cổng thì lấy cổng trong `AEGIS_MODEL_BASE_URL`, không có thì
+4000. `make llm-gateway-up` từ chối một cổng đang bận (in ra tiến trình đang giữ cổng và hai dòng cần
+sửa) và từ chối nếu `AEGIS_MODEL_BASE_URL` trỏ sang cổng khác.
+
+Endpoint dùng provider có sẵn trong image thì chỉ cần tên model, không cần `api_base`:
+`openrouter/<model>`, `opencode_go/<model>` (gói OpenCode Go - gateway tự gửi session id mà provider
+này yêu cầu). Tên tool của MCP có dấu chấm (`dns.resolve`) được gửi cho provider dưới dạng
+`dns__resolve` rồi đổi lại khi nhận câu trả lời: provider chỉ nhận `[a-zA-Z0-9_-]`, còn capability id
+và mọi hợp đồng giữ nguyên.
+
 ```bash
 mkdir -p ~/.config/ultron/llm-gateway
 cp deploy/llm-gateway/config.example.yaml ~/.config/ultron/llm-gateway/config.yaml
@@ -69,7 +85,7 @@ make llm-gateway-test      # image đã pin với 2 endpoint giả (một cái h
 không in ra); ultron gửi đúng key đó nên không có key thứ hai phải đồng bộ. Gateway chỉ nhận những
 biến mà `config.yaml` tham chiếu, không bao giờ cả file `.env`.
 
-Trỏ ultron vào gateway trong `.env` (xem `.env.example`): `AEGIS_SESSION_LIVE_MODEL=1`, `AEGIS_MODEL_GATEWAY=1`, `AEGIS_MODEL_BASE_URL=http://127.0.0.1:4000/v1`, `AEGIS_MODEL_NAME=aegis-smart` (tên nhóm định tuyến, không phải model upstream), `AEGIS_MODEL_API_KEY=<key trong .env, cũng là master key của gateway>`, `AEGIS_MODEL_PROVIDER=openai|anthropic` (upstream chỉ có chat-completions thì dùng `openai`), cùng hai giá (chỉ dùng khi gateway không báo chi phí). `make llm-smoke` gửi một lời gọi thật qua gateway. Xoay vòng chỉ nằm ở gateway: `AEGIS_MODEL_GATEWAY=1` từ chối fallback trong app. Nội dung request/response không bao giờ bị log; metadata (model, endpoint, status, token, chi phí, độ trễ) nằm ở `aegis.model_usage` và `/metrics` của proxy (sau master key).
+Trỏ ultron vào gateway trong `.env` (xem `.env.example`): `AEGIS_SESSION_LIVE_MODEL=1`, `AEGIS_MODEL_GATEWAY=1`, `AEGIS_MODEL_BASE_URL=http://127.0.0.1:4000/v1`, `AEGIS_MODEL_NAME=aegis-smart` (tên nhóm định tuyến, không phải model upstream), `AEGIS_MODEL_API_KEY=<key trong .env, cũng là master key của gateway>`, `AEGIS_MODEL_PROVIDER=openai|anthropic` (dùng `openai` cho mọi provider OpenAI-compatible, kể cả khi model là `openrouter/…` hay `opencode_go/…`) (upstream chỉ có chat-completions thì dùng `openai`), cùng hai giá (chỉ dùng khi gateway không báo chi phí). `make llm-smoke` gửi một lời gọi thật qua gateway. Xoay vòng chỉ nằm ở gateway: `AEGIS_MODEL_GATEWAY=1` từ chối fallback trong app. Nội dung request/response không bao giờ bị log; metadata (model, endpoint, status, token, chi phí, độ trễ) nằm ở `aegis.model_usage` và `/metrics` của proxy (sau master key).
 
 ## Chạy G1 một mình
 
