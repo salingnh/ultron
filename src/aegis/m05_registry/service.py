@@ -210,7 +210,7 @@ def _as_initiator(actor: Any) -> dict[str, str] | None:
 
 
 class PostgresJobService:
-    """M05 policy checkpoint + decision log + job rows, on PostgreSQL 16."""
+    """M05 policy checkpoint + decision log + job rows, on PostgreSQL."""
 
     def __init__(
         self,

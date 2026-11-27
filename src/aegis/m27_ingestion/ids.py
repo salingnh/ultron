@@ -1,7 +1,7 @@
 """UUIDv7 values for the identifiers M27 mints (RFC 9562, `common/ids.v2.schema.json#/$defs/Id`).
 
 Every id the contract exposes is a UUIDv7: asset, observation, relationship, provenance,
-quarantine and the event_id of an outbox event. PostgreSQL 16 has no `uuidv7()` and the standard
+quarantine and the event_id of an outbox event. PostgreSQL 18 can mint one, but the standard
 library only gained `uuid.uuid7()` after 3.12, so the layout is built here: 48-bit Unix
 millisecond timestamp, version 7, 12 random bits, variant 10, 62 random bits. Uniqueness comes
 from the 74 random bits; monotonicity inside a millisecond is not promised, and nothing in the

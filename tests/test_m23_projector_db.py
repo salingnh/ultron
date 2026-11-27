@@ -1,4 +1,4 @@
-"""M23 projector against PostgreSQL 16 and Neo4j 5.26 (G1.4b).
+"""M23 projector against PostgreSQL 18 and Neo4j 5.26 (G1.4b).
 
 The contract chain, M27 and the committed Cypher are the real ones; the two services are
 throwaway (see `tests/m23_support.py`). What these tests pin, in the order the card asks for:

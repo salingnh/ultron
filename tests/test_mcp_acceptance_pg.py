@@ -1,4 +1,4 @@
-"""`tools/call` through the real M05 acceptance path on PostgreSQL 16.
+"""`tools/call` through the real M05 acceptance path on PostgreSQL 18.
 
 The card's signal is "the same acceptance path as POST /jobs": one decision, one signed task, one
 job, the campaign's policy, and `IDEMPOTENCY_CONFLICT` semantics - with the one MCP difference that

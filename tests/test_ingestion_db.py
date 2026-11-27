@@ -1,4 +1,4 @@
-"""M27 ingestion against PostgreSQL 16: gates, C03 receipt, outbox, concurrency and P95 (G1.4a).
+"""M27 ingestion against PostgreSQL 18: gates, C03 receipt, outbox, concurrency and P95 (G1.4a).
 
 These tests apply the real contract chain to a throwaway database, build the campaign/decision/job
 rows the owning modules would write, and then drive `IngestionService`. They never touch a shared

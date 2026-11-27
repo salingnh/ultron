@@ -1,6 +1,6 @@
 """Throwaway PostgreSQL database for the M04 usage-sink test (same rule as tests/test_migrations).
 
-The test needs a real PostgreSQL 16 (`AEGIS_TEST_PG_DSN`) because `aegis.model_usage` is DDL, not a
+The test needs a real PostgreSQL 18 (`AEGIS_TEST_PG_DSN`) because `aegis.model_usage` is DDL, not a
 fake table; it creates its own database, applies the contract chain and drops it again.
 """
 
@@ -20,7 +20,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 DSN_ENV = "AEGIS_TEST_PG_DSN"
 requires_postgres = pytest.mark.skipif(
     not os.environ.get(DSN_ENV),
-    reason=f"set {DSN_ENV} to a PostgreSQL 16 server to run the M04 usage database test",
+    reason=f"set {DSN_ENV} to a PostgreSQL 18 server to run the M04 usage database test",
 )
 
 
