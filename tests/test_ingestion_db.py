@@ -554,6 +554,8 @@ def test_thousand_concurrent_envelopes_never_duplicate_an_asset() -> None:
         print(f"concurrency: {total} envelopes in {elapsed:.2f}s ({total / elapsed:.1f}/s)")
 
 
+# A latency measurement depends on what else the host runs, so the gate leaves it out.
+@pytest.mark.benchmark
 @requires_postgres
 def test_ingestion_p95_for_sub_megabyte_envelopes_is_under_thirty_seconds() -> None:
     samples = 12
