@@ -8,7 +8,7 @@
 #   * a throwaway PostgreSQL 18 container is published on a random loopback port and its DSN is
 #     exported as AEGIS_TEST_PG_DSN, so the migration-runner database tests really run instead of
 #     being skipped;
-#   * a throwaway Neo4j 5.26 (the same pinned image the contract gate uses) is published on a
+#   * a throwaway Neo4j 2026.10 (the same pinned image the contract gate uses) is published on a
 #     random loopback bolt port and exported as AEGIS_TEST_NEO4J_URI/AEGIS_TEST_NEO4J_PASSWORD, so
 #     the M23 projector tests (G1.4b) execute the committed Cypher against a real graph instead of
 #     being skipped;
@@ -72,7 +72,7 @@ PG_PORT=$(podman port "$PG" 5432/tcp | head -1 | sed 's/.*://')
 [[ -n $PG_PORT ]] || die "cannot read the published PostgreSQL port"
 log "postgres $(podman exec "$PG" psql -tAc 'SHOW server_version' -U aegis -d postgres) on 127.0.0.1:$PG_PORT"
 
-log "throwaway Neo4j 5.26 as $NEO4J (loopback bolt port, random password)"
+log "throwaway Neo4j 2026.10 as $NEO4J (loopback bolt port, random password)"
 # The `aegis.test.graph=1` label marks this Neo4j as disposable: the M23 tests wipe the graph they
 # run against, so they accept only a container carrying it (tests/graph_support.py). A dev-stack or
 # hand-started Neo4j never has it, which is what stops a gate run from wiping a shared graph.
@@ -84,6 +84,9 @@ start_container "$NEO4J" "$AEGIS_NEO4J_IMAGE" \
   -e NEO4J_server_memory_heap_initial__size=512m \
   -e NEO4J_server_memory_heap_max__size=1g \
   -e NEO4J_server_memory_pagecache_size=512m \
+  -e NEO4J_server_http_x__forward_enabled=false \
+  -e NEO4J_server_fleet__discovery_enabled=false \
+  -e NEO4J_dbms_fleet__manager_enabled=false \
   -p 127.0.0.1::7687
 for _ in $(seq 1 120); do
   podman exec "$NEO4J" cypher-shell -u neo4j -p "$NEO4J_PASSWORD" 'RETURN 1' >/dev/null 2>&1 && break
@@ -94,7 +97,8 @@ podman exec "$NEO4J" cypher-shell -u neo4j -p "$NEO4J_PASSWORD" 'RETURN 1' >/dev
 NEO4J_PORT=$(podman port "$NEO4J" 7687/tcp | head -1 | sed 's/.*://')
 [[ -n $NEO4J_PORT ]] || die "cannot read the published Neo4j bolt port"
 log "neo4j $(podman exec "$NEO4J" cypher-shell -u neo4j -p "$NEO4J_PASSWORD" \
-  'CALL dbms.components() YIELD versions RETURN versions' 2>/dev/null | tail -1) on 127.0.0.1:$NEO4J_PORT"
+  "CALL dbms.components() YIELD name, versions WHERE name = 'Neo4j Kernel' RETURN versions" 2>/dev/null |
+  tail -1) on 127.0.0.1:$NEO4J_PORT"
 
 # The LLM gateway rotation test (G1.6) runs the digest-pinned LiteLLM proxy
 # (deploy/llm-gateway/images.env) against two fake upstreams: no real provider, no key, no spend.

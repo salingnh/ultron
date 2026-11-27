@@ -33,6 +33,9 @@ start_container "$NEO4J" "$AEGIS_NEO4J_IMAGE" \
   -e NEO4J_server_memory_heap_initial__size=512m \
   -e NEO4J_server_memory_heap_max__size=512m \
   -e NEO4J_server_memory_pagecache_size=256m \
+  -e NEO4J_server_http_x__forward_enabled=false \
+  -e NEO4J_server_fleet__discovery_enabled=false \
+  -e NEO4J_dbms_fleet__manager_enabled=false \
   -p 127.0.0.1::7474
 
 address=$(podman port "$NEO4J" 7474/tcp)

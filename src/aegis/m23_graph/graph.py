@@ -7,9 +7,9 @@ verbatim (see `contract.py`). This module owns everything about the server:
 * `install_constraints` applies `constraints.cypher` plus the per-edge-type `relationship_id`
   schema it asks the projector to generate; every statement is idempotent, so it runs on start.
 * `apply_ops` runs one batch of operations in **one** Neo4j transaction per worker, with retry.
-  Neo4j 5.26 serializes concurrent `MERGE` on a unique index instead of failing, but a batch that
-  waits on a lock can still surface `Neo.TransientError.*`; the constraint violation a lost
-  create race can raise is retried too, because the statement is idempotent.
+  Neo4j serializes concurrent `MERGE` on a unique index instead of failing (measured on the 5.26
+  line), but a batch that waits on a lock can still surface `Neo.TransientError.*`; the constraint
+  violation a lost create race can raise is retried too, because the statement is idempotent.
 * `snapshot` reads every node and edge into a comparable structure; rebuild equality and the
   replay tests compare that, not node counts (card acceptance: "rebuild with new generation
   equals original").
