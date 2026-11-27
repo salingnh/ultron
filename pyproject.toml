@@ -43,6 +43,7 @@ dev = [
   "httpx>=0.28,<1",
   "mypy>=1.19,<2",
   "pytest>=8.4,<10",
+  "pytest-xdist>=3.8,<4",
   "ruff>=0.15,<1",
   "types-jsonschema>=4.26",
   "types-PyYAML>=6.0.12",
@@ -64,6 +65,7 @@ addopts = "-ra --strict-markers"
 # runs in CI (G1.3a acceptance).
 markers = [
   "podman: needs rootless Podman to start real job containers",
+  "host_exclusive: asserts a real-time bound of the host; the gate runs it after the parallel run",
   "live: needs a running Temporal server (AEGIS_TEMPORAL_TARGET); not in the default gate",
 ]
 pythonpath = ["src", "."]

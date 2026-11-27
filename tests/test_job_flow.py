@@ -24,6 +24,7 @@ from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle
 from aegis.m06_runner.podman import PodmanRunner
 from aegis.m06_runner.values import text
 from tests.fakes.evidence_store import FakeEvidenceStore
+from tests.xdist_support import worker_network_pool
 
 from . import m06_support
 
@@ -42,7 +43,11 @@ def probe_image() -> str:
 
 @pytest.fixture()
 def runner(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iterator[PodmanRunner]:
-    instance = PodmanRunner(base_dir=tmp_path_factory.mktemp("flows"), broker_image=probe_image)
+    instance = PodmanRunner(
+        network_pool=worker_network_pool(),
+        base_dir=tmp_path_factory.mktemp("flows"),
+        broker_image=probe_image,
+    )
     try:
         yield instance
     finally:
@@ -410,7 +415,11 @@ def test_reconcile_adopts_live_jobs_and_never_duplicates_a_container(
     spec = _spec(probe_image, job_id)
     handle = runner.run(spec)
     try:
-        restarted = PodmanRunner(base_dir=runner.base_dir, broker_image=probe_image)
+        restarted = PodmanRunner(
+            network_pool=worker_network_pool(),
+            base_dir=runner.base_dir,
+            broker_image=probe_image,
+        )
         report = restarted.reconcile([job_id])
         assert report.adopted == (job_id,)
         assert report.removed == ()
@@ -421,7 +430,11 @@ def test_reconcile_adopts_live_jobs_and_never_duplicates_a_container(
         assert restarted.inspect(adopted).status in {"running", "created"}
     finally:
         runner.stop(handle)
-    restarted = PodmanRunner(base_dir=runner.base_dir, broker_image=probe_image)
+    restarted = PodmanRunner(
+        network_pool=worker_network_pool(),
+        base_dir=runner.base_dir,
+        broker_image=probe_image,
+    )
     report = restarted.reconcile([])
     assert report.removed == (job_id,)
     assert restarted.list_jobs() == ()
@@ -441,7 +454,11 @@ def test_a_second_runner_on_the_same_host_never_touches_this_runners_jobs(
     job_id = m06_support.unique("owner")
     handle = runner.run(_spec(probe_image, job_id))
     try:
-        other = PodmanRunner(base_dir=runner.base_dir / "other-runner", broker_image=probe_image)
+        other = PodmanRunner(
+            network_pool=worker_network_pool(),
+            base_dir=runner.base_dir / "other-runner",
+            broker_image=probe_image,
+        )
         report = other.reconcile([])
         assert report.removed == ()
         assert report.adopted == ()
@@ -462,6 +479,7 @@ def test_egress_job_reaches_only_its_broker(
     uplink = m06_support.create_network(f"aegis-flow-up-{suffix}", internal=False)
     target_name = f"aegis-flow-target-{suffix}"
     runner = PodmanRunner(
+        network_pool=worker_network_pool(),
         base_dir=tmp_path_factory.mktemp("egress-flow"),
         broker_image=probe_image,
         uplink_network=uplink,

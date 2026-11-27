@@ -35,6 +35,7 @@ from tests.db_support import (
 from tests.fakes.evidence_store import FakeEvidenceStore
 from tests.m02_support import accept_job, scheduler_for, service
 from tests.test_m05_service import FakeBinder, body
+from tests.xdist_support import worker_network_pool
 
 from . import m06_support
 
@@ -251,7 +252,11 @@ def test_a_tampered_task_is_terminalized_failed_without_a_container() -> None:
         task = ApprovedTask.model_validate(row[0])
         tampered = dict(row[0])
         tampered["priority"] = 99
-        runner = PodmanRunner(base_dir=_Path(tempfile.mkdtemp()), broker_image=image)
+        runner = PodmanRunner(
+            network_pool=worker_network_pool(),
+            base_dir=_Path(tempfile.mkdtemp()),
+            broker_image=image,
+        )
         job_runner = JobRunner(
             runner,
             FakeEvidenceStore(),
@@ -325,7 +330,11 @@ def test_job_runner_reports_the_whole_lifecycle(
         from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 
         task = ApprovedTask.model_validate(row[0])
-        runner = PodmanRunner(base_dir=tmp_path_factory.mktemp("lifecycle"), broker_image=image)
+        runner = PodmanRunner(
+            network_pool=worker_network_pool(),
+            base_dir=tmp_path_factory.mktemp("lifecycle"),
+            broker_image=image,
+        )
         job_runner = JobRunner(
             runner,
             FakeEvidenceStore(),

@@ -20,6 +20,7 @@ import pytest
 
 from aegis.m06_runner import netpolicy
 from aegis.m06_runner.podman import PodmanRunner
+from tests.xdist_support import worker_network_pool
 
 from . import m06_support
 
@@ -46,6 +47,7 @@ def test_a_job_resolves_only_through_the_broker_and_is_audited(
     upstream_name = f"aegis-dns-fake-{suffix}"
     job_id = f"dns-{suffix}"
     runner = PodmanRunner(
+        network_pool=worker_network_pool(),
         base_dir=tmp_path_factory.mktemp("dns-flow"),
         broker_image=probe_image,
         uplink_network=uplink,

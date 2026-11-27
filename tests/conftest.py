@@ -59,12 +59,37 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[object]) 
     return report
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """In the xdist controller, before it starts the workers (see tests/xdist_support.py)."""
+    workers = len(getattr(session.config.option, "tx", None) or [])
+    if workers and not hasattr(session.config, "workerinput"):
+        from tests import xdist_support
+
+        try:
+            xdist_support.prepare_parallel_run(workers)
+        except ValueError as error:
+            raise pytest.UsageError(str(error)) from error
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    from tests.xdist_support import LANES
+
+    for item in items:
+        lane = LANES.get(item.path.name)
+        if lane is not None:
+            item.add_marker(pytest.mark.xdist_group(lane))
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Ensure any throwaway Neo4j container started during this pytest session is removed."""
     del exitstatus
     module = sys.modules.get("tests.graph_support")
     if module is not None:
         module.stop_test_graph()
+    containers = sys.modules.get("tests.m06_support")
+    if containers is not None:
+        containers.remove_probe_image()
     if _LOCAL_JOB_ID is None:
         return
     try:

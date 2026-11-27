@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -28,10 +29,11 @@ from aegis.common.ports import ContainerSpec
 from aegis.common.repo import repository_root
 from aegis.m06_runner import netpolicy
 from aegis.m06_runner.podman import PodmanRunner, RunnerError
+from tests.xdist_support import worker_network_pool
 
 from . import m06_support
 
-BROKER_IMAGE = "localhost/aegis-broker:g16-l3-test"
+BROKER_IMAGE = f"localhost/aegis-broker:g16-l3-test-{os.getpid()}"
 HOOK = repository_root() / "deploy" / "l3" / "hooks" / "aegis-l3-route"
 PRIVATE = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
 MIB = 1024 * 1024
@@ -111,6 +113,7 @@ def test_the_l3_gateway_allows_only_the_signed_ip_and_port(
     target_name = f"aegis-l3-target-{suffix}"
     extra_name = f"aegis-l3-extra-{suffix}"
     runner = PodmanRunner(
+        network_pool=worker_network_pool(),
         base_dir=tmp_path_factory.mktemp("l3-flow"),
         broker_image=broker_image,
         uplink_network=uplink,
@@ -211,6 +214,7 @@ def test_an_l3_job_without_a_hook_is_refused(
     job_id = f"l3-nohook-{suffix}"
     uplink = m06_support.create_network(f"aegis-{job_id}-up", internal=False)
     runner = PodmanRunner(
+        network_pool=worker_network_pool(),
         base_dir=tmp_path_factory.mktemp("l3-nohook"),
         broker_image=broker_image,
         uplink_network=uplink,
@@ -237,6 +241,7 @@ def test_a_failing_hook_refuses_the_job(
     job_id = f"l3-badhook-{suffix}"
     uplink = m06_support.create_network(f"aegis-{job_id}-up", internal=False)
     runner = PodmanRunner(
+        network_pool=worker_network_pool(),
         base_dir=tmp_path_factory.mktemp("l3-badhook"),
         broker_image=broker_image,
         uplink_network=uplink,

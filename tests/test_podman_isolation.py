@@ -21,6 +21,7 @@ import pytest
 from aegis.common.ports import ContainerSpec
 from aegis.m06_runner import netpolicy
 from aegis.m06_runner.podman import PodmanRunner, WaitResult
+from tests.xdist_support import worker_network_pool
 
 from . import m06_support
 
@@ -55,7 +56,10 @@ def probe_image() -> str:
 @pytest.fixture()
 def runner(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iterator[PodmanRunner]:
     instance = PodmanRunner(
-        base_dir=tmp_path_factory.mktemp("runner"), broker_image=probe_image, poll_seconds=0.2
+        network_pool=worker_network_pool(),
+        base_dir=tmp_path_factory.mktemp("runner"),
+        broker_image=probe_image,
+        poll_seconds=0.2,
     )
     try:
         yield instance
@@ -191,6 +195,9 @@ def test_one_output_file_cannot_exceed_the_cap(runner: PodmanRunner, probe_image
     assert size <= cap + 64 * 1024  # the tool's own small metadata files
 
 
+# The overshoot is the tool's write rate (~22 MiB/s) times the latency of `podman kill`, so the
+# 8 MiB bound allows ~0.35 s of it. Sibling workers driving podman break that, so it runs alone.
+@pytest.mark.host_exclusive
 def test_the_output_monitor_stops_many_small_files(runner: PodmanRunner, probe_image: str) -> None:
     """The directory monitor stops a tool whose total passes the cap while it is still running."""
     cap = 2 * MIB
@@ -335,6 +342,7 @@ def topology(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iter
     uplink = m06_support.create_network(f"aegis-test-up-{suffix}", internal=False)
     control = m06_support.create_network(f"aegis-test-ctl-{suffix}", internal=False)
     runner = PodmanRunner(
+        network_pool=worker_network_pool(),
         base_dir=tmp_path_factory.mktemp("topology"),
         broker_image=probe_image,
         uplink_network=uplink,
