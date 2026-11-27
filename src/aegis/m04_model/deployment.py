@@ -23,8 +23,11 @@ client, and any other value is a configuration error - never a silent fallback i
 
 The gateway (G1.6, `deploy/llm-gateway`) is the one place that rotates upstreams when one runs out
 of quota, so `AEGIS_MODEL_GATEWAY=1` means: the base URL is required (never a provider default), the
-cost the gateway reports per request is authoritative, and an in-app fallback chain is refused
-rather than run in parallel with the gateway's rotation.
+cost the gateway reports per request is authoritative, an in-app fallback chain is refused rather
+than run in parallel with the gateway's rotation, and every call names the agent session in
+`x-litellm-session-id` (a provider behind the gateway may refuse an unidentified request, e.g.
+opencode_go's `x-opencode-session`). Every call, gateway or not, carries the product user agent
+`aegis-ultron/<version>`.
 
 Why the prices are required (leader decision 2026-11-25): `aegis.model_usage.cost_usd` and the
 campaign budget are only honest with a real price, so a missing price stops start-up instead of
@@ -46,11 +49,12 @@ from urllib.parse import urlparse
 from aegis.contracts_gen.agent.model_request_v2_schema import Provider
 from aegis.m04_model.client import ModelClient
 from aegis.m04_model.config import ModelConfig
-from aegis.m04_model.transport import HttpTransport, PostJson, Price
+from aegis.m04_model.transport import HttpTransport, PostJson, Price, product_agent
 from aegis.m04_model.usage import UsageSink
 
 __all__ = [
     "API_KEY_ENV",
+    "GATEWAY_SESSION_HEADER",
     "BASE_URL_ENV",
     "DEFAULT_BASE_URLS",
     "GATEWAY_ENV",
@@ -81,6 +85,10 @@ TIMEOUT_SECONDS_ENV = "AEGIS_MODEL_TIMEOUT_SECONDS"
 MAX_OUTPUT_TOKENS_ENV = "AEGIS_MODEL_MAX_OUTPUT_TOKENS"
 #: 1 says the base URL is the owner's LLM gateway (`deploy/llm-gateway`), not a provider.
 GATEWAY_ENV = "AEGIS_MODEL_GATEWAY"
+#: Behind the gateway, every call names the agent session: the gateway forwards it as
+#: `x-opencode-session` to a provider that refuses an unidentified request (opencode_go). The value
+#: is the contract's agent session id - stable for one session, different for the next, and no PII.
+GATEWAY_SESSION_HEADER = "x-litellm-session-id"
 
 #: Official endpoints: OpenAI includes its `/v1`, Anthropic's base is the origin.
 DEFAULT_BASE_URLS: dict[Provider, str] = {
@@ -271,6 +279,8 @@ class ModelDeployment:
             redact=self.redacted,
             post=post,
             read_response_cost=self.gateway,
+            # A provider (or the owner's proxy log) can tell which product called it.
+            extra_headers={"user-agent": product_agent()},
         )
 
     def client(
@@ -292,7 +302,12 @@ class ModelDeployment:
                 f"{GATEWAY_ENV}=1: the gateway owns rotation; remove the in-app fallback chain "
                 "from the live model client"
             )
-        return ModelClient(self.transport(post=post), usage, chain)
+        return ModelClient(
+            self.transport(post=post),
+            usage,
+            chain,
+            session_header=GATEWAY_SESSION_HEADER if self.gateway else None,
+        )
 
     def describe(self) -> dict[str, Any]:
         """What a log line or `/healthz` may say: everything except the credential."""
@@ -305,9 +320,11 @@ class ModelDeployment:
             "timeout_seconds": self.timeout_seconds,
             "max_output_tokens": self.max_output_tokens,
         }
+        described["user_agent"] = product_agent()
         if self.gateway:
             described["gateway"] = True
             described["cost_source"] = "gateway-reported, else the configured price"
+            described["session_header"] = GATEWAY_SESSION_HEADER
         return described
 
     @classmethod

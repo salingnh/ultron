@@ -13,8 +13,9 @@ general LiteLLM linter:
 * the master key is `AEGIS_MODEL_API_KEY` and it exists - one key, the same `.env` value ultron
   sends, and a proxy without one answers anyone on the loopback port;
 * the fixed base is really in effect: bodies are never logged, `/metrics` keeps its auth on,
-  retries are bounded at the endpoint and at the router, and no spend log is attempted without a
-  database;
+  retries are bounded at the endpoint and at the router, an answer a provider refuses advances to
+  the next endpoint (that is how an exhausted account's 402 rotates), and no spend log is attempted
+  without a database;
 * every deployment is reachable: `api_key` names a variable the environment file really sets;
 * every endpoint is priced, so the gateway can report a real per-request cost (helper only - M04
   falls back to its own price and says so, but a missing price means the invoice and the ledger
@@ -204,6 +205,12 @@ def check(document: Mapping[str, Any], environment: Mapping[str, str]) -> Report
         )
 
     router = document.get("router_settings") or {}
+    if router.get("fallback_on_unsupported_params") is not True:
+        report.error(
+            "router_settings.fallback_on_unsupported_params: set it to true - a provider that "
+            "refuses a call (a 402 'out of credits' arrives as a bad request) must advance to the "
+            "next endpoint, not fail the group"
+        )
     if router.get("num_retries") not in (0, "0", None):
         report.error(
             "router_settings.num_retries: set it to 0 - rotation across the group is the retry, "

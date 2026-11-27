@@ -75,7 +75,10 @@ services:
       - "127.0.0.1:${AEGIS_LLM_GATEWAY_PORT:-4000}:4000"
     volumes:
       # The rendered config directory, read-only and shared-labelled (`z`, never `Z`: the next render
-      # in this checkout must still be able to write it).
+      # in this checkout must still be able to write it). The proxy runs as a non-root user from the
+      # image (`nonroot`, uid 65532), which is why render.py leaves the directory traversable and
+      # `config.yaml` world-readable - it holds variable names only. The environment file next to it
+      # is 0600 and is read by podman on the host, not by the container's user.
       - ${AEGIS_LLM_GATEWAY_RENDER_DIR:?run through make llm-gateway-up so the rendered config dir is set}:/app/config:ro,z
     tmpfs:
       # Python writes nothing but temporary files; the rootfs stays read-only.

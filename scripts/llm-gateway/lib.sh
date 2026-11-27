@@ -27,14 +27,61 @@ BASE_CONFIG="$GATEWAY_DIR/base.yaml"
 CONFIG_EXAMPLE="$GATEWAY_DIR/config.example.yaml"
 RENDER_SCRIPT="$LLM_GATEWAY_SCRIPTS/render.py"
 VALIDATE_SCRIPT="$LLM_GATEWAY_SCRIPTS/validate.py"
-# shellcheck disable=SC2034 # used by up.sh/reload.sh to point at .env.example
-ENV_EXAMPLE="$REPO_ROOT/.env.example"
 
 # One file for every secret: the checkout's .env. It must not be readable by group or other, because
-# the upstream keys and the gateway's master key live in it.
+# the upstream keys and the gateway's master key live in it. Every setting below comes from it too,
+# so `.env` is the one file that describes this deployment.
 ENV_FILE="$REPO_ROOT/.env"
 # The one credential of this deployment: the key ultron sends and the gateway's master key.
 MASTER_KEY_ENV=AEGIS_MODEL_API_KEY
+#: What ultron reads to call the gateway; the port it names is the port the gateway publishes.
+MODEL_BASE_URL_ENV=AEGIS_MODEL_BASE_URL
+GATEWAY_PORT_ENV=AEGIS_LLM_GATEWAY_PORT
+GATEWAY_PROJECT_ENV=AEGIS_LLM_GATEWAY_PROJECT
+
+# One value out of `.env`, without sourcing it: the stack's own identity has to be known before
+# anything is loaded. Never printed by a caller that handles a secret; this reader is used for the
+# project name, the port and the base URL.
+env_value() { # <name>
+  local name=$1 line value
+  [ -f "$ENV_FILE" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+    '' | '#'*) continue ;;
+    "$name"=*) ;;
+    *) continue ;;
+    esac
+    value=${line#*=}
+    value=${value%"${value##*[![:space:]]}"}
+    case $value in
+    \"*\")
+      value=${value#\"}
+      value=${value%\"}
+      ;;
+    \'*\')
+      value=${value#\'}
+      value=${value%\'}
+      ;;
+    *)
+      # An unquoted ` # ...` is a comment in a sourced file too, so it is not part of the value.
+      value=${value%%[[:space:]]#*}
+      value=${value%"${value##*[![:space:]]}"}
+      ;;
+    esac
+    printf '%s' "$value"
+    return 0
+  done <"$ENV_FILE"
+  return 1
+}
+
+# The port ultron already calls, when `.env` names a loopback gateway URL. Keeping one source of
+# truth matters: a gateway published on 14000 while ultron calls 4000 is the failure this removes.
+base_url_port() {
+  local url
+  url=$(env_value "$MODEL_BASE_URL_ENV" || true)
+  [ -n "$url" ] || return 1
+  printf '%s' "$url" | sed -nE 's#^https?://(127\.0\.0\.1|localhost):([0-9]{1,5})(/.*)?$#\2#p' | head -n 1 | grep -E '^[0-9]+$' || return 1
+}
 
 # The owner's directory: outside every checkout on purpose, so a stack's configuration is not part of
 # the repository and one edit serves every checkout that runs this gateway. The override exists for
@@ -50,10 +97,17 @@ RENDERED_CONFIG="$RENDER_DIR/config.yaml"
 GATEWAY_ENV="$RENDER_DIR/gateway.env"
 IDENTITY_FILE="$STATE_DIR/llm-gateway.identity"
 
-# Project, container, port and network of this checkout; AEGIS_LLM_GATEWAY_PROJECT renames all of
-# them (a second checkout on one host needs its own name and port).
-PROJECT=${AEGIS_LLM_GATEWAY_PROJECT:-aegis-llm-gateway}
-PORT=${AEGIS_LLM_GATEWAY_PORT:-4000}
+# Project, container, port and network of this checkout. Both are configuration like any other and
+# come from `.env` (AEGIS_LLM_GATEWAY_PROJECT / AEGIS_LLM_GATEWAY_PORT); the shell environment wins,
+# so a deliberate one-off run can override them. When the port is not named, the port ultron already
+# calls (AEGIS_MODEL_BASE_URL) is used, so the two cannot drift; 4000 is the last resort.
+PROJECT=${AEGIS_LLM_GATEWAY_PROJECT:-$(env_value "$GATEWAY_PROJECT_ENV" || true)}
+PROJECT=${PROJECT:-aegis-llm-gateway}
+PORT=${AEGIS_LLM_GATEWAY_PORT:-$(env_value "$GATEWAY_PORT_ENV" || true)}
+if [ -z "$PORT" ]; then
+  PORT=$(base_url_port || true)
+fi
+PORT=${PORT:-4000}
 CONTAINER="$PROJECT-gateway"
 # shellcheck disable=SC2034 # used by down.sh to tell whether anything is left to remove
 NETWORK="$PROJECT-net"
@@ -101,6 +155,61 @@ require_env_file() {
   fi
 }
 
+# The published port is the one thing a compose file cannot negotiate: another process on it means
+# the container starts, publishes nothing, and ultron keeps calling someone else. Refuse before a
+# container exists, naming the port and the two `.env` lines that fix it. Our own running gateway on
+# the same port is the one legitimate holder (an idempotent `up`).
+require_port_free() {
+  local holder
+  if container_running &&
+    [ "$(podman port "$CONTAINER" 4000/tcp 2>/dev/null | head -n 1)" = "127.0.0.1:$PORT" ]; then
+    return 0
+  fi
+  require_cmd python3 "install python3"
+  if python3 - "$PORT" <<'PY'
+import socket
+import sys
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# SO_REUSEADDR is enough to distinguish "someone listens" from "a socket is in TIME_WAIT"; it
+# cannot share a listening port, so a successful bind really means the port is free.
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    sock.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    sys.exit(1)
+finally:
+    sock.close()
+PY
+  then
+    return 0
+  fi
+  holder=$(ss -ltnp 2>/dev/null | awk -v port=":$PORT" 'NR > 1 && $4 ~ port "$" { print $6; exit }' || true)
+  die "port $PORT on 127.0.0.1 is already in use${holder:+ by $holder}:
+  this gateway publishes 127.0.0.1:$PORT, so that service would keep the port. Put a free port in
+  $ENV_FILE and keep the two lines in step:
+    $GATEWAY_PORT_ENV=<free port>
+    $MODEL_BASE_URL_ENV=http://127.0.0.1:<free port>/v1
+  then run make llm-gateway-up again. Nothing was started."
+}
+
+# What ultron reads must be this gateway, on the port it publishes. A mismatch would send every call
+# somewhere else, so it is refused before a container exists - never discovered on the first call.
+require_model_base_url() {
+  local wanted="http://127.0.0.1:$PORT/v1" configured
+  configured=$(env_value "$MODEL_BASE_URL_ENV" || true)
+  [ -n "$configured" ] || return 0
+  case $configured in
+  "http://127.0.0.1:$PORT/v1" | "http://127.0.0.1:$PORT/v1/" | \
+    "http://localhost:$PORT/v1" | "http://localhost:$PORT/v1/") return 0 ;;
+  esac
+  die "$MODEL_BASE_URL_ENV=$configured does not point at this gateway ($wanted):
+  set either one, so the gateway publishes what ultron calls:
+    $MODEL_BASE_URL_ENV=$wanted
+    $GATEWAY_PORT_ENV=<the port in that URL>
+  in $ENV_FILE. Nothing was started."
+}
+
 # Sources .env into this process, so render.py sees the values it must hand to the container. The
 # same file and the same rule the dev scripts use; nothing here prints a value.
 load_env() {
@@ -108,40 +217,6 @@ load_env() {
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   set +a
-}
-
-# One value out of .env for a caller that must not export the whole file (`status.sh` talks to the
-# proxy with the master key and needs nothing else). Never printed.
-env_value() { # <name>
-  local name=$1 line value
-  [ -f "$ENV_FILE" ] || return 1
-  while IFS= read -r line || [ -n "$line" ]; do
-    case $line in
-    '' | '#'*) continue ;;
-    "$name"=*) ;;
-    *) continue ;;
-    esac
-    value=${line#*=}
-    value=${value%"${value##*[![:space:]]}"}
-    case $value in
-    \"*\")
-      value=${value#\"}
-      value=${value%\"}
-      ;;
-    \'*\')
-      value=${value#\'}
-      value=${value%\'}
-      ;;
-    *)
-      # An unquoted ` # ...` is a comment in a sourced file too, so it is not part of the value.
-      value=${value%%[[:space:]]#*}
-      value=${value%"${value##*[![:space:]]}"}
-      ;;
-    esac
-    printf '%s' "$value"
-    return 0
-  done <"$ENV_FILE"
-  return 1
 }
 
 # `AEGIS_MODEL_API_KEY` is both the key ultron sends and the gateway's master key, so there is no

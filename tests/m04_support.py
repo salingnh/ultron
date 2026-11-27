@@ -90,6 +90,7 @@ class ScriptedTransport:
         wire: Mapping[str, Any],
         *,
         timeout_seconds: float,
+        headers: Mapping[str, str] | None = None,
     ) -> TransportResponse:
         self.calls.append(
             {
@@ -97,6 +98,7 @@ class ScriptedTransport:
                 "model": model,
                 "wire": dict(wire),
                 "timeout_seconds": timeout_seconds,
+                "headers": dict(headers or {}),
             }
         )
         if not self._pending:
