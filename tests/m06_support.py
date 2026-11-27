@@ -46,10 +46,6 @@ ALPINE = (
     "docker.io/library/alpine@sha256:"
     "d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc"
 )
-PYTHON_312 = (
-    "docker.io/library/python@sha256:"
-    "c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89"
-)
 SEAWEEDFS = (
     "docker.io/chrislusf/seaweedfs@sha256:"
     "7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9"

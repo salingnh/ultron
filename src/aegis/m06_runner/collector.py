@@ -88,7 +88,7 @@ def declared_uncompressed_bytes(path: Path) -> int | None:
         if zipfile.is_zipfile(path):
             with zipfile.ZipFile(path) as archive:
                 return sum(info.file_size for info in archive.infolist())
-    except (OSError, zipfile.BadZipFile):
+    except OSError, zipfile.BadZipFile:
         return None
     if path.suffix.lower() == ".gz":
         try:
@@ -96,7 +96,7 @@ def declared_uncompressed_bytes(path: Path) -> int | None:
                 handle.seek(-4, os.SEEK_END)
                 (isize,) = struct.unpack("<I", handle.read(4))
             return int(isize)
-        except (OSError, struct.error):
+        except OSError, struct.error:
             return None
     return None
 

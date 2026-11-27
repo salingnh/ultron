@@ -6,7 +6,7 @@
 #
 # Build context is the repository root:
 #   podman build -f tests/container/Containerfile -t localhost/aegis-probe:test .
-FROM docker.io/library/python@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+FROM docker.io/library/python@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67
 
 COPY src/aegis/__init__.py /app/aegis/__init__.py
 COPY src/aegis/m06_runner /app/aegis/m06_runner

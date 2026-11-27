@@ -366,7 +366,7 @@ def _container_memory() -> dict[str, float]:
             check=False,
             timeout=60,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return {}
     found: dict[str, float] = {}
     for line in completed.stdout.splitlines():
