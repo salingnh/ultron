@@ -2,10 +2,10 @@
   "provider": "fingerprintx",
   "capability": "service.fingerprint",
   "tool_version": "v1.1.19",
-  "adapter_version": "1.0.0",
-  "image_digest": "sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
-  "lab_run": "make lab-fingerprintx (deploy/lab/.run/runs/fingerprintx-20261125T094407Z)",
-  "lab_run_at": "2026-11-25T02:38:00Z",
+  "adapter_version": "1.1.1",
+  "image_digest": "sha256:48ce97d72380bad8eaba16ec8c3e54e9225b450b146d7572a39d9f14013b54fe",
+  "lab_run": "make lab-fingerprintx (deploy/lab/.run/runs/fingerprintx-20261127T140153Z)",
+  "lab_run_at": "2026-11-27T14:01:53Z",
   "lab_network": "aegis-lab-lab",
   "command": "-l /in/targets.txt --json -o /out/result.jsonl -w 2000",
   "input": {
@@ -28,7 +28,7 @@
   },
   "raw": {
     "file": "result.jsonl",
-    "sha256": "8d44299b26654abee18d480a5d38ac36497e78b1e6daae3a127a1128b5a2fa09",
+    "sha256": "4e46e728f1a08c33b03e7c6688ea2cefa765562760ca2438b6449b9bd8b98967",
     "size_bytes": 3501
   },
   "expected": "expected.json",

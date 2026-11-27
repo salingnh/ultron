@@ -36,7 +36,7 @@
       "mounts": []
     },
     {
-      "imageDigest": "sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+      "imageDigest": "sha256:48ce97d72380bad8eaba16ec8c3e54e9225b450b146d7572a39d9f14013b54fe",
       "args": [],
       "env": {
         "HOME": "/tmp"

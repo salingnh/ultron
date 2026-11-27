@@ -9,13 +9,13 @@
 #
 # No shell in the runtime image: the entrypoint is the static binary, and the runner supplies
 # argv. `CGO_ENABLED=0` keeps it a single static binary on a minimal base.
-FROM docker.io/library/golang:1.25-alpine@sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59 AS build
+FROM docker.io/library/golang:1.27-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS build
 
 RUN apk add --no-cache git ca-certificates
 RUN CGO_ENABLED=0 GOFLAGS=-trimpath \
     go install github.com/praetorian-inc/fingerprintx/cmd/fingerprintx@v1.1.19
 
-FROM docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+FROM docker.io/library/alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 RUN apk add --no-cache ca-certificates \
     && adduser -D -u 65532 scanner

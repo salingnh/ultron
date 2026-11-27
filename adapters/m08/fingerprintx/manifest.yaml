@@ -2,7 +2,7 @@ apiVersion: aegis.io/v2
 kind: CapabilityProvider
 metadata:
   name: fingerprintx
-  version: 1.1.0
+  version: 1.1.1
   module: M08
   license: Apache-2.0
   upstream: https://github.com/praetorian-inc/fingerprintx
@@ -17,7 +17,7 @@ spec:
   runtime:
     type: container
     image: registry.internal/aegis/fingerprintx
-    imageDigest: sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1
+    imageDigest: sha256:48ce97d72380bad8eaba16ec8c3e54e9225b450b146d7572a39d9f14013b54fe
     argsTemplate:
     - -l
     - /in/targets.txt

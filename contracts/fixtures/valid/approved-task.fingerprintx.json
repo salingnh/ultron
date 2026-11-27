@@ -7,9 +7,9 @@
   "capability": "service.fingerprint",
   "provider": "fingerprintx",
   "provider_version": "v1.1.19",
-  "adapter_version": "1.1.0",
-  "manifest_sha256": "17a3cfcc3e884c01fe92de7e8d84112f77b5b08a2364427ff3f9fd4e5d67ff1c",
-  "image_digest": "sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+  "adapter_version": "1.1.1",
+  "manifest_sha256": "d19edd1e32cb4690fb75da496fdb2b1cdb0b2ae0dc6a592a08297690cf43b9a4",
+  "image_digest": "sha256:48ce97d72380bad8eaba16ec8c3e54e9225b450b146d7572a39d9f14013b54fe",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
   "input": {
     "targets": [
