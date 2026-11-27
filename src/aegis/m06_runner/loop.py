@@ -31,13 +31,14 @@ import signal as signal_module
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import FrameType
 from typing import Any
 
 import psycopg
 
+from aegis.common import platform as platform_set
 from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
@@ -46,19 +47,24 @@ from aegis.m05_registry.manifest import ManifestRecord
 from aegis.m05_registry.registry import PostgresManifestRegistry
 from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import envelope as envelopes
+from aegis.m06_runner.authorization import authorization_of
 from aegis.m06_runner.job import JobOutcome, JobPlan, JobRunner
-from aegis.m06_runner.lab import LabProfile
 from aegis.m06_runner.lifecycle import TERMINAL_DB_STATUSES, JobClaim, JobLifecycle, connect
 from aegis.m06_runner.podman import PodmanRunner
+from aegis.m06_runner.profile import DeploymentProfile
+from aegis.m06_runner.values import text
 from aegis.m28_evidence.catalog import EvidenceCatalog
 from aegis.m28_evidence.store import S3EvidenceStore
 
 __all__ = [
     "DSN_ENV",
+    "JobPlanError",
     "LoopConfig",
     "LoopTick",
     "RUNNABLE_STATUSES",
+    "L3_HOOK_ENV",
     "SERVICE_TOKEN_ENV",
+    "UPLINK_ENV",
     "ServiceTokenMissing",
     "api_url_from_env",
     "main",
@@ -72,6 +78,14 @@ DSN_ENV = "AEGIS_PG_DSN"
 API_URL_ENV = "AEGIS_API_URL"
 SERVICE_TOKEN_ENV = "AEGIS_SERVICE_TOKEN"
 BROKER_IMAGE_ENV = "AEGIS_M06_BROKER_IMAGE"
+#: Deployment override of the broker's uplink network. The internet profile names a default
+#: (`deploy/internet/runner-profile.json`), and a deployment that owns a dedicated uplink
+#: (run-local creates `aegis-uplink`) points the runner at it, so the broker's outbound leg is never
+#: the host's shared default bridge.
+UPLINK_ENV = "AEGIS_UPLINK_NETWORK"
+#: Deployment-owned OCI hook that gives an L3 job its only default route (inside the job netns).
+#: Without it an L3 provider is refused: the job would have no filtered way out.
+L3_HOOK_ENV = "AEGIS_L3_HOOK"
 BASE_DIR_ENV = "AEGIS_M06_BASE_DIR"
 POLL_ENV = "AEGIS_M06_POLL_SECONDS"
 INGESTION_PATH = "/api/v2/ingestion/results"
@@ -95,10 +109,42 @@ class LoopConfig:
     api_url: str = DEFAULT_API_URL
     service_token: str = ""
     broker_image: str | None = None
-    lab: LabProfile | None = None
+    #: The deployment profiles of this runner; a job only uses the one its signed RoE names.
+    lab: DeploymentProfile | None = None
+    internet: DeploymentProfile | None = None
+    #: The broker's uplink network when the deployment overrides the internet profile's default.
+    uplink_network: str | None = None
+    #: Deployment-owned OCI hook that installs the L3 job's only default route.
+    l3_hook: Path | None = None
+    #: Why the platform deny set could not be loaded at start (empty string when it was): the
+    #: start-up snapshot is for the log only - every internet job recomputes the set (R1).
+    platform_cidrs_error: str = ""
     poll_seconds: float = DEFAULT_POLL_SECONDS
     platform_cidrs: tuple[str, ...] = ()
+    #: The environment `AEGIS_M06_PLATFORM_CIDRS` is read from again for every internet job. The
+    #: rest of the set (podman networks, host addresses) is re-read from the host each time too, so
+    #: a network created after this process started is still denied (R1).
+    platform_env: Mapping[str, str] | None = None
     parser_python_path: tuple[str, ...] = field(default_factory=tuple)
+
+    def platform_deny_set(self) -> tuple[tuple[str, ...], str]:
+        """Recompute the platform deny set now; `(cidrs, error)` with an empty set on failure.
+
+        The set is a snapshot of the host: podman networks, compose projects and the host's own
+        addresses change while the runner is up, and a stale snapshot would sign and install rules
+        for a network that did not exist when the process started (R1).
+        """
+        try:
+            return platform_set.platform_cidrs(self.platform_env), ""
+        except platform_set.PlatformDenySetUnavailable as error:
+            return (), str(error)
+
+    @property
+    def uplink(self) -> str | None:
+        """The network the broker egresses through: the deployment override, else the profile's."""
+        if self.uplink_network:
+            return self.uplink_network
+        return None if self.internet is None else self.internet.network
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> LoopConfig:
@@ -108,19 +154,29 @@ class LoopConfig:
             raise SystemExit(f"{DSN_ENV} is required: the runner records job state in PostgreSQL")
         base_dir = source.get(BASE_DIR_ENV, "").strip()
         poll = source.get(POLL_ENV, "").strip()
+        try:
+            platform_cidrs = platform_set.platform_cidrs(source)
+            platform_error = ""
+        except platform_set.PlatformDenySetUnavailable as error:
+            # Lab jobs still work; an internet job is refused at prepare time with this reason.
+            platform_cidrs = ()
+            platform_error = str(error)
         return cls(
             dsn=dsn,
             base_dir=Path(base_dir) if base_dir else repository_root() / ".local" / "m06",
             api_url=source.get(API_URL_ENV, DEFAULT_API_URL).rstrip("/"),
             service_token=source.get(SERVICE_TOKEN_ENV, "").strip(),
             broker_image=source.get(BROKER_IMAGE_ENV) or None,
-            lab=LabProfile.from_env(source),
-            poll_seconds=float(poll) if poll else DEFAULT_POLL_SECONDS,
-            platform_cidrs=tuple(
-                item.strip()
-                for item in source.get("AEGIS_M06_PLATFORM_CIDRS", "").split(",")
-                if item.strip()
+            lab=DeploymentProfile.from_env(source, kind="lab"),
+            internet=DeploymentProfile.from_env(source, kind="internet"),
+            uplink_network=source.get(UPLINK_ENV, "").strip() or None,
+            l3_hook=(
+                Path(source[L3_HOOK_ENV].strip()) if source.get(L3_HOOK_ENV, "").strip() else None
             ),
+            poll_seconds=float(poll) if poll else DEFAULT_POLL_SECONDS,
+            platform_cidrs=platform_cidrs,
+            platform_cidrs_error=platform_error,
+            platform_env=source,
             parser_python_path=(str(repository_root()),),
         )
 
@@ -144,14 +200,29 @@ def _field(row: Mapping[str, Any] | tuple[Any, ...], name: str, index: int) -> A
     return row[name] if isinstance(row, Mapping) else row[index]
 
 
+class JobPlanError(RuntimeError):
+    """A job whose plan cannot be built, with the contract error that records the refusal.
+
+    Every cause here is definite (a row that never came through M05, an unregistered pin, a policy
+    snapshot that does not exist), so the runner terminalizes the job with that code instead of
+    retrying it every tick (G1.6 review, proposal 5).
+    """
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+
 def plan_for(
     conn: psycopg.Connection[Any], job_id: str, registry: PostgresManifestRegistry
 ) -> JobPlan:
     """The plan of one job from its own row: signed task, pinned manifest, merged input.
 
-    Everything comes from `scan_job` and the immutable manifest registry, so a resumed job is the
-    same job: no re-resolution and no "latest manifest" (interfaces §2, OI-12). A row that did not
-    come through M05 (fixtures, history) has no `approved_task` and cannot be run.
+    Everything comes from `scan_job`, the immutable manifest registry and the policy snapshot the
+    task was signed against, so a resumed job is the same job: no re-resolution, no "latest
+    manifest" and no "current policy" (interfaces §2, OI-12). A failure is a `JobPlanError` with a
+    contract code, because accepting the row and then never running it is not a valid outcome.
     """
     row = conn.execute(
         """
@@ -162,23 +233,47 @@ def plan_for(
         (job_id,),
     ).fetchone()
     if row is None:
-        raise LookupError(f"job {job_id} does not exist")
-    campaign_id = _field(row, "campaign_id", 0)
+        raise JobPlanError("DEPENDENCY_MISSING", f"job {job_id} does not exist in scan_job")
     manifest_sha256 = _field(row, "manifest_sha256", 1)
     input_values = _field(row, "input", 2)
     approved = _field(row, "approved_task", 3)
-    if approved is None:
-        raise ValueError(f"job {job_id} has no approved task (it did not come through M05)")
-    record: ManifestRecord = registry.get(str(manifest_sha256 or approved.get("manifest_sha256")))
-    denylist = _target_denylist(conn, str(campaign_id))
+    if not isinstance(approved, Mapping):
+        raise JobPlanError(
+            "POLICY_DENIED", f"job {job_id} has no approved task: it did not come through M05"
+        )
+    try:
+        task = ApprovedTask.model_validate(dict(approved))
+    except Exception as error:  # noqa: BLE001 - a malformed signed task is a refusal, not a crash
+        raise JobPlanError(
+            "POLICY_DENIED", f"job {job_id}'s approved task is not contract-shaped: {error}"
+        ) from error
+    pin = str(manifest_sha256 or text(task.manifest_sha256))
+    try:
+        record: ManifestRecord = registry.get(pin)
+    except LookupError as error:
+        raise JobPlanError(
+            "DEPENDENCY_MISSING", f"job {job_id}'s pinned manifest {pin} is not registered"
+        ) from error
+    limits, denylist = _signed_policy(conn, str(text(task.policy_version)))
+    # R6: the authorization is a structured object, never a rendered string. A mapping with missing
+    # fields used to render as " |  |  | " and pass a non-empty check.
+    authorization, problem = authorization_of(_authorization(conn, str(text(task.policy_version))))
+    if authorization is None and str(task.network_profile) == "internet":
+        raise JobPlanError(
+            "POLICY_DENIED",
+            f"job {job_id}'s signed RoE has no usable structured authorization: {problem}",
+        )
     return JobPlan(
         job_id=job_id,
-        task=ApprovedTask.model_validate(approved),
+        task=task,
         manifest=ProviderManifest.model_validate(dict(record.document)),
         input=dict(input_values or {}),
         manifest_bytes=record.raw,
         task_body=dict(approved),
         target_denylist=denylist,
+        per_host_rps=limits[0],
+        per_host_max_connections=limits[1],
+        authorization=authorization,
         classification=_classification(record.document),
     )
 
@@ -192,18 +287,57 @@ def _classification(document: Mapping[str, Any]) -> Classification:
         return Classification.INTERNAL
 
 
-def _target_denylist(conn: psycopg.Connection[Any], campaign_id: str) -> tuple[str, ...]:
+def _signed_policy(
+    conn: psycopg.Connection[Any], policy_version: str
+) -> tuple[tuple[float | None, int | None], tuple[str, ...]]:
+    """Caps and target denylist of the snapshot the task was **signed** against.
+
+    A job runs under the policy version in its signed task (interfaces §2), so both the broker's
+    caps and the campaign's target denylist come from that snapshot - never from
+    `campaign.current_policy_version`, which may have moved after the task was signed. A missing
+    snapshot is a definite refusal (`DEPENDENCY_MISSING`), not an uncapped/unfiltered run.
+    """
     row = conn.execute(
         """
-        SELECT p.policy -> 'target_denylist' AS denylist
-          FROM campaign c JOIN policy_snapshot p
-            ON p.policy_version = c.current_policy_version
-         WHERE c.campaign_id = %s
+        SELECT policy -> 'rate_limits' AS rate_limits,
+               policy -> 'target_denylist' AS denylist
+          FROM policy_snapshot
+         WHERE policy_version = %s
         """,
-        (campaign_id,),
+        (policy_version,),
     ).fetchone()
-    values = (_field(row, "denylist", 0) if row is not None else None) or []
-    return tuple(str(item) for item in values)
+    if row is None:
+        raise JobPlanError(
+            "DEPENDENCY_MISSING",
+            f"the signed policy snapshot {policy_version!r} does not exist",
+        )
+    limits = _field(row, "rate_limits", 0) or {}
+    rps = limits.get("requests_per_second_per_host")
+    max_connections = limits.get("max_concurrent_connections_per_host")
+    values = _field(row, "denylist", 1) or []
+    return (
+        (
+            None if rps is None else float(rps),
+            None if max_connections is None else int(max_connections),
+        ),
+        tuple(str(item) for item in values),
+    )
+
+
+def _authorization(conn: psycopg.Connection[Any], policy_version: str) -> object | None:
+    """The structured `authorization` of the **signed** RoE, unvalidated.
+
+    It comes from the policy snapshot the task was signed against (`owner`, `reference`, `date`,
+    `authorized_suffixes`), never from a free-text campaign label. Returning the raw value keeps
+    the validation in one place (`authorization.authorization_of`); the caller refuses an internet
+    job whose object is missing or malformed.
+    """
+    row = conn.execute(
+        "SELECT policy -> 'authorization' AS authorization FROM policy_snapshot"
+        " WHERE policy_version = %s",
+        (policy_version,),
+    ).fetchone()
+    return _field(row, "authorization", 0) if row is not None else None
 
 
 def statuses_named(conn: psycopg.Connection[Any], statuses: Sequence[str]) -> list[str]:
@@ -240,7 +374,16 @@ def runner_for(config: LoopConfig, lifecycle: JobLifecycle) -> tuple[PodmanRunne
     podman = PodmanRunner(
         base_dir=config.base_dir,
         broker_image=config.broker_image,
-        lab=config.lab,
+        # The broker's uplink is the internet profile's network: one deployment file names the
+        # network the broker egresses through, so `AEGIS_M06_INTERNET_PROFILE` cannot disagree with
+        # a second setting.
+        uplink_network=config.uplink,
+        l3_hook=config.l3_hook,
+        profiles={
+            kind: profile
+            for kind, profile in (("lab", config.lab), ("internet", config.internet))
+            if profile is not None
+        },
     )
     job_runner = JobRunner(
         podman,
@@ -282,7 +425,7 @@ def run_once(
             claim = claim_of(conn, job_id)
             if claim is None:
                 continue
-            plan = plan_for(conn, job_id, registry)
+            plan = _with_platform_deny_set(config, plan_for(conn, job_id, registry), log)
             log(f"resume: job {job_id} (adopting the container this runner already started)")
             outcome = job_runner.resume(plan, claim)
             resumed.append(job_id)
@@ -294,10 +437,14 @@ def run_once(
             if job_id in resumed:
                 continue
             try:
-                plan = plan_for(conn, job_id, registry)
-            except (LookupError, ValueError) as error:
-                log(f"skip: job {job_id} cannot be planned: {error}")
-                failed.append(job_id)
+                plan = _with_platform_deny_set(config, plan_for(conn, job_id, registry), log)
+            except JobPlanError as error:
+                # Every cause is definite, so this tick owns the refusal: terminalize the job with
+                # the contract code instead of leaving it VALIDATING for the next tick (proposal 5).
+                outcome = job_runner.reject(job_id, error.code, error.detail)
+                log(f"reject: job {job_id}: {error}")
+                if outcome.status != "skipped":
+                    failed.append(job_id)
                 continue
             outcome = job_runner.execute(plan)
             if outcome.status == "skipped":
@@ -312,6 +459,22 @@ def run_once(
         failed=tuple(failed),
         reconciled_removed=removed,
     )
+
+
+def _with_platform_deny_set(
+    config: LoopConfig, plan: JobPlan, log: Callable[[str], None]
+) -> JobPlan:
+    """The plan with a platform deny set computed for **this** job (R1).
+
+    A lab job never uses the set (it has no broker), so it keeps an empty one: reading podman on
+    every lab job would make a lab tick depend on the host's network inventory.
+    """
+    if str(plan.task.network_profile) == "lab":
+        return plan
+    cidrs, error = config.platform_deny_set()
+    if error:
+        log(f"platform deny set unreadable for job {plan.job_id}: {error}")
+    return replace(plan, platform_cidrs=cidrs)
 
 
 def _log_outcome(job_id: str, outcome: JobOutcome, log: Callable[[str], None]) -> None:
@@ -390,10 +553,15 @@ def main(argv: list[str] | None = None) -> int:
             service_token=config.service_token,
             broker_image=config.broker_image,
             lab=config.lab,
+            internet=config.internet,
+            uplink_network=config.uplink_network,
+            l3_hook=config.l3_hook,
             poll_seconds=args.poll_seconds
             if args.poll_seconds is not None
             else config.poll_seconds,
             platform_cidrs=config.platform_cidrs,
+            platform_cidrs_error=config.platform_cidrs_error,
+            platform_env=config.platform_env,
             parser_python_path=config.parser_python_path,
         )
     return run(config, once=args.once, ticks=args.ticks)

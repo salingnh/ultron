@@ -30,9 +30,14 @@ def _campaigns_router() -> APIRouter:
     return router
 
 
-def test_health_and_openapi_paths() -> None:
+def test_health_and_openapi_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AEGIS_SESSION_LIVE_MODEL", raising=False)
     client = TestClient(create_app())
-    assert client.get("/healthz").json() == {"status": "ok"}
+    body = client.get("/healthz").json()
+    assert body["status"] == "ok"
+    # G1.6: the probe also reports the model mode the deployment's environment selects.
+    assert body["model"]["mode"] == "scripted"
+    assert "api_key" not in body["model"]
     assert client.get(OPENAPI_PATH).status_code == 200
 
 
@@ -144,3 +149,31 @@ def _entries() -> Iterator[str]:
 
 def test_registry_keeps_registration_order() -> None:
     assert list(_entries()) == ["a", "b"]
+
+
+def test_unhandled_500_returns_error_envelope_with_cors_headers() -> None:
+    from aegis import validation
+
+    router = APIRouter()
+
+    @router.get("/boom")
+    def boom() -> dict[str, str]:
+        raise RuntimeError("unhandled boom")
+
+    registry = RouterRegistry()
+    registry.register("boom", router, prefix=API_PREFIX)
+    origin = "http://127.0.0.1:5174"
+    client = TestClient(create_app(registry, cors_origins=[origin]), raise_server_exceptions=False)
+
+    response = client.get(f"{API_PREFIX}/boom", headers={"Origin": origin})
+    assert response.status_code == 500
+    assert response.headers.get("access-control-allow-origin") == origin
+    assert response.headers.get("traceparent")
+    body = response.json()
+    validation.validate("common/error.v2.schema.json", body)
+    assert body["code"] == "INTERNAL_ERROR"
+    assert body["trace_id"]
+
+    disallowed = client.get(f"{API_PREFIX}/boom", headers={"Origin": "http://evil.example"})
+    assert disallowed.status_code == 500
+    assert "access-control-allow-origin" not in disallowed.headers

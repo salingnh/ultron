@@ -23,9 +23,9 @@ DECLARE
   out text;
 BEGIN
   INSERT INTO policy_snapshot VALUES
-    ('roe-18',camp_a,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('1',64),'{"kind":"operator","id":"soc-1"}'),
-    ('roe-20',camp_a,'{"max_parallel_jobs":5,"max_duration_hours":24}',repeat('3',64),'{"kind":"operator","id":"soc-1"}'),
-    ('roe-19',camp_b,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('2',64),'{"kind":"operator","id":"soc-1"}');
+    ('roe-18',camp_a,'{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',repeat('1',64),'{"kind":"operator","id":"soc-1"}'),
+    ('roe-20',camp_a,'{"network_profile":"lab","max_parallel_jobs":5,"max_duration_hours":24}',repeat('3',64),'{"kind":"operator","id":"soc-1"}'),
+    ('roe-19',camp_b,'{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',repeat('2',64),'{"kind":"operator","id":"soc-1"}');
   INSERT INTO scope_snapshot VALUES
     (scope_a,camp_a,'{"domains":["bind-a.example"]}'),
     (scope_a2,camp_a,'{"domains":["bind-a2.example"]}'),

@@ -3,9 +3,17 @@
 
 from __future__ import annotations
 
+from datetime import date as date_aliased
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field, RootModel, confloat, conint, constr
 
 from ..common import ids_v2_schema
+
+
+class NetworkProfile(StrEnum):
+    lab = "lab"
+    internet = "internet"
 
 
 class TargetDenylistItem(RootModel[constr(min_length=1)]):
@@ -17,6 +25,10 @@ class RateLimits(BaseModel):
         extra="forbid",
     )
     requests_per_second_per_host: confloat(le=1000.0, gt=0.0) | None = None
+    max_concurrent_connections_per_host: conint(ge=1, le=100) | None = Field(
+        None,
+        description="Trần số kết nối đồng thời broker giữ tới một host cho một job. Profile `internet` bắt buộc khai báo cùng `requests_per_second_per_host`; thiếu là POLICY_DENIED (không có trần thì không chạy ra internet).",
+    )
     packets_per_second: conint(ge=1, le=100000) | None = Field(
         None, description="Trần cho quét cổng (Naabu, Nmap)."
     )
@@ -37,9 +49,25 @@ class Budget(BaseModel):
     )
 
 
+class Authorization(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    owner: constr(min_length=1, max_length=200)
+    reference: constr(min_length=3, max_length=300)
+    date: date_aliased
+    authorized_suffixes: list[ids_v2_schema.DomainTarget] = Field(
+        ..., max_length=100, min_length=1
+    )
+
+
 class RoePolicy(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
+    )
+    network_profile: NetworkProfile | None = Field(
+        None,
+        description="Mạng job của chiến dịch chạy trên đó. `internet`: container của job chỉ tới được broker L7 của nó, broker ra internet và ép tập luôn chặn, tập địa chỉ đã ký và trần tốc độ/đồng thời theo host. `lab`: mạng lab nội bộ của deployment (không có đường ra internet). Chiến dịch của người vận hành mặc định `internet`; demo/CI đặt `lab` tường minh.",
     )
     target_denylist: list[TargetDenylistItem] | None = Field(
         None,
@@ -52,4 +80,8 @@ class RoePolicy(BaseModel):
     budget: Budget | None = None
     capability_denylist: list[ids_v2_schema.CapabilityId] | None = Field(
         None, description="Tùy chọn: capability không được dùng trong chiến dịch này."
+    )
+    authorization: Authorization | None = Field(
+        None,
+        description="Chủ sở hữu hợp pháp của mục tiêu internet: ai cho phép (owner), tham chiếu bằng chứng (reference, vD quyết định/ticket), ngày và các hậu tố tên miền được phép. Bắt buộc khi `network_profile=internet` (kể cả khi bỏ trống trường profile, vì mặc định là internet); M01 từ chối, M05 không ký task, M06 không chạy task internet khi thiếu.",
     )

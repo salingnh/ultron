@@ -1,13 +1,15 @@
-# Ultron Foundation UI (G1.5b)
+# Ultron Operations UI (G1.5b–G1.6)
 
 Operations console for Ultron security orchestration, implementing Item #51 (Card G1.5b). Built with React 18, TypeScript, and Vite under `ui/`.
 
 ## Features & Screens
 
-1. **Campaign Management (`/`, `/campaigns/:id`)**
-   - Filterable campaigns table with status chips (CHỜ CHẠY, ĐANG CHẠY, TẠM DỪNG, HOÀN THÀNH, THẤT BẠI, ĐÃ HỦY).
-   - Campaign detail view with target seeds (domains, IPs), RoE policy rules, budget, and live counters.
+1. **Campaign Management (`/`, `/campaigns/new`, `/campaigns/:id`)**
+   - Filterable campaigns table (CREATED, RUNNING, WAITING, PAUSED, COMPLETED, FAILED, CANCELLED) with budget (`budget.limits/used/remaining`) and counters (`counters.jobs_by_status`, `counters.assets_by_kind`) from the API; absent fields are shown as absent, never fabricated.
+   - Create form (`/campaigns/new`, `POST /campaigns` + `Idempotency-Key`): targets, RoE (`network_profile` lab|internet, rate/connection caps, budget), structured authorization (owner, reference, date, authorized suffixes) required for internet, confirmation before an internet campaign. `max_agent_sessions` is omitted unless the operator sets it (API default); the form shows the minimum for the chosen capabilities.
+   - Campaign detail: target seeds, RoE policy panel with snapshot adoption (`POST /campaigns/{id}/policy`, non-terminal campaigns only), budget/counter panel, links to jobs, activity and asset graph.
    - Operations controls: Tạm dừng (Pause), Tiếp tục (Resume), Hủy (Cancel) with confirmation modal and idempotent requests.
+   - First-run help when no operator token is configured; the token modal closes on Escape and traps focus.
 
 2. **Job Table & Flow Graph (`/jobs`)**
    - Dual-view toggle between tabular list and React Flow interactive dependency graph.
@@ -19,9 +21,23 @@ Operations console for Ultron security orchestration, implementing Item #51 (Car
    - Truncated banner notification when query limits cap result sets (`truncated: true`).
    - Slide-over Provenance Panel displaying tool name, tool version, job ID, observation timestamps, confidence bar, and full unmasked 64-character SHA-256 evidence digests.
 
-4. **Tool Catalogue (`/capabilities`)**
+4. **Tool Catalogue (`/tools`)**
    - Operations catalogue listing all registered execution tools and adapters.
    - Entrypoint functions, health check statuses, and Podman OCI sandbox isolation specifications.
+
+5. **Agent Activity (`/activity`)**
+   - `GET /campaigns/{campaign_id}/activity`: agent sessions (start/finish, stop reason), policy decisions (approved/denied, reason code, targets, linked job), blockers, budget per session, idle cycles; kind/decision filters, keyset pagination with a truncated banner.
+   - Live refresh: SSE resumes from the last known event (`Last-Event-ID`), subscribes only to event types the screen needs, and coalesces refetches (O(1) requests when opening a campaign).
+
+Errors show a short operator message (code, HTTP status, path, next action) with technical details collapsed; an error belongs to the view that failed (a graph error does not cover the service/asset tables).
+
+### Discovery & CVE (G1.6)
+
+- **Đồ thị tài sản:** IP → Service (port/protocol) → Application/công nghệ (product, version, CPE) → Vulnerability (CVE, CVSS, KEV, EPSS); cạnh có nhãn.
+- **Bảng dịch vụ** (`ServiceTable`): host, port, protocol, product, version, CPE, số ứng viên CVE (số KEV).
+- **Panel CVE** (`VulnerabilityPanel`): luôn ghi "Ứng viên (chưa xác minh)" — kết quả khớp CPE, không phải finding. Bấm dòng dịch vụ hoặc badge ứng viên/KEV đều mở panel.
+- Đồ thị chỉ có node tài sản và cạnh tài sản↔tài sản (`GET /assets/{id}/graph`); ứng viên CVE đọc qua `GET /assets/{id}/vulnerabilities`.
+- Ảnh chụp review chạy trên API thật, theme sáng và tối, 1440px và 390px.
 
 ## Design System & UX Standards
 
@@ -37,7 +53,7 @@ Configuration is managed via environment variables (create `.env` in `ui/` if ov
 
 | Variable | Description | Default |
 |---|---|---|
-| `VITE_API_BASE` | Base URL of Ultron backend API | `http://localhost:8000` |
+| `VITE_API_BASE` | Base URL of Ultron backend API | `http://127.0.0.1:8000/api/v2` |
 | `VITE_USE_MOCK` | Enable contract fixture mock handlers (`true`/`false`) | `true` |
 | `VITE_BEARER_TOKEN` | Bearer token for authenticated requests | (empty) |
 
@@ -55,8 +71,9 @@ Dành cho người vận hành khảo sát toàn diện giao diện Ultron Opera
 # Khởi động PostgreSQL 16, Neo4j 5.26, SeaweedFS, Temporal và uvicorn M26 API
 make run-local
 
-# (Tùy chọn) Khởi tạo chiến dịch mẫu và dữ liệu ban đầu
-make seed-demo
+# (Tùy chọn) Dữ liệu mẫu chạy thật trên lab
+make demo-g1        # chuỗi Subfinder → DNSx
+make demo-g16c      # chuỗi port → service/version → ứng viên CVE (KEV/EPSS)
 ```
 
 #### 2. Cấu hình Operator Token (Xác thực Người vận hành)
@@ -72,8 +89,9 @@ make seed-demo
 cd ui
 npm install
 
-# Chế độ Real API (kết nối trực tiếp backend http://127.0.0.1:8000)
-VITE_USE_MOCK=false npm run dev
+# Chế độ Real API (kết nối trực tiếp backend http://127.0.0.1:8000/api/v2)
+VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
+  VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
 
 # Hoặc chế độ Mock Mode (dữ liệu mẫu hợp đồng OpenAPI v2)
 VITE_USE_MOCK=true npm run dev
@@ -139,7 +157,7 @@ npm run build
   ```bash
   npm run codegen
   ```
-- **End-to-End Tests & Screenshots**: Run Playwright suite to verify routes and generate 1440px light and dark mode screenshots:
+- **End-to-End Tests & Screenshots**: Run Playwright suite to verify routes (incl. `/campaigns/new`, `/activity`) and generate screenshots at 1440px and 390px in light and dark mode (mock by default; `VITE_USE_MOCK=false` + a real backend for real-API shots):
   ```bash
   npm run test:e2e
   ```

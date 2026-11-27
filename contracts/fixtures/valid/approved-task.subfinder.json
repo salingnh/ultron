@@ -4,11 +4,12 @@
   "campaign_id": "01934f6a-0000-7000-8000-000000000001",
   "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
   "policy_version": "roe-1",
+  "network_profile": "lab",
   "capability": "dns.enumerate_subdomains",
   "provider": "subfinder",
   "provider_version": "v2.17.0",
-  "adapter_version": "1.0.0",
-  "manifest_sha256": "c4edfe7bc1856660214bd637d0afb71da300aa24735cf1f99372e6ff00d5c097",
+  "adapter_version": "1.0.4",
+  "manifest_sha256": "28ae97dfd3dc22c59771899064bd4ac8c57504827685c4781d2a6a9d7a5a4376",
   "image_digest": "sha256:2f5ddea311db2a8b848e40f1b669fc655d0eb78b74a74ead93d3850e372b12bf",
   "scan_cycle": "01934f6a-0000-7000-8000-000000000001",
   "input": {
@@ -41,8 +42,13 @@
     "mode": "broker",
     "target_binding": "none",
     "entries": [
+      "api.hackertarget.com:443",
       "crt.sh:443",
-      "otx.alienvault.com:443"
+      "index.commoncrawl.org:443",
+      "otx.alienvault.com:443",
+      "rapiddns.io:443",
+      "web.archive.org:443",
+      "web.archive.org:80"
     ],
     "target_addresses": []
   },

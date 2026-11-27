@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Migration hygiene: the README gate and the files on disk must describe the same chain.
 
-There is one migration (`0001_baseline.sql`) and one chain. This file proves that the migration and
-every SQL test in `db/postgres/tests` are part of the documented gate, so a file cannot be added to
-the directory and silently skipped by `contracts/README.md §Kiểm tra` (the gate that
-scripts/ci/read-contract-gate.py reads and `python -m aegis.migrations` applies).
+The chain is `0001_baseline.sql` plus one numbered file per later slice. This file proves that
+every migration and every SQL test in `db/postgres/tests` are part of the documented gate, so a file
+cannot be added to the directory and silently skipped by `contracts/README.md §Kiểm tra` (the gate
+that scripts/ci/read-contract-gate.py reads and `python -m aegis.migrations` applies).
 
     python3 -I contracts/tests/test_migration_hygiene.py
 """
@@ -29,9 +29,16 @@ def clean_chain() -> list[str]:
 
 
 class ChainOnDisk(unittest.TestCase):
-    def test_the_chain_is_one_baseline(self):
-        self.assertEqual(MIGRATIONS, ["0001_baseline.sql"],
-                         "the contract schema is one migration; a new file needs a new chain decision")
+    def test_the_chain_is_the_baseline_then_its_sequenced_migrations(self):
+        # 0001 is the catalog dump of the locked schema; a later slice appends one numbered file
+        # (0004 adds the CVE matching columns and the vulnerability.matched.v2 outbox type), and
+        # the order is the version. The chain still has no upgrade path: a database built by the
+        # replaced chain is reset, not upgraded.
+        self.assertEqual(MIGRATIONS[0], "0001_baseline.sql",
+                         "the chain must start with the baseline migration")
+        versions = [int(name[:4]) for name in MIGRATIONS]
+        self.assertEqual(versions, sorted(versions), f"migrations out of order: {MIGRATIONS}")
+        self.assertEqual(len(versions), len(set(versions)), f"duplicate migration: {MIGRATIONS}")
 
     def test_every_migration_is_documented(self):
         for name in MIGRATIONS:

@@ -23,6 +23,7 @@
       "max_llm_cost_usd": 50,
       "max_jobs": 2000,
       "idle_cycles_before_pause": 3
-    }
+    },
+    "network_profile": "lab"
   }
 }

@@ -39,6 +39,11 @@ class Type(StrEnum):
     container = "container"
 
 
+class TargetsFormat(StrEnum):
+    canonical = "canonical"
+    host_port = "host_port"
+
+
 class Runtime(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -58,6 +63,10 @@ class Runtime(BaseModel):
     outputPath: str | None = Field(
         "/out", description="Thư mục kết quả trong container."
     )
+    targetsFormat: TargetsFormat | None = Field(
+        "canonical",
+        description="Dạng giá trị M06 ghi vào file target cho tool đọc (`/in/targets.txt`). `canonical` (mặc định): bỏ tiền tố khóa chuẩn, giữ nguyên phần còn lại - dạng của Subfinder/DNSx. `host_port`: thêm bỏ hậu tố transport của khóa service để tool nhận `host:port` (fingerprintx, httpx); target /udp bị từ chối trước khi chạy vì file không biểu diễn được transport. Registry kiểm luật này và M06 render đúng một lần, không đoán theo tool.",
+    )
 
 
 class NetworkAccess(StrEnum):
@@ -67,6 +76,12 @@ class NetworkAccess(StrEnum):
 
 class EgressMode(StrEnum):
     broker = "broker"
+    l3 = "l3"
+
+
+class ProxyFlagFormat(StrEnum):
+    url = "url"
+    host_port = "host_port"
 
 
 class TargetBinding(StrEnum):
@@ -185,11 +200,19 @@ class Permissions(BaseModel):
     networkAccess: NetworkAccess
     egressMode: EgressMode | None = Field(
         "broker",
-        description="Chế độ egress: GĐ1 chỉ có `broker` — container chỉ tới được broker của job; broker phân giải ở control plane, kiểm toàn bộ địa chỉ A/AAAA, pin đích đã kiểm và từ chối với mã lý do ổn định. Chế độ khác (vd L3 router cho raw socket) phải có nghiệm thu cưỡng chế trước khi thêm vào enum.",
+        description="Kênh egress đã nghiệm thu. `broker`: container chỉ tới được broker L7 của job; broker phân giải ở control plane, kiểm toàn bộ địa chỉ A/AAAA, pin đích đã kiểm và từ chối với mã lý do ổn định. `l3`: broker là gateway của mạng job, forward L3 chỉ tới tập IP:port đã ký (kèm deny set mặc định chặn), ghi audit theo flow; dùng cho công cụ không tôn trọng proxy, container job vẫn không có capability. Chế độ khác phải có nghiệm thu cưỡng chế trước khi thêm vào enum.",
     )
-    proxyAware: Literal[True] = Field(
-        True,
-        description="Bắt buộc true khi egress: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng. Broker là đường ra duy nhất nên công cụ không tôn trọng proxy sẽ không kết nối được gì; M05 từ chối đăng ký provider như vậy.",
+    proxyAware: bool | None = Field(
+        None,
+        description="Khai báo trung thực công cụ có đi ra được qua proxy hay không. Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` không bắt buộc và có thể false: kênh ra do gateway lọc theo IP:port đã ký (G1.6b: fingerprintx khai false; M06 từ chối nó trên đường broker trước khi tạo container, fail closed).",
+    )
+    proxyFlag: constr(pattern=r"^-[a-z][a-z0-9-]*$") | None = Field(
+        None,
+        description="Cờ mà công cụ cần để đi qua broker, khi nó KHÔNG đọc HTTPS_PROXY/ALL_PROXY cho các kết nối của mình (vD Subfinder: nguồn thụ động chỉ đi qua `-proxy`). Khai báo này là sự thật về công cụ: M06 từ chối job internet-profile nếu profile deployment không truyền đúng cờ đó. Chỉ có khi `egressMode=broker`; không dùng cho `l3`.",
+    )
+    proxyFlagFormat: ProxyFlagFormat | None = Field(
+        "url",
+        description="Dạng giá trị của `proxyFlag`: `url` (http://host:port cho proxy HTTP CONNECT) hoặc `host_port` (host:port trần, vD Naabu từ chối scheme - G0.2). Mặc định `url`.",
     )
     egressSources: list[EgressSource] | None = Field(
         None,

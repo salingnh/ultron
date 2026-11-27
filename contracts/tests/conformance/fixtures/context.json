@@ -11,7 +11,8 @@
       },
       "target_denylist": [
         "169.254.169.254"
-      ]
+      ],
+      "network_profile": "lab"
     }
   },
   "seeds": [
@@ -52,6 +53,13 @@
     }
   ],
   "assets": [
-    "dns:vpn.internal.example"
+    "dns:vpn.internal.example",
+    "ip:198.51.100.10",
+    "service:10.114.53.211:443/tcp",
+    "service:10.114.53.211:80/tcp",
+    "service:10.114.53.212:8080/tcp",
+    "service:10.114.53.213:2222/tcp",
+    "service:10.114.53.214:6379/tcp",
+    "service:10.114.53.215:80/tcp"
   ]
 }

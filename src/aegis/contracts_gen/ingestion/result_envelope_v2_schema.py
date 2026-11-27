@@ -28,6 +28,15 @@ class Status(StrEnum):
     cancelled = "cancelled"
 
 
+class Limitation(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    code: constr(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")
+    message: constr(min_length=1, max_length=1000)
+    subjects: list[ids_v2_schema.CanonicalKey] | None = Field(None, max_length=1000)
+
+
 class Coverage(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -39,6 +48,11 @@ class Coverage(BaseModel):
     )
     complete: bool | None = Field(
         None, description="false nếu job dừng giữa chừng; khi đó không ghi seen=false."
+    )
+    limitations: list[Limitation] | None = Field(
+        None,
+        description="Những giới hạn khiến coverage không đầy đủ: job dừng giữa chừng, egress bị chặn hoặc quá hạn chờ do trần RoE. Mỗi phần tử nêu mã ổn định và chi tiết; `complete` phải là false khi mảng này không rỗng. Cổng scan không được coi một cổng bị chặn/quá hạn là 'đóng'.",
+        max_length=100,
     )
 
 
@@ -116,8 +130,9 @@ class Observation(BaseModel):
         ...,
         description="Phải có trong contracts/ingestion/predicates.v2.yaml (cổng G4).",
     )
-    value: str | float | bool | dict[str, Any] | list[Any] | None = Field(
-        ..., description="Giá trị theo value_type của predicate."
+    value: int | str | float | bool | dict[str, Any] | list[Any] | None = Field(
+        ...,
+        description="Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu.",
     )
     polarity: Polarity | None = Field(
         "present",

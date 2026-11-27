@@ -9,7 +9,7 @@ BEGIN;
 
 -- Minimal campaign/scope rows: graph_revision has a campaign FK. Distinct ids/version, no clash
 -- with tests/smoke.sql (which uses roe-1 and 01900000-...-0001).
-INSERT INTO policy_snapshot VALUES ('roe-8','01900000-0000-7000-8000-000000000880','{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('a',64),'{"kind":"operator","id":"soc-8"}');
+INSERT INTO policy_snapshot VALUES ('roe-8','01900000-0000-7000-8000-000000000880','{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',repeat('a',64),'{"kind":"operator","id":"soc-8"}');
 INSERT INTO scope_snapshot VALUES ('01900000-0000-7000-8000-000000000881','01900000-0000-7000-8000-000000000882','{"domains":["internal.example"]}');
 INSERT INTO campaign (campaign_id,name,objective,current_policy_version,scope_id,created_by)
   VALUES ('01900000-0000-7000-8000-000000000882','C04 ordering','Publication order','roe-8','01900000-0000-7000-8000-000000000881','{"kind":"operator","id":"soc-8"}');

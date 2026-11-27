@@ -33,6 +33,7 @@ __all__ = [
     "ContractMismatch",
     "KIND_LABELS",
     "PROJECTOR_FILE",
+    "AFFECTED_BY_SOURCE_KINDS",
     "RELATIONSHIP_TYPES",
     "Templates",
     "asset_label",
@@ -42,8 +43,11 @@ __all__ = [
     "cypher_statements",
     "evidence_upsert",
     "finding_upsert",
+    "observation_upsert",
     "relationship_upsert",
     "templates",
+    "vulnerability_retract",
+    "vulnerability_upsert",
 ]
 
 PROJECTOR_FILE: Final = "graph/projector-upserts.cypher"
@@ -81,6 +85,11 @@ RELATIONSHIP_TYPES: Final[tuple[str, ...]] = (
     "SNAPSHOT_OF",
     "ALIAS_OF",
 )
+
+#: model.md edge table: `AFFECTED_BY` is a candidate edge from an affected asset to a
+#: `:Vulnerability`. This slice extends the sources from package to the two discovery kinds; the
+#: projector refuses any other kind instead of MERGEing an edge the model does not allow.
+AFFECTED_BY_SOURCE_KINDS: Final[tuple[str, ...]] = ("service", "application", "package")
 
 _ASSET_LABEL_TOKEN: Final = "a:Domain"
 _EDGE_TYPE_TOKEN: Final = ":SUBDOMAIN_OF"
@@ -126,12 +135,15 @@ def cypher_statements(text: str) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class Templates:
-    """The four statement groups of `projector-upserts.cypher`, in file order."""
+    """The seven statement groups of `projector-upserts.cypher`, in file order."""
 
     asset: str
     relationship: str
     finding: str
     evidence: str
+    vulnerability: str
+    vulnerability_retract: str
+    observation: str
 
 
 def _only_one(statements: list[str], marker: str, name: str) -> str:
@@ -165,6 +177,9 @@ def templates() -> Templates:
         relationship=relationship,
         finding=_only_one(statements, "MERGE (fd:Finding", "finding"),
         evidence=_only_one(statements, "MERGE (e:Evidence", "evidence"),
+        vulnerability=_only_one(statements, "MERGE (v:Vulnerability", "vulnerability"),
+        vulnerability_retract=_only_one(statements, "DELETE r", "vulnerability retraction"),
+        observation=_only_one(statements, "MERGE (o:Observation", "observation"),
     )
 
 
@@ -198,6 +213,36 @@ def finding_upsert() -> str:
 def evidence_upsert() -> str:
     """Statement 3b: the `:Evidence` node and its `SUPPORTED_BY` edge."""
     return templates().evidence
+
+
+def vulnerability_upsert() -> str:
+    """Statement 4: the `:Vulnerability` node and the candidate `AFFECTED_BY` edge."""
+    return templates().vulnerability
+
+
+def vulnerability_retract() -> str:
+    """Statement 4b: drop the `AFFECTED_BY` edge of a pair whose newest decision is a retraction."""
+    return templates().vulnerability_retract
+
+
+def affected_by_source(kind: str) -> str:
+    """The asset kind of an `AFFECTED_BY` start, or a contract gap (never a silent skip).
+
+    model.md's edge table names the allowed sources; a kind outside it is a producer/contract
+    mismatch the projector must refuse, because MERGEing the edge would publish a graph shape the
+    contract does not describe.
+    """
+    if kind not in AFFECTED_BY_SOURCE_KINDS:
+        raise ContractMismatch(
+            f"AFFECTED_BY from {kind!r}: contracts/graph/model.md allows "
+            f"{', '.join(AFFECTED_BY_SOURCE_KINDS)}"
+        )
+    return kind
+
+
+def observation_upsert() -> str:
+    """Statement 5: one `:Observation` node for a `graph: true` predicate (G1.6b)."""
+    return templates().observation
 
 
 @lru_cache(maxsize=1)

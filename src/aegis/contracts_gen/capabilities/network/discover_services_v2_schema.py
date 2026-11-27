@@ -6,6 +6,10 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, RootModel, conint, constr
 
 
+class Port(RootModel[conint(ge=1, le=65535)]):
+    root: conint(ge=1, le=65535)
+
+
 class Target1(RootModel[str]):
     model_config = ConfigDict(
         regex_engine="python-re",
@@ -182,20 +186,20 @@ class Target(RootModel[Target15]):
     root: Target15
 
 
-class Port(RootModel[conint(ge=1, le=65535)]):
-    root: conint(ge=1, le=65535)
-
-
 class DiscoverServices(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    concurrency: conint(ge=1, le=64) | None = Field(
+        None,
+        description="Số kết nối quét song song (`-c`). Đặt bằng trần `rate_limits.max_concurrent_connections_per_host` của RoE; trần cứng là `budget.maxConcurrency` của manifest đã pin. Broker vẫn xếp hàng/quá hạn theo trần RoE khi công cụ vượt.",
+    )
+    packets_per_second: conint(ge=1, le=10000) | None = None
+    ports: list[Port] | None = Field(None, max_length=1000)
     targets: list[Target] = Field(
         ...,
         description="Khóa service:<ip>:<port>/<transport> hoặc ip:<ip> kèm ports.",
         max_length=4096,
         min_length=1,
     )
-    ports: list[Port] | None = Field(None, max_length=1000)
     version_intensity: conint(ge=0, le=7) | None = 5
-    packets_per_second: conint(ge=1, le=10000) | None = None

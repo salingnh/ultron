@@ -12,9 +12,12 @@ Rules (02-nen-tang §Sandbox "Egress đã khóa"):
   (loopback, link-local/metadata, multicast, unspecified, reserved, IPv4 embedded in IPv6), the
   platform's own control/data networks and the campaign target denylist. Composition is
   `(targets ∪ sources) − deny`, so the deny set wins.
-* Resolution happens in the control plane. Every address of the answer is checked and the
-  connection is pinned to the checked address; a name that resolves to one denied address is
-  denied as a whole (DNS rebinding), and a redirect is a new request that is checked again.
+* Resolution happens in the control plane, and only for a name the job is bound to: a source host
+  or a signed DNS target name (R2). A name outside the binding is refused before any lookup, so a
+  tool cannot use the broker as a resolver for arbitrary domains. Every address of the answer is
+  checked and the connection is pinned to the checked address; a name that resolves to one denied
+  address is denied as a whole (DNS rebinding), and a redirect is a new request that is checked
+  again.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from aegis.m06_runner.denyset import (
     DenyReason,
     IPAddress,
     IPNetwork,
+    checked_address,
     deny_reason,
     host_key,
     normalize_host,
@@ -47,6 +51,13 @@ class Reason(StrEnum):
     NOT_BOUND_TO_JOB = "NOT_BOUND_TO_JOB"
     DENY_PLATFORM_NETWORK = "DENY_PLATFORM_NETWORK"
     DENY_TARGET_DENYLIST = "DENY_TARGET_DENYLIST"
+    # A private address the campaign did not name as a target is not reachable from the internet
+    # profile: an internet job talks to the addresses the campaign signed, not to whatever the
+    # host's own network happens to contain.
+    DENY_PRIVATE = "DENY_PRIVATE"
+    # Safety caps of the internet profile (RoE): the broker refuses instead of stalling the tool.
+    RATE_LIMITED = "RATE_LIMITED"
+    CONCURRENCY_LIMITED = "CONCURRENCY_LIMITED"
     # The always-deny reasons share their wire value with denyset.DenyReason.
     DENY_METADATA = DenyReason.METADATA.value
     DENY_LOOPBACK = DenyReason.LOOPBACK.value
@@ -59,6 +70,10 @@ class Reason(StrEnum):
 
 def _reason_for(denied: DenyReason) -> Reason:
     return Reason(denied.value)
+
+
+def _in_any(address: IPAddress, networks: tuple[IPNetwork, ...]) -> bool:
+    return any(address in network for network in networks)
 
 
 @dataclass(frozen=True)
@@ -79,15 +94,40 @@ class SourceAllow:
 
 @dataclass(frozen=True)
 class JobEgressPolicy:
-    """The policy document the runner writes per job and the broker enforces."""
+    """The policy document the runner writes per job and the broker enforces.
+
+    `profile` is the campaign's `network_profile` (signed in the task). `lab` jobs do not use a
+    broker at all today; the field still travels so an audit line always names the profile that was
+    in force. On `internet`, `private_cidrs` are denied unless the address is inside one of the
+    task's `authorized_private_cidrs` (the private *seed* CIDRs the RoE lists and M05 signed, R4),
+    and `per_host_rps`/`per_host_max_connections` are the RoE safety caps the broker applies.
+    """
 
     job_id: str
     mode: str = "egress"  # "egress" | "none"
+    #: The enforced channel of an egress job: `broker` (L7) or `l3` (the broker is the gateway).
+    egress_mode: str = "broker"
+    profile: str = "lab"  # "lab" | "internet"
+    campaign_id: str = ""
+    authorization: str = ""
     target_ips: tuple[IPNetwork, ...] = ()
     target_ports: tuple[int, ...] = ()
     sources: tuple[SourceAllow, ...] = ()
     platform_cidrs: tuple[IPNetwork, ...] = ()
     deny_cidrs: tuple[IPNetwork, ...] = ()
+    private_cidrs: tuple[IPNetwork, ...] = ()
+    #: The private seed CIDRs the RoE lists for this task (signed in `egress_binding`): the only
+    #: private ranges an internet job may reach (R4). Empty is the safe default.
+    authorized_private_cidrs: tuple[IPNetwork, ...] = ()
+    #: Names the job may resolve through the broker's DNS front end: the task's target names and the
+    #: manifest's declared source hosts. `dns_target_names` is the subset whose answers are narrowed
+    #: to the signed target addresses (a target name never resolves to something the broker would
+    #: refuse to connect to).
+    dns_names: tuple[str, ...] = ()
+    dns_target_names: tuple[str, ...] = ()
+    dns_ttl: int = 30
+    per_host_rps: float | None = None
+    per_host_max_connections: int | None = None
     max_resolved: int = DEFAULT_MAX_RESOLVED
     resolver: Resolver | None = field(default=None, compare=False, repr=False)
 
@@ -103,6 +143,20 @@ class JobEgressPolicy:
                 for port in source.ports:
                     bound.append(f"{host}:{port}")
         return tuple(bound)
+
+    def binds_name(self, host: str) -> bool:
+        """Whether this job may resolve `host` at all (R2: a bound source/target name).
+
+        `decide` resolves a name to judge the address it pins, so the name itself must be part of
+        the signed binding first. Otherwise any name a tool sends becomes a DNS query through the
+        broker to the host's resolver - an exfiltration channel that bypasses the DNS front end's
+        name binding, and a lookup the job was never authorized to make.
+        """
+        key = host_key(host)
+        for source in self.sources:
+            if any(host_key(candidate) == key for candidate in source.hosts):
+                return True
+        return any(host_key(name) == key for name in (*self.dns_names, *self.dns_target_names))
 
 
 @dataclass(frozen=True)
@@ -172,6 +226,10 @@ def decide(
     if literal is not None:
         resolved = (str(literal),)
     else:
+        if not policy.binds_name(host):
+            # R2: never ask the resolver about a name the job is not bound to. The refusal is the
+            # same as for any other unbound destination, but it happens before any lookup.
+            return Decision(False, Reason.NOT_BOUND_TO_JOB, host, port)
         answer = resolver or policy.resolver or Resolver()
         try:
             resolved_values = answer.resolve(host)
@@ -194,14 +252,25 @@ def decide(
 
     # 1. Address safety first, over the whole answer: one denied address denies the name, and a
     #    denied address never reaches the dial path whatever the job has bound.
-    for address in addresses:
+    for raw in addresses:
+        address, embedded = checked_address(raw)
+        if embedded is not None:
+            return Decision(False, _reason_for(embedded), host, port, resolved=resolved)
         denied = deny_reason(address)
         if denied is not None:
             return Decision(False, _reason_for(denied), host, port, resolved=resolved)
-        if any(address in net for net in policy.platform_cidrs):
+        if _in_any(address, policy.platform_cidrs):
             return Decision(False, Reason.DENY_PLATFORM_NETWORK, host, port, resolved=resolved)
-        if any(address in net for net in policy.deny_cidrs):
+        if _in_any(address, policy.deny_cidrs):
             return Decision(False, Reason.DENY_TARGET_DENYLIST, host, port, resolved=resolved)
+        # Internet profile: the host's private networks are not reachable unless the RoE lists the
+        # private seed CIDR that covers the address (R4). A signed target address alone is not the
+        # exemption: that would make every private target M05 signs reachable, including one that
+        # arrived through a split-horizon name resolving into the owner's own LAN.
+        if _in_any(address, policy.private_cidrs) and not _in_any(
+            address, policy.authorized_private_cidrs
+        ):
+            return Decision(False, Reason.DENY_PRIVATE, host, port, resolved=resolved)
 
     # 2. Which binding covers the request: a declared provider source (by host and port) or the
     #    job's own resolved targets (by target port).
@@ -258,16 +327,43 @@ def load_policy(raw: dict[str, object]) -> JobEgressPolicy:
                     addresses=nets(source_addresses) if source_addresses is not None else (),
                 )
             )
+    # Fail closed: a document without a profile is not a policy this broker can enforce, and an
+    # unknown profile could silently turn the internet deny rules off.
+    profile = raw.get("profile")
+    if not isinstance(profile, str) or profile not in {"lab", "internet"}:
+        raise ValueError(f"unknown network profile {profile!r} in the egress policy")
+    raw_rps = raw.get("per_host_rps")
+    raw_max = raw.get("per_host_max_connections")
+    egress_mode = str(raw.get("egress_mode", "broker"))
+    if egress_mode not in {"broker", "l3"}:
+        raise ValueError(f"unknown egress mode {egress_mode!r} in the egress policy")
+    per_host_rps = None if raw_rps is None else float(str(raw_rps))
+    per_host_max = None if raw_max is None else int(str(raw_max))
     return JobEgressPolicy(
         job_id=str(raw["job_id"]),
         mode=str(raw.get("mode", "egress")),
+        egress_mode=egress_mode,
+        profile=profile,
+        campaign_id=str(raw.get("campaign_id", "")),
+        authorization=str(raw.get("authorization", "")),
         target_ips=nets(raw.get("target_ips")),
         target_ports=ports(raw.get("target_ports")),
         sources=tuple(sources),
         platform_cidrs=nets(raw.get("platform_cidrs")),
         deny_cidrs=nets(raw.get("deny_cidrs")),
+        private_cidrs=nets(raw.get("private_cidrs")),
+        authorized_private_cidrs=nets(raw.get("authorized_private_cidrs")),
+        dns_names=tuple(str(name) for name in _list(raw.get("dns_names"))),
+        dns_target_names=tuple(str(name) for name in _list(raw.get("dns_target_names"))),
+        dns_ttl=int(str(raw.get("dns_ttl", 30))),
+        per_host_rps=per_host_rps,
+        per_host_max_connections=per_host_max,
         max_resolved=int(str(raw.get("max_resolved", DEFAULT_MAX_RESOLVED))),
     )
+
+
+def _list(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
 
 
 def policy_document(policy: JobEgressPolicy) -> dict[str, object]:
@@ -275,6 +371,10 @@ def policy_document(policy: JobEgressPolicy) -> dict[str, object]:
     return {
         "job_id": policy.job_id,
         "mode": policy.mode,
+        "egress_mode": policy.egress_mode,
+        "profile": policy.profile,
+        "campaign_id": policy.campaign_id,
+        "authorization": policy.authorization,
         "target_ips": [str(net) for net in policy.target_ips],
         "target_ports": list(policy.target_ports),
         "sources": [
@@ -288,6 +388,13 @@ def policy_document(policy: JobEgressPolicy) -> dict[str, object]:
         ],
         "platform_cidrs": [str(net) for net in policy.platform_cidrs],
         "deny_cidrs": [str(net) for net in policy.deny_cidrs],
+        "private_cidrs": [str(net) for net in policy.private_cidrs],
+        "authorized_private_cidrs": [str(net) for net in policy.authorized_private_cidrs],
+        "dns_names": list(policy.dns_names),
+        "dns_target_names": list(policy.dns_target_names),
+        "dns_ttl": policy.dns_ttl,
+        "per_host_rps": policy.per_host_rps,
+        "per_host_max_connections": policy.per_host_max_connections,
         "max_resolved": policy.max_resolved,
     }
 

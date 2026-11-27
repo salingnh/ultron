@@ -5,15 +5,15 @@
 # throwaway lab CA, wait for readiness and verify the lab boundary. Direct podman-compose
 # runs must export deploy/lab/images.env first.
 #
-# Project name is fixed by the caller (`podman-compose -p aegis-lab`): it is the only stack
+# Project name comes from the caller (`podman-compose -p <AEGIS_LAB_PROJECT or aegis-lab>`): it is the only stack
 # this file owns, and `make lab-down` removes nothing else. There is no published port: the
 # only clients are the scanner containers that join `aegis-lab-lab`.
-name: aegis-lab
+name: ${AEGIS_LAB_PROJECT:-aegis-lab}
 
 services:
   dns:
     image: ${AEGIS_LAB_DNS_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-dns
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-dns
     restart: "no"
     # The image entrypoint is just /coredns, so the config path must be explicit.
     command: ["-conf", "/etc/coredns/Corefile"]
@@ -37,7 +37,7 @@ services:
 
   passive:
     image: ${AEGIS_LAB_PASSIVE_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
-    container_name: aegis-lab-passive
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-passive
     restart: "no"
     command: ["python3", "/srv/crtsh_stub.py"]
     read_only: true
@@ -68,9 +68,127 @@ services:
       lab:
         ipv4_address: 10.114.53.80
 
+  # --- the four lab services (G1.6a) -------------------------------------------
+  # Targets to *observe*, not applications to serve: each one is an old upstream release with
+  # public CVEs, so the discovery chain can show a real EXPOSES edge now and a real match later.
+  # Pins, versions and licences are recorded in inventory.json and images.env (one story). They
+  # publish no port and run on the same internal network as the resolver, so a scanner reaches
+  # them only from inside the lab.
+  # Named `web-legacy` on purpose: the fingerprint slice adds its own unprivileged nginx as `web`
+  # (G1.6b). Both are lab targets with different jobs - this one is an old release for the
+  # port/service and CVE chain, that one publishes a current version for banner fingerprinting.
+  web-legacy:
+    image: ${AEGIS_LAB_WEB_LEGACY_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-web-legacy
+    restart: "no"
+    # The image's /docker-entrypoint.d scripts rewrite the baked-in config; the lab mounts its own,
+    # so nginx is started directly and never writes to its root filesystem.
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    read_only: true
+    cap_drop: [ALL]
+    # nginx's master binds 80/443 and drops its workers to the image's nginx user: binding the
+    # service ports plus chown/setuid/setgid for that drop are the only capabilities it gets.
+    cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx:size=8m
+      - /var/run:size=1m
+    volumes:
+      - ./web/default.conf:/etc/nginx/conf.d/default.conf:ro,z
+      - ./.run/tls/lab-web.crt:/etc/nginx/tls/lab-web.crt:ro,z
+      - ./.run/tls/lab-web.key:/etc/nginx/tls/lab-web.key:ro,z
+    networks:
+      lab:
+        ipv4_address: 10.114.53.211
+
+  app:
+    image: ${AEGIS_LAB_APP_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-app
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # Tomcat writes its pid, logs, work and temp under CATALINA_HOME; they are disposable.
+    tmpfs:
+      - /usr/local/tomcat/logs:size=16m
+      - /usr/local/tomcat/temp:size=16m
+      - /usr/local/tomcat/work:size=32m
+      - /usr/local/tomcat/conf/Catalina:size=4m
+    networks:
+      lab:
+        ipv4_address: 10.114.53.212
+
+  ssh:
+    image: ${AEGIS_LAB_SSH_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-ssh
+    restart: "no"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: UTC
+      USER_NAME: lab
+      # No credential is configured on purpose: the service exists so the scan can see an SSH
+      # daemon and its version, never so someone can log in (no password, no key is committed).
+      PASSWORD_ACCESS: "false"
+      SUDO_ACCESS: "false"
+    # This image's s6 init renames its unprivileged user in /etc on first start, so its root
+    # filesystem cannot be read-only (the older read-only-friendly tag is missing its lsiown
+    # helper and never starts). Everything the service persists is on tmpfs below; the container
+    # holds no capabilities beyond the privilege drop the init performs and publishes no port.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /config:size=8m
+      - /run:size=8m
+    networks:
+      lab:
+        ipv4_address: 10.114.53.213
+
+  # Apache httpd 2.4.49: path traversal / RCE (CVE-2021-41773, CVE-2021-42013). It is the one lab
+  # service whose product, version and CPE the CVE catalogue slice (G1.6c) matches exactly, so the
+  # real discovery chain can show a candidate without a fixture standing in for the scanner.
+  legacy-httpd:
+    image: ${AEGIS_LAB_HTTPD_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-httpd
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    # Binding 80 inside the container is the only capability this service needs.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /usr/local/apache2/logs:size=8m
+      - /usr/local/apache2/conf/extra:size=1m
+    networks:
+      lab:
+        ipv4_address: 10.114.53.215
+
+  cache:
+    image: ${AEGIS_LAB_CACHE_IMAGE:?run through make lab-up so deploy/lab/images.env is exported}
+    container_name: ${AEGIS_LAB_PROJECT:-aegis-lab}-cache
+    restart: "no"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--bind", "0.0.0.0"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # The image starts as root and drops to the redis uid; running as that uid directly keeps the
+    # sandbox flags (no capabilities) intact.
+    user: "999:999"
+    tmpfs:
+      - /data:size=8m,mode=1777
+    networks:
+      lab:
+        ipv4_address: 10.114.53.214
+
 networks:
   lab:
-    name: aegis-lab-lab
+    name: ${AEGIS_LAB_PROJECT:-aegis-lab}-lab
     internal: true
     ipam:
       config:

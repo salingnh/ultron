@@ -108,3 +108,5 @@ Parser theo output của bản pin: JSONL cho discovery/web, XML khi Nmap dùng 
 Kiểm thử credential và xác minh động là năng lực nghiệp vụ được giữ từ quyết định trước; chúng dùng tool/input và thứ tự chạy thông thường. Chưa có adapter/schema tương ứng trong bộ mẫu hiện tại thì vẫn là việc phải giao, không được báo đã hỗ trợ runtime.
 
 Mỗi chuỗi có ca kiểm độc lập: redirect tạo quan hệ nguồn gốc đúng; image → pURL → CVE giữ digest/snapshot; ba provider báo cùng package cho một finding với ba nguồn; artifact JS sinh endpoint rồi tạo job tiếp theo; secret cài sẵn trong fixture giữ nguyên giá trị và fingerprint.
+
+Ràng buộc G1.6 cho Subfinder/DNSx trên profile internet: nguồn thụ động của Subfinder giới hạn theo `egressSources` của manifest (crt.sh, OTX); API key đặt trong file provider-config có đường dẫn là biến môi trường (`AEGIS_SUBFINDER_PROVIDER_CONFIG`), không bao giờ nằm trong task, argv hay log. DNSx phân giải qua DNS của broker (`-r ${broker_dns}`); danh sách resolver là dữ liệu deployment, không phải input của manifest.

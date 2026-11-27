@@ -18,12 +18,19 @@ import pytest
 from psycopg.rows import dict_row
 
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
+from aegis.m01_campaign.policy import adopt_policy
 from aegis.m05_registry.manifest import parse_document
-from aegis.m05_registry.registry import PostgresManifestRegistry
+from aegis.m05_registry.registry import ManifestNotFound, PostgresManifestRegistry
 from aegis.m06_runner import loop
 from aegis.m06_runner.lifecycle import JobClaim
 from aegis.m06_runner.values import text
-from tests.db_support import migrated_database, requires_postgres, seed_campaign
+from tests import m06_support
+from tests.db_support import (
+    migrated_database,
+    policy_document,
+    requires_postgres,
+    seed_campaign,
+)
 from tests.m02_support import accept_job, run_job, scheduler_for, service
 
 pytestmark = requires_postgres
@@ -42,6 +49,13 @@ def _validating(dsn: str) -> tuple[str, str]:
     with scheduler_for(dsn) as scheduler:
         assert scheduler.dispatch(campaign.campaign_id).claimed == (job_id,)
     return campaign.campaign_id, job_id
+
+
+class _MissingRegistry:
+    """A registry that does not know the pin: the job's manifest cannot be planned (P5)."""
+
+    def get(self, sha256: str) -> Any:
+        raise ManifestNotFound(sha256)
 
 
 def _registry(dsn: str) -> PostgresManifestRegistry:
@@ -78,8 +92,82 @@ def test_a_plan_comes_from_the_job_row_and_the_pinned_manifest(database: str) ->
 
 def test_a_job_that_did_not_come_through_m05_has_no_plan(database: str) -> None:
     with dict_connection(database) as connection:
-        with pytest.raises(LookupError):
+        with pytest.raises(loop.JobPlanError) as caught:
             loop.plan_for(connection, str(uuid.uuid4()), _registry(database))
+    # A definite cause, so the runner refuses it with a contract code instead of retrying it.
+    assert caught.value.code == "DEPENDENCY_MISSING"
+
+
+def test_the_denylist_and_the_caps_come_from_the_signed_policy_version(database: str) -> None:
+    """A policy adopted after the task was signed must not change the task's limits (review P2)."""
+    policy = policy_document(
+        target_denylist=["10.50.0.0/16"],
+        rate_limits={
+            "requests_per_second_per_host": 1,
+            "max_concurrent_connections_per_host": 1,
+            "jobs_per_minute": 100,
+        },
+    )
+    campaign = seed_campaign(database, policy=policy)
+    with service(database) as jobs:
+        job_id = accept_job(jobs, campaign)
+    with scheduler_for(database) as scheduler:
+        assert scheduler.dispatch(campaign.campaign_id).claimed == (job_id,)
+    # The operator adopts a wider policy afterwards; the signed task keeps its own snapshot.
+    with dict_connection(database) as connection, connection.transaction():
+        adopt_policy(
+            connection,
+            campaign_id=campaign.campaign_id,
+            policy=policy_document(
+                target_denylist=[], rate_limits={"requests_per_second_per_host": 9}
+            ),
+            reason="test: a later policy must not widen a signed job",
+            actor={"kind": "operator", "id": "op-g16"},
+            trace_id="0" * 32,
+        )
+    with dict_connection(database) as connection:
+        plan = loop.plan_for(connection, job_id, _registry(database))
+    assert plan.target_denylist == ("10.50.0.0/16",)
+    assert plan.per_host_rps == 1.0
+    assert plan.per_host_max_connections == 1
+
+
+def test_a_tick_terminalizes_a_job_it_cannot_plan(database: str) -> None:
+    """No `VALIDATING` job may survive a tick whose cause is definite (review P5)."""
+    from aegis.m06_runner.job import JobRunner
+    from aegis.m06_runner.lifecycle import JobLifecycle
+    from aegis.m06_runner.podman import PodmanRunner
+    from tests.fakes.evidence_store import FakeEvidenceStore
+
+    _, job_id = _validating(database)
+    runner = PodmanRunner(base_dir=Path("/tmp/aegis-m06-loop-reject"))
+    job_runner = JobRunner(
+        runner,
+        FakeEvidenceStore(),
+        key_ring=m06_support.ANY_RING,
+        lifecycle=JobLifecycle.from_dsn(database),
+    )
+    try:
+        tick = loop.run_once(
+            _config(database),
+            podman=_Podman(),  # type: ignore[arg-type]
+            job_runner=job_runner,
+            registry=_MissingRegistry(),  # type: ignore[arg-type]
+            log=_quiet,
+        )
+        assert tick.failed == (job_id,)
+        assert tick.ran == ()
+        assert runner.list_jobs() == ()
+        with dict_connection(database) as connection:
+            row = connection.execute(
+                "SELECT status, error FROM scan_job WHERE job_id = %s", (job_id,)
+            ).fetchone()
+        assert row is not None
+        assert row["status"] == "FAILED"
+        assert row["error"]["code"] == "DEPENDENCY_MISSING"
+        assert row["error"]["next_action"] == "CHECK_PROVIDER"
+    finally:
+        runner.reconcile([])
 
 
 def test_the_queue_and_the_fence_of_a_job(database: str) -> None:

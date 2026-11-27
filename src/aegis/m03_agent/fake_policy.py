@@ -20,13 +20,29 @@ policy decides from is in the bundle:
   finished job (`<capability> <job_id> <status>`), and in `ledger.pending_job_ids`;
 * the names to resolve arrive as observations whose `ref` is their canonical key.
 
-The demo it drives (card G1.2c, G1.5c):
+The demo it drives (card G1.2c, G1.5c, G1.6a, G1.6b):
 
 1. seed domain -> `dns.enumerate_subdomains` on the seed observations (Subfinder);
 2. after M27 recorded domain observations -> `dns.resolve` on them, with
    `depends_on = [<the enumerate job id>]` (DNSx after Subfinder);
-3. enumeration finished with no new names -> `{"decision": "wait"}` (nothing to resolve, and
-   nothing is invented); both capabilities proposed -> `{"decision": "stop"}`.
+3. an objective that asks for services/ports -> `network.discover_services` on the `ip:` refs the
+   resolution recorded, with `depends_on = [<the resolve job id>]` (naabu after DNSx);
+4. G1.6b: services the bundle reports as open (`net.port_state` = open, written by the port
+   scanner) -> `service.fingerprint` on **every** open service, with their ports (fingerprintx);
+5. G1.6b: services the bundle reports as `service.protocol` http/https -> `web.probe_http` on
+   them, with `depends_on = [<the fingerprint job id>]` (httpx);
+6. enumeration finished with no new names -> `{"decision": "wait"}` (nothing to resolve, and
+   nothing is invented); every capability the objective asks for proposed -> `{"decision": "stop"}`.
+
+A campaign may also start from **address** seeds instead of a domain (the vulnlab cases do): there
+is nothing to enumerate or resolve, so the same objective that asks for services starts at the port
+step on those addresses. Steps 4 and 5 read observations, never a list: a service is fingerprinted
+because the bundle says it is open, not because a fixture knows the lab.
+
+The service step is gated on the *objective text*, the one thing a live model reads that the
+generated bundle carries verbatim. `make demo-g1` keeps its two-job chain (its objective names
+enumeration and resolution only); `make demo-discovery` states that it wants the services on the
+resolved addresses, so the same policy continues one step further.
 
 Every answer goes through `FakeModelClient` (M04), so the budget pre-check, the one-usage-row-
 per-attempt rule and the response contract validation are exactly the production ones.
@@ -49,7 +65,11 @@ from aegis.m04_model.fake import FakeModelClient
 from aegis.m04_model.usage import InMemoryUsageSink, UsageSink
 
 __all__ = [
+    "DISCOVER",
     "ENUMERATE",
+    "FINGERPRINT",
+    "HTTP_PROTOCOLS",
+    "PROBE_HTTP",
     "RESOLVE",
     "SEED_SUMMARY_PREFIX",
     "ContextObserver",
@@ -59,6 +79,9 @@ __all__ = [
 
 ENUMERATE = "dns.enumerate_subdomains"
 RESOLVE = "dns.resolve"
+DISCOVER = "network.discover_services"
+FINGERPRINT = "service.fingerprint"
+PROBE_HTTP = "web.probe_http"
 ENUMERATE_RATIONALE = (
     "Enumerate the subdomains of the campaign's authorized domain seeds to find more surface "
     "before resolving them"
@@ -67,6 +90,35 @@ RESOLVE_RATIONALE = (
     "Resolve the domain names the enumeration job discovered, so the campaign learns their "
     "addresses before the next step"
 )
+DISCOVER_RATIONALE = (
+    "Scan the addresses the resolution step found for the ports this campaign is looking for, so "
+    "the graph links each address to the services it exposes"
+)
+#: Objective text that asks for the port/service step. A live model reads the objective; the
+#: scripted stand-in matches it, so one policy serves both demos (`make demo-g1` stops after the
+#: DNS chain, `make demo-discovery` continues) without a second code path.
+SERVICE_OBJECTIVE_HINTS = ("service", "port")
+#: Ports the discovery step asks for. A plain lab port list: it is an input, not a tool default,
+#: and every one of them has to be inside the signed binding before the container exists.
+SERVICE_PORTS = (22, 80, 443, 2222, 6379, 8009, 8080)
+#: Packets per second for the discovery scan (`input.packets_per_second`), well inside the schema's
+#: 1..10000 and the pinned manifest's budget; one job at a time on a lab network.
+SERVICE_PACKETS_PER_SECOND = 100
+FINGERPRINT_RATIONALE = (
+    "Identify the protocol, banner and product version of every service the port scan found, so "
+    "the graph can link each open port to the software (and CPE) behind it"
+)
+PROBE_HTTP_RATIONALE = (
+    "Probe HTTP on the services fingerprinting identified as http(s), so the graph gains the "
+    "application, its technologies and its TLS certificate"
+)
+#: Protocols `web.probe_http` accepts a service for.
+HTTP_PROTOCOLS = frozenset({"http", "https"})
+#: Per-connection budget of the fingerprint run (fingerprintx `-w`); the job budget is the
+#: manifest's `budget.timeoutSeconds`, this only bounds a single connect/banner read.
+FINGERPRINT_TIMEOUT_MS = 2000
+#: httpx `-timeout`, in seconds.
+HTTP_TIMEOUT_SECONDS = 10
 #: Provider parameters the pinned argv templates render (`-t`, `-rl`). The contract makes both
 #: optional ("absent = the provider's default"), but the template can only render a value, so the
 #: policy states them: a job whose input omits them is refused by M06 before a container exists
@@ -113,6 +165,65 @@ def job_lines(bundle: ContextBundle) -> list[tuple[str, str, str]]:
     return lines
 
 
+def bundle_observations(bundle: ContextBundle) -> list[tuple[str, str, Any]]:
+    """`(predicate, subject key, value)` for the bundle's observations, parsed from its own fields.
+
+    `build_context` writes each observation as `summary = "<predicate> on <subject>"`, `ref` = the
+    subject's canonical key and the value into `untrusted` (the prompt wraps it as untrusted text).
+    The policy reads exactly those fields - no database, no lab inventory - and treats a value that
+    is not JSON as the plain string it is (the graph read model summarises a string value without
+    JSON-quoting it).
+    """
+    parsed: list[tuple[str, str, Any]] = []
+    for item in bundle.observations:
+        summary = str(plain(item.summary))
+        predicate, separator, _ = summary.partition(" on ")
+        if not separator:
+            continue
+        parsed.append((predicate.strip(), str(plain(item.ref)), _observation_value(item)))
+    return parsed
+
+
+def _observation_value(item: Any) -> Any:
+    raw = item.untrusted
+    if raw is None:
+        return None
+    try:
+        return json.loads(str(raw))
+    except ValueError:
+        return str(raw)
+
+
+def open_services(bundle: ContextBundle) -> list[str]:
+    """Canonical keys of the services the bundle reports as open (`net.port_state` = open)."""
+    keys = {
+        subject
+        for predicate, subject, value in bundle_observations(bundle)
+        if predicate == "net.port_state"
+        and subject.startswith("service:")
+        and str(value).lower() == "open"
+    }
+    return sorted(keys)
+
+
+def http_services(bundle: ContextBundle) -> list[str]:
+    """Canonical keys of the services whose `service.protocol` is http or https."""
+    keys = {
+        subject
+        for predicate, subject, value in bundle_observations(bundle)
+        if predicate == "service.protocol"
+        and subject.startswith("service:")
+        and str(value).lower() in HTTP_PROTOCOLS
+    }
+    return sorted(keys)
+
+
+def service_port(key: str) -> int:
+    """The port of a `service:<host>:<port>/<transport>` key (the key is contract-validated)."""
+    body = key.split(":", 1)[1]
+    return int(body.rsplit(":", 1)[1].split("/", 1)[0])
+
+
 @dataclass
 class ScriptedLabPolicy:
     """The lab demo's decisions, from the session's bundle (never a provider or a database)."""
@@ -152,6 +263,7 @@ class ScriptedLabPolicy:
         jobs = job_lines(bundle)
         enumerated = [job for job in jobs if job[0] == ENUMERATE]
         resolved = [job for job in jobs if job[0] == RESOLVE]
+        discovered_services = [job for job in jobs if job[0] == DISCOVER]
         pending = [
             str(plain(item))
             for item in (bundle.ledger.pending_job_ids if bundle.ledger is not None else None) or []
@@ -160,6 +272,15 @@ class ScriptedLabPolicy:
         # the seed itself may also be recorded as an observation once M27 knows the asset; it is not
         # a name the enumeration discovered
         discovered = [ref for ref in _refs(bundle, seed=False) if ref not in seeds]
+        # Addresses the campaign may scan: the IP seeds themselves (a campaign can start from
+        # them, as the vulnlab cases do) plus every address a resolution recorded.
+        address_seeds = _refs(bundle, seed=True, prefix="ip:")
+        discovered_addresses = [
+            ref for ref in _refs(bundle, seed=False, prefix="ip:") if ref not in seeds
+        ]
+        addresses = list(dict.fromkeys(address_seeds + discovered_addresses))
+        objective = str(plain(bundle.objective.text)).lower()
+        wants_services = any(hint in objective for hint in SERVICE_OBJECTIVE_HINTS)
 
         if pending:
             return self._decision(
@@ -167,14 +288,15 @@ class ScriptedLabPolicy:
                 "wait",
                 f"{len(pending)} job(s) still in flight; their results arrive in a later session",
             )
-        if not enumerated:
-            if not seeds:
-                return self._decision(
-                    request,
-                    "wait",
-                    "the context bundle carries no domain seed target, so there is nothing to "
-                    "enumerate",
-                )
+        domain_campaign = bool(seeds)
+        if not domain_campaign and not address_seeds:
+            return self._decision(
+                request,
+                "wait",
+                "the context bundle carries no domain or address seed target, so there is nothing "
+                "to enumerate or scan",
+            )
+        if domain_campaign and not enumerated:
             return self._tool_call(
                 request,
                 ENUMERATE,
@@ -190,7 +312,7 @@ class ScriptedLabPolicy:
                     "priority": 80,
                 },
             )
-        if not resolved:
+        if domain_campaign and not resolved:
             if not discovered:
                 return self._decision(
                     request,
@@ -210,10 +332,76 @@ class ScriptedLabPolicy:
                     "priority": 70,
                 },
             )
+        if wants_services and not discovered_services:
+            if not addresses:
+                # A domain campaign only reaches this with no recorded address (a resolution that
+                # found nothing); an address campaign always has its seeds.
+                detail = (
+                    f"{RESOLVE} {resolved[0][1]} recorded no address in the context bundle"
+                    if resolved
+                    else "the context bundle carries no address"
+                )
+                return self._decision(
+                    request, "wait", f"{detail}, so there is nothing to scan for services"
+                )
+            call: dict[str, Any] = {
+                "input": {
+                    "targets": addresses[:100],
+                    "ports": list(SERVICE_PORTS),
+                    "packets_per_second": SERVICE_PACKETS_PER_SECOND,
+                    "concurrency": 1,
+                },
+                "rationale": DISCOVER_RATIONALE,
+                "expected_signal": "open ports on the campaign's addresses (EXPOSES edges)",
+                "priority": 80,
+            }
+            if resolved:
+                call["depends_on"] = [resolved[0][1]]
+            return self._tool_call(request, DISCOVER, ["network-discover-services"], call)
+        fingerprinted = [job for job in jobs if job[0] == FINGERPRINT]
+        probed = [job for job in jobs if job[0] == PROBE_HTTP]
+        services = open_services(bundle)
+        if services and not fingerprinted:
+            targets = services[:100]
+            return self._tool_call(
+                request,
+                FINGERPRINT,
+                ["service-fingerprint"],
+                {
+                    "input": {
+                        "targets": targets,
+                        "ports": sorted({service_port(key) for key in targets}),
+                        "timeout_ms": FINGERPRINT_TIMEOUT_MS,
+                    },
+                    "rationale": FINGERPRINT_RATIONALE,
+                    "expected_signal": "protocol, banner and product/version/CPE per open service",
+                    "priority": 55,
+                },
+            )
+        http = http_services(bundle)
+        if http and fingerprinted and not probed:
+            targets = http[:100]
+            probe: dict[str, Any] = {
+                "input": {
+                    "targets": targets,
+                    "ports": sorted({service_port(key) for key in targets}),
+                    "concurrency": LAB_CONCURRENCY,
+                    "timeout_seconds": HTTP_TIMEOUT_SECONDS,
+                },
+                "rationale": PROBE_HTTP_RATIONALE,
+                "expected_signal": (
+                    "application, technologies and TLS certificate per http(s) service"
+                ),
+                "priority": 50,
+            }
+            if fingerprinted[0][1]:
+                probe["depends_on"] = [fingerprinted[0][1]]
+            return self._tool_call(request, PROBE_HTTP, ["web-probe"], probe)
         return self._decision(
             request,
             "stop",
-            "enumeration and resolution are both proposed; the campaign objective is met",
+            "enumeration, resolution, service discovery, fingerprint and web probe are proposed; "
+            "the campaign objective is met",
         )
 
     # --- response builders --------------------------------------------------------------------
@@ -296,12 +484,12 @@ def _blocks(message: Any) -> list[dict[str, Any]]:
     return blocks(message)
 
 
-def _refs(bundle: ContextBundle, *, seed: bool) -> list[str]:
-    """Domain refs of the bundle's observations, split into seed targets and discovered names."""
+def _refs(bundle: ContextBundle, *, seed: bool, prefix: str = "dns:") -> list[str]:
+    """Refs of the bundle's observations with `prefix`, split into seed targets and discovered."""
     refs: list[str] = []
     for observation in bundle.observations:
         ref = str(plain(observation.ref))
-        if not ref.startswith("dns:"):
+        if not ref.startswith(prefix):
             continue
         is_seed = str(plain(observation.summary)).startswith(SEED_SUMMARY_PREFIX)
         if is_seed is seed and ref not in refs:

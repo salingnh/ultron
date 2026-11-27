@@ -1,0 +1,104 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c3",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000c1",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "capability": "service.fingerprint",
+  "provider": "fingerprintx",
+  "provider_version": "v1.1.19",
+  "adapter_version": "1.1.0",
+  "manifest_sha256": "17a3cfcc3e884c01fe92de7e8d84112f77b5b08a2364427ff3f9fd4e5d67ff1c",
+  "image_digest": "sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000003",
+  "input": {
+    "targets": [
+      "service:10.114.53.211:80/tcp",
+      "service:10.114.53.211:443/tcp",
+      "service:10.114.53.212:8080/tcp",
+      "service:10.114.53.213:2222/tcp",
+      "service:10.114.53.214:6379/tcp",
+      "service:10.114.53.215:80/tcp"
+    ],
+    "ports": [
+      80,
+      443,
+      2222,
+      6379,
+      8080
+    ],
+    "timeout_ms": 2000
+  },
+  "targets": [
+    {
+      "canonical_key": "service:10.114.53.211:80/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.211:443/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.212:8080/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.213:2222/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.214:6379/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.53.215:80/tcp"
+    }
+  ],
+  "idempotency_key": "fixture:fingerprintx-conformance",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: service.fingerprint over known open lab services; no execution",
+  "trace": {
+    "trace_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "signature": "hmac-sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "required",
+    "entries": [
+      "10.114.53.211:2222",
+      "10.114.53.211:443",
+      "10.114.53.211:6379",
+      "10.114.53.211:80",
+      "10.114.53.211:8080",
+      "10.114.53.212:2222",
+      "10.114.53.212:443",
+      "10.114.53.212:6379",
+      "10.114.53.212:80",
+      "10.114.53.212:8080",
+      "10.114.53.213:2222",
+      "10.114.53.213:443",
+      "10.114.53.213:6379",
+      "10.114.53.213:80",
+      "10.114.53.213:8080",
+      "10.114.53.214:2222",
+      "10.114.53.214:443",
+      "10.114.53.214:6379",
+      "10.114.53.214:80",
+      "10.114.53.214:8080",
+      "10.114.53.215:2222",
+      "10.114.53.215:443",
+      "10.114.53.215:6379",
+      "10.114.53.215:80",
+      "10.114.53.215:8080"
+    ],
+    "target_addresses": [
+      "10.114.53.211",
+      "10.114.53.212",
+      "10.114.53.213",
+      "10.114.53.214",
+      "10.114.53.215"
+    ]
+  },
+  "priority": 50,
+  "depends_on": [],
+  "network_profile": "lab"
+}

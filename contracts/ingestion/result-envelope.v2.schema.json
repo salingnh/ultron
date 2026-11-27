@@ -107,6 +107,38 @@
         "complete": {
           "description": "false nếu job dừng giữa chừng; khi đó không ghi seen=false.",
           "type": "boolean"
+        },
+        "limitations": {
+          "description": "Những giới hạn khiến coverage không đầy đủ: job dừng giữa chừng, egress bị chặn hoặc quá hạn chờ do trần RoE. Mỗi phần tử nêu mã ổn định và chi tiết; `complete` phải là false khi mảng này không rỗng. Cổng scan không được coi một cổng bị chặn/quá hạn là 'đóng'.",
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "subjects": {
+                "type": "array",
+                "items": {
+                  "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+                },
+                "maxItems": 1000,
+                "uniqueItems": true
+              }
+            }
+          }
         }
       }
     },
@@ -297,8 +329,9 @@
           "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
         },
         "value": {
-          "description": "Giá trị theo value_type của predicate.",
+          "description": "Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu.",
           "type": [
+            "integer",
             "string",
             "number",
             "boolean",

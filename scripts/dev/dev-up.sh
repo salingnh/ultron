@@ -24,10 +24,15 @@ fi
 
 check_dev_ports_free
 
+# A project on this host belongs to the checkout that created it: another worker's `make dev-up`
+# must not recreate the owner's containers (that is the incident scripts/lib/stack.sh describes).
+require_dev_stack_ownership
+
 log "compose project $DEV_PROJECT: starting"
 compose up -d
 
 wait_healthy 300 "$PG_CONTAINER" "$SEAWEEDFS_CONTAINER" "$NEO4J_CONTAINER" "$TEMPORAL_CONTAINER"
+record_dev_stack_identity
 
 "$DEV_DIR/apply-schema.sh"
 "$DEV_DIR/dev-status.sh"

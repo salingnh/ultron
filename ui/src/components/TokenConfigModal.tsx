@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Key, Eye, EyeOff, ShieldCheck, Trash2 } from 'lucide-react';
 import { getOperatorToken, setOperatorToken } from '../api/client';
 
@@ -7,10 +7,58 @@ interface TokenConfigModalProps {
   onClose: () => void;
 }
 
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
 export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onClose }) => {
   const [tokenInput, setTokenInput] = useState(() => getOperatorToken());
   const [showToken, setShowToken] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    setTokenInput(getOperatorToken());
+
+    const raf = requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusables = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first || !modalRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else if (document.activeElement === last || !modalRef.current.contains(document.activeElement)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocusRef.current?.focus?.();
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -34,8 +82,15 @@ export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onCl
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" onClick={onClose}>
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="token-modal-title"
+      onClick={onClose}
+    >
       <div
+        ref={modalRef}
         className="modal-content"
         onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: 480 }}
@@ -56,7 +111,7 @@ export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onCl
             <Key size={18} />
           </div>
           <div>
-            <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--ink)' }}>
+            <h3 id="token-modal-title" style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--ink)' }}>
               Cấu hình Operator Bearer Token
             </h3>
             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
@@ -79,9 +134,18 @@ export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onCl
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
             <ShieldCheck size={14} style={{ color: 'var(--success)' }} />
-            <span>Bảo mật & Lưu trữ cục bộ:</span>
+            <span>Bảo mật &amp; Vị trí lưu trữ Operator Token:</span>
           </div>
-          Token chỉ được lưu trong <code>localStorage</code> của trình duyệt người dùng và không bao giờ được ghi hay commit vào repository.
+          <div>
+            • <strong>Trên trình duyệt:</strong> Token lưu cục bộ trong{' '}
+            <code className="mono">localStorage[&apos;ultron-operator-token&apos;]</code> (hoặc{' '}
+            <code className="mono">VITE_BEARER_TOKEN</code> khi build), không bao giờ commit vào repository.
+          </div>
+          <div style={{ marginTop: 4 }}>
+            • <strong>Trên stack backend cục bộ:</strong> chạy <code className="mono">make run-local</code> để sinh token tại{' '}
+            <code className="mono">.local/operator-token</code> (mode 0600); server chỉ lưu mã băm SHA-256 tại{' '}
+            <code className="mono">.local/operators.json</code> (<code className="mono">AEGIS_OPERATOR_TOKENS_FILE</code>).
+          </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
@@ -93,6 +157,7 @@ export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onCl
           </label>
           <div style={{ position: 'relative' }}>
             <input
+              ref={inputRef}
               id="operator-token-input"
               type={showToken ? 'text' : 'password'}
               className="input-search"
@@ -125,7 +190,8 @@ export const TokenConfigModal: React.FC<TokenConfigModalProps> = ({ isOpen, onCl
             </button>
           </div>
           <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 4 }}>
-            Mặc định môi trường dev: <code>token-of-soc-1-0123456789</code>
+            Lấy token từ <code className="mono">.local/operator-token</code> (hoặc xoay vòng bằng{' '}
+            <code className="mono">make run-local NEW_TOKEN=1</code>).
           </div>
         </div>
 

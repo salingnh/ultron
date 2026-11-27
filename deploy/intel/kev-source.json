@@ -1,0 +1,12 @@
+{
+  "feed": "kev",
+  "repository": "cisagov/kev-data",
+  "file": "known_exploited_vulnerabilities.json",
+  "limits": {
+    "size_min_bytes": 100000,
+    "size_max_bytes": 16777216,
+    "count_min": 100,
+    "count_max": 100000
+  },
+  "note": "The one configured KEV source: the official cisagov/kev-data mirror resolved through the GitHub API at refresh time (default branch HEAD), then downloaded at that commit and validated (shape, size/count bounds, catalogVersion monotonic vs the newest stored snapshot). KEV changes several times a week, so a pinned commit would silently freeze production intel; the resolved commit is recorded in intel_snapshot.source_uri. www.cisa.gov answers HTTP 403 to this deployment's egress for every path (Akamai IP denial, measured 2026-11-27), so it is not a configured source and nothing falls back to it. Tests, CI and the offline harness use a committed fixture (--fixture / tests/fixtures/intel)."
+}

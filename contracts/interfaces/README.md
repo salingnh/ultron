@@ -61,7 +61,7 @@ ApprovedTask bắt buộc có `adapter_version` và `manifest_sha256`. Hash là 
 
 **Chữ ký (OI-7).** Nội dung được ký = `aegis-c14n/1` của `{"purpose": "aegis.io/approved-task/v2", "signature_key_id": <id>, "task": <task bỏ trường signature và signature_key_id>}`; `signature` = `hmac-sha256:` + hex(HMAC-SHA256(khóa[key id], utf8(nội dung đó))). `signature_key_id` nằm trong nội dung được ký nên không thể đổi khóa của task đã ký. Xoay khóa: thêm khóa mới với id mới, ký task mới bằng khóa đang hoạt động, vẫn verify task cũ bằng khóa cũ; khóa và id là cấu hình của server, không nằm trong task, log hay fixture. M06 lấy task đã ghim (`scan_job.approved_task`), verify HMAC trước khi dựng ContainerSpec, và từ chối khi khóa không có trong ring hoặc chữ ký không khớp.
 
-**Egress binding (E-1).** `egress_binding` của task là tập đích broker được phép mở, do M05 tính và ghim **trong nội dung được ký**: `mode` (`broker|none`), `target_binding` của manifest, `entries` (host:port, đã sắp xếp, đã trừ tập luôn chặn) và `target_addresses` (IP đã phân giải khi `targetBinding=required`; rỗng khi `none`). M06 dùng đúng giá trị này và không tính lại; broker vẫn phân giải lại tên lúc kết nối và từ chối địa chỉ nằm ngoài tập đã ghim. Registry từ chối manifest khai `egressSources` thuộc tập luôn chặn, nên binding không bao giờ chứa đích bị cấm.
+**Egress binding (E-1).** `egress_binding` của task là tập đích broker được phép mở, do M05 tính và ghim **trong nội dung được ký**: `mode` (`broker|none`), `target_binding` của manifest, `entries` (đã sắp xếp, đã trừ tập luôn chặn; dạng `host:port`, hoặc `dns:<tên>` cho tên được phân giải qua DNS front end của broker — provider chỉ cần DNS như DNSx trên profile internet được ký các mục này thay cho resolver công cộng, và `mode=broker` không bao giờ có `entries` rỗng), `target_addresses` (IP đã phân giải khi `targetBinding=required`; rỗng khi `none`) và `authorized_private_cidrs` (CIDR seed riêng tư mà RoE liệt kê; trên profile internet là miễn trừ duy nhất cho `DENY_PRIVATE`, M06 từ chối entry nằm ngoài dải riêng). M06 dùng đúng giá trị này và không tính lại; broker vẫn phân giải lại tên lúc kết nối và từ chối địa chỉ nằm ngoài tập đã ghim. Registry từ chối manifest khai `egressSources` thuộc tập luôn chặn, nên binding không bao giờ chứa đích bị cấm.
 
 M05 resolve manifest, ghép inputDefaults rồi validate input, ghi pin cùng job và ký toàn bộ task trừ trường signature. `manifest_sha256` thuộc dữ liệu được ký. M06 lấy manifest theo hash, tính lại hash và đối chiếu capability/provider/adapter_version/provider_version/image_digest với task. Thiếu bản đã pin thì dừng với DEPENDENCY_MISSING; hash hoặc định danh không khớp thì POLICY_DENIED. Không thay bằng manifest latest hay defaults của bản triển khai mới. [Kiểm conformance offline](../tests/manifest_binding.py) kiểm pin/định danh; chưa phải mã executor hay kiểm HMAC runtime.
 
@@ -110,6 +110,8 @@ class EvidenceStore(Protocol):
 ```
 
 ## 5. ModelClient (M04)
+
+Sau LLM gateway của chủ (`AEGIS_MODEL_GATEWAY=1`), base URL là gateway, chi phí từng request do gateway báo là nguồn chính (giá cấu hình chỉ là dự phòng), và không được cấu hình chuỗi fallback trong app: xoay vòng thuộc về gateway.
 
 Hình dạng là contract, không định nghĩa DTO tay lần hai: [message](../agent/model-message.v2.schema.json) (content block, tool call/result), [request](../agent/model-request.v2.schema.json), [response](../agent/model-response.v2.schema.json). Chữ ký Python dưới đây chỉ để đọc.
 
@@ -188,9 +190,11 @@ Cách M02 ghi quyết định (G1.1d): job được dispatch bằng transition `
 
 ## Phần cần khóa của ModelClient và severity — C07
 
-Đã khóa ở S1.4 bằng contract và suite offline `contracts/tests/test_model_client.py` (hành vi tham chiếu: `contracts/tests/model_client_ref.py`); chưa có LLM thật.
+Đã khóa ở S1.4 bằng contract và suite offline `contracts/tests/test_model_client.py` (hành vi tham chiếu: `contracts/tests/model_client_ref.py`); G1.6 thêm đường live chọn provider bằng biến môi trường (`aegis.m04_model.deployment`) cho cả hai chuẩn OpenAI/Anthropic; CI chỉ chạy transport ghi sẵn.
 
 - Message/ToolCall/ToolResult: [model-message.v2](../agent/model-message.v2.schema.json) định nghĩa content block, liên kết tool_result → tool_call.id và round-trip `arguments_raw`; [model-request.v2](../agent/model-request.v2.schema.json) và [model-response.v2](../agent/model-response.v2.schema.json) giữ metadata provider và finish chuẩn hóa. Suite kiểm hai vòng tool call cả hai provider, output sai schema, cắt, refusal, hết ngân sách trước lời gọi, fallback trong cấu hình, và orphan/duplicate tool_result.
 - Severity: mỗi bản ghi có `trigger` (`scan|intel_revision|operator_request|verification`), `input_revision` và `dedup_key = severity:<finding_id>:<input_revision>`; cùng finding và cùng revision trả bản ghi đã có, không gọi model lại, nên đánh giá lại phải có đầu vào mới. `assessed_by`/`inputs`/`trigger`/`input_revision`/`dedup_key` do mã gán; model chỉ sinh phần `$defs/ModelOutput` rồi mã kiểm nguồn trích dẫn.
 - Fallback khi đánh giá thất bại: bản ghi mới `severity=UNRATED`, `failure` (mã lỗi theo error.v2, attempt, finish_reason/provider/model/session khi có lời gọi) và `raw_signals` trỏ finding/finding_source/evidence/intel đã lưu; cấm `source_refs` nên không dựng nguồn giả. Không có `failure` thì `source_refs` bắt buộc. Bảng append-only: bản ghi cũ không đổi, severity cũ không được trình bày như kết quả mới. Hết ngân sách trước lời gọi vẫn tạo UNRATED với `failure.code=POLICY_DENIED`.
 - Ngoài phạm vi S1.4: streaming, content ảnh, block `thinking`/signature của extended thinking (provider trả block lạ bị đánh dấu invalid_output thay vì bỏ im lặng), bảng giá token (cấu hình triển khai) và runtime M04/M20 thật. Các test/fake này chưa phải implementation đã có trong repo.
+
+Input staging của M06 (G1.6): mảng mục tiêu ghi vào `/in/targets.txt` theo `spec.runtime.targetsFormat` của manifest (`canonical` mặc định; `host_port` bỏ hậu tố `/tcp` và từ chối `/udp`); mảng số nguyên `ports` ghi vào `/in/ports.txt`. Mảng không bao giờ được nối thành một phần tử argv (OI-12).

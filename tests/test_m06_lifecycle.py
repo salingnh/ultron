@@ -17,7 +17,6 @@ from psycopg.types.json import Jsonb
 from aegis.m05_registry.registry import PostgresManifestRegistry
 from aegis.m05_registry.service import PostgresJobService
 from aegis.m05_registry.signing import KeyRing
-from aegis.m05_registry.signing import KeyRing as SigningKeyRing
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner.job import JobPlan, JobRunner
 from aegis.m06_runner.lifecycle import JobClaim, JobLifecycle, LifecycleError
@@ -256,7 +255,7 @@ def test_a_tampered_task_is_terminalized_failed_without_a_container() -> None:
         job_runner = JobRunner(
             runner,
             FakeEvidenceStore(),
-            key_ring=SigningKeyRing.dev(),
+            key_ring=m06_support.ANY_RING,
             extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],
             lifecycle=JobLifecycle.from_dsn(dsn),
         )
@@ -330,7 +329,7 @@ def test_job_runner_reports_the_whole_lifecycle(
         job_runner = JobRunner(
             runner,
             FakeEvidenceStore(),
-            key_ring=SigningKeyRing.dev(),
+            key_ring=m06_support.ANY_RING,
             ingestion=IngestionService.from_dsn(dsn),
             extra_parser_prefixes=("adapters.probe.",),
             extra_parser_python_path=[str(m06_support.CONTAINER_DIR)],

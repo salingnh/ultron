@@ -1,0 +1,16 @@
+{
+  "asset": {
+    "asset_id": "01934f6a-0000-7000-8000-0000000ee011",
+    "canonical_key": "service:10.114.53.10:80/tcp",
+    "kind": "service"
+  },
+  "items": [
+    {
+      "vulnerability_id": "CVE-2021-41773",
+      "kev": true,
+      "match_method": "cpe_range",
+      "confidence": 1.4,
+      "candidate_since": "2026-11-25T08:00:00Z"
+    }
+  ]
+}

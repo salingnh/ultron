@@ -30,7 +30,7 @@ STARTED_AT = "2026-11-24T09:59:00Z"
 INPUT_FINGERPRINT = "a" * 64
 IMAGE_DIGEST = "sha256:" + "d" * 64
 ACTOR = {"kind": "operator", "id": "fixture-operator"}
-POLICY = '{"max_parallel_jobs": 10, "max_duration_hours": 168}'
+POLICY = '{"network_profile": "lab", "max_parallel_jobs": 10, "max_duration_hours": 168}'
 
 
 def seed_campaign(connection: psycopg.Connection[tuple[object, ...]]) -> None:

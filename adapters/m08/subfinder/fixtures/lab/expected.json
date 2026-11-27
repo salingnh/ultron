@@ -2,6 +2,19 @@
   "assets": [
     {
       "kind": "domain",
+      "canonical_key": "dns:www.lab.aegis.test",
+      "discovered_from": [
+        "dns:lab.aegis.test"
+      ],
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "domain",
       "canonical_key": "dns:vpn.lab.aegis.test",
       "discovered_from": [
         "dns:lab.aegis.test"
@@ -28,7 +41,59 @@
     },
     {
       "kind": "domain",
-      "canonical_key": "dns:www.lab.aegis.test",
+      "canonical_key": "dns:web.lab.aegis.test",
+      "discovered_from": [
+        "dns:lab.aegis.test"
+      ],
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "domain",
+      "canonical_key": "dns:app.lab.aegis.test",
+      "discovered_from": [
+        "dns:lab.aegis.test"
+      ],
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "domain",
+      "canonical_key": "dns:ssh.lab.aegis.test",
+      "discovered_from": [
+        "dns:lab.aegis.test"
+      ],
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "domain",
+      "canonical_key": "dns:cache.lab.aegis.test",
+      "discovered_from": [
+        "dns:lab.aegis.test"
+      ],
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "kind": "domain",
+      "canonical_key": "dns:httpd.lab.aegis.test",
       "discovered_from": [
         "dns:lab.aegis.test"
       ],
@@ -41,6 +106,17 @@
     }
   ],
   "observations": [
+    {
+      "subject": "dns:www.lab.aegis.test",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
     {
       "subject": "dns:vpn.lab.aegis.test",
       "predicate": "asset.seen",
@@ -64,7 +140,51 @@
       ]
     },
     {
-      "subject": "dns:www.lab.aegis.test",
+      "subject": "dns:web.lab.aegis.test",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:app.lab.aegis.test",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:ssh.lab.aegis.test",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:cache.lab.aegis.test",
+      "predicate": "asset.seen",
+      "value": true,
+      "confidence": 0.7,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "subject": "dns:httpd.lab.aegis.test",
       "predicate": "asset.seen",
       "value": true,
       "confidence": 0.7,
@@ -76,6 +196,17 @@
     }
   ],
   "relationships": [
+    {
+      "type": "SUBDOMAIN_OF",
+      "from": "dns:www.lab.aegis.test",
+      "to": "dns:lab.aegis.test",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
     {
       "type": "SUBDOMAIN_OF",
       "from": "dns:vpn.lab.aegis.test",
@@ -100,7 +231,51 @@
     },
     {
       "type": "SUBDOMAIN_OF",
-      "from": "dns:www.lab.aegis.test",
+      "from": "dns:web.lab.aegis.test",
+      "to": "dns:lab.aegis.test",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "SUBDOMAIN_OF",
+      "from": "dns:app.lab.aegis.test",
+      "to": "dns:lab.aegis.test",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "SUBDOMAIN_OF",
+      "from": "dns:ssh.lab.aegis.test",
+      "to": "dns:lab.aegis.test",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "SUBDOMAIN_OF",
+      "from": "dns:cache.lab.aegis.test",
+      "to": "dns:lab.aegis.test",
+      "confidence": 1.0,
+      "evidence_refs": [
+        {
+          "local_ref": "raw"
+        }
+      ]
+    },
+    {
+      "type": "SUBDOMAIN_OF",
+      "from": "dns:httpd.lab.aegis.test",
       "to": "dns:lab.aegis.test",
       "confidence": 1.0,
       "evidence_refs": [

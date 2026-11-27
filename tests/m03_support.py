@@ -438,8 +438,10 @@ class FakeContext:
         spent_cost_usd: float = 0.0,
         graph_revision: int = 0,
         campaign_id: str = CAMPAIGN_ID,
+        objective_text: str = "Discover the lab domain's subdomains and resolve them",
     ) -> None:
         self.campaign_id = campaign_id
+        self.objective_text = objective_text
         self.observations = tuple(observations)
         self.jobs = tuple(jobs)
         self.targets = tuple(targets)
@@ -447,6 +449,7 @@ class FakeContext:
             policy
             or {
                 "budget": {"max_llm_tokens": 100000, "max_llm_cost_usd": 5.0},
+                "network_profile": "lab",
                 "max_parallel_jobs": 2,
                 "rate_limits": {"jobs_per_minute": 30},
             }
@@ -460,7 +463,7 @@ class FakeContext:
         self.cursors.append(cursor)
         return CampaignContext(
             campaign_id=campaign_id,
-            objective_text="Discover the lab domain's subdomains and resolve them",
+            objective_text=self.objective_text,
             policy_version="roe-10",
             policy=self.policy,
             graph_revision=self.graph_revision,

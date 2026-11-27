@@ -35,10 +35,17 @@ LAB_ZONE = "lab.aegis.test"
 LAB_NETWORK = "aegis-lab-lab"
 ENUMERATE = "dns.enumerate_subdomains"
 RESOLVE = "dns.resolve"
+DISCOVER = "network.discover_services"
+#: Ports the G1.6a discovery demo asks for. The lab services answer on 80/443 (web), 8080/8009
+#: (Tomcat), 2222 (sshd) and 6379 (Redis); 22 is in the list as a negative control (nothing listens
+#: there, so a run that reports it is not scanning the lab).
+SERVICE_PORTS = (22, 80, 443, 2222, 6379, 8009, 8080)
 TERMINAL_CAMPAIGN = {"COMPLETED", "FAILED", "CANCELLED"}
 
 #: The campaign the demo creates: the lab zone only, the lab-only policy, a fake model.
 DEMO_POLICY: dict[str, Any] = {
+    # Demos run on the authorized lab network; an operator campaign defaults to `internet`.
+    "network_profile": "lab",
     "max_parallel_jobs": 2,
     "max_duration_hours": 1,
     "rate_limits": {"requests_per_second_per_host": 5},
@@ -74,15 +81,28 @@ def now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def campaign_body(name: str) -> dict[str, Any]:
-    """The demo campaign: one lab seed domain and the lab-only execution settings."""
+def campaign_body(
+    name: str,
+    objective: str | None = None,
+    *,
+    targets: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, Any]:
+    """A demo campaign: the lab seeds and the lab-only execution settings.
+
+    `objective` is what the session reads (it reaches M03 verbatim in the context bundle), so it is
+    how a demo says how far the scripted policy should go: `make demo-g1` stops after the DNS
+    chain, `make demo-discovery`/`make demo-g16c` ask for the services on the resolved addresses,
+    `make demo-g16b` asks for the services and the product behind them. `targets` overrides the seed
+    object (a demo that seeds addresses instead of the zone).
+    """
     return {
         "name": name,
-        "objective": (
+        "objective": objective
+        or (
             "Enumerate the subdomains of the authorized lab zone, then resolve the names the "
             "enumeration found"
         ),
-        "targets": {"domains": [LAB_ZONE]},
+        "targets": dict(targets) if targets else {"domains": [LAB_ZONE]},
         "policy": dict(DEMO_POLICY),
     }
 
@@ -138,11 +158,11 @@ def operator_token() -> str:
     return token
 
 
-def create_campaign(name: str) -> str:
+def create_campaign(name: str, objective: str | None = None) -> str:
     created = api(
         "POST",
         "/api/v2/campaigns",
-        payload=campaign_body(name),
+        payload=campaign_body(name, objective),
         token=operator_token(),
         headers={"Idempotency-Key": f"demo-{uuid.uuid4()}"},
     )
@@ -291,21 +311,42 @@ def _cell(raw: str) -> Any:
     return value
 
 
+def _dotenv_value(name: str) -> str:
+    """Read one unquoted `KEY=VALUE` from `.env` if present (never mutates `os.environ`)."""
+    env_file = REPO / ".env"
+    if not env_file.is_file():
+        return ""
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        entry = raw.strip()
+        if not entry or entry.startswith("#") or "=" not in entry:
+            continue
+        key, _, value = entry.partition("=")
+        if key.strip() != name:
+            continue
+        cleaned = value.strip()
+        if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in "\"'":
+            cleaned = cleaned[1:-1]
+        return cleaned
+    return ""
+
+
 def _neo4j_container() -> str:
     """The Neo4j container of the dev compose project (names live in scripts/dev/lib.sh).
 
-    `AEGIS_NEO4J_CONTAINER` names it explicitly, for a run against a stack of another compose
-    project (a task that must not touch the shared dev stack).
+    `AEGIS_NEO4J_CONTAINER` names it explicitly; otherwise the compose project comes from
+    `AEGIS_DEV_PROJECT` (environment or `.env`), defaulting to `aegis-dev`.
     """
     override = os.environ.get("AEGIS_NEO4J_CONTAINER", "").strip()
     if override:
         return override
+    project = os.environ.get("AEGIS_DEV_PROJECT", "").strip() or _dotenv_value("AEGIS_DEV_PROJECT")
+    project = project or "aegis-dev"
     completed = subprocess.run(
         [
             "podman",
             "ps",
             "--filter",
-            "label=io.podman.compose.project=aegis-dev",
+            f"label=io.podman.compose.project={project}",
             "--format",
             "{{.Names}}",
         ],
@@ -318,7 +359,8 @@ def _neo4j_container() -> str:
         if name.endswith("-neo4j"):
             return name
     raise DemoError(
-        "the dev Neo4j container is not running: run `make dev-up` (or `make run-local`)"
+        f"the dev Neo4j container for compose project {project!r} is not running: "
+        "run `make dev-up` (or `make run-local`)"
     )
 
 

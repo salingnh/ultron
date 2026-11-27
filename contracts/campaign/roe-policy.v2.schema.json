@@ -10,6 +10,14 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "network_profile": {
+      "description": "Mạng job của chiến dịch chạy trên đó. `internet`: container của job chỉ tới được broker L7 của nó, broker ra internet và ép tập luôn chặn, tập địa chỉ đã ký và trần tốc độ/đồng thời theo host. `lab`: mạng lab nội bộ của deployment (không có đường ra internet). Chiến dịch của người vận hành mặc định `internet`; demo/CI đặt `lab` tường minh.",
+      "type": "string",
+      "enum": [
+        "lab",
+        "internet"
+      ]
+    },
     "target_denylist": {
       "description": "Danh sách mục tiêu bị loại bổ sung. Sandbox luôn cách ly hạ tầng điều khiển/dữ liệu; kiểm tra cấu hình này áp dụng cho mọi job.",
       "type": "array",
@@ -38,6 +46,12 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 1000
+        },
+        "max_concurrent_connections_per_host": {
+          "description": "Trần số kết nối đồng thời broker giữ tới một host cho một job. Profile `internet` bắt buộc khai báo cùng `requests_per_second_per_host`; thiếu là POLICY_DENIED (không có trần thì không chạy ra internet).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
         },
         "packets_per_second": {
           "description": "Trần cho quét cổng (Naabu, Nmap).",
@@ -88,7 +102,74 @@
         "$ref": "../common/ids.v2.schema.json#/$defs/CapabilityId"
       },
       "uniqueItems": true
+    },
+    "authorization": {
+      "description": "Chủ sở hữu hợp pháp của mục tiêu internet: ai cho phép (owner), tham chiếu bằng chứng (reference, vD quyết định/ticket), ngày và các hậu tố tên miền được phép. Bắt buộc khi `network_profile=internet` (kể cả khi bỏ trống trường profile, vì mặc định là internet); M01 từ chối, M05 không ký task, M06 không chạy task internet khi thiếu.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "reference",
+        "date",
+        "authorized_suffixes"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 300
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "authorized_suffixes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/DomainTarget"
+          }
+        }
+      }
     }
   },
-  "$defs": {}
+  "$defs": {},
+  "allOf": [
+    {
+      "description": "Chiến dịch internet phải khai authorization có cấu trúc (owner, reference, date, authorized_suffixes).",
+      "if": {
+        "anyOf": [
+          {
+            "not": {
+              "required": [
+                "network_profile"
+              ]
+            }
+          },
+          {
+            "required": [
+              "network_profile"
+            ],
+            "properties": {
+              "network_profile": {
+                "const": "internet"
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "required": [
+          "authorization"
+        ]
+      }
+    }
+  ]
 }

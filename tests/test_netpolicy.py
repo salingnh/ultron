@@ -17,8 +17,10 @@ from aegis.m06_runner.netpolicy import JobEgressPolicy, Reason, Resolver, Source
 class StubResolver(Resolver):
     def __init__(self, answers: dict[str, list[str]]) -> None:
         self.answers = answers
+        self.asked: list[str] = []
 
     def resolve(self, host: str) -> list[str]:
+        self.asked.append(host)
         return list(self.answers.get(host, []))
 
 
@@ -54,7 +56,10 @@ def test_source_binding_is_per_host_and_port() -> None:
     policy = _source_only("crt.sh")
     resolver = StubResolver({"crt.sh": ["93.184.216.34"], "evil.test": ["93.184.216.34"]})
     assert decide(policy, "crt.sh", 8443, resolver=resolver).reason is Reason.PORT_NOT_ALLOWED
-    assert decide(policy, "evil.test", 443, resolver=resolver).reason is Reason.PORT_NOT_ALLOWED
+    # R2: a name that is not a bound source/target name is refused before any lookup, so the
+    # resolver is never asked about it (it would be a DNS channel out of the sandbox).
+    assert decide(policy, "evil.test", 443, resolver=resolver).reason is Reason.NOT_BOUND_TO_JOB
+    assert resolver.asked == ["crt.sh"]
 
 
 def test_any_answer_in_the_deny_set_denies_the_name() -> None:
@@ -83,6 +88,8 @@ def test_target_binding_allows_only_resolved_targets() -> None:
         job_id="job-1",
         target_ips=(ipaddress.ip_network("10.1.2.3/32"),),
         target_ports=(8080,),
+        # R2: the tool dials a name, so the name must be in the signed DNS binding too.
+        dns_names=("a.example",),
     )
     resolver = StubResolver({"a.example": ["10.1.2.3"]})
     assert decide(policy, "a.example", 8080, resolver=resolver).allowed
@@ -97,6 +104,7 @@ def test_foreign_answer_for_a_bound_name_is_refused() -> None:
         job_id="job-1",
         target_ips=(ipaddress.ip_network("10.1.2.3/32"),),
         target_ports=(8080,),
+        dns_names=("a.example",),
     )
     resolver = StubResolver({"a.example": ["10.1.2.3", "10.9.9.9"]})
     assert decide(policy, "a.example", 8080, resolver=resolver).reason is Reason.NOT_BOUND_TO_JOB
@@ -194,3 +202,91 @@ def test_declared_metadata_names_are_denied_at_runtime(host: str) -> None:
     policy = _source_only(host)
     resolver = StubResolver({host: ["169.254.169.254"]})
     assert decide(policy, host, 443, resolver=resolver).reason is Reason.DENY_METADATA
+
+
+# --- internet profile (G1.6) -----------------------------------------------------------------
+
+PRIVATE = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")
+
+
+def _internet(
+    *hosts: str, targets: tuple[str, ...] = (), private: tuple[str, ...] = ()
+) -> JobEgressPolicy:
+    return JobEgressPolicy(
+        job_id="job-1",
+        profile="internet",
+        sources=(SourceAllow(id="crtsh", hosts=hosts, ports=(443,)),),
+        target_ips=tuple(ipaddress.ip_network(f"{address}/32") for address in targets),
+        private_cidrs=tuple(ipaddress.ip_network(entry) for entry in PRIVATE),
+        authorized_private_cidrs=tuple(ipaddress.ip_network(entry) for entry in private),
+    )
+
+
+def test_a_private_answer_is_denied_on_the_internet_profile() -> None:
+    policy = _internet("intranet.example")
+    resolver = StubResolver({"intranet.example": ["10.1.2.3"]})
+    decision = decide(policy, "intranet.example", 443, resolver=resolver)
+    assert decision.reason is Reason.DENY_PRIVATE
+    assert decision.resolved == ("10.1.2.3",)
+    # An IPv6 ULA is the same rule, not a second code path.
+    resolver6 = StubResolver({"intranet.example": ["fd00::10"]})
+    assert decide(policy, "intranet.example", 443, resolver=resolver6).reason is Reason.DENY_PRIVATE
+
+
+def test_a_private_address_inside_a_roe_private_seed_is_allowed() -> None:
+    # R4: a private address is reachable only when the RoE lists the private seed CIDR that covers
+    # it (signed as `authorized_private_cidrs`), not merely because the address is a signed target.
+    policy = _internet("internal.example", targets=("10.1.2.3",), private=("10.1.2.0/24",))
+    resolver = StubResolver({"internal.example": ["10.1.2.3"]})
+    decision = decide(policy, "internal.example", 443, resolver=resolver)
+    assert decision.allowed and decision.pinned == "10.1.2.3"
+
+
+def test_a_signed_private_target_without_a_roe_private_seed_is_denied() -> None:
+    # The old rule exempted every signed target address, so a name that resolved into the owner's
+    # LAN was reachable once M05 signed it. Only the RoE's own listing exempts a private address.
+    policy = _internet("internal.example", targets=("10.1.2.3",))
+    resolver = StubResolver({"internal.example": ["10.1.2.3"]})
+    assert decide(policy, "internal.example", 443, resolver=resolver).reason is Reason.DENY_PRIVATE
+
+
+def test_the_lab_profile_keeps_private_ranges_reachable_when_bound() -> None:
+    # A lab job runs on the lab network; `private_cidrs` is empty there, so the G1.5c behaviour is
+    # unchanged and a signed binding is still required.
+    policy = JobEgressPolicy(
+        job_id="job-1",
+        profile="lab",
+        sources=(SourceAllow(id="lab", hosts=("crt.sh",), ports=(443,)),),
+    )
+    resolver = StubResolver({"crt.sh": ["10.114.53.80"]})
+    assert decide(policy, "crt.sh", 443, resolver=resolver).allowed
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ({"job_id": "job-1"}, "profile"),
+        ({"job_id": "job-1", "profile": "dmz"}, "unknown network profile"),
+    ],
+)
+def test_a_policy_document_without_a_valid_profile_is_refused(
+    document: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        netpolicy.load_policy(document)
+
+
+def test_the_policy_document_carries_the_profile_caps_and_authorization() -> None:
+    policy = JobEgressPolicy(
+        job_id="job-1",
+        profile="internet",
+        campaign_id="01934f6a-0000-7000-8000-000000000001",
+        authorization="owner, item 61, 2026-11-25",
+        private_cidrs=(ipaddress.ip_network("10.0.0.0/8"),),
+        per_host_rps=0.5,
+        per_host_max_connections=1,
+    )
+    document = netpolicy.policy_document(policy)
+    assert document["profile"] == "internet"
+    assert document["authorization"] == "owner, item 61, 2026-11-25"
+    assert netpolicy.load_policy(document) == policy

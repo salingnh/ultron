@@ -100,10 +100,24 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+#: CanonicalKey namespaces (common/ids.v2). A target that already carries one is that asset; a
+#: bare value is a domain, the form both DNS capabilities take.
+KEY_NAMESPACES = (
+    "dns:", "ip:", "service:", "app:", "url:", "email:", "purl:", "oci:", "repo:", "git:",
+    "artifact:", "cloud:", "k8s:",
+)
+
+
 def domain_key(value: str) -> str:
     """Capability input target -> CanonicalKey. M07 owns normalization; the fixture inputs are already ASCII."""
     text = value.lower().rstrip(".")
     return text if text.startswith("dns:") else "dns:" + text
+
+
+def canonical_key(value: str) -> str:
+    """A target as the CanonicalKey it names: an existing key stays one, a bare name is a domain."""
+    text = value.lower().rstrip(".")
+    return text if text.startswith(KEY_NAMESPACES) else "dns:" + text
 
 
 def kind_for_key(key: str) -> str:
@@ -214,7 +228,7 @@ class Registry:
         refs, kinds = [], []
         for index, value in enumerate(merged.get("targets", [])):
             seed_hits = [s for s in context["seeds"] if self._matches_seed(value, s)]
-            asset_key = domain_key(value)
+            asset_key = canonical_key(value)
             if len(seed_hits) > 1:
                 raise _invalid(f"target {value} khớp nhiều seed", f"/input/targets/{index}")
             if seed_hits:
@@ -387,6 +401,18 @@ def parse_dnsx(output_dir: Path, task: dict, evidence: list[dict]) -> dict:
 
 
 PARSERS = {"subfinder": parse_subfinder, "dnsx": parse_dnsx}
+
+
+def _capability_properties(manifest: dict) -> dict:
+    """The pinned capability input schema's properties (the one place a field's cap is declared)."""
+    match = re.fullmatch(r"schema://([a-z0-9-]+)/([a-z0-9-]+)/v(\d+)",
+                         str(manifest["spec"]["inputSchemaRef"]))
+    if match is None:
+        return {}
+    relpath = f"capabilities/{match[1]}/{match[2]}.v{match[3]}.schema.json"
+    document = _SCHEMAS.get(relpath) or {}
+    properties = document.get("properties")
+    return properties if isinstance(properties, dict) else {}
 
 
 def _trace(task: dict, manifest: dict, job_id: str) -> dict:
@@ -619,11 +645,21 @@ def run_provider_suite(provider: str, context: dict, parser=None) -> tuple[list[
     def validate_before_execution():
         result = adapter.validate(task)
         _equal("validate merged input", result["input"], registry.merged_input(adapter.manifest, task["input"]), failures)
-        over_cap = adapter.manifest["spec"]["budget"]["maxConcurrency"] + 1
-        _expect_error(f"{provider}/validate over-cap",
-                      lambda: adapter.validate(dict(copy.deepcopy(task),
-                                                    input={**task["input"], "concurrency": over_cap})),
-                      "POLICY_DENIED", "FIX_INPUT", failures)
+        # A capability only has a concurrency cap when its input declares the field (the two DNS
+        # capabilities do). A target-bound capability is capped by its port set instead, so the
+        # negative case there is input the pinned schema refuses.
+        properties = _capability_properties(adapter.manifest)
+        if "concurrency" in properties:
+            over_cap = adapter.manifest["spec"]["budget"]["maxConcurrency"] + 1
+            _expect_error(f"{provider}/validate over-cap",
+                          lambda: adapter.validate(dict(copy.deepcopy(task),
+                                                        input={**task["input"], "concurrency": over_cap})),
+                          "POLICY_DENIED", "FIX_INPUT", failures)
+        elif "ports" in properties:
+            _expect_error(f"{provider}/validate empty ports",
+                          lambda: adapter.validate(dict(copy.deepcopy(task),
+                                                        input={**task["input"], "ports": []})),
+                          "INPUT_INVALID", "FIX_INPUT", failures)
         if provider == "dnsx":
             _expect_error(f"{provider}/validate schema",
                           lambda: adapter.validate(dict(copy.deepcopy(task),

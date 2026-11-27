@@ -29,7 +29,8 @@
         "artifact.ready.v2",
         "knowledge.delta.v2",
         "intel.revision.v2",
-        "finding.changed.v2"
+        "finding.changed.v2",
+        "vulnerability.matched.v2"
       ]
     },
     "occurred_at": {
@@ -191,6 +192,22 @@
         "properties": {
           "payload": {
             "$ref": "finding.changed.v2.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "vulnerability.matched.v2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "vulnerability.matched.v2.schema.json"
           }
         }
       }

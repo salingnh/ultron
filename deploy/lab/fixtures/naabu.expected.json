@@ -1,0 +1,61 @@
+{
+  "network": "aegis-lab-lab",
+  "ports": [
+    22,
+    80,
+    443,
+    2222,
+    6379,
+    8009,
+    8080
+  ],
+  "targets": [
+    "10.114.53.211",
+    "10.114.53.212",
+    "10.114.53.213",
+    "10.114.53.214",
+    "10.114.53.215"
+  ],
+  "open": [
+    {
+      "ip": "10.114.53.211",
+      "port": 80,
+      "protocol": "tcp"
+    },
+    {
+      "ip": "10.114.53.211",
+      "port": 443,
+      "protocol": "tcp"
+    },
+    {
+      "ip": "10.114.53.212",
+      "port": 8080,
+      "protocol": "tcp"
+    },
+    {
+      "ip": "10.114.53.212",
+      "port": 8009,
+      "protocol": "tcp"
+    },
+    {
+      "ip": "10.114.53.213",
+      "port": 2222,
+      "protocol": "tcp"
+    },
+    {
+      "ip": "10.114.53.214",
+      "port": 6379,
+      "protocol": "tcp"
+    },
+    {
+      "ip": "10.114.53.215",
+      "port": 80,
+      "protocol": "tcp"
+    }
+  ],
+  "negative_control": {
+    "port": 22,
+    "why": "no lab service listens on 22; a run that reports it is not scanning the inventory"
+  },
+  "note": "Derived from deploy/lab/inventory.json (services); scripts/lab/check_inventory.py fails when the two drift, and scripts/lab/compare_results.py compares a real run against it."
+}

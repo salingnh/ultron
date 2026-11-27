@@ -11,8 +11,14 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, conint, constr
 from ..common import ids_v2_schema
 
 
+class NetworkProfile(StrEnum):
+    lab = "lab"
+    internet = "internet"
+
+
 class Mode(StrEnum):
     broker = "broker"
+    l3 = "l3"
     none = "none"
 
 
@@ -24,15 +30,17 @@ class TargetBinding(StrEnum):
 class BindingEntry(
     RootModel[
         constr(
-            pattern=r"^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+            pattern=r"^(?:(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])|dns:([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)$",
+            max_length=260,
         )
     ]
 ):
     root: constr(
-        pattern=r"^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+        pattern=r"^(?:(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]{0,252}):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])|dns:([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)$",
+        max_length=260,
     ) = Field(
         ...,
-        description="Một đích được broker mở: host (tên DNS, IPv4 hoặc IPv6 trong ngoặc vuông) và cổng 1–65535. Tên luôn viết thường, không wildcard.",
+        description="Một đích được broker mở: `host:port` (tên DNS, IPv4 hoặc IPv6 trong ngoặc vuông với cổng 1–65535), hoặc `dns:<tên>` cho tên miền được phân giải qua DNS front end của broker. Tên luôn viết thường, không wildcard.",
     )
 
 
@@ -42,20 +50,25 @@ class EgressBinding(BaseModel):
     )
     mode: Mode = Field(
         ...,
-        description="`broker` khi manifest đã pin có networkAccess=egress; `none` khi không có mạng ra (khi đó mọi mảng rỗng).",
+        description="Kênh egress của task, bằng `egressMode` của manifest đã pin: `broker` (L7) hoặc `l3` (gateway lọc theo IP:port đã ký); `none` khi không có mạng ra (khi đó mọi mảng rỗng). M06 từ chối task có mode khác manifest.",
     )
     target_binding: TargetBinding = Field(
         ..., description="Giá trị targetBinding của manifest đã pin."
     )
     entries: list[BindingEntry] = Field(
         ...,
-        description="Tập đích được mở, dạng host:port, đã sắp xếp và không trùng. IPv6 viết trong ngoặc vuông.",
+        description="Tập đích được mở, dạng host:port (IPv6 viết trong ngoặc vuông) hoặc dns:<tên> cho tên được phân giải qua DNS front end của broker, đã sắp xếp và không trùng.",
         max_length=256,
     )
     target_addresses: list[ids_v2_schema.IPAddress] = Field(
         ...,
         description="Địa chỉ IP đã phân giải và ghim của mục tiêu task (targetBinding=required); rỗng khi targetBinding=none. Là bằng chứng M05 đã kiểm đích, không phải nguồn sự thật về tài sản.",
         max_length=1000,
+    )
+    authorized_private_cidrs: list[ids_v2_schema.IPOrCIDR] | None = Field(
+        None,
+        description="CIDR seed riêng tư (RFC1918, CGNAT, ULA) mà RoE của chiến dịch liệt kê tường minh và M05 đã ký cho task này (R4). Trên profile internet, một địa chỉ riêng tư chỉ được mở khi nằm trong một CIDR ở đây: M06 từ chối (`DENY_PRIVATE`) mọi dải riêng khác, kể cả khi địa chỉ đó có trong `target_addresses`; một entry không nằm trong dải riêng làm task bị từ chối. Rỗng là mặc định an toàn: không dải riêng nào được mở.",
+        max_length=100,
     )
 
 
@@ -68,6 +81,10 @@ class ApprovedTask(BaseModel):
     campaign_id: ids_v2_schema.Id
     scope_id: ids_v2_schema.Id
     policy_version: ids_v2_schema.PolicyVersion
+    network_profile: NetworkProfile = Field(
+        ...,
+        description="Profile mạng đã ký của job, lấy từ RoE của campaign lúc M05 duyệt: `lab` (mạng lab của deployment) hoặc `internet` (mạng riêng của job + broker L7 ra internet). M06 chỉ chạy job trên đúng profile này và từ chối khi deployment không cấu hình được profile đó; nhiệm vụ fail closed nên trường này bắt buộc, không suy diễn từ môi trường.",
+    )
     capability: ids_v2_schema.CapabilityId
     provider: str
     provider_version: str

@@ -352,11 +352,14 @@ def test_every_mounted_operation_requires_the_operator_token(
         "getJob",
         "cancelJob",
         "getCampaignFlow",
+        "getCampaignActivity",
         "streamCampaignEvents",
         "listCapabilities",
         # G1.4b: the two locked graph reads (asset graph and its history).
         "getAssetGraph",
         "getAssetHistory",
+        # G1.6 slice C: the candidate CVE read of one asset.
+        "listAssetVulnerabilities",
         # G1.5c: M27's ingestion endpoint is mounted by the API (service token, not the operator's).
         "ingestResult",
     }

@@ -1,0 +1,439 @@
+{
+ "resultsPerPage": 4,
+ "startIndex": 0,
+ "totalResults": 4,
+ "format": "NVD_CVE",
+ "version": "2.0",
+ "timestamp": "2026-11-24T06:00:00.000Z",
+ "vulnerabilities": [
+  {
+   "cve": {
+    "id": "CVE-2021-41773",
+    "sourceIdentifier": "security@apache.org",
+    "published": "2021-10-05T14:15:10.050",
+    "lastModified": "2026-11-20T12:00:00.000",
+    "vulnStatus": "Analyzed",
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "cvssData": {
+        "version": "3.1",
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        "baseScore": 9.8,
+        "baseSeverity": "CRITICAL"
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*",
+          "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000001"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "references": [
+     {
+      "url": "https://httpd.apache.org/security/vulnerabilities_24.html",
+      "source": "security@apache.org",
+      "tags": [
+       "Vendor Advisory"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "cve": {
+    "id": "CVE-2021-23017",
+    "sourceIdentifier": "security@nginx.com",
+    "published": "2021-06-01T13:15:07.607",
+    "lastModified": "2026-11-18T09:30:00.000",
+    "vulnStatus": "Analyzed",
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "cvssData": {
+        "version": "3.1",
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        "baseScore": 7.7,
+        "baseSeverity": "HIGH"
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "0.6.18",
+          "versionEndExcluding": "1.20.1",
+          "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000002"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "references": [
+     {
+      "url": "https://nginx.org/en/security_advisories.html",
+      "source": "security@nginx.com",
+      "tags": [
+       "Vendor Advisory"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "cve": {
+    "id": "CVE-2022-22965",
+    "sourceIdentifier": "security@vmware.com",
+    "published": "2022-04-01T21:15:07.797",
+    "lastModified": "2026-11-19T11:00:00.000",
+    "vulnStatus": "Analyzed",
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "cvssData": {
+        "version": "3.1",
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        "baseScore": 9.8,
+        "baseSeverity": "CRITICAL"
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:vmware:spring_framework:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "5.3.0",
+          "versionEndExcluding": "5.3.18",
+          "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000003"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:vmware:spring_framework:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "2.5.0",
+          "versionEndExcluding": "2.6.6",
+          "matchCriteriaId": "9F1E4F4C-1111-4A00-8000-000000000004"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "references": [
+     {
+      "url": "https://spring.io/security/cve-2022-22965",
+      "source": "security@vmware.com",
+      "tags": [
+       "Vendor Advisory"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "cve": {
+    "id": "CVE-2020-1938",
+    "sourceIdentifier": "security@apache.org",
+    "published": "2020-02-24T22:15:12.057",
+    "lastModified": "2026-08-25T16:28:27.310",
+    "vulnStatus": "Analyzed",
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "cvssData": {
+        "version": "3.1",
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        "baseScore": 9.8,
+        "baseSeverity": "CRITICAL"
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:apache:geode:1.12.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "7.0.0",
+          "versionEndExcluding": "7.0.100",
+          "version_start_including": "7.0.0",
+          "version_end_excluding": "7.0.100"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "8.5.0",
+          "versionEndExcluding": "8.5.51",
+          "version_start_including": "8.5.0",
+          "version_end_excluding": "8.5.51"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "9.0.0",
+          "versionEndExcluding": "9.0.31",
+          "version_start_including": "9.0.0",
+          "version_end_excluding": "9.0.31"
+         }
+        ]
+       },
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:fedoraproject:fedora:30:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:fedoraproject:fedora:31:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:fedoraproject:fedora:32:*:*:*:*:*:*:*"
+         }
+        ]
+       },
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:agile_engineering_data_management:6.2.1.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:agile_product_lifecycle_management:9.3.3:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:agile_product_lifecycle_management:9.3.5:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:agile_product_lifecycle_management:9.3.6:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:communications_element_manager:8.1.1:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:communications_element_manager:8.2.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:communications_element_manager:8.2.1:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:communications_instant_messaging_server:10.0.1.4.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:health_sciences_empirica_inspections:1.0.1.2:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:health_sciences_empirica_signal:7.3.3:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:hospitality_guest_access:4.2.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:hospitality_guest_access:4.2.1:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:instantis_enterprisetrack:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "17.1",
+          "versionEndIncluding": "17.3",
+          "version_start_including": "17.1",
+          "version_end_including": "17.3"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:mysql_enterprise_monitor:*:*:*:*:*:*:*:*",
+          "versionEndIncluding": "4.0.12",
+          "version_end_including": "4.0.12"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:mysql_enterprise_monitor:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "8.0.0",
+          "versionEndIncluding": "8.0.20",
+          "version_start_including": "8.0.0",
+          "version_end_including": "8.0.20"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:siebel_ui_framework:*:*:*:*:*:*:*:*",
+          "versionEndIncluding": "20.5",
+          "version_end_including": "20.5"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:transportation_management:6.3.7:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:workload_manager:12.2.0.1:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:workload_manager:18c:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:oracle:workload_manager:19c:*:*:*:*:*:*:*"
+         }
+        ]
+       },
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:debian:debian_linux:8.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:debian:debian_linux:9.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:debian:debian_linux:10.0:*:*:*:*:*:*:*"
+         }
+        ]
+       },
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:opensuse:leap:15.1:*:*:*:*:*:*:*"
+         }
+        ]
+       },
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:blackberry:good_control:*:*:*:*:*:*:*:*",
+          "versionEndIncluding": "5.2.58.38",
+          "version_end_including": "5.2.58.38"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:blackberry:workspaces_server:7.0.1:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:blackberry:workspaces_server:7.1.2:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:blackberry:workspaces_server:8.1.0:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:blackberry:workspaces_server:9.0:*:*:*:*:*:*:*"
+         }
+        ]
+       },
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:netapp:data_availability_services:-:*:*:*:*:*:*:*"
+         },
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:netapp:oncommand_system_manager:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "3.0.0",
+          "versionEndIncluding": "3.1.3",
+          "version_start_including": "3.0.0",
+          "version_end_including": "3.1.3"
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "references": [
+     {
+      "url": "http://lists.opensuse.org/opensuse-security-announce/2020-03/msg00025.html",
+      "source": "security@apache.org"
+     },
+     {
+      "url": "http://lists.opensuse.org/opensuse-security-announce/2020-05/msg00002.html",
+      "source": "security@apache.org"
+     },
+     {
+      "url": "http://support.blackberry.com/kb/articleDetail?articleNumber=000062739",
+      "source": "security@apache.org"
+     },
+     {
+      "url": "https://lists.apache.org/thread.html/r089dc67c0358a1556dd279c762c74f32d7a254a54836b7ee2d839d8e%40%3Cdev.tomee.apache.org%3E",
+      "source": "security@apache.org"
+     }
+    ]
+   }
+  }
+ ]
+}

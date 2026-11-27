@@ -1,7 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { apiClient, getOperatorToken, setOperatorToken, STORAGE_KEY_TOKEN } from '../api/client';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  ApiError,
+  apiClient,
+  getOperatorToken,
+  setOperatorToken,
+  STORAGE_KEY_TOKEN,
+} from '../api/client';
 import { resetMockData } from '../mock/handlers';
-import { parseSSEBlock } from '../api/sse';
+import {
+  clearAllCampaignEventIds,
+  createCoalescedRefresh,
+  getLatestCampaignEventId,
+  parseSSEBlock,
+  subscribeToCampaignEvents,
+} from '../api/sse';
 
 describe('ApiClient (Mock & Contract Operations)', () => {
   beforeEach(() => {
@@ -154,5 +166,283 @@ describe('ApiClient (Mock & Contract Operations)', () => {
     const res = await apiClient.listCapabilities();
     expect(res.items.some((c) => c.capability === 'dns.enumerate_subdomains')).toBe(true);
     expect(res.items.some((c) => c.capability === 'dns.resolve')).toBe(true);
+  });
+
+  it('lists candidate vulnerabilities for a service asset and supports kev_only filter', async () => {
+    const all = await apiClient.listAssetVulnerabilities('01934f6a-0000-7000-8000-0000000000f6');
+    expect(all.asset.canonical_key).toBe('service:203.0.113.10:80/tcp');
+    expect(all.items).toHaveLength(1);
+    expect(all.items[0].vulnerability_id).toBe('CVE-2021-41773');
+    expect(all.items[0].kev).toBe(true);
+
+    const nonKevFiltered = await apiClient.listAssetVulnerabilities(
+      '01934f6a-0000-7000-8000-0000000000f7',
+      { kev_only: true }
+    );
+    expect(nonKevFiltered.items).toHaveLength(0);
+  });
+
+  it('lists campaign asset.discovered.v2 events', async () => {
+    const res = await apiClient.listCampaignEvents('01934f6a-0000-7000-8000-000000000001', {
+      types: ['asset.discovered.v2'],
+      limit: 200,
+    });
+    expect(res.items.length).toBeGreaterThanOrEqual(9);
+    expect(res.items.every((ev) => ev.type === 'asset.discovered.v2')).toBe(true);
+  });
+
+  it('creates a campaign with Idempotency-Key replay and 409 conflict handling in mock mode', async () => {
+    const payload = {
+      name: 'Lab verification campaign',
+      objective: 'Test lab campaign creation',
+      targets: { domains: ['lab.aegis.test'] },
+      policy: {
+        network_profile: 'lab' as const,
+        max_parallel_jobs: 2,
+        max_duration_hours: 2,
+      },
+    };
+    const key = 'test-create-idemp-key-0001';
+    const created = await apiClient.createCampaign(payload, { idempotencyKey: key });
+    expect(created.status).toBe('CREATED');
+    expect(created.policy_version).toMatch(/^roe-\d+$/);
+
+    const replayed = await apiClient.createCampaign(payload, { idempotencyKey: key });
+    expect(replayed.campaign_id).toBe(created.campaign_id);
+
+    await expect(
+      apiClient.createCampaign({ ...payload, name: 'Different body' }, { idempotencyKey: key })
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'IDEMPOTENCY_CONFLICT',
+    });
+
+    const fetched = await apiClient.getCampaign(created.campaign_id);
+    expect(fetched.name).toBe('Lab verification campaign');
+    expect(fetched.policy?.network_profile).toBe('lab');
+  });
+
+  it('adopts a new policy snapshot on active campaign and rejects terminal campaign', async () => {
+    const activeId = '01934f6a-0000-7000-8000-000000000001';
+    const res = await apiClient.updateCampaignPolicy(
+      activeId,
+      {
+        policy: {
+          network_profile: 'lab',
+          max_parallel_jobs: 4,
+          max_duration_hours: 12,
+        },
+        reason: 'Tang gioi han song song len 4',
+      },
+      { idempotencyKey: 'test-policy-key-0001' }
+    );
+    expect(res.policy_version).toMatch(/^roe-\d+$/);
+    const updated = await apiClient.getCampaign(activeId);
+    expect(updated.policy_version).toBe(res.policy_version);
+    expect(updated.policy?.max_parallel_jobs).toBe(4);
+
+    // Campaign 0003 is COMPLETED -> 409 conflict
+    await expect(
+      apiClient.updateCampaignPolicy(
+        '01934f6a-0000-7000-8000-000000000003',
+        {
+          policy: { max_parallel_jobs: 2, max_duration_hours: 4 },
+          reason: 'Khong duoc phep tren terminal',
+        },
+        { idempotencyKey: 'test-policy-key-0002' }
+      )
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('sends Idempotency-Key and Bearer token headers on POST /campaigns in real mode', async () => {
+    setOperatorToken('op-real-token-xyz');
+    apiClient.setMock(false);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          campaign_id: '01934f6a-0000-7000-8000-000000000099',
+          status: 'CREATED',
+          policy_version: 'roe-1',
+          scope_id: '01934f6a-0000-7000-8000-0000000000aa',
+        }),
+        { status: 202, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    try {
+      await apiClient.createCampaign(
+        {
+          name: 'Header check',
+          objective: 'Verify headers',
+          targets: { domains: ['lab.aegis.test'] },
+          policy: { network_profile: 'lab', max_parallel_jobs: 1, max_duration_hours: 1 },
+        },
+        { idempotencyKey: 'fixed-idemp-key-9999' }
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0];
+      const headers = init?.headers as Headers;
+      expect(headers.get('Idempotency-Key')).toBe('fixed-idemp-key-9999');
+      expect(headers.get('Authorization')).toBe('Bearer op-real-token-xyz');
+    } finally {
+      fetchSpy.mockRestore();
+      apiClient.setMock(null);
+    }
+  });
+
+  it('captures HTTP status, API error code, and request path on ApiError/UiError, and translates network failure to Vietnamese', async () => {
+    apiClient.setMock(false);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 'INTERNAL_ERROR',
+            message: 'the app has no graph driver',
+            next_action: 'CHECK_PROVIDER',
+          }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    try {
+      let caughtHttp: unknown;
+      try {
+        await apiClient.getAssetGraph('01934f6a-0000-7000-8000-0000000000f1', {
+          campaign_id: '01934f6a-0000-7000-8000-000000000001',
+          max_hops: 2,
+        });
+      } catch (e) {
+        caughtHttp = e;
+      }
+      expect(caughtHttp).toBeInstanceOf(ApiError);
+      const httpUiErr = (caughtHttp as ApiError).toUiError();
+      expect(httpUiErr.status).toBe(500);
+      expect(httpUiErr.code).toBe('INTERNAL_ERROR');
+      expect(httpUiErr.path).toContain('/assets/01934f6a-0000-7000-8000-0000000000f1/graph');
+
+      let caughtNet: unknown;
+      try {
+        await apiClient.listCampaigns();
+      } catch (e) {
+        caughtNet = e;
+      }
+      expect(caughtNet).toBeInstanceOf(ApiError);
+      const netUiErr = (caughtNet as ApiError).toUiError();
+      expect(netUiErr.status).toBeUndefined();
+      expect(netUiErr.code).toBe('NETWORK_ERROR');
+      expect(netUiErr.path).toBe('/campaigns');
+      expect(netUiErr.message).toContain('Không thể kết nối tới máy chủ API');
+    } finally {
+      fetchSpy.mockRestore();
+      apiClient.setMock(null);
+    }
+  });
+
+  it('retrieves campaign activity timeline with cursor pagination', async () => {
+    const page1 = await apiClient.getCampaignActivity('01934f6a-0000-7000-8000-000000000001', {
+      limit: 3,
+    });
+    expect(page1.items).toHaveLength(3);
+    expect(page1.truncated).toBe(true);
+    expect(page1.next_cursor).toBeTruthy();
+
+    const page2 = await apiClient.getCampaignActivity('01934f6a-0000-7000-8000-000000000001', {
+      cursor: page1.next_cursor,
+      limit: 10,
+    });
+    expect(page2.items.length).toBeGreaterThan(0);
+    expect(page2.truncated).toBe(false);
+  });
+
+  it('tracks Last-Event-ID per campaign, sends types filter, and resets stale checkpoint on 400 (D1)', async () => {
+    clearAllCampaignEventIds();
+    const campaignId = '01934f6a-0000-7000-8000-0000000000aa';
+
+    const encoder = new TextEncoder();
+    const sseBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'id: 355\nevent: job.completed.v2\ndata: {"event_id":"e1","type":"job.completed.v2","payload":{}}\n\n'
+          )
+        );
+        controller.close();
+      },
+    });
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(sseBody, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 'INPUT_INVALID', message: 'resume point beyond head' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    try {
+      const sub1 = subscribeToCampaignEvents({
+        campaignId,
+        types: ['job.started.v2', 'job.completed.v2'],
+        onEvent: () => {},
+        reconnectDelayMs: 5000,
+      });
+
+      await vi.waitFor(() => {
+        expect(getLatestCampaignEventId(campaignId)).toBe('355');
+      });
+      expect(String(fetchSpy.mock.calls[0][0])).toContain(
+        'types=job.started.v2%2Cjob.completed.v2'
+      );
+      const firstHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(firstHeaders['Last-Event-ID']).toBeUndefined();
+      sub1.close();
+
+      // Second subscription starts from cached Last-Event-ID=355; 400 clears stale checkpoint
+      const sub2 = subscribeToCampaignEvents({
+        campaignId,
+        onEvent: () => {},
+        reconnectDelayMs: 5000,
+      });
+
+      await vi.waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+      const secondHeaders = fetchSpy.mock.calls[1][1]?.headers as Record<string, string>;
+      expect(secondHeaders['Last-Event-ID']).toBe('355');
+      await vi.waitFor(() => {
+        expect(getLatestCampaignEventId(campaignId)).toBeNull();
+      });
+      sub2.close();
+    } finally {
+      fetchSpy.mockRestore();
+      clearAllCampaignEventIds();
+    }
+  });
+
+  it('coalesces burst triggers and overlapping in-flight refreshes into O(1) calls (D1)', async () => {
+    vi.useFakeTimers();
+    try {
+      const fn = vi.fn().mockResolvedValue(undefined);
+      const refresher = createCoalescedRefresh(fn, 200);
+
+      for (let i = 0; i < 355; i++) {
+        refresher.trigger();
+      }
+      expect(fn).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(fn).toHaveBeenCalledTimes(1);
+      refresher.cancel();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

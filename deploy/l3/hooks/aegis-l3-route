@@ -1,0 +1,22 @@
+#!/bin/sh
+# OCI createContainer hook of the L3 gateway mode (G1.6 item 5).
+#
+# The job runs on an *internal* podman network: it has no default route, so without this hook it can
+# reach nothing but the broker's address on its own subnet. The hook runs inside the container's
+# network namespace (OCI stage `createContainer`) and installs the one route the job is allowed to
+# have: the default via the broker, which is the L3 gateway that filters every forwarded packet.
+#
+# Usage (written by M06 into the job's own hooks directory):
+#   aegis-l3-route <broker_ip> <interface>
+#
+# Fail closed: a non-zero exit aborts the container start (the OCI runtime refuses it), and an
+# internal network has no other route to fall back to. The running job has no capabilities, so it
+# cannot change or remove the route. The file is deployment-owned: the task never names it.
+set -eu
+
+broker_ip=${1:?broker address is required}
+interface=${2:-eth0}
+
+# `onlink` accepts the gateway before netavark has finished the interface address, so the hook does
+# not depend on the order in which podman runs network setup and container hooks.
+exec ip route replace default via "$broker_ip" dev "$interface" onlink

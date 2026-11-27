@@ -4,7 +4,6 @@
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
-STATE_DIR="$REPO_ROOT/.local"
 API_PID_FILE="$STATE_DIR/api.pid"
 
 [ -f "$API_PID_FILE" ] || {

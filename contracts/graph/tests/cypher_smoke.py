@@ -6,8 +6,8 @@ contracts/graph/projector-upserts.cypher - not a copy of them, and asserts the p
 PROGRESS.md claims for them:
 
   1. constraints.cypher is idempotent: both runs succeed.
-  2. The four projector upserts are idempotent: applied twice they keep 2 Asset, 1 Finding,
-     1 Evidence and 3 edges.
+  2. The projector upserts are idempotent: applied twice they keep 3 Asset, 1 Finding,
+     1 Evidence, 1 Vulnerability and 3 edges carrying a job.
   3. Closing a relationship interval and opening a new one keeps two SUBDOMAIN_OF windows
      with exactly one current (valid_to IS NULL) edge.
   4. A second Asset with an existing asset_id but another canonical_key is rejected by the
@@ -56,8 +56,16 @@ CAMPAIGN = str(uuid.uuid4())
 JOB = str(uuid.uuid4())
 FINDING = str(uuid.uuid4())
 EVIDENCE = str(uuid.uuid4())
+OBSERVATION = str(uuid.uuid4())
 ROOT_CANONICAL = f"dns:app.{SUFFIX}"
 ROOT_ASSET = str(uuid.uuid4())
+# Namespaced per run like the domain above: a fixed key would collide with an earlier run's
+# node (MERGE on canonical_key keeps the old asset_id), and the edge assertion would fail.
+SVC_CANONICAL = f"service:10.114.53.10:{20000 + int(RUN, 16) % 40000}/tcp"
+SVC_ASSET = str(uuid.uuid4())
+CVE = "CVE-2021-44228"
+SNAPSHOT = str(uuid.uuid4())
+MATCH = str(uuid.uuid4())
 SUB_CANONICAL = f"dns:www.app.{SUFFIX}"
 SUB_ASSET = str(uuid.uuid4())
 REL_ONE = str(uuid.uuid4())
@@ -142,8 +150,8 @@ def apply_file(path: Path) -> int:
 
 
 def apply_projector(relationship_id: str | None, valid_to: str | None) -> None:
-    """Runs the four projector upserts from the committed template, in file order."""
-    asset, edge, finding, evidence = statements(PROJECTOR)
+    """Runs the projector upserts from the committed template, in file order."""
+    asset, edge, finding, evidence, vulnerability, retraction, observation = statements(PROJECTOR)
     run(asset, {
         "canonical_key": ROOT_CANONICAL, "asset_id": ROOT_ASSET, "kind": "domain",
         "first_seen": OBSERVED, "last_seen": OBSERVED,
@@ -172,6 +180,54 @@ def apply_projector(relationship_id: str | None, valid_to: str | None) -> None:
         "storage_uri": STORAGE_URI, "source_tool": "smoke",
         "observed_at": OBSERVED, "source_job_id": JOB,
     })
+    run(asset, {
+        "canonical_key": SVC_CANONICAL, "asset_id": SVC_ASSET, "kind": "service",
+        "first_seen": OBSERVED, "last_seen": OBSERVED,
+        "campaign_id": CAMPAIGN, "revision": 1,
+    })
+    run(vulnerability, {
+        "asset_id": SVC_ASSET, "vulnerability_id": CVE, "cvss_base": 9.8, "kev": True,
+        "epss": 0.94, "snapshot_id": SNAPSHOT, "node_snapshot_id": SNAPSHOT,
+        "match_method": "cpe_range",
+        "affected_range": ">= 2.0.0, < 2.15.0", "confidence": 0.6,
+        "observed_at": OBSERVED, "match_id": MATCH, "campaign_id": CAMPAIGN,
+    })
+    run(observation, {
+        "observation_id": OBSERVATION, "predicate": "service.product",
+        "value_summary": '{"product": "nginx", "version": "1.29.8"}', "polarity": "present",
+        "subject": SUB_CANONICAL, "observed_at": OBSERVED, "confidence": 0.8, "revision": 1,
+    })
+
+
+def retraction_removes_the_edge_and_the_orphan_node() -> str:
+    """Statement 4b: a retracted candidate leaves no AFFECTED_BY edge and no orphan :Vulnerability.
+
+    The projector runs it only when PostgreSQL says no decision of the pair matches any more; here
+    the template is exercised on its own, then the upsert restores the edge for the checks after it.
+    """
+    _, _, _, _, vulnerability, retraction, _ = statements(PROJECTOR)
+    run(retraction, {"asset_id": SVC_ASSET, "vulnerability_id": CVE})
+    edges = scalars(
+        "MATCH (:Asset {asset_id: $asset})-[:AFFECTED_BY]->(:Vulnerability {vulnerability_id: $cve})"
+        " RETURN count(*)", {"asset": SVC_ASSET, "cve": CVE})[0]
+    nodes = scalars("MATCH (v:Vulnerability {vulnerability_id: $cve}) RETURN count(v)",
+                    {"cve": CVE})[0]
+    if (edges, nodes) != (0, 0):
+        raise AssertionError(f"retraction left {edges} edge(s) and {nodes} orphan node(s)")
+    # Idempotent: a replay of the same event removes nothing and must not fail.
+    run(retraction, {"asset_id": SVC_ASSET, "vulnerability_id": CVE})
+    run(vulnerability, {
+        "asset_id": SVC_ASSET, "vulnerability_id": CVE, "cvss_base": 9.8, "kev": True,
+        "epss": 0.94, "snapshot_id": SNAPSHOT, "node_snapshot_id": SNAPSHOT,
+        "match_method": "cpe_range",
+        "affected_range": ">= 2.0.0, < 2.15.0", "confidence": 0.6,
+        "observed_at": OBSERVED, "match_id": MATCH, "campaign_id": CAMPAIGN,
+    })
+    restored = scalars("MATCH (:Vulnerability {vulnerability_id: $cve}) RETURN count(*)",
+                       {"cve": CVE})[0]
+    if restored != 1:
+        raise AssertionError(f"the upsert did not restore the candidate: {restored} node(s)")
+    return "edge and orphan node removed, upsert restored them"
 
 
 def constraint_runs() -> str:
@@ -195,8 +251,20 @@ def projector_twice() -> str:
                             {"sha256": SHA256})[0],
         "edges": scalars("MATCH ()-[r]->() WHERE r.source_job_id = $job RETURN count(r)",
                          {"job": JOB})[0],
+        "observations": scalars("MATCH (o:Observation {observation_id: $id}) RETURN count(o)",
+                                {"id": OBSERVATION})[0],
     }
-    expected = {"assets": 2, "findings": 1, "evidence": 1, "edges": 3}
+    for query, key, value in (
+        ("MATCH (:Vulnerability {vulnerability_id: $cve}) RETURN count(*)",
+         "cve", CVE),
+        ("MATCH (:Asset {asset_id: $asset})-[:AFFECTED_BY]->(:Vulnerability {vulnerability_id: $cve})"
+         " RETURN count(*)", "asset", SVC_ASSET),
+    ):
+        params = {"cve": CVE, "asset": SVC_ASSET}
+        count = scalars(query, params)[0]
+        if count != 1:
+            raise AssertionError(f"{key}={value!r}: expected 1 node/edge, found {count}")
+    expected = {"assets": 3, "findings": 1, "evidence": 1, "edges": 3, "observations": 1}
     if counts != expected:
         raise AssertionError(f"{counts} != {expected}")
     return str(counts)
@@ -237,6 +305,7 @@ def main() -> int:
     check("projector upserts are idempotent", projector_twice)
     check("reopening a relationship keeps one current window", interval_reopen)
     check("asset_id uniqueness is enforced", duplicate_asset_id_rejected)
+    check("a retraction removes the edge and the orphan node", retraction_removes_the_edge_and_the_orphan_node)
 
     failed = [name for name, ok, _ in CHECKS if not ok]
     print(f"cypher smoke: {len(CHECKS) - len(failed)}/{len(CHECKS)} checks PASS")

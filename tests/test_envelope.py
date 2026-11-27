@@ -103,7 +103,7 @@ def test_envelope_carries_the_pins_and_the_dedup_key() -> None:
     provider = built.provider
     assert str(provider.name) == "subfinder"
     assert str(provider.version) == "v2.17.0"
-    assert str(provider.adapter_version.root) == "1.0.0"
+    assert str(provider.adapter_version.root) == str(task.adapter_version.root)
     assert str(provider.image_digest.root) == task.image_digest.root
     assert built.provenance.seed_targets[0].model_dump() == task.targets[0].model_dump()
     assert built.status == "succeeded"
@@ -343,3 +343,26 @@ def test_parser_results_without_coverage_are_still_refused() -> None:
     }
     with pytest.raises(envelopes.EnvelopeError, match="coverage_subjects"):
         _build(results=results)
+
+
+def test_a_limited_run_reports_incomplete_coverage_with_its_limitations() -> None:
+    """A denied or capped connection is not a result: coverage says incomplete and why."""
+    built = _build(
+        limitations=[
+            {
+                "code": "EGRESS_CAPPED",
+                "message": "3 connection(s) waited past the RoE per-host cap; unknown, not closed",
+            }
+        ]
+    )
+    coverage = built.coverage
+    assert coverage.complete is False
+    assert coverage.limitations is not None and len(coverage.limitations) == 1
+    assert coverage.limitations[0].code == "EGRESS_CAPPED"
+    assert "not closed" in (coverage.limitations[0].message or "")
+
+
+def test_an_unlimited_run_keeps_a_complete_coverage() -> None:
+    built = _build()
+    assert built.coverage.complete is True
+    assert not built.coverage.limitations

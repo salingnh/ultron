@@ -6,15 +6,30 @@ import type {
   AssetGraphNode,
   AssetGraphEdge,
   AssetHistoryResponse,
+  AssetVulnerabilitiesResponse,
+  CampaignEventsResponse,
   Asset,
   CapabilitiesResponse,
+  CampaignActivityResponse,
   ProvenanceDetail,
   CampaignStatus,
   JobStatus,
   AppError,
+  UiError,
+  CreateCampaignRequest,
+  CreateCampaignResponse,
+  UpdateCampaignPolicyRequest,
+  UpdateCampaignPolicyResponse,
 } from './types';
 import { mockHandlers } from '../mock/handlers';
-import { subscribeToCampaignEvents, type SSEConnection, type SSEOptions } from './sse';
+import {
+  recordCampaignEventId,
+  subscribeToCampaignEvents,
+  type SSEConnection,
+  type SSEOptions,
+} from './sse';
+
+export type { UiError };
 
 export const STORAGE_KEY_TOKEN = 'ultron-operator-token';
 
@@ -43,29 +58,120 @@ export function setOperatorToken(token: string): void {
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v2';
 let mockOverride: boolean | null = null;
 
+const NETWORK_ERROR_VI =
+  'Không thể kết nối tới máy chủ API (lỗi mạng hoặc CORS bị chặn). Kiểm tra API server đang chạy và cấu hình CORS.';
+
+export function isLikelyNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'TypeError') return true;
+  return /failed to fetch|networkerror|network request failed|load failed|fetch/i.test(err.message);
+}
+
 export class ApiError extends Error {
-  public code?: string;
+  public code: string;
+  public path?: string;
+  public isNetworkError: boolean;
   public next_action?: string;
   public next_action_detail?: string;
   public technical_cause?: string;
+  public field?: string;
+  public trace_id?: string;
 
   constructor(
-    public status: number,
+    public status: number | undefined,
     public appError?: AppError,
-    message?: string
+    message?: string,
+    path?: string,
+    isNetworkError: boolean = false
   ) {
-    super(message || appError?.message || `API Error: ${status}`);
+    super(
+      message ||
+        appError?.message ||
+        (isNetworkError
+          ? NETWORK_ERROR_VI
+          : status !== undefined
+          ? `Yêu cầu thất bại với mã HTTP ${status}`
+          : 'Lỗi kết nối API')
+    );
     this.name = 'ApiError';
+    this.path = path;
+    this.isNetworkError = isNetworkError;
+    this.code =
+      appError?.code ||
+      (isNetworkError
+        ? 'NETWORK_ERROR'
+        : status === 401
+        ? 'POLICY_DENIED'
+        : status === 404
+        ? 'INPUT_INVALID'
+        : 'INTERNAL_ERROR');
     if (appError) {
-      this.code = appError.code;
       this.next_action = appError.next_action;
       this.next_action_detail = appError.next_action_detail;
       this.technical_cause = appError.technical_cause;
+      this.field = appError.field;
+      this.trace_id = appError.trace_id;
+    } else if (isNetworkError) {
+      this.next_action = 'CHECK_PROVIDER';
+      this.next_action_detail = 'Kiểm tra kết nối mạng, trạng thái API server và cấu hình CORS.';
     }
+  }
+
+  toUiError(): UiError {
+    return {
+      status: this.status,
+      code: this.code,
+      path: this.path,
+      message: this.message,
+      next_action: this.next_action,
+      next_action_detail: this.next_action_detail,
+      technical_cause: this.technical_cause,
+      field: this.field,
+      trace_id: this.trace_id,
+      isNetworkError: this.isNetworkError,
+    };
   }
 }
 
-function generateIdempotencyKey(): string {
+export function toUiError(err: unknown, fallbackPath?: string): UiError {
+  if (err instanceof ApiError) {
+    const uiErr = err.toUiError();
+    if (!uiErr.path && fallbackPath) uiErr.path = fallbackPath;
+    return uiErr;
+  }
+  if (typeof err === 'object' && err !== null && 'code' in err && 'message' in err) {
+    const obj = err as UiError;
+    return {
+      ...obj,
+      path: obj.path || fallbackPath,
+    };
+  }
+  if (err instanceof Error) {
+    if (isLikelyNetworkError(err)) {
+      return {
+        code: 'NETWORK_ERROR',
+        path: fallbackPath,
+        message: NETWORK_ERROR_VI,
+        technical_cause: err.message,
+        next_action: 'CHECK_PROVIDER',
+        next_action_detail: 'Kiểm tra kết nối mạng, trạng thái API server và cấu hình CORS.',
+        isNetworkError: true,
+      };
+    }
+    return {
+      code: 'ERROR',
+      path: fallbackPath,
+      message: err.message || 'Đã xảy ra lỗi không xác định',
+    };
+  }
+  return {
+    code: 'ERROR',
+    path: fallbackPath,
+    message: typeof err === 'string' ? err : 'Đã xảy ra lỗi không xác định',
+  };
+}
+
+export function generateIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
@@ -90,7 +196,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers.set('Idempotency-Key', generateIdempotencyKey());
   }
 
-  const res = await fetch(url, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (err: unknown) {
+    const netErr = new ApiError(undefined, undefined, NETWORK_ERROR_VI, path, true);
+    if (err instanceof Error && err.message) {
+      netErr.technical_cause = err.message;
+    }
+    throw netErr;
+  }
 
   if (!res.ok) {
     let errorData: AppError | undefined;
@@ -99,7 +214,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // not json error
     }
-    throw new ApiError(res.status, errorData, errorData?.message || `Yêu cầu thất bại với mã ${res.status}`);
+    throw new ApiError(
+      res.status,
+      errorData,
+      errorData?.message || `Yêu cầu thất bại với mã HTTP ${res.status}`,
+      path,
+      false
+    );
   }
 
   return res.json();
@@ -128,6 +249,33 @@ export const apiClient = {
   async getCampaign(id: string): Promise<Campaign> {
     if (this.isMock) return mockHandlers.getCampaign(id);
     return request<Campaign>(`/campaigns/${encodeURIComponent(id)}`);
+  },
+
+  async createCampaign(
+    payload: CreateCampaignRequest,
+    options?: { idempotencyKey?: string }
+  ): Promise<CreateCampaignResponse> {
+    const key = options?.idempotencyKey || generateIdempotencyKey();
+    if (this.isMock) return mockHandlers.createCampaign(payload, key);
+    return request<CreateCampaignResponse>('/campaigns', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateCampaignPolicy(
+    id: string,
+    payload: UpdateCampaignPolicyRequest,
+    options?: { idempotencyKey?: string }
+  ): Promise<UpdateCampaignPolicyResponse> {
+    const key = options?.idempotencyKey || generateIdempotencyKey();
+    if (this.isMock) return mockHandlers.updateCampaignPolicy(id, payload, key);
+    return request<UpdateCampaignPolicyResponse>(`/campaigns/${encodeURIComponent(id)}/policy`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify(payload),
+    });
   },
 
   async pauseCampaign(id: string, reason?: string): Promise<Campaign> {
@@ -225,6 +373,55 @@ export const apiClient = {
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString() ? `?${query.toString()}` : '';
     return request<AssetHistoryResponse>(`/assets/${encodeURIComponent(assetId)}/history${qs}`);
+  },
+
+  async listAssetVulnerabilities(
+    assetId: string,
+    params?: { campaign_id?: string; kev_only?: boolean; cursor?: string; limit?: number }
+  ): Promise<AssetVulnerabilitiesResponse> {
+    if (this.isMock) return mockHandlers.listAssetVulnerabilities(assetId, params);
+    const query = new URLSearchParams();
+    if (params?.campaign_id) query.set('campaign_id', params.campaign_id);
+    if (params?.kev_only !== undefined) query.set('kev_only', String(params.kev_only));
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<AssetVulnerabilitiesResponse>(
+      `/assets/${encodeURIComponent(assetId)}/vulnerabilities${qs}`
+    );
+  },
+
+  async listCampaignEvents(
+    campaignId: string,
+    params?: { cursor?: string; limit?: number; types?: string[] }
+  ): Promise<CampaignEventsResponse> {
+    if (this.isMock) return mockHandlers.listCampaignEvents(campaignId, params);
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.types && params.types.length > 0) query.set('types', params.types.join(','));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await request<CampaignEventsResponse>(
+      `/campaigns/${encodeURIComponent(campaignId)}/events${qs}`
+    );
+    if (res.next_cursor) {
+      recordCampaignEventId(campaignId, res.next_cursor);
+    }
+    return res;
+  },
+
+  async getCampaignActivity(
+    campaignId: string,
+    params?: { cursor?: string; limit?: number }
+  ): Promise<CampaignActivityResponse> {
+    if (this.isMock) return mockHandlers.getCampaignActivity(campaignId, params);
+    const query = new URLSearchParams();
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<CampaignActivityResponse>(
+      `/campaigns/${encodeURIComponent(campaignId)}/activity${qs}`
+    );
   },
 
   async listCapabilities(campaignId?: string): Promise<CapabilitiesResponse> {

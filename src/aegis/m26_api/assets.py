@@ -121,7 +121,7 @@ def _driver(request: Request) -> Any:
     if driver is None:
         raise RuntimeError(
             "the app has no graph driver: build it with create_app(graph_driver=...) or set "
-            "AEGIS_NEO4J_PASSWORD for create_production_app()"
+            "AEGIS_NEO4J_URI, AEGIS_NEO4J_USER and AEGIS_NEO4J_PASSWORD for create_production_app()"
         )
     return driver
 
@@ -205,12 +205,19 @@ def get_asset_graph(
     )
     try:
         validation.validate(NEIGHBORS_OUTPUT, result)
-    except validation.ContractViolation as error:
+    except validation.ContractViolation:
+        # A producer (M23's projection or this read model) built a row the output contract does
+        # not describe. That is a server-side bug, but the operator needs a code and a pointer,
+        # not the validator's pattern dump (D2/D3, item 61 trial).
+        problems = validation.problems(NEIGHBORS_OUTPUT, result)
+        pointers = ", ".join(pointer for pointer, _ in problems[:3]) or "/"
         raise ApiError(
             http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            f"graph read model violates {NEIGHBORS_OUTPUT}: {error}",
-        ) from error
+            "OUTPUT_INVALID",
+            f"the asset graph read model violates {NEIGHBORS_OUTPUT} at {pointers} "
+            f"({len(problems)} problem(s)); the producer must be fixed",
+            next_action="REVIEW_QUARANTINE",
+        ) from None
     return result
 
 

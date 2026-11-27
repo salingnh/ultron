@@ -1,0 +1,28 @@
+# Cloudflare Tunnel ingress for the CVE lab, rendered from deploy/vulnlab/.env by
+# scripts/vulnlab/render_cloudflared.py into deploy/vulnlab/.run/cloudflared/config.yml.
+#
+# Do not edit the rendered copy. Every `@AEGIS_...@` placeholder is substituted from the environment; a
+# missing value is an error in the renderer, never an empty hostname in here.
+#
+# The origin service names are the compose service names on `aegis-vulnlab-net`: the tunnel reaches
+# the origin port directly and the origin never listens on a host port. Every public URL is HTTPS
+# only (Cloudflare terminates TLS) and, per the owner's decision on item 61, must be restricted by a
+# Cloudflare Access policy to this machine's egress IP - these services are vulnerable on purpose.
+no-autoupdate: true
+ingress:
+  - hostname: @AEGIS_VULNLAB_HOST_HTTPD@
+    service: http://httpd:80
+  - hostname: @AEGIS_VULNLAB_HOST_NGINX@
+    service: http://nginx:80
+  - hostname: @AEGIS_VULNLAB_HOST_TOMCAT@
+    service: http://tomcat:8080
+  - hostname: @AEGIS_VULNLAB_HOST_SPRING@
+    service: http://spring:8080
+  - hostname: @AEGIS_VULNLAB_HOST_JENKINS@
+    service: http://jenkins:8080
+  - hostname: @AEGIS_VULNLAB_HOST_JETTY@
+    service: http://jetty:8080
+  - hostname: @AEGIS_VULNLAB_HOST_STRUTS2@
+    service: http://struts2:8080
+  # Anything else is closed: no catch-all to an origin.
+  - service: http_status:404

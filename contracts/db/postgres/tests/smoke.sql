@@ -2,7 +2,7 @@
 -- Trên DB mới: áp 0001 -> 0002 -> 0003 -> 0004, rồi chạy file này; finding chưa nằm trong smoke.
 SET search_path = aegis, public;
 BEGIN;
-INSERT INTO policy_snapshot VALUES ('roe-1','01900000-0000-7000-8000-000000000001','{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('a',64),'{"kind":"operator","id":"soc-1"}');
+INSERT INTO policy_snapshot VALUES ('roe-1','01900000-0000-7000-8000-000000000001','{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',repeat('a',64),'{"kind":"operator","id":"soc-1"}');
 INSERT INTO scope_snapshot VALUES ('01900000-0000-7000-8000-0000000000a1','01900000-0000-7000-8000-000000000001','{"domains":["internal.example"]}');
 INSERT INTO campaign (campaign_id,name,objective,current_policy_version,scope_id,created_by)
   VALUES ('01900000-0000-7000-8000-000000000001','Internal baseline','Inventory','roe-1','01900000-0000-7000-8000-0000000000a1','{"kind":"operator","id":"soc-1"}');

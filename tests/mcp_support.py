@@ -52,6 +52,7 @@ ENVELOPE_META: dict[str, Any] = {
 
 ENUMERATE = "dns.enumerate_subdomains"
 RESOLVE = "dns.resolve"
+DISCOVER = "network.discover_services"
 GRAPH_TOOLS = (
     "graph.get_asset_neighbors",
     "graph.get_evidence_excerpt",
@@ -61,8 +62,20 @@ GRAPH_TOOLS = (
     "graph.summarize_campaign_delta",
 )
 
-MANIFESTS = ("manifest.subfinder.yaml", "manifest.dnsx.yaml")
-PROVIDERS = {ENUMERATE: "subfinder", RESOLVE: "dnsx"}
+MANIFESTS = (
+    "manifest.subfinder.yaml",
+    "manifest.dnsx.yaml",
+    "manifest.naabu.yaml",
+    "manifest.fingerprintx.yaml",
+    "manifest.httpx.yaml",
+)
+PROVIDERS = {
+    ENUMERATE: "subfinder",
+    RESOLVE: "dnsx",
+    DISCOVER: "naabu",
+    "service.fingerprint": "fingerprintx",
+    "web.probe_http": "httpx",
+}
 
 
 def manifest_bytes() -> list[bytes]:

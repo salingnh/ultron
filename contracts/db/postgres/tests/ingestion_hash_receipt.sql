@@ -18,7 +18,7 @@ DECLARE
   blocked int := 0; shape int := 0; unversioned int := 0;
   stored_event text; stored_hash text; stored_version text; stored_revision text;
 BEGIN
-  INSERT INTO policy_snapshot VALUES ('roe-6',camp,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('6',64),'{"kind":"operator","id":"fixture"}');
+  INSERT INTO policy_snapshot VALUES ('roe-6',camp,'{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',repeat('6',64),'{"kind":"operator","id":"fixture"}');
   INSERT INTO scope_snapshot VALUES (scope,camp,'{"domains":["hash.example"]}');
   INSERT INTO campaign (campaign_id,name,objective,current_policy_version,scope_id,created_by)
     VALUES (camp,'Hash and receipt','C03 fixture','roe-6',scope,'{"kind":"operator","id":"fixture"}');

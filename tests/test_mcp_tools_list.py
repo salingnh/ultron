@@ -21,6 +21,7 @@ from aegis import validation
 from aegis.m05_registry.registry import InMemoryManifestRegistry
 from tests.mcp_support import (
     CAMPAIGN_ID,
+    DISCOVER,
     ENUMERATE,
     GRAPH_TOOLS,
     RESOLVE,
@@ -42,6 +43,17 @@ def _refs(node: Any) -> Iterator[str]:
             yield from _refs(item)
 
 
+#: Capabilities the fixture registry serves (tests/mcp_support.py MANIFESTS). Every registered
+#: provider is one MCP tool, so a new adapter shows up here without a code change.
+CAPABILITIES = (
+    ENUMERATE,
+    RESOLVE,
+    DISCOVER,
+    "service.fingerprint",
+    "web.probe_http",
+)
+
+
 def _tools(service: Any, **kwargs: Any) -> dict[str, Any]:
     listed = service.list_tools(request_meta=meta(), mcp_session_id="transport-1")
     return {tool.name: tool for tool in listed.tools}
@@ -50,7 +62,7 @@ def _tools(service: Any, **kwargs: Any) -> dict[str, Any]:
 def test_the_catalogue_is_capabilities_plus_graph_queries() -> None:
     tools = _tools(make_service())
 
-    assert sorted(tools) == sorted([ENUMERATE, RESOLVE, *GRAPH_TOOLS])
+    assert sorted(tools) == sorted([*CAPABILITIES, *GRAPH_TOOLS])
 
 
 def test_the_policy_denylist_hides_a_capability_for_that_campaign_only() -> None:
@@ -64,7 +76,7 @@ def test_the_policy_denylist_hides_a_capability_for_that_campaign_only() -> None
 
 def test_published_schemas_are_self_contained_and_wrapped() -> None:
     tools = _tools(make_service())
-    for name in (ENUMERATE, RESOLVE):
+    for name in CAPABILITIES:
         tool = tools[name]
         raw = json.dumps(tool.input_schema) + json.dumps(tool.output_schema)
         assert "aegis.io/contracts" not in raw

@@ -173,6 +173,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/campaigns/{campaign_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Dòng thời gian hoạt động của agent trong chiến dịch (mới nhất trước)
+         * @description Read model cho màn hình "agent đã làm gì": phiên bắt đầu/kết thúc kèm lý do dừng, từng quyết định policy cho một lời gọi tool (capability, TargetRef, approved/denied, mã lý do, job id), mục idle/blocker và ảnh chụp ngân sách. Thứ tự keyset `(at, kind, entry_id)` GIẢM dần; `next_cursor` vắng = hết trang. `truncated` nói trang này chưa phải toàn bộ dòng thời gian (đúng khi và chỉ khi có `next_cursor`).
+         *     Nguồn là bốn bảng đã có: `agent_session` (phiên, lý do dừng), `policy_decision` cùng `scan_job.decision_id` (quyết định và job), `campaign_ledger` với ba kind `idle_cycle`, `blocker`, `budget` (M03 ghi).
+         *     Không phát ra rationale, input của request, prompt hay văn bản do model sinh, và output tool không bao giờ nằm trong tài liệu này: chỉ cột có cấu trúc. Cần operator token như mọi thao tác campaign (OD-5); campaign không tồn tại trả 404. Không có sự kiện outbox riêng cho dòng thời gian này nên client đọc bằng phân trang (polling), không qua SSE của `/events`.
+         */
+        get: operations["getCampaignActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/capabilities": {
         parameters: {
             query?: never;
@@ -331,6 +355,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assets/{asset_id}/vulnerabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: components["parameters"]["AssetId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Ứng viên CVE của một tài sản (cạnh AFFECTED_BY), kèm KEV/EPSS
+         * @description Chỉ là ứng viên so khớp CPE từ bản intel đã nạp (package_vuln_match), không phải finding đã xác minh. Sắp theo vulnerability_id tăng dần; con trỏ là mã CVE cuối trang.
+         */
+        get: operations["listAssetVulnerabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/findings": {
         parameters: {
             query?: never;
@@ -461,16 +507,28 @@ export interface components {
         /** @description Capability cấp nghiệp vụ: <nhóm>.<động_từ_danh_từ>, vd dns.enumerate_subdomains. */
         CapabilityId: string;
         /**
+         * Format: aegis-domain-target
+         * @description Domain ASCII/IDNA đã chuẩn hóa, tùy chọn tiền tố dns:. Không dấu chấm cuối hoặc label rỗng.
+         */
+        DomainTarget: string;
+        /**
          * Campaign execution settings v2
          * @description Cấu hình chạy có phiên bản: ngân sách, tốc độ, concurrency và danh sách mục tiêu bị loại. Không dùng phân loại thao tác. Khung giờ cho phép (allowed/blackout windows) đã bị bỏ khỏi contract theo quyết định chủ 2026-11-24 (G1 chỉ cần luồng chạy được); snapshot cũ còn khung giờ là lịch sử, không được chạy.
          */
         "roe-policy.v2.schema": {
+            /**
+             * @description Mạng job của chiến dịch chạy trên đó. `internet`: container của job chỉ tới được broker L7 của nó, broker ra internet và ép tập luôn chặn, tập địa chỉ đã ký và trần tốc độ/đồng thời theo host. `lab`: mạng lab nội bộ của deployment (không có đường ra internet). Chiến dịch của người vận hành mặc định `internet`; demo/CI đặt `lab` tường minh.
+             * @enum {string}
+             */
+            network_profile?: "lab" | "internet";
             /** @description Danh sách mục tiêu bị loại bổ sung. Sandbox luôn cách ly hạ tầng điều khiển/dữ liệu; kiểm tra cấu hình này áp dụng cho mọi job. */
             target_denylist?: string[];
             max_parallel_jobs: number;
             max_duration_hours: number;
             rate_limits?: {
                 requests_per_second_per_host?: number;
+                /** @description Trần số kết nối đồng thời broker giữ tới một host cho một job. Profile `internet` bắt buộc khai báo cùng `requests_per_second_per_host`; thiếu là POLICY_DENIED (không có trần thì không chạy ra internet). */
+                max_concurrent_connections_per_host?: number;
                 /** @description Trần cho quét cổng (Naabu, Nmap). */
                 packets_per_second?: number;
                 jobs_per_minute?: number;
@@ -488,7 +546,15 @@ export interface components {
             };
             /** @description Tùy chọn: capability không được dùng trong chiến dịch này. */
             capability_denylist?: components["schemas"]["CapabilityId"][];
-        };
+            /** @description Chủ sở hữu hợp pháp của mục tiêu internet: ai cho phép (owner), tham chiếu bằng chứng (reference, vD quyết định/ticket), ngày và các hậu tố tên miền được phép. Bắt buộc khi `network_profile=internet` (kể cả khi bỏ trống trường profile, vì mặc định là internet); M01 từ chối, M05 không ký task, M06 không chạy task internet khi thiếu. */
+            authorization?: {
+                owner: string;
+                reference: string;
+                /** Format: date */
+                date: string;
+                authorized_suffixes: components["schemas"]["DomainTarget"][];
+            };
+        } & unknown;
         /**
          * Format: aegis-ip-or-cidr
          * @description Seed IP hoặc CIDR, giữ raw; M07 chuẩn hóa về sau. Không interface scope ID hoặc netmask dạng dotted.
@@ -536,6 +602,29 @@ export interface components {
             created_at: components["schemas"]["Timestamp"];
             started_at?: components["schemas"]["Timestamp"];
             ended_at?: components["schemas"]["Timestamp"];
+            budget?: {
+                limits: {
+                    max_duration_hours: number;
+                    max_llm_cost_usd?: number;
+                    max_llm_tokens?: number;
+                    max_jobs?: number;
+                    max_agent_sessions?: number;
+                };
+                used: {
+                    hours: number;
+                    llm_cost_usd: number;
+                    llm_tokens: number;
+                    jobs: number;
+                    agent_sessions: number;
+                };
+                remaining: {
+                    hours: number;
+                    llm_cost_usd?: number;
+                    llm_tokens?: number;
+                    jobs?: number;
+                    agent_sessions?: number;
+                };
+            };
             budget_remaining?: {
                 llm_cost_usd?: number;
                 llm_tokens?: number;
@@ -543,6 +632,12 @@ export interface components {
                 hours?: number;
             };
             counters?: {
+                jobs_by_status?: {
+                    [key: string]: number;
+                };
+                assets_by_kind?: {
+                    [key: string]: number;
+                };
                 jobs_total?: number;
                 jobs_running?: number;
                 jobs_failed?: number;
@@ -805,6 +900,21 @@ export interface components {
             cause: "scan" | "intel_revision" | "verification" | "operator" | "regression_check";
             changed_at: components["schemas"]["Timestamp"];
         };
+        /**
+         * Payload vulnerability.matched.v2
+         * @description Bên phát: M20. Khóa khử duy nhất của consumer: match_id. Bên nhận: M23 (projector đồ thị chiếu :Vulnerability và cạnh AFFECTED_BY), M26 (UI đọc ứng viên CVE của tài sản). Chỉ là ứng viên: cạnh AFFECTED_BY không phải finding và không bao giờ tự lên VERIFIED.
+         */
+        "vulnerability.matched.v2.schema": {
+            match_id: components["schemas"]["Id"];
+            /** @description Tài sản bị ảnh hưởng (service, application hoặc package). */
+            asset_id: components["schemas"]["Id"];
+            /** @description Khóa chuẩn của tài sản; dùng làm khóa phân vùng của projector. */
+            canonical_key: components["schemas"]["CanonicalKey"];
+            /** @description Mã CVE của bản ghi NVD đã khớp. */
+            vulnerability_id: string;
+            /** @description Chiến dịch mà observation sinh ra ứng viên này thuộc về. */
+            campaign_id: components["schemas"]["Id"];
+        };
         ModuleCode: string;
         /** @description Bộ ID truy vết bắt buộc (RULES mục 3). Trường không áp dụng thì bỏ qua, không gửi chuỗi rỗng. */
         TraceContext: {
@@ -827,14 +937,14 @@ export interface components {
         "event-envelope.v2.schema": {
             event_id: components["schemas"]["Id"];
             /** @enum {string} */
-            type: "job.started.v2" | "job.completed.v2" | "policy.denied.v2" | "asset.discovered.v2" | "observation.changed.v2" | "artifact.ready.v2" | "knowledge.delta.v2" | "intel.revision.v2" | "finding.changed.v2";
+            type: "job.started.v2" | "job.completed.v2" | "policy.denied.v2" | "asset.discovered.v2" | "observation.changed.v2" | "artifact.ready.v2" | "knowledge.delta.v2" | "intel.revision.v2" | "finding.changed.v2" | "vulnerability.matched.v2";
             occurred_at: components["schemas"]["Timestamp"];
             producer: components["schemas"]["ModuleCode"];
             /** @description Theo bảng sự kiện tab Dữ liệu mục 5, nối bằng ':' (vd '<finding_id>:3'). */
             dedup_key: string;
             trace: components["schemas"]["TraceContext"];
             payload: Record<string, never>;
-        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown & unknown);
         /** @enum {string} */
         JobStatus: "QUEUED" | "VALIDATING" | "DISPATCHED" | "RUNNING" | "COLLECTING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
         /** @description Ý định hủy đã ghi nhận (cancel intent). Bản thân nó không đổi trạng thái: job terminal khi M06 gọi terminal hóa. Ý định không bao giờ ghi đè một kết quả terminal đã nhận trước đó; nó vẫn nằm trong lịch sử. */
@@ -853,7 +963,46 @@ export interface components {
             blocking_job_ids?: components["schemas"]["Id"][];
             since: components["schemas"]["Timestamp"];
         };
-        Sha256: string;
+        /** @description Định danh ổn định của một mục trong dòng thời gian: `<nguồn>:<khóa>`, vd `session:<session_id>:start`, `decision:<decision_id>`, `ledger:<seq>`. Dùng làm khóa React và để đối chiếu với hàng nguồn. */
+        EntryId: string;
+        /** @description Một phiên agent đã mở (agent_session). Cùng sự kiện với campaign_ledger `cycle_started`; dòng agent_session là nguồn. */
+        SessionStarted: {
+            /** @constant */
+            kind: "session_started";
+            entry_id: components["schemas"]["EntryId"];
+            at: components["schemas"]["Timestamp"];
+            session_id: components["schemas"]["Id"];
+            objective_id?: components["schemas"]["Id"];
+            /** @description Policy snapshot the session ran under. */
+            policy_version: components["schemas"]["PolicyVersion"];
+            /** @description Graph revision the session read its context from. */
+            revision_from: number;
+        };
+        /** @description Một phiên agent đã kết thúc: trạng thái, quyết định cuối và lý do dừng (agent_session). Cùng sự kiện với campaign_ledger `cycle_finished`/`stop_condition`; dòng agent_session là nguồn. */
+        SessionFinished: {
+            /** @constant */
+            kind: "session_finished";
+            entry_id: components["schemas"]["EntryId"];
+            at: components["schemas"]["Timestamp"];
+            session_id: components["schemas"]["Id"];
+            /**
+             * @description Trạng thái cuối của agent_session. RUNNING không phát ra: mục này chỉ có khi phiên đã kết thúc.
+             * @enum {string}
+             */
+            status: "SUCCEEDED" | "FAILED" | "CANCELLED";
+            /**
+             * @description Cùng enum với session-result.v2 (agent_session.decision).
+             * @enum {string}
+             */
+            decision: "continue" | "wait" | "stop";
+            /**
+             * @description Cùng enum với session-result.v2 `stop_reason`; vắng mặt khi phiên dừng mà không có lý do (decision=wait).
+             * @enum {string}
+             */
+            stop_reason?: "objective_met" | "no_new_evidence" | "budget_exhausted" | "step_limit" | "blocked" | "operator";
+            /** @description Số bước model đã dùng trong phiên (agent_session.steps_used, trần 30). */
+            steps_used: number;
+        };
         /** @description Tham chiếu mục tiêu của job/task: hoặc seed của campaign (seed_id = campaign_target.target_id, giữ nguyên kind/raw_value ở campaign_target), hoặc canonical_key của asset đã biết. Đúng một trong hai khóa. Keyword/CIDR không có canonical_key nên phải dùng seed_id; không tạo asset giả cho seed. Bên đọc dùng seed_id để truy nguồn gốc (G5) và ghi provenance, không suy ra khóa chuẩn từ seed. */
         TargetRef: {
             seed_id: components["schemas"]["Id"];
@@ -870,6 +1019,191 @@ export interface components {
             /** @constant */
             kind?: "agent";
         } & components["schemas"]["Actor"];
+        /** @description Một quyết định policy cho một lời gọi tool (policy_decision). `requested_by` là người khởi động do server xác minh, `proposed_by` là phiên agent đã đề xuất; job đã cấp (nếu có) đi kèm qua job_id. Không mang rationale hay input của request. */
+        Decision: {
+            /** @constant */
+            kind: "decision";
+            entry_id: components["schemas"]["EntryId"];
+            at: components["schemas"]["Timestamp"];
+            decision_id: components["schemas"]["Id"];
+            capability: components["schemas"]["CapabilityId"];
+            /** @description Provider M05 đã chọn cho lời gọi; vắng mặt khi quyết định bị từ chối trước khi resolve provider. */
+            provider?: string;
+            /** @enum {string} */
+            decision: "approved" | "denied";
+            /** @description Mã lý do khi bị từ chối: error.v2 `code` của quyết định và luật policy đã từ chối. Chỉ có khi decision=denied. */
+            reason?: {
+                code: components["schemas"]["ErrorCode"];
+                /** @description Luật policy đã từ chối (policy_decision.rule), vd schema, rate_limit, dependency_invalid, capability_unknown. */
+                rule?: string;
+            };
+            /** @description TargetRef đã phân giải của lời gọi (policy_decision.target_refs), giữ nguyên thứ tự. */
+            targets: components["schemas"]["TargetRef"][];
+            /** @description Job đã cấp cho quyết định này (scan_job.decision_id); vắng mặt khi bị từ chối. */
+            job_id?: components["schemas"]["Id"];
+            /** @description Người/kênh khởi động do server gán (policy_decision.requested_by). */
+            requested_by: components["schemas"]["RequestedBy"];
+            /** @description Phiên agent đã đề xuất (policy_decision.proposed_by); vắng mặt khi người vận hành gửi trực tiếp, không bịa phiên. */
+            proposed_by?: components["schemas"]["ProposedBy"];
+            policy_version: components["schemas"]["PolicyVersion"];
+        } & (unknown & unknown);
+        /** @description Một chu kỳ không có bằng chứng mới (campaign_ledger `idle_cycle`): M02 dùng nó cho ngưỡng idle_cycles_before_pause. */
+        IdleCycle: {
+            /** @constant */
+            kind: "idle_cycle";
+            entry_id: components["schemas"]["EntryId"];
+            at: components["schemas"]["Timestamp"];
+            session_id?: components["schemas"]["Id"];
+            cycle?: number;
+        };
+        /** @description Một đường bị chặn mà phiên ghi lại (campaign_ledger `blocker`), vd graph M23 không đọc được và context lấy từ hàng M27. Chỉ mã lỗi chuẩn và nhãn ngữ cảnh của module, không có văn bản do model sinh. */
+        Blocker: {
+            /** @constant */
+            kind: "blocker";
+            entry_id: components["schemas"]["EntryId"];
+            at: components["schemas"]["Timestamp"];
+            session_id?: components["schemas"]["Id"];
+            code: components["schemas"]["ErrorCode"];
+            /** @description Nhãn ngữ cảnh của module đã ghi blocker, vd 'context graph'. */
+            context?: string;
+        };
+        /** @description Ảnh chụp ngân sách sau một phiên (campaign_ledger `budget`): đã dùng bao nhiêu và còn lại bao nhiêu. Trần không đặt thì trường còn lại vắng mặt (không gửi null, không gửi 0). */
+        Budget: {
+            /** @constant */
+            kind: "budget";
+            entry_id: components["schemas"]["EntryId"];
+            at: components["schemas"]["Timestamp"];
+            session_id?: components["schemas"]["Id"];
+            /** @description Token đã gửi trong phiên (input + output). */
+            sent_tokens: number;
+            sent_cost_usd: number;
+            remaining_tokens?: number;
+            remaining_cost_usd?: number;
+            /** @description Model đã dùng trong phiên, theo thứ tự dùng. */
+            models?: string[];
+        };
+        /** @description Một mục của dòng thời gian. Loại mục do `kind` quyết định; trường nào thuộc loại nào do oneOf dưới đây khóa. Không mục nào mang văn bản tự do do model sinh. */
+        Entry: components["schemas"]["SessionStarted"] | components["schemas"]["SessionFinished"] | components["schemas"]["Decision"] | components["schemas"]["IdleCycle"] | components["schemas"]["Blocker"] | components["schemas"]["Budget"];
+        /**
+         * CampaignActivity
+         * @description Dòng thời gian hoạt động của agent trong một chiến dịch, mới nhất trước: phiên bắt đầu/kết thúc kèm lý do dừng, từng quyết định policy cho một lời gọi tool (capability, TargetRef, approved/denied, mã lý do, job), mục idle/blocker và ảnh chụp ngân sách. Bên phát: M26 (read model dựng từ agent_session, policy_decision + scan_job, campaign_ledger của M03). Bên nhận: UI (màn hình hoạt động của chiến dịch). Mọi trường đều là dữ liệu có cấu trúc lấy từ cột đã đặt tên; rationale, input và mọi văn bản do model sinh KHÔNG được phát ra, và output tool không bao giờ nằm trong tài liệu này. Người xem đọc được agent đã làm gì mà không cần log.
+         */
+        "activity.v2.schema": {
+            /** @description Các mục của trang này, mới nhất trước. Mỗi mục là một sự kiện có cấu trúc (Entry). */
+            items: components["schemas"]["Entry"][];
+            /** @description Cursor keyset của mục cũ nhất trong trang; vắng mặt = đã hết. Truyền lại qua `cursor` để đọc trang kế tiếp. */
+            next_cursor?: string;
+            /** @description true khi còn mục cũ hơn chưa nằm trong trang này - UI phải hiển thị dữ liệu bị cắt thay vì coi trang là toàn bộ dòng thời gian. Đúng khi và chỉ khi có `next_cursor`. */
+            truncated: boolean;
+            $defs: {
+                /** @description Định danh ổn định của một mục trong dòng thời gian: `<nguồn>:<khóa>`, vd `session:<session_id>:start`, `decision:<decision_id>`, `ledger:<seq>`. Dùng làm khóa React và để đối chiếu với hàng nguồn. */
+                EntryId: string;
+                /** @description Một mục của dòng thời gian. Loại mục do `kind` quyết định; trường nào thuộc loại nào do oneOf dưới đây khóa. Không mục nào mang văn bản tự do do model sinh. */
+                Entry: components["schemas"]["SessionStarted"] | components["schemas"]["SessionFinished"] | components["schemas"]["Decision"] | components["schemas"]["IdleCycle"] | components["schemas"]["Blocker"] | components["schemas"]["Budget"];
+                /** @description Một phiên agent đã mở (agent_session). Cùng sự kiện với campaign_ledger `cycle_started`; dòng agent_session là nguồn. */
+                SessionStarted: {
+                    /** @constant */
+                    kind: "session_started";
+                    entry_id: components["schemas"]["EntryId"];
+                    at: components["schemas"]["Timestamp"];
+                    session_id: components["schemas"]["Id"];
+                    objective_id?: components["schemas"]["Id"];
+                    /** @description Policy snapshot the session ran under. */
+                    policy_version: components["schemas"]["PolicyVersion"];
+                    /** @description Graph revision the session read its context from. */
+                    revision_from: number;
+                };
+                /** @description Một phiên agent đã kết thúc: trạng thái, quyết định cuối và lý do dừng (agent_session). Cùng sự kiện với campaign_ledger `cycle_finished`/`stop_condition`; dòng agent_session là nguồn. */
+                SessionFinished: {
+                    /** @constant */
+                    kind: "session_finished";
+                    entry_id: components["schemas"]["EntryId"];
+                    at: components["schemas"]["Timestamp"];
+                    session_id: components["schemas"]["Id"];
+                    /**
+                     * @description Trạng thái cuối của agent_session. RUNNING không phát ra: mục này chỉ có khi phiên đã kết thúc.
+                     * @enum {string}
+                     */
+                    status: "SUCCEEDED" | "FAILED" | "CANCELLED";
+                    /**
+                     * @description Cùng enum với session-result.v2 (agent_session.decision).
+                     * @enum {string}
+                     */
+                    decision: "continue" | "wait" | "stop";
+                    /**
+                     * @description Cùng enum với session-result.v2 `stop_reason`; vắng mặt khi phiên dừng mà không có lý do (decision=wait).
+                     * @enum {string}
+                     */
+                    stop_reason?: "objective_met" | "no_new_evidence" | "budget_exhausted" | "step_limit" | "blocked" | "operator";
+                    /** @description Số bước model đã dùng trong phiên (agent_session.steps_used, trần 30). */
+                    steps_used: number;
+                };
+                /** @description Một quyết định policy cho một lời gọi tool (policy_decision). `requested_by` là người khởi động do server xác minh, `proposed_by` là phiên agent đã đề xuất; job đã cấp (nếu có) đi kèm qua job_id. Không mang rationale hay input của request. */
+                Decision: {
+                    /** @constant */
+                    kind: "decision";
+                    entry_id: components["schemas"]["EntryId"];
+                    at: components["schemas"]["Timestamp"];
+                    decision_id: components["schemas"]["Id"];
+                    capability: components["schemas"]["CapabilityId"];
+                    /** @description Provider M05 đã chọn cho lời gọi; vắng mặt khi quyết định bị từ chối trước khi resolve provider. */
+                    provider?: string;
+                    /** @enum {string} */
+                    decision: "approved" | "denied";
+                    /** @description Mã lý do khi bị từ chối: error.v2 `code` của quyết định và luật policy đã từ chối. Chỉ có khi decision=denied. */
+                    reason?: {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description Luật policy đã từ chối (policy_decision.rule), vd schema, rate_limit, dependency_invalid, capability_unknown. */
+                        rule?: string;
+                    };
+                    /** @description TargetRef đã phân giải của lời gọi (policy_decision.target_refs), giữ nguyên thứ tự. */
+                    targets: components["schemas"]["TargetRef"][];
+                    /** @description Job đã cấp cho quyết định này (scan_job.decision_id); vắng mặt khi bị từ chối. */
+                    job_id?: components["schemas"]["Id"];
+                    /** @description Người/kênh khởi động do server gán (policy_decision.requested_by). */
+                    requested_by: components["schemas"]["RequestedBy"];
+                    /** @description Phiên agent đã đề xuất (policy_decision.proposed_by); vắng mặt khi người vận hành gửi trực tiếp, không bịa phiên. */
+                    proposed_by?: components["schemas"]["ProposedBy"];
+                    policy_version: components["schemas"]["PolicyVersion"];
+                } & (unknown & unknown);
+                /** @description Một chu kỳ không có bằng chứng mới (campaign_ledger `idle_cycle`): M02 dùng nó cho ngưỡng idle_cycles_before_pause. */
+                IdleCycle: {
+                    /** @constant */
+                    kind: "idle_cycle";
+                    entry_id: components["schemas"]["EntryId"];
+                    at: components["schemas"]["Timestamp"];
+                    session_id?: components["schemas"]["Id"];
+                    cycle?: number;
+                };
+                /** @description Một đường bị chặn mà phiên ghi lại (campaign_ledger `blocker`), vd graph M23 không đọc được và context lấy từ hàng M27. Chỉ mã lỗi chuẩn và nhãn ngữ cảnh của module, không có văn bản do model sinh. */
+                Blocker: {
+                    /** @constant */
+                    kind: "blocker";
+                    entry_id: components["schemas"]["EntryId"];
+                    at: components["schemas"]["Timestamp"];
+                    session_id?: components["schemas"]["Id"];
+                    code: components["schemas"]["ErrorCode"];
+                    /** @description Nhãn ngữ cảnh của module đã ghi blocker, vd 'context graph'. */
+                    context?: string;
+                };
+                /** @description Ảnh chụp ngân sách sau một phiên (campaign_ledger `budget`): đã dùng bao nhiêu và còn lại bao nhiêu. Trần không đặt thì trường còn lại vắng mặt (không gửi null, không gửi 0). */
+                Budget: {
+                    /** @constant */
+                    kind: "budget";
+                    entry_id: components["schemas"]["EntryId"];
+                    at: components["schemas"]["Timestamp"];
+                    session_id?: components["schemas"]["Id"];
+                    /** @description Token đã gửi trong phiên (input + output). */
+                    sent_tokens: number;
+                    sent_cost_usd: number;
+                    remaining_tokens?: number;
+                    remaining_cost_usd?: number;
+                    /** @description Model đã dùng trong phiên, theo thứ tự dùng. */
+                    models?: string[];
+                };
+            };
+        } & (unknown & unknown);
+        Sha256: string;
         SemVer: string;
         /**
          * ScanJob v2 (đọc)
@@ -1006,8 +1340,8 @@ export interface components {
             subject: components["schemas"]["CanonicalKey"];
             /** @description Phải có trong contracts/ingestion/predicates.v2.yaml (cổng G4). */
             predicate: string;
-            /** @description Giá trị theo value_type của predicate. */
-            value: string | number | boolean | Record<string, never> | unknown[] | null;
+            /** @description Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu. */
+            value: number | string | boolean | Record<string, never> | unknown[] | null;
             /**
              * @description present = thấy; absent = không thấy tại thời điểm quan sát; negated = có bằng chứng phủ định rõ ràng.
              * @default present
@@ -1109,6 +1443,12 @@ export interface components {
                 rule_set?: string;
                 /** @description false nếu job dừng giữa chừng; khi đó không ghi seen=false. */
                 complete?: boolean;
+                /** @description Những giới hạn khiến coverage không đầy đủ: job dừng giữa chừng, egress bị chặn hoặc quá hạn chờ do trần RoE. Mỗi phần tử nêu mã ổn định và chi tiết; `complete` phải là false khi mảng này không rỗng. Cổng scan không được coi một cổng bị chặn/quá hạn là 'đóng'. */
+                limitations?: {
+                    code: string;
+                    message: string;
+                    subjects?: components["schemas"]["CanonicalKey"][];
+                }[];
             };
             results: {
                 assets: components["schemas"]["$defs-Asset"][];
@@ -1150,8 +1490,8 @@ export interface components {
                     subject: components["schemas"]["CanonicalKey"];
                     /** @description Phải có trong contracts/ingestion/predicates.v2.yaml (cổng G4). */
                     predicate: string;
-                    /** @description Giá trị theo value_type của predicate. */
-                    value: string | number | boolean | Record<string, never> | unknown[] | null;
+                    /** @description Giá trị theo value_type của predicate. `integer` đứng trước `number` trong union: JSON Schema coi số nguyên là `number`, nhưng DTO sinh ra phải giữ kiểu int cho predicate `value_type: integer` (http.status), nếu không một giá trị 200 đi qua DTO thành 200.0 và cổng G4 quarantine vì sai kiểu. */
+                    value: number | string | boolean | Record<string, never> | unknown[] | null;
                     /**
                      * @description present = thấy; absent = không thấy tại thời điểm quan sát; negated = có bằng chứng phủ định rõ ràng.
                      * @default present
@@ -1285,6 +1625,76 @@ export interface components {
                 limit: number;
                 /** @description Trần thời gian đã áp cho truy vấn (M23 cố định 2000 ms). */
                 timeout_ms: number;
+            };
+        };
+        MatchLimitation: {
+            code: string;
+            message: string;
+            products?: string[];
+        };
+        Candidate: {
+            vulnerability_id: string;
+            cvss_base?: number | null;
+            /** @enum {unknown} */
+            cvss_severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "NONE" | null;
+            /** @description CVE có trong CISA KEV tại bản intel đã pin. */
+            kev: boolean;
+            /** Format: date */
+            kev_due_date?: string | null;
+            epss?: number | null;
+            /** @enum {unknown} */
+            match_method: "cpe_range" | "purl_range" | "scanner_direct";
+            affected_range?: string | null;
+            confidence: number;
+            snapshot_id?: components["schemas"]["Id"];
+            candidate_since: components["schemas"]["Timestamp"];
+        };
+        MatchCoverage: {
+            matchable: boolean;
+            limitations: components["schemas"]["MatchLimitation"][];
+        };
+        /**
+         * Ứng viên CVE của một tài sản
+         * @description Phản hồi của listAssetVulnerabilities (M26): các hàng package_vuln_match hiện hành của một tài sản, kèm CVSS/KEV/EPSS của bản intel đã pin. Chỉ là ứng viên (AFFECTED_BY), không phải finding đã xác minh.
+         */
+        "asset-vulnerabilities.v2.schema": {
+            /** @description Danh tính tài sản mà trang này nói về (không lặp lại toàn bộ hồ sơ tài sản). */
+            asset: {
+                asset_id: components["schemas"]["Id"];
+                canonical_key: components["schemas"]["CanonicalKey"];
+                kind: components["schemas"]["AssetKind"];
+            };
+            items: components["schemas"]["Candidate"][];
+            /** @description Phạm vi so khớp CVE hiện hành của tài sản (vd sản phẩm thiếu phiên bản không thể so khớp). */
+            coverage?: components["schemas"]["MatchCoverage"];
+            next_cursor?: string;
+            $defs: {
+                MatchCoverage: {
+                    matchable: boolean;
+                    limitations: components["schemas"]["MatchLimitation"][];
+                };
+                MatchLimitation: {
+                    code: string;
+                    message: string;
+                    products?: string[];
+                };
+                Candidate: {
+                    vulnerability_id: string;
+                    cvss_base?: number | null;
+                    /** @enum {unknown} */
+                    cvss_severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "NONE" | null;
+                    /** @description CVE có trong CISA KEV tại bản intel đã pin. */
+                    kev: boolean;
+                    /** Format: date */
+                    kev_due_date?: string | null;
+                    epss?: number | null;
+                    /** @enum {unknown} */
+                    match_method: "cpe_range" | "purl_range" | "scanner_direct";
+                    affected_range?: string | null;
+                    confidence: number;
+                    snapshot_id?: components["schemas"]["Id"];
+                    candidate_since: components["schemas"]["Timestamp"];
+                };
             };
         };
         /**
@@ -1774,6 +2184,34 @@ export interface operations {
             401: components["responses"]["Error"];
         };
     };
+    getCampaignActivity: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["activity.v2.schema"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
     listCapabilities: {
         parameters: {
             query?: {
@@ -2056,6 +2494,38 @@ export interface operations {
                         }[];
                         next_cursor?: string;
                     };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listAssetVulnerabilities: {
+        parameters: {
+            query?: {
+                /** @description Chỉ lấy ứng viên khi tài sản thuộc chiến dịch này (asset_campaign); hàng ứng viên không thuộc riêng một chiến dịch nào vì khóa duy nhất là (asset, CVE, bản intel, phương pháp). */
+                campaign_id?: components["schemas"]["Id"];
+                /** @description Chỉ lấy ứng viên có trong CISA KEV */
+                kev_only?: boolean;
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                asset_id: components["parameters"]["AssetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["asset-vulnerabilities.v2.schema"];
                 };
             };
             400: components["responses"]["Error"];

@@ -36,7 +36,7 @@ from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import collector, parser_host
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner import spec as specs
-from aegis.m06_runner import values as texts
+from aegis.m06_runner.authorization import Authorization
 from aegis.m06_runner.collector import CollectionError, CollectionResult
 from aegis.m06_runner.lifecycle import (
     TERMINAL_DB_STATUSES,
@@ -76,6 +76,14 @@ class JobPlan:
     task_body: Mapping[str, Any] | None = None
     target_denylist: tuple[str, ...] = ()
     platform_cidrs: tuple[str, ...] = ()
+    #: The campaign's RoE safety caps, read from the snapshot the task was signed against. The
+    #: internet profile refuses a job without both (see `specs.build_policy`); a lab job ignores
+    #: them because it never uses the broker.
+    per_host_rps: float | None = None
+    per_host_max_connections: int | None = None
+    #: The campaign's structured authorization (`owner`, `reference`, `date`, suffixes) from the
+    #: signed RoE; `plan_for` validates it and renders its audit line (R6).
+    authorization: Authorization | None = None
     classification: Classification = Classification.INTERNAL
 
 
@@ -136,14 +144,33 @@ class JobRunner:
     def prepare(self, plan: JobPlan) -> tuple[Any, Any]:
         """The spec and egress policy of the job, before any container exists.
 
-        A job whose pinned image has a lab profile entry (G1.5c) runs on the authorized lab network
-        instead of its own per-job network, so it gets no broker proxy and no job network is
-        created; the egress policy is still built and checked (E-1) so the task's binding is
-        verified exactly as for any other job.
+        The signed `network_profile` decides the network: `lab` attaches the container to the
+        authorized lab network (the deployment must have an entry for the pinned image, else the job
+        is refused - it never falls back to the internet), `internet` gives it its own per-job
+        network whose only peer is the broker and needs a configured broker image plus an uplink.
+        The egress policy is built and checked (E-1) either way.
         """
         body = _task_body(plan)
-        lab = self.runner.lab_for(text(plan.task.image_digest))
-        if lab is None:
+        profile = str(plan.task.network_profile)
+        lab = profile == "lab"
+        # A provider without networkAccess has no network at all: the profile contributes nothing.
+        egress = plan.manifest.spec.permissions.networkAccess == "egress"
+        entry = self.runner.profile_entry(profile, text(plan.task.image_digest)) if egress else None
+        if egress and not lab and not plan.platform_cidrs:
+            # The platform's own networks must be in every internet policy; without the set the
+            # job is refused rather than dispatched with an incomplete deny list (B1).
+            raise specs.SpecError(
+                "DEPENDENCY_MISSING",
+                "the platform deny set is not loaded (podman networks/host addresses); refusing "
+                "an internet job without it",
+            )
+        if egress and lab and entry is None:
+            raise specs.SpecError(
+                "POLICY_DENIED",
+                f"campaign profile lab, but this runner has no lab profile entry for "
+                f"{text(plan.task.image_digest)}",
+            )
+        if egress and not lab:
             self.runner.ensure_network(plan.job_id)
         try:
             policy = specs.build_policy(
@@ -155,10 +182,28 @@ class JobRunner:
                 key_ring=self.key_ring,
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
+                authorization=plan.authorization,
+                per_host_rps=plan.per_host_rps,
+                per_host_max_connections=plan.per_host_max_connections,
             )
+            if policy.mode == "egress" and not lab:
+                if not self.runner.broker_image:
+                    raise specs.SpecError(
+                        "DEPENDENCY_MISSING",
+                        "an internet job needs the pinned broker image "
+                        "(AEGIS_M06_BROKER_IMAGE) on this runner",
+                    )
+                if not self.runner.uplink_network:
+                    raise specs.SpecError(
+                        "DEPENDENCY_MISSING",
+                        "an internet job needs the broker's uplink network "
+                        "(the internet profile's `network`)",
+                    )
+            if egress and not lab and policy.mode == "egress" and policy.egress_mode == "broker":
+                specs.check_proxy_wiring(plan.manifest, None if entry is None else list(entry.args))
             proxy = (
                 self.runner.broker_proxy(plan.job_id)
-                if policy.mode == "egress" and lab is None
+                if policy.mode == "egress" and policy.egress_mode == "broker" and not lab
                 else None
             )
             spec = specs.build_spec(
@@ -172,12 +217,50 @@ class JobRunner:
                 platform_cidrs=plan.platform_cidrs,
                 target_denylist=plan.target_denylist,
                 manifest_bytes=plan.manifest_bytes,
-                lab_network=lab is not None,
+                authorization=plan.authorization,
+                per_host_rps=plan.per_host_rps,
+                per_host_max_connections=plan.per_host_max_connections,
             )
         except Exception:
             self.runner.discard(plan.job_id)
             raise
         return spec, policy
+
+    def reject(self, job_id: str, code: str, detail: str) -> JobOutcome:
+        """Terminalize a job M06 refuses before a plan exists, with the contract's error code.
+
+        A job whose row cannot be planned (it never came through M05, its pinned manifest is not
+        registered, its signed policy snapshot is gone) is a definite refusal: claiming it and
+        recording the terminal result is the only honest outcome. Leaving it `VALIDATING` would
+        retry the same impossible plan on every tick (G1.6 review, proposal 5).
+        """
+        outcome = JobOutcome(
+            job_id=job_id,
+            status="failed",
+            errors=[
+                envelopes.error_object(
+                    code,
+                    detail,
+                    next_action="CHECK_PROVIDER" if code == "DEPENDENCY_MISSING" else "FIX_INPUT",
+                )
+            ],
+            error=f"{code}: {detail}",
+        )
+        if self.lifecycle is None:
+            return JobOutcome(
+                job_id=job_id,
+                status="skipped",
+                error=f"{code}: {detail} (no lifecycle attached; nothing recorded)",
+            )
+        claim = self.lifecycle.claim(job_id)
+        if claim is None:
+            return JobOutcome(
+                job_id=job_id,
+                status="skipped",
+                error=f"{code}: the job is no longer M06's to reject",
+            )
+        self._terminalize(claim, outcome)
+        return outcome
 
     def execute(self, plan: JobPlan, *, cancel: Callable[[], bool] | None = None) -> JobOutcome:
         body = _task_body(plan)
@@ -277,12 +360,9 @@ class JobRunner:
                 outcome.error = str(error)
                 return outcome
             layout = self.runner.layout(plan.job_id).create()
-            self._write_inputs(layout.input, plan.input)
+            self._write_inputs(layout.input, plan.input, plan.manifest)
             try:
-                if (
-                    policy.mode == "egress"
-                    and self.runner.lab_for(text(plan.task.image_digest)) is None
-                ):
+                if policy.mode == "egress" and spec.network_profile == "internet":
                     self.runner.start_broker(plan.job_id, policy)
                 started_at = envelopes.now_timestamp()
                 handle = self.runner.run(spec)
@@ -348,10 +428,20 @@ class JobRunner:
                 self._collect(plan, spec, layout, outcome)
                 if wait.cancelled:
                     return outcome
-                self._parse(plan, layout, outcome)
+                run_failure = self._run_failure(outcome.run)
+                if run_failure is None or (
+                    outcome.collected is not None and outcome.collected.files
+                ):
+                    self._parse(plan, layout, outcome)
                 status, errors = self._status_of(outcome)
                 outcome.status = status
-                outcome.errors.extend(errors)
+                if run_failure is not None:
+                    # Tool/sandbox exit status wins over any parse error on missing/partial output.
+                    outcome.errors = errors + outcome.errors
+                    if outcome.error is None:
+                        outcome.error = run_failure[0]
+                else:
+                    outcome.errors.extend(errors)
                 if outcome.collected is not None and outcome.parser is not None:
                     self._build_and_submit(plan, layout, outcome, started_at)
                 return outcome
@@ -415,20 +505,45 @@ class JobRunner:
     # -- steps ------------------------------------------------------------------------------
 
     @staticmethod
-    def _write_inputs(input_dir: Path, input_values: Mapping[str, Any]) -> None:
+    def _write_inputs(
+        input_dir: Path, input_values: Mapping[str, Any], manifest: ProviderManifest
+    ) -> None:
         """Write the tool's input files; a target is written as the tool's value, not as a key.
 
         `input.targets` carries the contract's `DomainTarget`/`CanonicalKey` form, where the
-        `dns:`/`ip:`/`url:`/... prefix is optional platform notation. A tool reading
-        `/in/targets.txt` (the pinned `argsTemplate` of both DNS adapters) understands names and
-        addresses, never our prefixes: writing `dns:lab.aegis.test` into the file makes Subfinder
-        enumerate nothing at all, silently. So the known canonical prefixes are stripped here, once,
-        and the parser keeps working on the keys it is handed.
+        `dns:`/`ip:`/`service:`/... prefix is optional platform notation. A tool reading
+        `/in/targets.txt` understands its own values, never our prefixes: writing
+        `dns:lab.aegis.test` into the file makes Subfinder enumerate nothing at all, silently.
+
+        The pinned manifest says how its tool reads a target (`runtime.targetsFormat`, G1.6b):
+        `canonical` strips the prefix and keeps the rest (Subfinder/DNSx/naabu); `host_port` also
+        drops the `/tcp` suffix of a service key so fingerprintx/httpx read `host:port`. The rule
+        lives in `spec.tool_target` and `build_spec` already refused a `/udp` target for that
+        format, so this method cannot widen what the job may scan.
+
+        An integer-array `ports` input is staged the same way, as `/in/ports.txt` one port per
+        line. The OI-12 rendering rule forbids joining a list into one argv element (an array
+        becomes one argv element per item), and a port scanner has to receive the whole set in
+        one argument (`-ports-file /in/ports.txt`); the file is the same kind of tool input as
+        `targets.txt`, and nothing about the port set comes from the tool's output or from a
+        manifest constant.
         """
         targets = input_values.get("targets")
         if isinstance(targets, list) and all(isinstance(item, str) for item in targets):
-            values = [texts.TARGET_PREFIXES.sub("", item, count=1) for item in targets]
-            (input_dir / "targets.txt").write_text("\n".join(values) + "\n", encoding="utf-8")
+            name = specs.targets_format(manifest)
+            values = [specs.tool_target(item, name) for item in targets]
+            targets_path = input_dir / "targets.txt"
+            targets_path.write_text("\n".join(values) + "\n", encoding="utf-8")
+            targets_path.chmod(0o644)
+        ports = input_values.get("ports")
+        if (
+            isinstance(ports, list)
+            and ports
+            and all(isinstance(port, int) and not isinstance(port, bool) for port in ports)
+        ):
+            ports_path = input_dir / "ports.txt"
+            ports_path.write_text("\n".join(str(port) for port in ports) + "\n", encoding="utf-8")
+            ports_path.chmod(0o644)
 
     def _collect(
         self, plan: JobPlan, spec: ContainerSpec, layout: JobLayout, outcome: JobOutcome
@@ -597,45 +712,51 @@ class JobRunner:
         return None
 
     @staticmethod
-    def _status_of(outcome: JobOutcome) -> tuple[EnvelopeStatus, list[dict[str, Any]]]:
-        errors: list[dict[str, Any]] = []
-        run = outcome.run
-        if outcome.error is not None:
-            return "failed", errors
+    def _run_failure(run: RunState | None) -> tuple[str, dict[str, Any]] | None:
         if run is None:
-            return "failed", errors
+            return None
         if run.status in TERMINAL_FAILURES:
-            errors.append(
+            code = TERMINAL_FAILURES[run.status]
+            return (
+                f"{code}: exit_code={run.exit_code}",
                 envelopes.error_object(
-                    TERMINAL_FAILURES[run.status],
+                    code,
                     f"the sandbox ended the job with state {run.status}",
                     technical_cause=f"exit_code={run.exit_code}",
-                )
+                ),
             )
-            return "failed", errors
         if run.status == "missing":
-            errors.append(
+            return (
+                "INTERNAL_ERROR: container missing",
                 envelopes.error_object(
                     "INTERNAL_ERROR",
                     "the job container disappeared before the runner could inspect it",
-                )
+                ),
             )
-            return "failed", errors
         if run.exit_code not in (0, None):
-            errors.append(
+            return (
+                f"TOOL_UNAVAILABLE: exit_code={run.exit_code}",
                 envelopes.error_object(
                     "TOOL_UNAVAILABLE",
                     "the tool exited non-zero",
                     technical_cause=f"exit_code={run.exit_code}",
-                )
+                ),
             )
-            return "failed", errors
+        return None
+
+    @staticmethod
+    def _status_of(outcome: JobOutcome) -> tuple[EnvelopeStatus, list[dict[str, Any]]]:
+        run_failure = JobRunner._run_failure(outcome.run)
+        if run_failure is not None:
+            return "failed", [run_failure[1]]
+        if outcome.error is not None or outcome.run is None:
+            return "failed", []
         skipped = outcome.collected.skipped if outcome.collected is not None else []
         if skipped:
             # A skipped hostile entry does not fail a job that produced usable output, but the
             # envelope must not claim a complete run.
-            return "partial", errors
-        return "succeeded", errors
+            return "partial", []
+        return "succeeded", []
 
     def _build_and_submit(
         self, plan: JobPlan, layout: JobLayout, outcome: JobOutcome, started_at: str
@@ -660,6 +781,7 @@ class JobRunner:
                 finished_at=envelopes.now_timestamp(),
                 exit_code=outcome.run.exit_code if outcome.run is not None else None,
                 errors=outcome.errors,
+                limitations=_egress_limitations(self.runner.audit_records(plan.job_id)),
             )
         except (envelopes.EnvelopeError, ValueError) as error:
             outcome.status = "failed"
@@ -725,6 +847,42 @@ class _CancelSignal:
             self._checked_at = now
             self._requested = self._lifecycle.cancel_requested(self._job_id)
         return self._requested
+
+
+#: Reasons the broker refuses after the bounded wait: a scan must report those as incomplete
+#: coverage, never as a closed port.
+CAPPED_REASONS = frozenset({"RATE_LIMITED", "CONCURRENCY_LIMITED"})
+
+
+def _egress_limitations(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Coverage limitations from the broker audit: any deny or cap timeout makes the run partial."""
+    denied = [record for record in records if record.get("decision") == "deny"]
+    if not denied:
+        return []
+    capped = [record for record in denied if record.get("reason") in CAPPED_REASONS]
+    other = [record for record in denied if record.get("reason") not in CAPPED_REASONS]
+    limitations: list[dict[str, Any]] = []
+    if capped:
+        limitations.append(
+            {
+                "code": "EGRESS_CAPPED",
+                "message": (
+                    f"{len(capped)} connection(s) waited past the RoE per-host cap and were "
+                    "refused; the affected ports/hosts are unknown, not closed"
+                ),
+            }
+        )
+    if other:
+        limitations.append(
+            {
+                "code": "EGRESS_DENIED",
+                "message": (
+                    f"{len(other)} connection(s) were refused by the egress policy (see the job "
+                    "audit); the affected destinations were not reached"
+                ),
+            }
+        )
+    return limitations
 
 
 def _task_body(plan: JobPlan) -> Mapping[str, Any]:

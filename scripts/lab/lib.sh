@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts/lab/*.sh. Source it; do not execute it directly.
 #
-# Everything here operates on compose project `aegis-lab` (deploy/lab/compose.yaml) and its
-# network `aegis-lab-lab`. Run containers are named `aegis-lab-*` and labelled
-# `aegis.lab=aegis-lab-run`; nothing outside the project is inspected or removed.
+# Everything here operates on one compose project - `aegis-lab` by default, or the name in
+# `AEGIS_LAB_PROJECT` (repo .env) for a checkout with its own isolated stack - and its network
+# `<project>-lab` (deploy/lab/compose.yaml). Run containers are named after the project and labelled
+# `aegis.lab=<project>-run`; nothing outside the project is inspected or removed.
 
 set -euo pipefail
 
@@ -18,14 +19,44 @@ FIXTURES_DIR="$LAB_DIR/fixtures"
 RUN_DIR="$LAB_DIR/.run"
 TLS_DIR="$RUN_DIR/tls"
 
-LAB_PROJECT=aegis-lab
-LAB_NETWORK=aegis-lab-lab
-DNS_CONTAINER=aegis-lab-dns
-PASSIVE_CONTAINER=aegis-lab-passive
+# shellcheck source=scripts/lib/stack.sh
+. "$(cd "$LAB_SCRIPTS/../lib" && pwd)/stack.sh"
+
+# The project name and everything derived from it; AEGIS_LAB_PROJECT comes from the repo .env when
+# it exists (make lab-up runs before dev-up on a fresh checkout, so .env may not be there yet).
+lab_project_from_env() {
+  if [ -f "$REPO_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$REPO_ROOT/.env"
+    set +a
+  fi
+}
+set_lab_names() {
+  LAB_PROJECT=${AEGIS_LAB_PROJECT:-aegis-lab}
+  LAB_NETWORK="$LAB_PROJECT-lab"
+  DNS_CONTAINER="$LAB_PROJECT-dns"
+  PASSIVE_CONTAINER="$LAB_PROJECT-passive"
+  RUN_LABEL="aegis.lab=$LAB_PROJECT-run"
+  # The G1.6a service containers: the hosts and ports a scanner should see open.
+  SERVICE_CONTAINERS=(
+    "$LAB_PROJECT-web-legacy" "$LAB_PROJECT-app" "$LAB_PROJECT-ssh" "$LAB_PROJECT-cache"
+    "$LAB_PROJECT-httpd"
+  )
+}
+lab_project_from_env
+set_lab_names
 LAB_ZONE=lab.aegis.test
 DNS_IP=10.114.53.53
 PASSIVE_IP=10.114.53.80
-RUN_LABEL=aegis.lab=aegis-lab-run
+SERVICE_ENDPOINTS=(
+  "web.lab.aegis.test:80"
+  "web.lab.aegis.test:443"
+  "app.lab.aegis.test:8080"
+  "ssh.lab.aegis.test:2222"
+  "cache.lab.aegis.test:6379"
+  "httpd.lab.aegis.test:80"
+)
 
 log() { printf '[lab] %s\n' "$*"; }
 die() {
@@ -48,9 +79,48 @@ load_images() {
   : "${AEGIS_LAB_PASSIVE_IMAGE:?deploy/lab/images.env: AEGIS_LAB_PASSIVE_IMAGE missing}"
   : "${AEGIS_LAB_DNSX_IMAGE:?deploy/lab/images.env: AEGIS_LAB_DNSX_IMAGE missing}"
   : "${AEGIS_LAB_SUBFINDER_IMAGE:?deploy/lab/images.env: AEGIS_LAB_SUBFINDER_IMAGE missing}"
+  : "${AEGIS_LAB_FINGERPRINTX_IMAGE:?deploy/lab/images.env: AEGIS_LAB_FINGERPRINTX_IMAGE missing}"
+  : "${AEGIS_LAB_HTTPX_IMAGE:?deploy/lab/images.env: AEGIS_LAB_HTTPX_IMAGE missing}"
 }
 
 compose() { podman-compose -p "$LAB_PROJECT" -f "$COMPOSE_FILE" "$@"; }
+
+# Ownership of the lab project on a shared host (scripts/lib/stack.sh): the checkout that created it
+# owns it, and only that checkout removes or recreates it.
+LAB_IDENTITY="$RUN_DIR/identity"
+
+lab_stack_fingerprint() {
+  stack_config_fingerprint "$COMPOSE_FILE" "$IMAGES_FILE" "$REPO_ROOT/.env" AEGIS_LAB_PROJECT
+}
+
+require_lab_stack_ownership() {
+  require_stack_ownership lab "$LAB_PROJECT" "$LAB_DIR" "$COMPOSE_FILE" \
+    "$(lab_stack_fingerprint)" "$LAB_IDENTITY" AEGIS_LAB_PROJECT
+}
+
+# laid out as stack_verdict: absent | ours | other:<owner dir> | config:<fingerprint>
+lab_stack_verdict() {
+  stack_verdict "$LAB_PROJECT" "$LAB_DIR" "$COMPOSE_FILE" "$(lab_stack_fingerprint)" "$LAB_IDENTITY"
+}
+
+# The lab of this host belongs to the checkout that created it, but one lab serves the whole host
+# (its subnet and addresses are fixed). A checkout that finds another one's lab uses it as it is
+# (never `compose up`, which could recreate the containers) and takes that lab's throwaway CA, so its
+# own scanner jobs trust the certificate the lab actually serves.
+adopt_running_lab() {
+  local owner_lab=$1 owner
+  owner=$(cd "$owner_lab/../.." && pwd)
+  local ca="$owner_lab/.run/tls/ca.crt"
+  [ -f "$ca" ] ||
+    die "the lab belongs to $owner but its CA is missing ($ca); run 'make lab-up' there, or set AEGIS_LAB_PROJECT in .env for a lab of your own"
+  mkdir -p "$TLS_DIR"
+  cp -f "$ca" "$TLS_DIR/ca.crt"
+  log "lab: using the running lab of $owner (no recreate); its CA is in $TLS_DIR/ca.crt"
+}
+
+record_lab_stack_identity() {
+  record_stack_identity "$LAB_IDENTITY" "$LAB_PROJECT" "$LAB_DIR" "$(lab_stack_fingerprint)"
+}
 
 container_exists() { podman container exists "$1" 2>/dev/null; }
 
@@ -146,6 +216,42 @@ wait_dns_ready() { # <timeout-seconds>
   return 1
 }
 
+# True when every G1.6a service endpoint accepts a TCP connection from the lab network. One
+# throwaway container runs the checks: the lab network is internal, so the probe is the same kind of
+# client the scanner is, and nothing is published to the host.
+services_ready() {
+  local args=()
+  for endpoint in "${SERVICE_ENDPOINTS[@]}"; do args+=("$endpoint"); done
+  podman run --rm --name "aegis-lab-services-probe-$$" --label "$RUN_LABEL" \
+    --network "$LAB_NETWORK" --cap-drop ALL --security-opt no-new-privileges --read-only \
+    --tmpfs /tmp:size=8m "$AEGIS_LAB_PASSIVE_IMAGE" python3 - "${args[@]}" >/dev/null 2>&1 <<'PY'
+import socket
+import sys
+
+for endpoint in sys.argv[1:]:
+    host, _, port = endpoint.rpartition(":")
+    try:
+        with socket.create_connection((host, int(port)), timeout=5):
+            pass
+    except OSError as error:
+        print(f"{endpoint}: {error}", file=sys.stderr)
+        sys.exit(1)
+PY
+}
+
+wait_services_ready() { # <timeout-seconds>
+  local timeout=${1:-120} deadline
+  deadline=$((SECONDS + timeout))
+  while ((SECONDS < deadline)); do
+    services_ready && return 0
+    sleep 2
+  done
+  for container in "${SERVICE_CONTAINERS[@]}"; do
+    podman logs --tail 10 "$container" >&2 2>&1 || true
+  done
+  return 1
+}
+
 wait_passive_healthy() { # <timeout-seconds>
   local timeout=${1:-120} deadline status
   deadline=$((SECONDS + timeout))
@@ -165,16 +271,18 @@ wait_passive_healthy() { # <timeout-seconds>
   die "timed out after ${timeout}s waiting for $PASSIVE_CONTAINER to become healthy"
 }
 
-# Throwaway lab CA plus a crt.sh certificate, so the Subfinder run can trust the local stub
-# without touching the system trust store. Generated on the host, git-ignored, removed by
-# `make lab-down`; never committed and never installed anywhere else.
+# Throwaway lab CA plus a crt.sh certificate and the web service's TLS certificate, so the
+# Subfinder run can trust the local stub without touching the system trust store and the lab web
+# service can answer HTTPS with a lab-issued certificate. Generated on the host, git-ignored,
+# removed by `make lab-down`; never committed and never installed anywhere else.
 generate_lab_tls() {
   mkdir -p "$RUN_DIR" "$RUN_DIR/runs"
   chmod 755 "$RUN_DIR" "$RUN_DIR/runs"
   mkdir -p "$TLS_DIR"
   chmod 700 "$TLS_DIR"
-  if [ -s "$TLS_DIR/ca.crt" ] && [ -s "$TLS_DIR/crt.sh.crt" ] && [ -s "$TLS_DIR/crt.sh.key" ]; then
-    log "lab TLS: reusing the generated CA and crt.sh certificate"
+  if [ -s "$TLS_DIR/ca.crt" ] && [ -s "$TLS_DIR/crt.sh.crt" ] && [ -s "$TLS_DIR/crt.sh.key" ] &&
+    [ -s "$TLS_DIR/lab-web.crt" ] && [ -s "$TLS_DIR/lab-web.key" ]; then
+    log "lab TLS: reusing the generated CA, crt.sh and web certificates"
     return 0
   fi
   require_cmd openssl
@@ -197,10 +305,25 @@ EOF
   openssl x509 -req -in "$TLS_DIR/crt.sh.csr" \
     -CA "$TLS_DIR/ca.crt" -CAkey "$TLS_DIR/ca.key" -CAcreateserial \
     -out "$TLS_DIR/crt.sh.crt" -days 30 -extfile "$ext" 2>/dev/null
-  rm -f "$TLS_DIR/crt.sh.csr" "$TLS_DIR/ca.srl" "$ext"
-  chmod 644 "$TLS_DIR/ca.crt" "$TLS_DIR/crt.sh.crt"
-  chmod 600 "$TLS_DIR/ca.key" "$TLS_DIR/crt.sh.key"
-  log "lab TLS: generated throwaway CA and crt.sh certificate in deploy/lab/.run/tls"
+  rm -f "$TLS_DIR/crt.sh.csr" "$TLS_DIR/ca.srl"
+  # The web service's certificate (G1.6a): the same CA, one name, so the TLS port is a real
+  # handshake with a lab-issued chain instead of a PEM checked into the repository.
+  cat >"$ext" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:web.lab.aegis.test
+EOF
+  openssl req -newkey rsa:2048 -nodes \
+    -keyout "$TLS_DIR/lab-web.key" -out "$TLS_DIR/lab-web.csr" \
+    -subj "/CN=web.lab.aegis.test" 2>/dev/null
+  openssl x509 -req -in "$TLS_DIR/lab-web.csr" \
+    -CA "$TLS_DIR/ca.crt" -CAkey "$TLS_DIR/ca.key" -CAcreateserial \
+    -out "$TLS_DIR/lab-web.crt" -days 30 -extfile "$ext" 2>/dev/null
+  rm -f "$TLS_DIR/lab-web.csr" "$TLS_DIR/ca.srl" "$ext"
+  chmod 644 "$TLS_DIR/ca.crt" "$TLS_DIR/crt.sh.crt" "$TLS_DIR/lab-web.crt"
+  chmod 600 "$TLS_DIR/ca.key" "$TLS_DIR/crt.sh.key" "$TLS_DIR/lab-web.key"
+  log "lab TLS: generated throwaway CA, crt.sh and web certificates in deploy/lab/.run/tls"
 }
 
 new_run_dir() { # <kind>; prints the evidence directory

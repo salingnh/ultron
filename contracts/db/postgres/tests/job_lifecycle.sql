@@ -22,7 +22,7 @@ DECLARE
   out text; terminals int; changes int; evidence_rows int;
   wait_json jsonb := '{"code":"DEPENDENCY_FAILED","since":"2026-11-24T02:00:00Z","blocking_job_ids":["01900000-0000-7000-8000-000000000341"]}';
 BEGIN
-  INSERT INTO policy_snapshot VALUES ('roe-7',camp,'{"max_parallel_jobs":10,"max_duration_hours":168}',repeat('7',64),'{"kind":"operator","id":"fixture"}');
+  INSERT INTO policy_snapshot VALUES ('roe-7',camp,'{"network_profile":"lab","max_parallel_jobs":10,"max_duration_hours":168}',repeat('7',64),'{"kind":"operator","id":"fixture"}');
   INSERT INTO scope_snapshot VALUES (scope,camp,'{"domains":["lifecycle.example"]}');
   INSERT INTO campaign (campaign_id,name,objective,current_policy_version,scope_id,created_by)
     VALUES (camp,'Job lifecycle','C06 fixture','roe-7',scope,'{"kind":"operator","id":"fixture"}');

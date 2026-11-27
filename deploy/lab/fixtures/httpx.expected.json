@@ -1,0 +1,29 @@
+{
+  "kind": "applications",
+  "note": "Independent expectation for the G1.6b httpx lab run: one application per HTTP(S) endpoint the inventory declares, on the service that answers it, with the status its own image returns on `/` (Tomcat 9.0.30 has no ROOT context, so 404 is the expected page, not a failure). Derived from deploy/lab/inventory.json, never from parser output; technology is not pinned here (it comes from the recorded run). For Tomcat the expectation names the product, version and CPE the origin prints in its 404 page body (`Apache Tomcat/9.0.30`), which the parser fills into the tool's own CPE (`apache:tomcat:*`); the AJP port has no HTTP answer and no product.",
+  "applications": [
+    {
+      "key": "app:http://10.114.53.211:80",
+      "service": "service:10.114.53.211:80/tcp",
+      "status": 200
+    },
+    {
+      "key": "app:https://10.114.53.211:443",
+      "service": "service:10.114.53.211:443/tcp",
+      "status": 200
+    },
+    {
+      "key": "app:http://10.114.53.212:8080",
+      "service": "service:10.114.53.212:8080/tcp",
+      "status": 404,
+      "product": "tomcat",
+      "version": "9.0.30",
+      "cpe": "cpe:2.3:a:apache:tomcat:9.0.30:*:*:*:*:*:*:*"
+    },
+    {
+      "key": "app:http://10.114.53.215:80",
+      "service": "service:10.114.53.215:80/tcp",
+      "status": 200
+    }
+  ]
+}

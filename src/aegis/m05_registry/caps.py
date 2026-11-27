@@ -32,9 +32,38 @@ from aegis.m05_registry.manifest import ManifestRecord
 
 __all__ = [
     "CampaignPolicy",
+    "MAX_CAMPAIGN_TARGET_ADDRESSES",
+    "MAX_CAMPAIGN_TARGET_PREFIXES",
+    "check_campaign_address_budget",
     "check_campaign_caps",
     "merge_input",
+    "network_profile",
 ]
+
+#: F3 guardrail 3: a campaign may not fan out to more than this many distinct target addresses,
+#: nor to more than this many distinct prefixes (/24 for IPv4, /48 for IPv6). Exceeding either
+#: pauses the campaign for the operator instead of continuing to scan a third-party surface.
+MAX_CAMPAIGN_TARGET_ADDRESSES = 64
+MAX_CAMPAIGN_TARGET_PREFIXES = 16
+
+#: The profile a campaign with no `network_profile` in its RoE runs on: the operator default is
+#: the internet profile; demo/CI set `lab` explicitly (G1.6).
+DEFAULT_NETWORK_PROFILE = "internet"
+PROFILES = frozenset({"lab", "internet"})
+
+
+def network_profile(policy: Mapping[str, Any]) -> str:
+    """The campaign's network profile, signed into every task it produces."""
+    value = policy.get("network_profile")
+    profile = DEFAULT_NETWORK_PROFILE if value is None else str(value)
+    if profile not in PROFILES:
+        # The schema and the DDL already close the enum; this is the fail-closed read in M05.
+        raise M05Error.policy_denied(
+            "network_profile_unknown",
+            f"campaign RoE names an unknown network_profile {profile!r}",
+            field="/policy/network_profile",
+        )
+    return profile
 
 
 def merge_input(record: ManifestRecord, submitted: Mapping[str, Any]) -> dict[str, Any]:
@@ -203,3 +232,73 @@ def check_campaign_caps(
                 f"rate_limit {rate_limit} exceeds the campaign cap {campaign_rate}",
                 field="/input/rate_limit",
             )
+
+
+def _prefixes(addresses: set[str]) -> set[str]:
+    prefixes: set[str] = set()
+    for value in addresses:
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError:
+            continue
+        width = 24 if address.version == 4 else 48
+        prefixes.add(str(ipaddress.ip_network(f"{address}/{width}", strict=False)))
+    return prefixes
+
+
+def check_campaign_address_budget(
+    connection: psycopg.Connection[Any],
+    *,
+    campaign_id: str,
+    addresses: list[str] | tuple[str, ...],
+    actor: Mapping[str, Any],
+    trace_id: str,
+) -> None:
+    """Refuse the binding and pause the campaign when its target surface exceeds the budget.
+
+    The count is over every signed `egress_binding.target_addresses` of the campaign plus the new
+    binding, so the ceiling holds across jobs and across the scheduler's parallelism. Pausing is
+    the operator-visible outcome: the scheduler then blocks the campaign's queued jobs with
+    `CAMPAIGN_PAUSED` instead of carrying on.
+    """
+    if not addresses:
+        return
+    rows = connection.execute(
+        """
+        SELECT DISTINCT value
+          FROM aegis.scan_job,
+               jsonb_array_elements_text(approved_task -> 'egress_binding' -> 'target_addresses')
+               AS value
+         WHERE campaign_id = %s
+           AND approved_task ? 'egress_binding'
+        """,
+        (campaign_id,),
+    ).fetchall()
+    known = {str(row[0]) for row in rows if row[0]}
+    combined = known | {str(value) for value in addresses}
+    prefixes = _prefixes(combined)
+    if (
+        len(combined) <= MAX_CAMPAIGN_TARGET_ADDRESSES
+        and len(prefixes) <= MAX_CAMPAIGN_TARGET_PREFIXES
+    ):
+        return
+    from aegis.m01_campaign.status import change_status
+
+    change_status(
+        connection,
+        campaign_id=campaign_id,
+        action="pause",
+        reason=(
+            f"campaign target budget exceeded: {len(combined)} addresses, "
+            f"{len(prefixes)} prefixes (max {MAX_CAMPAIGN_TARGET_ADDRESSES}/"
+            f"{MAX_CAMPAIGN_TARGET_PREFIXES})"
+        ),
+        actor=actor,
+        trace_id=trace_id,
+    )
+    raise M05Error.policy_denied(
+        "campaign_address_budget",
+        f"the campaign would reach {len(combined)} distinct addresses and {len(prefixes)} "
+        f"prefixes (max {MAX_CAMPAIGN_TARGET_ADDRESSES}/{MAX_CAMPAIGN_TARGET_PREFIXES}); the "
+        "campaign was paused for the operator",
+    )

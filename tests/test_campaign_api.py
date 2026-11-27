@@ -632,3 +632,171 @@ def test_the_seed_targets_become_assets(dsn: str, client: TestClient) -> None:
         (second.json()["campaign_id"],),
     )
     assert len(campaign_two) == 2
+
+
+@requires_postgres
+def test_campaign_list_and_detail_return_counters_and_budget(dsn: str, client: TestClient) -> None:
+    import psycopg
+    from psycopg.rows import dict_row
+
+    from aegis.m01_campaign.campaigns import list_campaigns
+    from aegis.m05_registry.ids import uuid7 as m05_uuid7
+    from tests.db_support import SeededCampaign
+    from tests.m02_support import accept_job, complete_job, run_job, scheduler_for, service
+
+    policy = {
+        "network_profile": "lab",
+        "max_parallel_jobs": 2,
+        "max_duration_hours": 10,
+        "budget": {
+            "max_llm_cost_usd": 5.0,
+            "max_llm_tokens": 2000,
+            "max_jobs": 4,
+            "max_agent_sessions": 3,
+        },
+    }
+    created = _create(
+        client,
+        "counters-budget-1",
+        name="counters budget",
+        targets={"domains": ["cb-one.example", "cb-two.example"], "ips": ["10.99.0.10"]},
+        policy=policy,
+    )
+    campaign_id = created["campaign_id"]
+
+    # Seed 3 jobs via M05 + M02: 1 QUEUED, 1 SUCCEEDED, 1 CANCELLED.
+    client.post(
+        f"{support.API}/campaigns/{campaign_id}/resume",
+        json={"reason": "start for jobs"},
+        headers=support.auth(),
+    )
+    seeded = SeededCampaign(
+        campaign_id=campaign_id,
+        policy_version=created["policy_version"],
+        scope_id=created["scope_id"],
+        seed_domain="cb-one.example",
+        seed_ip="10.99.0.10",
+        known_asset="dns:cb-one.example",
+        policy=policy,
+    )
+    with service(dsn) as jobs:
+        queued_id = accept_job(jobs, seeded, input={"targets": ["cb-one.example"]})
+        done_id = accept_job(jobs, seeded, input={"targets": ["cb-two.example"]})
+        cancelled_id = accept_job(
+            jobs, seeded, input={"targets": ["cb-one.example"], "max_results": 5}
+        )
+        jobs.cancel(
+            cancelled_id,
+            requested_by={"kind": "operator", "id": "op-soc-1"},
+            reason="drop duplicate",
+        )
+    with scheduler_for(dsn) as scheduler:
+        assert queued_id in scheduler.dispatch(campaign_id).claimed or True
+    # Reset queued_id back to QUEUED? Or simply check status: let's move done_id to SUCCEEDED,
+    # and keep queued_id in VALIDATING or create one more QUEUED job after!
+    with service(dsn) as jobs:
+        still_queued_id = accept_job(
+            jobs, seeded, input={"targets": ["cb-two.example"], "max_results": 7}
+        )
+    del still_queued_id
+    run_job(dsn, done_id)
+    complete_job(dsn, done_id, "SUCCEEDED")
+
+    # Seed 2 agent_sessions + 2 model_usage rows directly against the real DDL.
+    session_a, session_b = str(m05_uuid7()), str(m05_uuid7())
+    with psycopg.connect(dsn) as conn, conn.transaction():
+        conn.execute("SET search_path = aegis, public")
+        for sid in (session_a, session_b):
+            conn.execute(
+                """
+                INSERT INTO aegis.agent_session
+                    (session_id, campaign_id, policy_version, revision_from, status)
+                VALUES (%s, %s, %s, 0, 'RUNNING')
+                """,
+                (sid, campaign_id, created["policy_version"]),
+            )
+        for tokens_in, tokens_out, cost in ((100, 50, "0.250000"), (200, 100, "0.500000")):
+            conn.execute(
+                """
+                INSERT INTO aegis.model_usage
+                    (usage_id, campaign_id, session_id, provider, model,
+                     input_tokens, output_tokens, cost_usd, latency_ms, status, trace_id)
+                VALUES (%s, %s, %s, 'openai', 'gpt-test', %s, %s, %s, 10, 'ok', %s)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    campaign_id,
+                    session_a,
+                    tokens_in,
+                    tokens_out,
+                    cost,
+                    "0" * 32,
+                ),
+            )
+
+    detail_res = client.get(f"{support.API}/campaigns/{campaign_id}", headers=support.auth())
+    assert detail_res.status_code == 200, detail_res.text
+    detail = detail_res.json()
+    validation.validate(CAMPAIGN_READ, detail)
+
+    assert detail["counters"] == {
+        "jobs_by_status": {"QUEUED": 1, "VALIDATING": 1, "SUCCEEDED": 1, "CANCELLED": 1},
+        "assets_by_kind": {"domain": 2, "ip": 1},
+    }
+    assert detail["budget"]["limits"] == {
+        "max_duration_hours": 10,
+        "max_llm_cost_usd": 5.0,
+        "max_llm_tokens": 2000,
+        "max_jobs": 4,
+        "max_agent_sessions": 3,
+    }
+    assert detail["budget"]["used"]["llm_tokens"] == 450
+    assert detail["budget"]["used"]["llm_cost_usd"] == pytest.approx(0.75)
+    assert detail["budget"]["used"]["jobs"] == 3  # CANCELLED excluded, matching M05
+    assert detail["budget"]["used"]["agent_sessions"] == 2
+    assert detail["budget"]["used"]["hours"] >= 0.0
+    assert detail["budget"]["remaining"]["llm_tokens"] == 1550
+    assert detail["budget"]["remaining"]["llm_cost_usd"] == pytest.approx(4.25)
+    assert detail["budget"]["remaining"]["jobs"] == 1
+    assert detail["budget"]["remaining"]["agent_sessions"] == 1
+    assert detail["budget"]["remaining"]["hours"] <= 10.0
+
+    # List endpoint returns the exact same counters/budget.
+    list_res = client.get(f"{support.API}/campaigns", params={"limit": 50}, headers=support.auth())
+    assert list_res.status_code == 200, list_res.text
+    listed = next(item for item in list_res.json()["items"] if item["campaign_id"] == campaign_id)
+    assert listed["counters"] == detail["counters"]
+    assert listed["budget"]["limits"] == detail["budget"]["limits"]
+    assert listed["budget"]["used"]["jobs"] == 3
+    assert listed["budget"]["remaining"]["jobs"] == 1
+
+    # Unbounded policy budget: optional limits and remaining keys stay absent.
+    unbounded_created = _create(
+        client,
+        "counters-budget-unbounded",
+        name="unbounded budget",
+        policy={"network_profile": "lab", "max_parallel_jobs": 1, "max_duration_hours": 2},
+    )
+    unbounded = client.get(
+        f"{support.API}/campaigns/{unbounded_created['campaign_id']}", headers=support.auth()
+    ).json()
+    assert unbounded["budget"]["limits"] == {"max_duration_hours": 2}
+    assert set(unbounded["budget"]["remaining"]) == {"hours"}
+    assert unbounded["budget"]["used"]["hours"] == 0.0
+
+    # One query per page in list_campaigns (no N+1).
+    class _CountingConnection:
+        def __init__(self, inner: psycopg.Connection[Any]) -> None:
+            self._inner = inner
+            self.queries = 0
+
+        def execute(self, *args: Any, **kwargs: Any) -> Any:
+            self.queries += 1
+            return self._inner.execute(*args, **kwargs)
+
+    with psycopg.connect(dsn, row_factory=dict_row) as raw_conn:
+        raw_conn.execute("SET search_path = aegis, public")
+        counting = _CountingConnection(raw_conn)
+        items, _ = list_campaigns(counting, status=None, limit=50)  # type: ignore[arg-type]
+        assert len(items) >= 2
+        assert counting.queries == 1

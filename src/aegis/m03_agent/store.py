@@ -29,6 +29,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from aegis.m01_campaign.ids import new_id
+from aegis.m02_orchestrator import types
 from aegis.m02_orchestrator.types import SessionRequest
 from aegis.m03_agent import ledger as ledger_module
 
@@ -46,7 +47,27 @@ TERMINAL_STATUSES = frozenset({"SUCCEEDED", "FAILED", "CANCELLED"})
 
 
 class SessionRefused(RuntimeError):
-    """The campaign may not start another session (not RUNNING, session budget spent)."""
+    """The campaign may not start another session (not RUNNING, session budget spent).
+
+    `code` is the machine-readable reason M02 needs to decide what a refusal means: a spent
+    session budget is a terminal campaign budget (`budget_exhausted`), a campaign that is no
+    longer RUNNING is not an error at all, and an inconsistency between the ledger and the
+    session row must fail loudly. Without it M02 could only retry the activity (the 926-retry
+    storm of D4, item 61 trial).
+    """
+
+    #: The campaign's `budget.max_agent_sessions` is spent: no further session can start.
+    BUDGET_EXHAUSTED = types.REFUSAL_BUDGET_EXHAUSTED
+    #: The campaign row is not RUNNING (paused, cancelled, terminal): nothing to do here.
+    NOT_RUNNING = types.REFUSAL_NOT_RUNNING
+    #: The campaign row does not exist.
+    MISSING = types.REFUSAL_CAMPAIGN_MISSING
+    #: The ledger and the session row disagree: a producer bug, never a retry.
+    INCONSISTENT = types.REFUSAL_INCONSISTENT
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def workflow_session_label(request: SessionRequest) -> str:
@@ -172,10 +193,13 @@ class PostgresAgentSessionStore:
                 (request.campaign_id,),
             ).fetchone()
             if campaign is None:
-                raise SessionRefused(f"campaign {request.campaign_id} does not exist")
+                raise SessionRefused(
+                    f"campaign {request.campaign_id} does not exist", code=SessionRefused.MISSING
+                )
             if str(campaign["status"]) != "RUNNING":
                 raise SessionRefused(
-                    f"campaign {request.campaign_id} is {campaign['status']}, not RUNNING"
+                    f"campaign {request.campaign_id} is {campaign['status']}, not RUNNING",
+                    code=SessionRefused.NOT_RUNNING,
                 )
             ceiling = max_sessions
             if ceiling is None and campaign["max_sessions"] is not None:
@@ -188,7 +212,8 @@ class PostgresAgentSessionStore:
                 if used is not None and int(used["n"]) >= ceiling:
                     raise SessionRefused(
                         f"campaign {request.campaign_id} already used {used['n']} of its "
-                        f"{ceiling} agent sessions (policy budget.max_agent_sessions)"
+                        f"{ceiling} agent sessions (policy budget.max_agent_sessions)",
+                        code=SessionRefused.BUDGET_EXHAUSTED,
                     )
             objective_id = self._objective(conn, request.campaign_id, str(campaign["objective"]))
             session_id = new_id()
@@ -244,12 +269,14 @@ class PostgresAgentSessionStore:
         if row is None:  # pragma: no cover - the ledger row and the session row are one transaction
             raise SessionRefused(
                 f"ledger names session {session_id} of campaign {request.campaign_id} "
-                "but the agent_session row is gone"
+                "but the agent_session row is gone",
+                code=SessionRefused.INCONSISTENT,
             )
         if str(row["campaign_id"]) != request.campaign_id:
             raise SessionRefused(
                 f"session {session_id} belongs to campaign {row['campaign_id']}, not "
-                f"{request.campaign_id}"
+                f"{request.campaign_id}",
+                code=SessionRefused.INCONSISTENT,
             )
         return SessionRef(
             session_id=session_id,

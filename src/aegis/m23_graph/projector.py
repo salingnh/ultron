@@ -7,7 +7,8 @@ The loop is the C04/D25 consumer contract of `contracts/graph/model.md`:
    (`aegis.outbox_watermark_refresh`, 0013 waits for the publication lock instead of starving);
 3. read the next published events (`aegis.outbox_batch`) - never past the watermark, gaps legal;
 4. prefetch the entity rows of the whole batch from PostgreSQL (properties come from PG, not from
-   the payload), plan the Cypher operations, and apply them **partitioned by key** (per-key order)
+   the payload: assets, relationships, findings, evidence, vulnerabilities), plan the Cypher
+   operations, and apply them **partitioned by key** (per-key order)
    and in two phases (assets before the edges that `MATCH` them);
 5. check the batchpoint: `consumer_inbox` rows for the applied events and `aegis.consumer_advance`
    with the fence - Neo4j first, cursor second, so a crash replays instead of skipping;
@@ -35,6 +36,7 @@ from aegis.m23_graph.models import (
     ASSET_EVENT,
     FINDING_EVENT,
     OBSERVATION_EVENT,
+    VULNERABILITY_EVENT,
     CypherOp,
     OutboxEvent,
     ProjectorStats,
@@ -282,6 +284,20 @@ class Projector:
         findings = pg.prefetch_findings(
             self._conn, pg.event_ids(batch, FINDING_EVENT, "finding_id")
         )
+        vulnerabilities = pg.prefetch_vulnerabilities(
+            self._conn, pg.event_ids(batch, VULNERABILITY_EVENT, "vulnerability_id")
+        )
+        matches = pg.prefetch_matches(
+            self._conn, pg.event_ids(batch, VULNERABILITY_EVENT, "match_id")
+        )
+        # A retraction removes the pair's edge only when no decision of the pair still matches
+        # (a decision row carries a campaign, the edge does not), so the batch asks PostgreSQL once.
+        current_matches = pg.current_matched_pairs(
+            self._conn,
+            pg.event_ids(batch, VULNERABILITY_EVENT, "asset_id")
+            if any(not match.matched for match in matches.values())
+            else (),
+        )
         evidence = pg.prefetch_evidence(
             self._conn,
             [
@@ -289,6 +305,11 @@ class Projector:
                 for event in batch
                 if event.type == FINDING_EVENT and event.payload.get("evidence_ref")
             ],
+        )
+        # G1.6b: the `:Observation` node of a `graph: true` predicate reads its value and
+        # confidence from PostgreSQL at apply time, like every other node property.
+        observations = pg.prefetch_observations(
+            self._conn, pg.event_ids(batch, OBSERVATION_EVENT, "observation_id")
         )
         planned = plan_round(
             batch,
@@ -298,7 +319,11 @@ class Projector:
             incoming=incoming,
             findings=findings,
             evidence=evidence,
+            observations=observations,
             partitions=max(self.config.partitions, 1),
+            vulnerabilities=vulnerabilities,
+            matches=matches,
+            current_matches=current_matches,
         )
         applied_ops = 0
         phases = planned.phases()

@@ -35,14 +35,21 @@ require_cmd curl
 require_cmd ss "install iproute2"
 require_cmd uv "install uv (https://docs.astral.sh/uv/)"
 
-STATE_DIR="$REPO_ROOT/.local"
 mkdir -p "$STATE_DIR"
 TOKENS_FILE="$STATE_DIR/operators.json"
 TOKEN_FILE="$STATE_DIR/operator-token"
 SERVICE_TOKEN_FILE="$STATE_DIR/service-token"
+SIGNING_KEY_FILE="$STATE_DIR/task-signing-key"
 STACK_MARKER="$STATE_DIR/stack.started"
 LAB_MARKER="$STATE_DIR/lab.started"
+UPLINK_MARKER="$STATE_DIR/uplink.started"
 LAB_PROFILE="$REPO_ROOT/deploy/lab/runner-profile.json"
+# The lab profile names the lab network; a checkout with its own lab project gets its own network and
+# therefore its own copy of the profile (absolute paths, so the copy can live under .local/).
+LAB_PROFILE_LOCAL="$STATE_DIR/lab-runner-profile.json"
+INTERNET_PROFILE="$REPO_ROOT/deploy/internet/runner-profile.json"
+DEFAULT_BROKER_IMAGE=$("$DEV_DIR/broker-image.sh" --tag-only)
+BROKER_IMAGE=${AEGIS_M06_BROKER_IMAGE:-$DEFAULT_BROKER_IMAGE}
 MCP_PORT=${MCP_PORT:-8105}
 
 # "Present" means anything of the project exists - a container (running or not) or a volume - so a
@@ -84,6 +91,13 @@ write_secret() {
   (umask 077 && printf '%s\n' "$value" >"$file")
 }
 
+# Resolve .env and project/network names once before checking whether our dev/lab stacks exist.
+if [ ! -f "$ENV_FILE" ]; then
+  cp "$ENV_EXAMPLE" "$ENV_FILE"
+  log "created .env from .env.example (local dev values, git-ignored)"
+fi
+load_env
+
 # --- 1. the dev stack (and the lab, on request) ------------------------------
 stack_was_present=0
 dev_project_present && stack_was_present=1
@@ -107,7 +121,6 @@ if [ "${LAB:-1}" = 1 ]; then
   fi
 fi
 
-load_env
 API_PORT=${API_PORT:-${AEGIS_API_PORT:-8000}}
 PG_DSN="postgresql://$AEGIS_PG_USER:$AEGIS_PG_PASSWORD@127.0.0.1:$AEGIS_PG_PORT/$AEGIS_PG_DB"
 export AEGIS_PG_DSN="$PG_DSN"
@@ -120,7 +133,55 @@ export AEGIS_API_URL="http://127.0.0.1:$API_PORT"
 # profile is deploy config (deploy/lab/runner-profile.json); without it jobs keep their own per-job
 # network and broker, and a lab tool would have no endpoint to reach.
 if [ "${LAB:-1}" = 1 ] && [ -f "$LAB_PROFILE" ]; then
-  export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE"
+  if [ "$LAB_NETWORK" = "aegis-lab-lab" ]; then
+    export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE"
+  else
+    require_cmd python3
+    python3 - "$LAB_PROFILE" "$LAB_PROFILE_LOCAL" "$LAB_NETWORK" <<'PY_PROFILE'
+import json, sys
+from pathlib import Path
+source, target, network = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+document = json.loads(source.read_text(encoding="utf-8"))
+document["network"] = network
+for job in document.get("jobs", []):
+    for mount in job.get("mounts", []):
+        mount["source"] = str((source.parent / mount["source"]).resolve())
+target.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
+PY_PROFILE
+    export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE_LOCAL"
+  fi
+fi
+# The internet profile (G1.6) is what an operator campaign needs: its `network` is the broker's
+# uplink, and the broker image is the stdlib-only broker container. Both are deploy config; a job
+# whose campaign names `internet` without them is refused before a container exists (fail closed).
+if [ "${INTERNET:-1}" = 1 ] && [ -f "$INTERNET_PROFILE" ]; then
+  export AEGIS_M06_INTERNET_PROFILE="$INTERNET_PROFILE"
+  if ! podman image exists "$BROKER_IMAGE" >/dev/null 2>&1; then
+    log "broker: building $BROKER_IMAGE (deploy/broker/Containerfile)"
+    podman build --quiet --file "$REPO_ROOT/deploy/broker/Containerfile" --tag "$BROKER_IMAGE" \
+      "$REPO_ROOT" >/dev/null
+  fi
+  export AEGIS_M06_BROKER_IMAGE="$BROKER_IMAGE"
+  # The broker's outbound leg gets a network of its own (G1.6): never the host's default bridge,
+  # where unrelated containers could reach the broker or impersonate an upstream. run-local creates
+  # it once and removes it only when it created it (marker file).
+  UPLINK_NETWORK=${UPLINK_NETWORK:-aegis-uplink}
+  if podman network exists "$UPLINK_NETWORK" >/dev/null 2>&1; then
+    log "uplink: reusing network $UPLINK_NETWORK"
+  else
+    # `isolate=strict` keeps this bridge unreachable from other podman networks of the same
+    # rootless user (netavark 1.17), so the broker's uplink cannot route into the dev stack.
+    podman network create --opt isolate=strict --label aegis.uplink=run-local \
+      "$UPLINK_NETWORK" >/dev/null
+    printf '%s' "$UPLINK_NETWORK" >"$UPLINK_MARKER"
+    log "uplink: created network $UPLINK_NETWORK (stop-local will remove it)"
+  fi
+  export AEGIS_UPLINK_NETWORK="$UPLINK_NETWORK"
+  # The L3 channel's route hook is part of the checkout, so the runner can start L3 jobs; the
+  # hook itself is deployment-owned and never configurable from a task.
+  if [ -x "$REPO_ROOT/deploy/l3/hooks/aegis-l3-route" ]; then
+    export AEGIS_L3_HOOK="$REPO_ROOT/deploy/l3/hooks/aegis-l3-route"
+  fi
 fi
 
 # --- 2. migrations through the one runner ------------------------------------
@@ -145,7 +206,17 @@ if [ ! -s "$SERVICE_TOKEN_FILE" ]; then
   log "service token: generated for the ingestion endpoint (.local/service-token)"
 fi
 AEGIS_SERVICE_TOKEN=$(cat "$SERVICE_TOKEN_FILE")
-export AEGIS_SERVICE_TOKEN AEGIS_ALLOW_DEV_SIGNING_KEY=1
+export AEGIS_SERVICE_TOKEN
+# A per-install task-signing key, generated once in .local/ (0600). Internet tasks signed with
+# the published development key are refused by M06 (safety review F7), so a deployment that runs
+# internet campaigns must sign with its own key; lab-only use may still opt into the dev key.
+if [ ! -s "$SIGNING_KEY_FILE" ]; then
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$SIGNING_KEY_FILE"
+  chmod 600 "$SIGNING_KEY_FILE"
+  log "task signing key: generated for this install (.local/task-signing-key)"
+fi
+export AEGIS_TASK_SIGNING_KEYS="g16-local-1:$(cat "$SIGNING_KEY_FILE")"
+export AEGIS_TASK_SIGNING_ACTIVE_KEY="g16-local-1"
 export AEGIS_OPERATOR_TOKENS_FILE="$TOKENS_FILE"
 
 cors_origins=${AEGIS_CORS_ORIGINS:-"http://127.0.0.1:5173,http://localhost:5173"}
@@ -231,6 +302,7 @@ run_env="$STATE_DIR/run-local.env"
 (umask 077
   cat >"$run_env" <<RUNENV
 # written by scripts/dev/run-local.sh - sourced by the demo scripts, do not edit
+export AEGIS_DEV_PROJECT="$DEV_PROJECT"
 export AEGIS_API_URL="$api_url"
 export AEGIS_PG_DSN="$PG_DSN"
 export AEGIS_NEO4J_URI="$AEGIS_NEO4J_URI"
@@ -239,10 +311,16 @@ export AEGIS_NEO4J_PASSWORD="$AEGIS_NEO4J_PASSWORD"
 export AEGIS_S3_ENDPOINT="$AEGIS_S3_ENDPOINT"
 export AEGIS_S3_BUCKET="$AEGIS_S3_BUCKET"
 export AEGIS_SERVICE_TOKEN="$AEGIS_SERVICE_TOKEN"
-export AEGIS_ALLOW_DEV_SIGNING_KEY=1
+export AEGIS_TASK_SIGNING_KEYS="$AEGIS_TASK_SIGNING_KEYS"
+export AEGIS_TASK_SIGNING_ACTIVE_KEY="$AEGIS_TASK_SIGNING_ACTIVE_KEY"
 export AEGIS_OPERATOR_TOKEN="$(cat "$TOKEN_FILE")"
 export AEGIS_OPERATOR_TOKENS_FILE="$TOKENS_FILE"
 export AEGIS_M06_LAB_PROFILE="${AEGIS_M06_LAB_PROFILE:-}"
+export AEGIS_M06_INTERNET_PROFILE="${AEGIS_M06_INTERNET_PROFILE:-}"
+export AEGIS_M06_BROKER_IMAGE="${AEGIS_M06_BROKER_IMAGE:-}"
+export AEGIS_UPLINK_NETWORK="${AEGIS_UPLINK_NETWORK:-}"
+export AEGIS_L3_HOOK="${AEGIS_L3_HOOK:-}"
+export AEGIS_SUBFINDER_PROVIDER_CONFIG="${AEGIS_SUBFINDER_PROVIDER_CONFIG:-}"
 export AEGIS_WORKERS="${WORKERS:-1}"
 RUNENV
 )

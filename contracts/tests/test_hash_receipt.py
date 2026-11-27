@@ -89,7 +89,7 @@ class CanonicalHash(unittest.TestCase):
             "seed_targets": dict(ENVELOPE, provenance=dict(ENVELOPE["provenance"], seed_targets=[
                 {"seed_id": "01934f6a-0000-7000-8000-0000000000b2"}])),
             "campaign": dict(ENVELOPE, campaign_id="01934f6a-0000-7000-8000-0000000000bb"),
-            "provider": dict(ENVELOPE, provider=dict(ENVELOPE["provider"], adapter_version="1.0.1")),
+            "provider": dict(ENVELOPE, provider=dict(ENVELOPE["provider"], adapter_version="9.9.9")),
         }
         changed["value"]["results"]["observations"][0]["value"] = "changed"
         for name, envelope in changed.items():

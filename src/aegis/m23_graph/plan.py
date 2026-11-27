@@ -24,21 +24,28 @@ Properties are read from PostgreSQL at apply time, never from the event payload,
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping, Sequence, Set
+from typing import Any
 
 from aegis.m23_graph import contract
 from aegis.m23_graph.models import (
     ASSET_EVENT,
     FINDING_EVENT,
     OBSERVATION_EVENT,
+    VULNERABILITY_EVENT,
     AssetSnapshot,
     CypherOp,
     EvidenceSnapshot,
     FindingSnapshot,
+    ObservationSnapshot,
     OutboxEvent,
     RelationshipSnapshot,
     RoundPlan,
+    VulnerabilityMatchSnapshot,
+    VulnerabilitySnapshot,
 )
+from aegis.m27_ingestion.predicates import graph_predicate
 
 __all__ = [
     "PHASE_ASSET",
@@ -71,6 +78,7 @@ class _Builder:
         self.ops: list[CypherOp] = []
         self._asset_index: dict[tuple[str, str], int] = {}
         self._edge_index: dict[str, int] = {}
+        self._observation_index: dict[str, int] = {}
 
     def append(self, op: CypherOp) -> None:
         self.ops.append(op)
@@ -92,6 +100,15 @@ class _Builder:
         previous = self.ops[index]
         if int(op.parameters["revision"]) > int(previous.parameters["revision"]):
             self.ops[index] = op
+
+    def upsert_observation(self, op: CypherOp, observation_id: str) -> None:
+        """One statement per observation id (MERGE is idempotent; redelivery keeps the last one)."""
+        index = self._observation_index.get(observation_id)
+        if index is None:
+            self._observation_index[observation_id] = len(self.ops)
+            self.ops.append(op)
+            return
+        self.ops[index] = op
 
     def upsert_edge(self, op: CypherOp, relationship_id: str) -> None:
         index = self._edge_index.get(relationship_id)
@@ -200,6 +217,10 @@ def plan_round(
     evidence: Mapping[str, EvidenceSnapshot],
     partitions: int,
     incoming: Mapping[str, Sequence[RelationshipSnapshot]] | None = None,
+    vulnerabilities: Mapping[str, VulnerabilitySnapshot] | None = None,
+    matches: Mapping[str, VulnerabilityMatchSnapshot] | None = None,
+    observations: Mapping[str, ObservationSnapshot] | None = None,
+    current_matches: Set[tuple[str, str]] | None = None,
 ) -> RoundPlan:
     """The Neo4j work and the checkpoint facts of one batch.
 
@@ -216,12 +237,30 @@ def plan_round(
         if event.type == ASSET_EVENT:
             _plan_asset(builder, event, assets, relationships, partitions, incoming or {})
         elif event.type == OBSERVATION_EVENT:
-            _plan_observation(builder, event, assets, relationships, partitions, incoming or {})
+            _plan_observation(
+                builder,
+                event,
+                assets,
+                relationships,
+                partitions,
+                incoming or {},
+                observations or {},
+            )
         elif event.type == FINDING_EVENT:
             _plan_finding(builder, event, assets, findings, evidence, partitions)
+        elif event.type == VULNERABILITY_EVENT:
+            _plan_vulnerability(
+                builder,
+                event,
+                matches or {},
+                vulnerabilities or {},
+                assets,
+                partitions,
+                current_matches,
+            )
         # Every other event has no statement in the committed template: the projector still
-        # checkpoints past it (the node types it would feed - `:Observation`/`:Target`/`:Campaign`/
-        # `:Job` - have no projector statement yet).
+        # checkpoints past it (the node types it would feed - `:Target`/`:Campaign`/`:Job` - have
+        # no projector statement yet; `:Observation` is projected for `graph: true` predicates).
     return RoundPlan(
         ops=tuple(builder.ops),
         applied=tuple(applied),
@@ -250,20 +289,157 @@ def _plan_observation(
     relationships: Mapping[str, Sequence[RelationshipSnapshot]],
     partitions: int,
     incoming: Mapping[str, Sequence[RelationshipSnapshot]],
+    observations: Mapping[str, ObservationSnapshot],
 ) -> None:
-    """An observation's subject is an asset: plan that asset and its edges.
+    """An observation's subject is an asset: plan that asset, its edges, and its `:Observation`.
 
-    The committed template has no `:Observation` statement, but the *asset* an observation is about
-    is in the graph, and this is the event that makes a later edge projectable: `dns.resolve`
-    creates `RESOLVES_TO` edges between a name discovered by an earlier envelope and an address
-    discovered by this one, so no `asset.discovered.v2` in this batch names the edge's start. The
-    payload carries the subject (`subject_id`) and the revision, so re-merging the node and its
-    edges is idempotent (MERGE by `canonical_key`/`relationship_id`) and the incremental projection
-    matches what a rebuild produces.
+    The *asset* an observation is about is in the graph, and this is the event that makes a later
+    edge projectable: `dns.resolve` creates `RESOLVES_TO` edges between a name discovered by an
+    earlier envelope and an address discovered by this one, so no `asset.discovered.v2` in this
+    batch names the edge's start. The payload carries the subject (`subject_id`) and the revision,
+    so re-merging the node and its edges is idempotent (MERGE by `canonical_key`/`relationship_id`)
+    and the incremental projection matches what a rebuild produces.
+
+    G1.6b: predicates the registry marks `graph: true` (`service.product`, `tls.certificate`,
+    `http.technology`, ...) also get their `:Observation` node, with the `value_summary` the read
+    model publishes and the subject's canonical key. Every other predicate stays PostgreSQL-only,
+    which is what keeps the graph from growing one node per port state.
     """
     subject_id = str(event.payload.get("subject_id") or "")
-    revision = int(event.payload.get("revision") or 0) or 0
+    observation = observations.get(str(event.payload.get("observation_id") or ""))
+    # `observation.changed.v2` carries no revision in its payload: the row does (M23 reads
+    # properties from PostgreSQL), and it is the revision of the state this event applied.
+    revision = int(event.payload.get("revision") or 0) or (
+        observation.revision if observation is not None else 0
+    )
     _plan_asset_state(builder, subject_id, revision, assets, relationships, incoming, partitions)
+    if observation is None or not graph_predicate(observation.predicate):
+        return
+    builder.upsert_observation(
+        _observation_op(observation, revision, partition_of(observation.subject_key, partitions)),
+        observation.observation_id,
+    )
+
+
+def _observation_op(snapshot: ObservationSnapshot, revision: int, partition: int) -> CypherOp:
+    return CypherOp(
+        statement=contract.observation_upsert(),
+        parameters={
+            "observation_id": snapshot.observation_id,
+            "predicate": snapshot.predicate,
+            "value_summary": value_summary(snapshot.value),
+            "polarity": snapshot.polarity,
+            "subject": snapshot.subject_key,
+            "observed_at": snapshot.observed_at.isoformat(),
+            "confidence": snapshot.confidence,
+            "revision": revision,
+        },
+        partition=partition,
+        phase=PHASE_GRAPH,
+        entity="observation",
+    )
+
+
+def value_summary(value: Any) -> str | None:
+    """The one textual summary of an observation value, as the read model publishes it.
+
+    PostgreSQL keeps the whole JSON value; the graph node and `get_recent_observations` keep this
+    summary so a query never has to move an arbitrary-sized object out of the graph.
+    """
+    if value is None:
+        return None
+    text = (
+        value if isinstance(value, str) else json.dumps(value, sort_keys=True, ensure_ascii=False)
+    )
+    return text[:500]
+
+
+def _plan_vulnerability(
+    builder: _Builder,
+    event: OutboxEvent,
+    matches: Mapping[str, VulnerabilityMatchSnapshot],
+    vulnerabilities: Mapping[str, VulnerabilitySnapshot],
+    assets: Mapping[str, AssetSnapshot],
+    partitions: int,
+    current_matches: Set[tuple[str, str]] | None = None,
+) -> None:
+    """The `:Vulnerability` node and its candidate `AFFECTED_BY` edge, from PostgreSQL rows.
+
+    The event only names the match: `match_method`, `affected_range`, `confidence`, the intel
+    snapshot and the campaign are read from `package_vuln_match`, and CVSS/KEV/EPSS from
+    `vulnerability_current` (model.md: properties come from PostgreSQL, not from the payload). A
+    match whose vulnerability is withdrawn everywhere has no node and plans nothing; a start asset
+    whose kind the model does not allow is a `ContractMismatch`, never a silently dropped edge.
+    """
+    match = matches.get(str(event.payload.get("match_id") or ""))
+    if match is None:
+        return
+    if not match.matched:
+        _plan_retraction(builder, match, assets, partitions, current_matches)
+        return
+    vulnerability = vulnerabilities.get(match.vulnerability_id)
+    if vulnerability is None:
+        return
+    contract.affected_by_source(match.asset_kind)
+    owner = assets.get(match.asset_id)
+    key = owner.canonical_key if owner is not None else match.canonical_key
+    partition = partition_of(key, partitions)
+    builder.append(
+        CypherOp(
+            statement=contract.vulnerability_upsert(),
+            parameters={
+                "asset_id": match.asset_id,
+                "vulnerability_id": match.vulnerability_id,
+                "cvss_base": vulnerability.cvss_base,
+                "kev": vulnerability.kev,
+                "epss": vulnerability.epss,
+                "node_snapshot_id": vulnerability.snapshot_id,
+                "observed_at": match.observed_at.isoformat(),
+                "match_method": match.match_method,
+                "affected_range": match.affected_range,
+                "confidence": match.confidence,
+                "snapshot_id": match.snapshot_id,
+                "match_id": match.match_id,
+                "campaign_id": match.campaign_id,
+            },
+            partition=partition,
+            phase=PHASE_GRAPH,
+            entity="vulnerability",
+        )
+    )
+
+
+def _plan_retraction(
+    builder: _Builder,
+    match: VulnerabilityMatchSnapshot,
+    assets: Mapping[str, AssetSnapshot],
+    partitions: int,
+    current_matches: Set[tuple[str, str]] | None,
+) -> None:
+    """Drop the `AFFECTED_BY` edge a retraction takes back, unless the pair still matches.
+
+    The edge is one per `(asset, vulnerability)` while the decision row carries a campaign, so the
+    removal only happens when no decision of the pair matches any more (`current_matched_pairs`).
+    Without that set - a caller that did not prefetch it - the retraction is planned as if it were
+    the only decision, because the alternative is an edge the newest decision contradicts.
+    """
+    contract.affected_by_source(match.asset_kind)
+    if current_matches is not None and (match.asset_id, match.vulnerability_id) in current_matches:
+        return
+    owner = assets.get(match.asset_id)
+    key = owner.canonical_key if owner is not None else match.canonical_key
+    builder.append(
+        CypherOp(
+            statement=contract.vulnerability_retract(),
+            parameters={
+                "asset_id": match.asset_id,
+                "vulnerability_id": match.vulnerability_id,
+            },
+            partition=partition_of(key, partitions),
+            phase=PHASE_GRAPH,
+            entity="vulnerability",
+        )
+    )
 
 
 def _plan_asset_state(

@@ -192,6 +192,7 @@ def build_envelope(
     finished_at: str,
     exit_code: int | None = None,
     errors: Sequence[Mapping[str, Any]] = (),
+    limitations: Sequence[Mapping[str, Any]] = (),
 ) -> ResultEnvelope:
     """Assemble and validate the envelope of one finished job.
 
@@ -213,7 +214,12 @@ def build_envelope(
     complete = True
     if isinstance(declared_complete, Mapping):
         complete = bool(declared_complete.get("complete", True))
-    coverage = {"subjects": sorted({str(subject) for subject in subjects}), "complete": complete}
+    coverage: dict[str, Any] = {
+        "subjects": sorted({str(subject) for subject in subjects}),
+        "complete": complete and not limitations,
+    }
+    if limitations:
+        coverage["limitations"] = [dict(item) for item in limitations]
     if manifest.spec.runtime.outputPath is None:  # pragma: no cover - schema default is "/out"
         raise EnvelopeError("DEPENDENCY_MISSING", "pinned manifest declares no outputPath")
     payload: dict[str, Any] = {

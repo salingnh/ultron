@@ -18,7 +18,7 @@
 
 ## Còn mở
 
-- Cổng G0: không còn điều kiện mở. OD-2 (provider/model LLM) chuyển sang G1 — G1 dùng fake model, chọn provider thật khi có quyết định; Product Team ký cổng đã ghi nhận — leader ký dưới ủy quyền của chủ ngày 2026-11-24.
+- Cổng G0: không còn điều kiện mở. OD-2 (provider/model LLM) chuyển sang G1 — provider thật bật bằng `AEGIS_SESSION_LIVE_MODEL=1` + `AEGIS_MODEL_*` (OpenAI Chat Completions hoặc Anthropic Messages, base URL tùy chọn, giá bắt buộc; G1.6, PR #62), mặc định scripted policy cho CI/demo; Product Team ký cổng đã ghi nhận — leader ký dưới ủy quyền của chủ ngày 2026-11-24.
 - Trước khi viết code G1: tám điều kiện ở TASKS §G1 (E-1, R-5, P3a/P3c, OI-7, R-6, throughput projector, `normalization_version`, OI-4/OD-5), mỗi điều kiện ghi task G1 sở hữu.
 - Chưa kiểm runtime: xem mục "Chưa kiểm runtime" dưới đây. Schema xanh và số đo spike không thay nghiệm thu runtime.
 
@@ -53,7 +53,7 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 - MCP, registry, latency mới đo trên fake registry và template Cypher; graph query tools chưa chạy qua MCP (thuộc G1.2b).
 - Sandbox/egress mới đo trên container của spike với listener giả; chưa có M06/broker sản phẩm, chưa thử IPv6 egress thật, seccomp tùy chỉnh hay host hết cgroup delegation.
 - HMAC của ApprovedTask, restart-reconcile của M06: chưa có implementation để kiểm.
-- LLM thật (OD-2), soak 24–48 h và 7 ngày: chưa chạy. Lab G0.4c đã chạy Subfinder/DNSx thật trong container nhưng không phải runner sản phẩm (G1.3a).
+- LLM thật (OD-2): client live cho cả hai chuẩn đã có (G1.6, PR #62), kiểm bằng transport ghi sẵn; chưa chạy bằng key thật — chủ chạy `make llm-smoke`. Soak 7 ngày: chưa chạy. Lab G0.4c đã chạy Subfinder/DNSx thật trong container nhưng không phải runner sản phẩm (G1.3a).
 - CI chạy trên `main` qua #14 và trên PR G0.4c (#27); lần chạy tay của cổng contract trước đó ghi ở mục trên.
 
 ## Hồ sơ cổng G0
@@ -73,8 +73,11 @@ Lượt chạy 2026-11-24 trên `integ/g0-s1-contracts` @ `15c02b9` (nay ở `ma
 | Kiểm hạn chế sandbox | đạt | G0.2 (#9) 63 test — chưa phải runner sản phẩm (G1.3a) |
 | Kiểm scheduling | đạt | G0.1 (#13) ready query + dependency/priority; implementation thuộc G1.1d |
 
-**Cổng G0: đạt.** Mọi dòng bằng chứng ở trên đã đạt và nằm trên `main`. Hai mục từng mở được chốt như sau: OD-2 (provider/model LLM) không chặn G0 — G1 dùng fake model, chọn provider thật khi có quyết định; Product Team ký cổng đã ghi nhận — leader ký dưới ủy quyền của chủ ngày 2026-11-24. Điều kiện OD-5/OI-4 và bảy điều kiện G1 còn lại vẫn phải xong cùng task G1 sở hữu (TASKS §G1).
+**Cổng G0: đạt.** Mọi dòng bằng chứng ở trên đã đạt và nằm trên `main`. Hai mục từng mở được chốt như sau: OD-2 (provider/model LLM) không chặn G0 — provider thật bật bằng `AEGIS_SESSION_LIVE_MODEL=1` + `AEGIS_MODEL_*` (OpenAI Chat Completions hoặc Anthropic Messages, base URL tùy chọn, giá bắt buộc; G1.6, PR #62), mặc định scripted policy cho CI/demo; Product Team ký cổng đã ghi nhận — leader ký dưới ủy quyền của chủ ngày 2026-11-24. Điều kiện OD-5/OI-4 và bảy điều kiện G1 còn lại vẫn phải xong cùng task G1 sở hữu (TASKS §G1).
 
 ## Tiếp theo
 
-Mở G1 theo TASKS: G1.1a trước, tám điều kiện review phải xong cùng task sở hữu; OD-2 vẫn mở nhưng G1 chạy bằng fake model. Cập nhật sau mỗi lần merge hoặc deploy (update after every merge or deploy).
+Mở G1 theo TASKS: G1.1a trước, tám điều kiện review phải xong cùng task sở hữu; G1 mặc định chạy scripted policy; provider thật bật bằng `AEGIS_SESSION_LIVE_MODEL=1` (G1.6). Cập nhật sau mỗi lần merge hoặc deploy (update after every merge or deploy).
+- G1.6 slice E (PR #65): `deploy/vulnlab` (7 pinned origins, internal + lab networks, podman TTL auto-stop) và catalog `tests/vulnlab` + `make vulnlab-test`; lab lộ đúng 7/7, assertion CVE ứng viên đã định nghĩa cho slice A/B/C; tunnel internet chờ đăng nhập Cloudflare MCP.
+- G1.6 (integ/g16-discovery, 2026-11-25): trên lab, chuỗi seed → Subfinder → DNSx → Naabu → fingerprintx/httpx → ứng viên CVE chạy thật: demo-g16b, demo-g16c PASS (CVE-2021-41773, CVE-2021-23017, CVE-2020-1938 kèm KEV/EPSS), vulnlab-test lab 7/7; PG == Neo4j. Migration 0004 (CVE matching), 0005 (internet profile); baseline bất biến. Chưa chạy trên mục tiêu internet thật.
+- G1.6 (integ/g16-discovery, 2026-11-27): chạy thật trên internet. Thụ động icomm.vn (78 tên), salingnh.com (0 tên, không có A). Chủ động icomm.vn qua 3 seed IP (zone có wildcard), 1 job, 2 req/s/host, 2 kết nối: port 22/80/443/2222 (.17), 22/80/443 (.15); OpenSSH 8.9p1 Ubuntu, NetBird; 32 CVE ứng viên/64 cặp, không KEV; audit 0 deny; PG == Neo4j. Hai lần review an toàn độc lập: lần 2 kết luận an toàn ở trần thấp kể cả L3. Intel đầy đủ (NVD 432k CVE, KEV tự làm mới, EPSS); demo-g1, demo-g16c PASS, vulnlab-test lab 7/7. Stack thử nghiệm của chủ: UI 127.0.0.1:5174. Chưa merge vào main.

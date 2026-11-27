@@ -20,6 +20,7 @@ Bắt đầu từ [PRD](PRD.md), [kiến trúc](ARCHITECTURE.md), [thiết kế 
 ```bash
 make run-local                  # toàn bộ hệ, có lab DNS
 make run-local WORKERS=0        # chỉ API + MCP (làm UI, không chạy job)
+make llm-smoke                  # một lần gọi LLM thật bằng key trong .env (không chạy trong CI; tên biến ở .env.example)
 make run-local LAB=0            # không dựng lab (job DNS không có endpoint để chạy)
 make run-local NEW_TOKEN=1      # xoay operator token và in lại
 make stop-local                 # dừng đúng những process/stack mà run-local đã bật
@@ -36,6 +37,26 @@ VITE_USE_MOCK=false VITE_API_BASE=http://127.0.0.1:8000/api/v2 \
   VITE_BEARER_TOKEN=$(cat ../.local/operator-token) npm run dev
 ```
 
+## LLM gateway (bạn quản lý, tự xoay vòng endpoint)
+
+ultron chỉ gọi model qua LLM gateway của bạn: một LiteLLM proxy chạy local (`deploy/llm-gateway`, pin digest, lõi MIT) tự chuyển sang endpoint kế tiếp khi một endpoint hết quota (429), lỗi 5xx hoặc timeout, và cho endpoint lỗi nghỉ `cooldown_time` giây. Cấu hình nằm ngoài checkout:
+
+```bash
+mkdir -p ~/.config/ultron/llm-gateway
+cp deploy/llm-gateway/config.example.yaml ~/.config/ultron/llm-gateway/config.yaml
+cp deploy/llm-gateway/secrets.env.example ~/.config/ultron/llm-gateway/secrets.env
+chmod 600 ~/.config/ultron/llm-gateway/secrets.env
+$EDITOR ~/.config/ultron/llm-gateway/config.yaml     # các endpoint, rồi nhóm định tuyến (thứ tự ưu tiên)
+$EDITOR ~/.config/ultron/llm-gateway/secrets.env     # key (không bao giờ commit)
+make llm-gateway-up        # kiểm hai file trước, rồi chạy chỉ trên 127.0.0.1
+make llm-gateway-status    # từng endpoint: healthy / cooling down / no traffic yet
+make llm-gateway-reload    # áp cấu hình đã sửa (ultron vẫn chạy; gateway gián đoạn vài giây)
+make llm-gateway-down      # gỡ gateway của checkout này
+make llm-gateway-test      # chạy image đã pin với 2 endpoint giả (một cái hết quota), không cần key
+```
+
+Trỏ ultron vào gateway trong `.env` (xem `.env.example`): `AEGIS_SESSION_LIVE_MODEL=1`, `AEGIS_MODEL_GATEWAY=1`, `AEGIS_MODEL_BASE_URL=http://127.0.0.1:4000/v1`, `AEGIS_MODEL_NAME=aegis-smart` (tên nhóm định tuyến, không phải model upstream), `AEGIS_MODEL_API_KEY=<LITELLM_MASTER_KEY>`, `AEGIS_MODEL_PROVIDER=openai|anthropic` (upstream chỉ có chat-completions thì dùng `openai`), cùng hai giá (chỉ dùng khi gateway không báo chi phí). `make llm-smoke` gửi một lời gọi thật qua gateway. Xoay vòng chỉ nằm ở gateway: `AEGIS_MODEL_GATEWAY=1` từ chối fallback trong app. Nội dung request/response không bao giờ bị log; metadata (model, endpoint, status, token, chi phí, độ trễ) nằm ở `aegis.model_usage` và `/metrics` của proxy (sau master key).
+
 ## Chạy G1 một mình
 
 Ba lệnh dưới đây là bằng chứng của cổng G1 (`docs/living/02-ke-hoach-trien-khai.md` dòng 28 và 33). Chúng cần một checkout sạch, rootless Podman và image đã có trên máy (`make lab-up` dùng image Subfinder/DNSx đã pin).
@@ -45,9 +66,12 @@ Nếu máy đã có stack `aegis-dev` từ bản trước khi gộp migration (c
 ```bash
 make run-local      # 1. dựng toàn bộ hệ + lab, in token; để nguyên terminal này
 make demo-g1        # 2. campaign thật -> agent/MCP -> Subfinder -> DNSx -> raw/metadata/graph
+make demo-g16c      #    G1.6: ... -> Naabu -> fingerprintx/httpx -> ứng viên CVE (KEV/EPSS) trên lab
 make demo-recovery  # 3. SIGKILL runner giữa job: chạy tiếp, không trùng container/job/envelope
 make soak-start     # 4. soak rút gọn 24 h (SOAK_HOURS=... để đổi), chạy nền
 ```
+
+Ứng viên CVE thật cần intel: trên stack mới chạy `make intel-sync` (NVD đủ mọi năm lần đầu ~30 phút, sau đó tăng dần; KEV từ `cisagov/kev-data`; EPSS khi đặt `AEGIS_EPSS_SOURCE`) trước `make vulnlab-test PROFILE=lab`. Lệnh thoát khác 0 nghĩa là intel chưa mới, không có nguồn dự phòng. Demo và CI dùng fixture đã commit, không gọi mạng.
 
 Tạo thêm một campaign mẫu qua API: `make seed-demo AEGIS_DEV_TOKEN=$(cat .local/operator-token)`. Campaign này dùng target của fixture contract (`internal.example`, `10.20.0.0/24`), lab không trả lời các tên đó, nên nó chạy một lượt enumerate, không có tên mới và tự tạm dừng với lý do "no progress for 3 session(s)" — đó là hành vi đúng. Campaign chạy trọn vòng trên lab là `make demo-g1`.
 
@@ -100,5 +124,7 @@ Dừng hết: `make stop-local` (hoặc `make soak-stop` trước nếu muốn d
 - Token chỉ in một lần vì trên đĩa chỉ có sha256; mất token thì `make run-local NEW_TOKEN=1`. `.local/operator-token` và `.local/service-token` là tiện ích dev (mode 600, đã git-ignore) để script demo dùng.
 - `make seed-demo AEGIS_DEV_TOKEN=<token>` tạo thêm một campaign demo qua `POST /campaigns`.
 - `AEGIS_CORS_ORIGINS` đổi danh sách origin được phép (mặc định `http://127.0.0.1:5173,http://localhost:5173`).
-- M06 chạy image đã pin theo digest; runner không pull. Job cần egress mà không có profile lab thì cần `AEGIS_M06_BROKER_IMAGE` (broker container) — G1 chỉ dùng hai adapter DNS trên lab nên không cần.
+- M06 chạy image đã pin theo digest; runner không pull. `make run-local` dựng broker image (`deploy/broker/Containerfile`), đặt `AEGIS_M06_INTERNET_PROFILE`, `AEGIS_L3_HOOK` và tạo uplink riêng `aegis-uplink`; job internet phân giải DNS qua broker, không cần cấu hình thêm. Campaign demo/CI khai `network_profile: lab`; campaign của người vận hành mặc định `internet`. Chạy thử internet (chỉ trên tài sản bạn sở hữu, thụ động trước): `make internet-smoke DOMAIN=<domain>`. Campaign internet bắt buộc có `authorization` có cấu trúc (owner, reference, date, `authorized_suffixes`) và trần tốc độ/kết nối; dải IP nội bộ luôn bị chặn trừ CIDR seed khai rõ; zone có wildcard DNS (vd icomm.vn) chỉ quét chủ động được qua seed IP. Luật đầy đủ: `docs/living/dac-ta-ky-thuat/02-nen-tang.md` §Profile mạng của job.
+- Một máy chỉ có một lab (subnet lab cố định `10.114.53.0/24`): checkout sau dùng chung lab đang chạy; muốn lab riêng phải gỡ lab cũ trước.
+- Mỗi checkout chạy stack riêng: đặt `AEGIS_DEV_PROJECT`/`AEGIS_LAB_PROJECT`/`AEGIS_VULNLAB_PROJECT` và port riêng trong `.env`; `dev-up`/`dev-down`/`lab-down`/`vulnlab-*` từ chối đụng stack do checkout khác tạo.
 - `make ci-local` và `make ci-python` là đúng hai job CI; `make demo-g15a` là bằng chứng flow/SSE riêng của G1.5a.

@@ -54,17 +54,25 @@ from psycopg.types.json import Jsonb
 from pydantic import RootModel
 
 from aegis import validation
+from aegis.common import platform as platform_set
 from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
 from aegis.contracts_gen.common.error_v2_schema import NextAction
 from aegis.m01_campaign.audit import record_audit
 from aegis.m05_registry.canonical import job_fingerprint, sha256_hex
-from aegis.m05_registry.caps import CampaignPolicy, check_campaign_caps, merge_input
+from aegis.m05_registry.caps import (
+    CampaignPolicy,
+    check_campaign_address_budget,
+    check_campaign_caps,
+    merge_input,
+    network_profile,
+)
 from aegis.m05_registry.dependency import check_dependencies
 from aegis.m05_registry.egress import (
     EgressBinding,
     TargetBinder,
     build_egress_binding,
     check_declared_destinations,
+    load_active_provenance,
 )
 from aegis.m05_registry.errors import M05Error, Refusal
 from aegis.m05_registry.ids import trace_id as new_trace_id
@@ -211,11 +219,27 @@ class PostgresJobService:
         registry: ManifestRegistry,
         key_ring: KeyRing,
         binder: TargetBinder | None = None,
+        platform_cidrs: Sequence[str] | None = None,
+        platform_env: Mapping[str, str] | None = None,
     ) -> None:
         self._connect = connect
         self._registry = registry
         self._key_ring = key_ring
         self._binder = binder
+        #: Tests and single-host deployments can pin the set; otherwise it is read from the host for
+        #: **every** task (R1): the set is a snapshot of podman networks and host addresses, and a
+        #: network created after this process started must still be denied.
+        self._platform_cidrs_override = None if platform_cidrs is None else tuple(platform_cidrs)
+        self._platform_env = platform_env
+
+    def _platform_deny_set(self) -> tuple[tuple[str, ...], str]:
+        """The platform deny set right now, and why it could not be read (``""`` when it was)."""
+        if self._platform_cidrs_override is not None:
+            return self._platform_cidrs_override, ""
+        try:
+            return platform_set.platform_cidrs(self._platform_env), ""
+        except platform_set.PlatformDenySetUnavailable as error:
+            return (), str(error)
 
     # --- submission ---------------------------------------------------------------------
     def submit(
@@ -396,6 +420,25 @@ class PostgresJobService:
         try:
             self._check_target_kinds(record, targets)
             check_declared_destinations(record, merged_input)
+            profile = network_profile(campaign.policy)
+            platform_cidrs: tuple[str, ...] = ()
+            if profile == "internet":
+                authorization_value = campaign.policy.get("authorization")
+                if not isinstance(authorization_value, Mapping) or not authorization_value:
+                    raise M05Error.policy_denied(
+                        "authorization_missing",
+                        "an internet campaign needs a structured authorization in its RoE "
+                        "(owner, reference, date, authorized_suffixes)",
+                        field="/policy/authorization",
+                    )
+                platform_cidrs, platform_error = self._platform_deny_set()
+                if not platform_cidrs:
+                    raise M05Error.policy_denied(
+                        "platform_deny_set_unavailable",
+                        "the platform deny set cannot be read on this host; refusing to sign an "
+                        "internet task without it"
+                        + (f": {platform_error}" if platform_error else ""),
+                    )
             check_campaign_caps(
                 conn,
                 policy=campaign,
@@ -409,12 +452,37 @@ class PostgresJobService:
                 job_id=job_id,
                 depends_on=[str(_plain(item)) for item in request.depends_on or []],
             )
+            active_binder = self._binder or _MissingBinder()
+            active_provenance = None
+            if profile == "internet":
+                # The seed networks are needed for every internet task, not only a target-bound one:
+                # the private seed CIDRs the RoE lists are signed into the binding (R4), and a
+                # dns-only provider's answers are judged against them at M06.
+                active_provenance = load_active_provenance(
+                    conn,
+                    campaign_id=campaign.campaign_id,
+                    scope_id=campaign.scope_id,
+                    targets=targets,
+                    binder=active_binder,
+                )
             binding = build_egress_binding(
                 record,
                 merged_input=merged_input,
                 targets=targets,
-                binder=self._binder or _MissingBinder(),
+                binder=active_binder,
+                network_profile=profile,
+                platform_cidrs=platform_cidrs,
+                authorized_suffixes=_authorized_suffixes(campaign.policy),
+                provenance=active_provenance,
             )
+            if binding.target_addresses:
+                check_campaign_address_budget(
+                    conn,
+                    campaign_id=campaign.campaign_id,
+                    addresses=binding.target_addresses,
+                    actor={"kind": "module", "id": "M05"},
+                    trace_id=trace_id,
+                )
         except M05Error as error:
             return self._deny(
                 conn,
@@ -784,6 +852,10 @@ class PostgresJobService:
             "campaign_id": campaign.campaign_id,
             "scope_id": campaign.scope_id,
             "policy_version": campaign.policy_version,
+            # The campaign's RoE decides the network profile; it is signed with the task so M06
+            # never picks lab vs internet from its own environment (G1.6). A campaign that omits
+            # the field runs on `internet` (the operator default); demo/CI set `lab` explicitly.
+            "network_profile": network_profile(campaign.policy),
             "capability": record.capability,
             "provider": record.provider,
             "provider_version": record.provider_version,
@@ -1184,3 +1256,14 @@ def _decode_cursor(cursor: str) -> tuple[str, str]:
         return str(document["created_at"]), str(document["job_id"])
     except (ValueError, KeyError, TypeError) as error:
         raise M05Error.input_invalid("cursor is not a job cursor", field="/cursor") from error
+
+
+def _authorized_suffixes(policy: Mapping[str, Any]) -> tuple[str, ...]:
+    """The RoE's authorized suffixes, for the wildcard probe (F3 guardrail 4)."""
+    authorization = policy.get("authorization")
+    if not isinstance(authorization, Mapping):
+        return ()
+    suffixes = authorization.get("authorized_suffixes")
+    if not isinstance(suffixes, list):
+        return ()
+    return tuple(str(value).strip(".").lower() for value in suffixes)

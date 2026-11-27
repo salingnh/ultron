@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   ReactFlow,
@@ -11,6 +11,7 @@ import {
   type NodeTypes,
   Position,
   Handle,
+  useNodesState,
   useReactFlow,
   ReactFlowProvider,
 } from '@xyflow/react';
@@ -24,8 +25,9 @@ import {
   Radio,
   Maximize2,
 } from 'lucide-react';
-import { apiClient } from '../api/client';
-import type { ScanJob, JobStatus, CampaignFlow, FlowNode, Campaign } from '../api/types';
+import { apiClient, toUiError } from '../api/client';
+import { createCoalescedRefresh } from '../api/sse';
+import type { ScanJob, JobStatus, CampaignFlow, FlowNode, Campaign, UiError } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
 import { ErrorDisplay } from '../components/ErrorDisplay';
@@ -71,14 +73,36 @@ const CustomJobNode: React.FC<NodeProps<Node<JobNodeData>>> = ({ data }) => {
       }}
     >
       <Handle type="target" position={Position.Top} style={{ background: 'var(--line)' }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          marginBottom: 6,
+        }}
+      >
         <span style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--muted)' }}>
           {data.type}
         </span>
         <StatusChip status={data.status} size="sm" kind={isJob ? 'job' : 'campaign'} />
       </div>
 
-      <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--ink)', marginBottom: 4, wordBreak: 'break-word' }}>
+      <div
+        title={data.label}
+        style={{
+          fontWeight: 600,
+          fontSize: 'var(--text-sm)',
+          color: 'var(--ink)',
+          marginBottom: 4,
+          wordBreak: 'break-word',
+          display: '-webkit-box',
+          WebkitLineClamp: 4,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}
+      >
         {data.label}
       </div>
 
@@ -128,13 +152,44 @@ const FlowGraphView: React.FC<{
   onNodeSelect: (id: string) => void;
 }> = ({ nodes, edges, nodeTypes, onNodeSelect }) => {
   const { fitView } = useReactFlow();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(nodes);
+
+  useEffect(() => {
+    setRfNodes(nodes);
+  }, [nodes, setRfNodes]);
 
   const handleFit = useCallback(() => {
-    fitView({ padding: 0.15, maxZoom: 1.0, minZoom: 0.8 });
+    fitView({ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 });
   }, [fitView]);
 
+  useEffect(() => {
+    if (rfNodes.length === 0) return;
+    const raf = requestAnimationFrame(() => {
+      fitView({ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [rfNodes.length, fitView]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (rfNodes.length > 0) {
+        fitView({ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 });
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [rfNodes.length, fitView]);
+
   return (
-    <div className="flow-container" style={{ height: 680, position: 'relative' }} aria-label="Luồng phụ thuộc React Flow">
+    <div
+      ref={containerRef}
+      className="flow-container"
+      style={{ height: 680, width: '100%', maxWidth: '100%', position: 'relative', overflow: 'hidden' }}
+      aria-label="Luồng phụ thuộc React Flow"
+    >
       <div
         style={{
           position: 'absolute',
@@ -157,18 +212,24 @@ const FlowGraphView: React.FC<{
       </div>
 
       <ReactFlow
-        nodes={nodes}
+        nodes={rfNodes}
         edges={edges}
+        onNodesChange={onNodesChange}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.15, maxZoom: 1.0, minZoom: 0.8 }}
-        minZoom={0.5}
+        fitViewOptions={{ padding: 0.12, maxZoom: 1.0, minZoom: 0.2 }}
+        minZoom={0.2}
         maxZoom={1.5}
+        style={{ width: '100%', height: '100%' }}
         onNodeClick={(_event, node) => onNodeSelect(node.id)}
       >
         <Background color="var(--line)" gap={16} />
         <Controls />
         <MiniMap
+          className="flow-minimap"
+          pannable
+          zoomable
+          bgColor="var(--surface)"
           nodeColor={(node) => {
             const data = node.data as unknown as JobNodeData | undefined;
             if (data?.status === 'FAILED' || data?.status === 'rejected') return '#ef4444';
@@ -180,13 +241,13 @@ const FlowGraphView: React.FC<{
           nodeStrokeColor="var(--line)"
           nodeStrokeWidth={1}
           nodeBorderRadius={4}
-          maskColor="rgba(0, 0, 0, 0.15)"
+          maskColor="var(--minimap-mask, rgba(18, 32, 43, 0.14))"
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--line)',
             borderRadius: 'var(--radius-md)',
-            width: 180,
-            height: 110,
+            width: 160,
+            height: 100,
           }}
         />
       </ReactFlow>
@@ -194,9 +255,13 @@ const FlowGraphView: React.FC<{
   );
 };
 
+const JOB_FLOW_SSE_TYPES = ['job.started.v2', 'job.completed.v2', 'policy.denied.v2'];
+const JOB_FLOW_SSE_TYPE_SET = new Set(JOB_FLOW_SSE_TYPES);
+
 export const JobTableFlowScreen: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlCampaignId = searchParams.get('campaign_id');
+  const urlJobId = searchParams.get('job_id');
 
   const [campaignList, setCampaignList] = useState<Campaign[]>([]);
   const [activeCampaignId, setActiveCampaignId] = useState<string>(urlCampaignId || '');
@@ -205,7 +270,8 @@ export const JobTableFlowScreen: React.FC = () => {
   const [jobs, setJobs] = useState<ScanJob[]>([]);
   const [flowData, setFlowData] = useState<CampaignFlow | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [jobsError, setJobsError] = useState<UiError | null>(null);
+  const [flowError, setFlowError] = useState<UiError | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [selectedJob, setSelectedJob] = useState<ScanJob | null>(null);
 
@@ -242,34 +308,50 @@ export const JobTableFlowScreen: React.FC = () => {
     }
     try {
       if (showLoading) setLoading(true);
-      setError(null);
+      setJobsError(null);
+      setFlowError(null);
       const params = {
         campaign_id: effectiveCampaignId,
         status: statusFilter !== 'ALL' ? (statusFilter as JobStatus) : undefined,
       };
-      const [jobsRes, flowRes] = await Promise.all([
+      const [jobsResult, flowResult] = await Promise.allSettled([
         apiClient.listJobs(params),
         apiClient.getCampaignFlow(effectiveCampaignId),
       ]);
-      setJobs(jobsRes.items);
-      setFlowData(flowRes);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu Job hoặc Flow');
+      if (jobsResult.status === 'fulfilled') {
+        setJobs(jobsResult.value.items);
+        if (urlJobId) {
+          const matched = jobsResult.value.items.find((j) => j.job_id === urlJobId);
+          if (matched) setSelectedJob(matched);
+        }
+      } else {
+        setJobsError(toUiError(jobsResult.reason, `/jobs?campaign_id=${effectiveCampaignId}`));
+      }
+      if (flowResult.status === 'fulfilled') {
+        setFlowData(flowResult.value);
+      } else {
+        setFlowError(toUiError(flowResult.reason, `/campaigns/${effectiveCampaignId}/flow`));
+      }
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [effectiveCampaignId, statusFilter]);
+  }, [effectiveCampaignId, statusFilter, urlJobId]);
+
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
 
   useEffect(() => {
     loadData(true);
   }, [loadData]);
 
-  // Subscribe to SSE events for real-time live updates (<2s)
+  // Subscribe to SSE events for real-time live updates (<2s), coalescing bursts into O(1) GETs
   useEffect(() => {
     if (!effectiveCampaignId) return;
 
+    const refresher = createCoalescedRefresh(() => loadDataRef.current(false), 250);
     const sub = apiClient.subscribeCampaignEvents({
       campaignId: effectiveCampaignId,
+      types: JOB_FLOW_SSE_TYPES,
       onEvent: (event) => {
         setLastLiveEvent({
           type: event.type,
@@ -316,8 +398,9 @@ export const JobTableFlowScreen: React.FC = () => {
           }
         }
 
-        // Silent background authoritative sync
-        loadData(false);
+        if (JOB_FLOW_SSE_TYPE_SET.has(event.type)) {
+          refresher.trigger();
+        }
       },
       onStatusChange: (status) => {
         setSseConnected(status === 'connected');
@@ -325,9 +408,10 @@ export const JobTableFlowScreen: React.FC = () => {
     });
 
     return () => {
+      refresher.cancel();
       sub.close();
     };
-  }, [effectiveCampaignId, loadData]);
+  }, [effectiveCampaignId]);
 
   const handleCancelJob = async (jobId: string) => {
     const reason = prompt('Nhập lý do hủy job:', 'Hủy thủ công qua giao diện');
@@ -393,32 +477,50 @@ export const JobTableFlowScreen: React.FC = () => {
     const calculatedNodes: Node[] = [];
     const nodeWidth = 250;
     const nodeGapX = 40;
-    const levelHeight = 140;
-    const startY = 30;
+    const rankGapY = 60;
     const centerX = 500;
 
-    for (const [rankStr, nodesInRank] of Object.entries(rankGroups)) {
-      const r = parseInt(rankStr, 10);
+    const estimateNodeHeight = (n: FlowNode): number => {
+      const lines = Math.min(4, Math.max(1, Math.ceil((n.label?.length || 1) / 26)));
+      const headerHeight = 56;
+      const bodyHeight = lines * 20 + 16;
+      const footerHeight =
+        (n.type === 'job' ? 32 : 0) +
+        (n.type === 'decision' && n.started_at ? 22 : 0) +
+        (n.wait_reason ? 36 : 0);
+      return headerHeight + bodyHeight + footerHeight;
+    };
+
+    const sortedRanks = Object.keys(rankGroups)
+      .map((r) => parseInt(r, 10))
+      .sort((a, b) => a - b);
+
+    let currentY = 30;
+    for (const r of sortedRanks) {
+      const nodesInRank = rankGroups[r];
       const count = nodesInRank.length;
       const totalWidth = count * nodeWidth + (count - 1) * nodeGapX;
       const startX = centerX - totalWidth / 2;
+      const maxRankHeight = Math.max(...nodesInRank.map(estimateNodeHeight));
 
       nodesInRank.forEach((n, idx) => {
         const x = startX + idx * (nodeWidth + nodeGapX);
-        const y = startY + r * levelHeight;
+        const estimatedHeight = estimateNodeHeight(n);
         calculatedNodes.push({
           id: n.id,
           type: 'jobNode',
-          position: { x, y },
-          width: 250,
-          height: 110,
-          style: { width: 250 },
+          position: { x, y: currentY },
+          initialWidth: nodeWidth,
+          initialHeight: estimatedHeight,
+          width: nodeWidth,
+          style: { width: nodeWidth },
           data: {
             ...n,
             type: n.type,
           },
         });
       });
+      currentY += maxRankHeight + rankGapY;
     }
 
     const calculatedEdges: Edge[] = flowData.edges.map((e, idx) => ({
@@ -552,7 +654,16 @@ export const JobTableFlowScreen: React.FC = () => {
         </div>
       </div>
 
-      {error && <ErrorDisplay error={error} onRetry={() => loadData(true)} />}
+      {viewMode === 'table' && jobsError && (
+        <div style={{ marginBottom: 16 }}>
+          <ErrorDisplay error={jobsError} onRetry={() => loadData(true)} />
+        </div>
+      )}
+      {viewMode === 'flow' && flowError && (
+        <div style={{ marginBottom: 16 }}>
+          <ErrorDisplay error={flowError} onRetry={() => loadData(true)} />
+        </div>
+      )}
 
       {loading ? (
         <div className="state-box">

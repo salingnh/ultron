@@ -2,7 +2,7 @@ apiVersion: aegis.io/v2
 kind: CapabilityProvider
 metadata:
   name: dnsx
-  version: 1.0.0
+  version: 1.0.2
   module: M08
   license: MIT
   upstream: https://github.com/projectdiscovery/dnsx
@@ -17,7 +17,11 @@ spec:
     imageDigest: sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec
     argsTemplate:
     - -silent
+    - -duc
     - -json
+    - -a
+    - -aaaa
+    - -cname
     - -l
     - /in/targets.txt
     - -o

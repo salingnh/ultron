@@ -1,0 +1,80 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: fingerprintx
+  version: 1.1.0
+  module: M08
+  license: Apache-2.0
+  upstream: https://github.com/praetorian-inc/fingerprintx
+  licenseNotes: Apache-2.0 (LICENSE and NOTICE in the upstream repository). Upstream publishes no
+    container image, so the pin is the source tag v1.1.19 plus the base-image digests and the built
+    image digest in deploy/lab/images.env (recipe deploy/lab/tools/fingerprintx/Dockerfile). The
+    image is built locally for the authorized lab; CI verifies the adapter against the committed
+    fixture bytes, never by pulling.
+spec:
+  capability: service.fingerprint
+  providerVersion: v1.1.19
+  runtime:
+    type: container
+    image: registry.internal/aegis/fingerprintx
+    imageDigest: sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1
+    argsTemplate:
+    - -l
+    - /in/targets.txt
+    - --json
+    - -o
+    - /out/result.jsonl
+    - -w
+    - ${input.timeout_ms}
+    targetsFormat: host_port
+    outputPath: /out
+  inputSchemaRef: schema://service/fingerprint/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - service
+  permissions:
+    scopeRequired: false
+    networkAccess: egress
+    # G1.6b/G1.6: fingerprintx dials its targets directly and has no SOCKS/HTTP proxy flag (only
+    # its HTTP plugin honours HTTPS_PROXY/ALL_PROXY through Go's default transport), so it declares
+    # `proxyAware: false` truthfully and asks for the L3 channel instead of the L7 broker: the
+    # gateway filters by the signed IP:port set without the tool knowing about a proxy. The lab
+    # profile runs it on the authorized lab network; a broker-only deployment refuses it.
+    egressMode: l3
+    proxyAware: false
+    egressSources: []
+    targetBinding: required
+    targetPorts: from_input
+    rawSocket: false
+  budget:
+    timeoutSeconds: 120
+    maxConcurrency: 8
+    cpu: 0.5
+    memoryMb: 256
+    maxOutputMb: 16
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m08.fingerprintx.parser:parse
+    outputFormat: jsonl
+  emits:
+    assetKinds: []
+    predicates:
+    - service.protocol
+    - service.banner
+    - service.product
+    relationships: []
+    findings: false
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation

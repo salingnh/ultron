@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Removes compose project `aegis-lab` only - its containers, network and (none today)
-# volumes - plus stale one-shot run containers labelled `aegis.lab=aegis-lab-run`, and the
-# throwaway lab CA. Containers and networks of anything else on the machine are untouched.
+# Removes this checkout's lab compose project only - its containers, network and (none today)
+# volumes - plus stale one-shot run containers of that project, and the throwaway lab CA. The project
+# is `aegis-lab` unless `AEGIS_LAB_PROJECT` names another one, and it must be this checkout's
+# (scripts/lib/stack.sh); containers and networks of anything else on the machine are untouched.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -9,13 +10,17 @@ require_cmd podman
 require_cmd podman-compose
 load_images
 
+# Removing the lab is as destructive as starting it: only this checkout's own project is removed
+# (AEGIS_STACK_FORCE=1 for a lab known to be disposable).
+require_lab_stack_ownership
+
 log "compose project $LAB_PROJECT: removing its containers and network"
 compose_project_resources=$(
   podman ps -a --filter "label=io.podman.compose.project=$LAB_PROJECT" --format '{{.Names}}'
   podman volume ls --filter "label=io.podman.compose.project=$LAB_PROJECT" --format '{{.Name}}'
 )
 if [ -n "$compose_project_resources" ] || podman network inspect "$LAB_NETWORK" >/dev/null 2>&1; then
-  compose down --remove-orphans --timeout 20
+  compose down --volumes --remove-orphans --timeout 20
 else
   log "compose project $LAB_PROJECT: nothing to remove"
 fi
@@ -24,7 +29,7 @@ mapfile -t stale < <(podman ps -a --filter "label=$RUN_LABEL" --format '{{.Names
 for name in "${stale[@]}"; do
   [ -n "$name" ] || continue
   log "removing stale run container $name"
-  podman rm -f "$name" >/dev/null
+  podman rm -f -v "$name" >/dev/null
 done
 
 leftovers=$(
@@ -38,4 +43,5 @@ if [ -n "$leftovers" ]; then
 fi
 
 rm -rf "$TLS_DIR"
+rm -f "$LAB_IDENTITY"
 log "compose project $LAB_PROJECT: removed; nothing outside the project was touched"

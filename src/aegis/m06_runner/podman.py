@@ -31,7 +31,13 @@ from typing import Any
 
 from aegis.common.ports import ContainerRunner, ContainerSpec, RunHandle, RunState
 from aegis.m06_runner import netpolicy
-from aegis.m06_runner.lab import LabJob, LabProfile
+from aegis.m06_runner.profile import (
+    BROKER_DNS,
+    BROKER_HTTP,
+    BROKER_SOCKS,
+    DeploymentProfile,
+    JobProfile,
+)
 
 PODMAN = os.environ.get("AEGIS_PODMAN") or shutil.which("podman") or "podman"
 ROLE_LABEL = "aegis.role"
@@ -48,6 +54,30 @@ EXITED_STATES = frozenset({"exited", "stopped", "dead", "configured"})
 
 class RunnerError(RuntimeError):
     """The sandbox runtime could not do what the contract requires (fail loudly)."""
+
+
+def _ci_job_label_args() -> list[str]:
+    job = os.environ.get("AEGIS_CI_JOB", "").strip()
+    return ["--label", f"aegis.ci-job={job}"] if job else []
+
+
+def _remove_container(name: str) -> None:
+    log_path = os.environ.get("AEGIS_CI_VOLUME_LOG", "").strip()
+    if log_path:
+        mounts = _podman(
+            "container",
+            "inspect",
+            name,
+            "--format",
+            '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}',
+            check=False,
+        ).stdout
+        names = [line.strip() for line in mounts.splitlines() if line.strip()]
+        if names:
+            with Path(log_path).open("a", encoding="utf-8") as handle:
+                for volume in names:
+                    handle.write(f"{volume}\n")
+    _podman("rm", "-f", "-v", name, check=False)
 
 
 def _podman(*args: str, check: bool = True, timeout: int = 600) -> subprocess.CompletedProcess[str]:
@@ -106,6 +136,11 @@ class JobLayout:
         return self.root / "audit"
 
     @property
+    def hooks(self) -> Path:
+        """Per-job OCI hook directory (L3 mode): the deployment hook plus this job's arguments."""
+        return self.root / "hooks"
+
+    @property
     def run(self) -> Path:
         return self.root / "run.json"
 
@@ -113,12 +148,31 @@ class JobLayout:
         for directory in (self.output, self.input, self.audit):
             directory.mkdir(parents=True, exist_ok=True)
         # The job runs as uid/gid 65534 (contract), which is not the owner of these host
-        # directories. They are private to the job, and the sandbox user must be able to write its
-        # output and the broker its audit line, so both are world-writable (SELinux `Z` already
-        # relabels them for this container only).
+        # directories. `in/` must stay readable (0755 dir, 0644 files) regardless of umask, and
+        # `out/`/`audit/` must be writable (0777) (SELinux `Z` relabels them for this container).
+        self.ensure_input_permissions()
         for writable in (self.output, self.audit):
             writable.chmod(0o777)
         return self
+
+    def ensure_input_permissions(self) -> None:
+        """Keep `in/` at 0755 and its files at 0644 so uid 65534 can read under any umask."""
+        self.input.mkdir(parents=True, exist_ok=True)
+        self.input.chmod(0o755)
+        for entry in self.input.iterdir():
+            if entry.is_dir():
+                entry.chmod(0o755)
+            elif entry.is_file():
+                entry.chmod(0o644)
+
+    def write_input(self, filename: str, content: str) -> Path:
+        """Write one job input file into `in/` with mode 0644 regardless of process umask."""
+        self.input.mkdir(parents=True, exist_ok=True)
+        self.input.chmod(0o755)
+        path = self.input / filename
+        path.write_text(content, encoding="utf-8")
+        path.chmod(0o644)
+        return path
 
 
 @dataclass
@@ -131,10 +185,26 @@ class PodmanRunner(ContainerRunner):
     network_pool: str = "10.97.0.0/16"
     network_prefix: int = 24
     poll_seconds: float = 0.2
-    #: Deployment profile of the authorized lab (G1.5c); None means "never run on the lab".
-    lab: LabProfile | None = None
+    #: Deployment network profiles of this runner, keyed by kind (`lab`, `internet`). A profile is
+    #: off unless its file is configured, and a job only uses the profile its signed RoE names.
+    profiles: Mapping[str, DeploymentProfile] = field(default_factory=dict)
+    #: Test/deployment hook: the resolver the broker forwards DNS to (`--dns-upstream`). None uses
+    #: the control plane's system resolver, which is what a deployment normally wants.
+    broker_dns_upstream: str | None = None
+    #: Deployment-owned OCI hook that installs the L3 job's only default route inside its network
+    #: namespace (`deploy/l3/hooks/aegis-l3-route`). None refuses an L3 job: it never starts a job
+    #: that would have no route or an unfiltered one.
+    l3_hook: Path | None = None
     _subnets: dict[str, str] = field(default_factory=dict, init=False)
     _images: dict[str, str] = field(default_factory=dict, init=False)
+
+    @property
+    def lab(self) -> DeploymentProfile | None:
+        return self.profiles.get("lab")
+
+    @property
+    def internet(self) -> DeploymentProfile | None:
+        return self.profiles.get("internet")
 
     # -- layout -----------------------------------------------------------------------------
 
@@ -175,11 +245,29 @@ class PodmanRunner(ContainerRunner):
             # Idempotent by job id: a restarted runner adopts the container instead of starting a
             # second one (a retry is a new attempt, not a second container for the same job).
             return RunHandle(job_id=spec.job_id, container_id=existing)
-        lab = self.lab_for(spec.image_digest)
-        network = self.lab.network if (lab is not None and self.lab is not None) else "none"
-        if lab is None and spec.network == "exec":
+        entry = self.profile_entry(spec.network_profile, spec.image_digest)
+        network = "none"
+        if spec.network_profile == "lab" and spec.network == "exec":
+            profile = self.lab
+            if entry is None or profile is None:
+                # Fail closed: a lab campaign never falls back to the broker/internet network.
+                raise RunnerError(
+                    f"campaign profile lab, but this runner has no lab profile entry for "
+                    f"{spec.image_digest}"
+                )
+            network = profile.network
+        elif spec.network == "exec":
             network = self._ensure_network(spec.job_id)
-        argv = self._run_argv(spec, layout, network, lab=lab)
+        if spec.network != "exec":
+            # No egress means no network at all; the profile contributes no endpoint data.
+            entry = None
+        # The L3 route hook is the internet deployment's way of giving a job its only route (to
+        # the gateway). A lab-profile job already has its route: the internal lab network it joins.
+        needs_l3_hook = (
+            spec.egress_mode == "l3" and spec.network_profile != "lab" and spec.network == "exec"
+        )
+        hooks_dir = self._write_l3_hook(spec) if needs_l3_hook else None
+        argv = self._run_argv(spec, layout, network, entry=entry, hooks_dir=hooks_dir)
         try:
             started = _podman(*argv, timeout=120)
         except subprocess.CalledProcessError as failure:
@@ -192,9 +280,13 @@ class PodmanRunner(ContainerRunner):
         if not lines:
             raise RunnerError(f"podman run did not report a container id: {started.stderr.strip()}")
         container_id = lines[-1]
-        markers: dict[str, object] = {"job_id": spec.job_id, "spec": _spec_document(spec)}
-        if lab is not None and self.lab is not None:
-            markers["lab"] = {"network": self.lab.network, "args": list(lab.args)}
+        markers: dict[str, object] = {
+            "job_id": spec.job_id,
+            "network_profile": spec.network_profile,
+            "spec": _spec_document(spec),
+        }
+        if spec.network_profile == "lab" and entry is not None and self.lab is not None:
+            markers["lab"] = {"network": self.lab.network, "args": list(entry.args)}
         self._write_markers(spec.job_id, markers)
         return RunHandle(job_id=spec.job_id, container_id=container_id)
 
@@ -223,9 +315,15 @@ class PodmanRunner(ContainerRunner):
         self._images[image_digest] = image_digest
         return image_digest
 
-    def lab_for(self, image_digest: str) -> LabJob | None:
-        """The lab profile entry of a pinned image, or None (the runner then behaves as before)."""
-        return None if self.lab is None else self.lab.for_image(image_digest)
+    def profile_entry(self, kind: str, image_digest: str) -> JobProfile | None:
+        """The entry of the deployment profile `kind` for a pinned image, or None.
+
+        The kind comes from the campaign's signed `network_profile`; a job never picks a profile
+        from the environment, so an internet campaign cannot land on the lab network (or the other
+        way round) because of how one runner happens to be configured.
+        """
+        profile = self.profiles.get(kind)
+        return None if profile is None else profile.for_image(image_digest)
 
     def owned_jobs(self) -> tuple[str, ...]:
         """Job ids of this runner's containers (running, exited or created), sorted."""
@@ -284,7 +382,7 @@ class PodmanRunner(ContainerRunner):
             _podman("kill", "--signal", "SIGKILL", name, check=False)
 
     def remove(self, handle: RunHandle) -> None:
-        _podman("rm", "-f", self.container_name(handle.job_id), check=False)
+        _remove_container(self.container_name(handle.job_id))
         self.stop_broker(handle.job_id)
         self._remove_network(handle.job_id)
 
@@ -339,7 +437,7 @@ class PodmanRunner(ContainerRunner):
 
     def discard(self, job_id: str) -> None:
         """Forget everything a failed preparation created; no container and no output exists."""
-        _podman("rm", "-f", self.container_name(job_id), check=False)
+        _remove_container(self.container_name(job_id))
         self.stop_broker(job_id)
         self._remove_network(job_id)
 
@@ -365,6 +463,7 @@ class PodmanRunner(ContainerRunner):
             return BrokerHandle(
                 job_id=job_id, container_id=existing, proxy=self.broker_proxy(job_id)
             )
+        l3_mode = policy.egress_mode == "l3"
         argv = [
             "run",
             "--detach",
@@ -376,6 +475,7 @@ class PodmanRunner(ContainerRunner):
             f"{ROLE_LABEL}={BROKER_ROLE}",
             "--label",
             f"{RUNNER_LABEL}={self.owner}",
+            *_ci_job_label_args(),
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--pids-limit",
@@ -386,14 +486,28 @@ class PodmanRunner(ContainerRunner):
             "--tmpfs",
             "/tmp:rw,size=16m,mode=1777",
             "--user",
-            "65534:65534",
+            # The L3 gateway is the only part of the platform that needs NET_ADMIN, and only
+            # inside its own network namespace (rules + forwarding live there); the job never gets
+            # it. Every other channel runs the broker unprivileged.
+            "0:0" if l3_mode else "65534:65534",
             "--network",
             f"{network}:ip={self.broker_ip(job_id)}",
         ]
+        if l3_mode:
+            argv += [
+                "--cap-add=NET_ADMIN",
+                "--sysctl",
+                "net.ipv4.ip_forward=1",
+            ]
         argv += ["--network", self.uplink_network] if self.uplink_network else []
         argv += [
             "--mount",
             f"type=bind,src={policy_path},dst=/policy.json,ro,Z",
+            # The DNS front end listens on 53 in the broker's own network namespace; the broker
+            # runs as uid 65534 with no capabilities, so the unprivileged port floor is lowered for
+            # that namespace only (a net sysctl, never the host's).
+            "--sysctl",
+            "net.ipv4.ip_unprivileged_port_start=0",
             "--mount",
             f"type=bind,src={layout.audit},dst=/audit,rw,Z",
             self.broker_image,
@@ -404,7 +518,13 @@ class PodmanRunner(ContainerRunner):
             "/policy.json",
             "--audit",
             "/audit/egress.jsonl",
+            # Listen on the job network only: the broker also has a leg on the uplink, and a
+            # container on that (shared) network must not be able to use the job's proxy.
+            "--bind",
+            self.broker_ip(job_id),
         ]
+        if self.broker_dns_upstream:
+            argv += ["--dns-upstream", self.broker_dns_upstream]
         started = _podman(*argv, timeout=120)
         container_id = started.stdout.strip().splitlines()[-1]
         deadline = time.monotonic() + 30
@@ -421,7 +541,7 @@ class PodmanRunner(ContainerRunner):
         )
 
     def stop_broker(self, job_id: str) -> None:
-        _podman("rm", "-f", self.broker_name(job_id), check=False)
+        _remove_container(self.broker_name(job_id))
 
     def broker_name(self, job_id: str) -> str:
         return f"aegis-broker-{job_id}"
@@ -433,6 +553,7 @@ class PodmanRunner(ContainerRunner):
         return f"{self.broker_ip(job_id)}:{BROKER_SOCKS_PORT}"
 
     def broker_ip(self, job_id: str) -> str:
+        """The broker's address on the job network (`subnet+2`; `+1` is reserved by netavark)."""
         subnet = self._subnets.get(job_id) or self._existing_subnet(self.network_name(job_id))
         if subnet is None:
             raise RunnerError(f"job network of {job_id} does not exist on this host")
@@ -498,12 +619,12 @@ class PodmanRunner(ContainerRunner):
                 continue
             # The container is removed but its output directory stays: the collector may still
             # upload what the job produced before it died.
-            _podman("rm", "-f", name, check=False)
+            _remove_container(name)
             removed.append(job_id)
             self._remove_network(job_id)
         brokers = [name for name, job_id in self._containers(BROKER_ROLE) if job_id not in live]
         for name in brokers:
-            _podman("rm", "-f", name, check=False)
+            _remove_container(name)
         networks = [name for name, job_id in self._networks() if job_id not in live]
         for name in networks:
             _podman("network", "rm", "-f", name, check=False)
@@ -517,7 +638,13 @@ class PodmanRunner(ContainerRunner):
     # -- internals --------------------------------------------------------------------------
 
     def _run_argv(
-        self, spec: ContainerSpec, layout: JobLayout, network: str, *, lab: LabJob | None = None
+        self,
+        spec: ContainerSpec,
+        layout: JobLayout,
+        network: str,
+        *,
+        entry: JobProfile | None = None,
+        hooks_dir: Path | None = None,
     ) -> list[str]:
         argv = [
             "run",
@@ -530,6 +657,7 @@ class PodmanRunner(ContainerRunner):
             f"{ROLE_LABEL}={JOB_ROLE}",
             "--label",
             f"{RUNNER_LABEL}={self.owner}",
+            *_ci_job_label_args(),
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--pids-limit",
@@ -559,22 +687,135 @@ class PodmanRunner(ContainerRunner):
             argv += ["--cap-add=NET_RAW"]
         # Never host network, never the Podman socket, never --privileged.
         argv += ["--network", network if network != "none" else "none"]
-        if lab is not None:
-            # The lab deployment profile: its network was passed in as `network`, and these are the
-            # endpoint data the lab needs (resolver flag, /etc/hosts, CA). Trusted deploy config,
-            # never a job input - see aegis.m06_runner.lab.
-            argv += lab.argv()
+        if hooks_dir is not None:
+            argv += ["--hooks-dir", str(hooks_dir)]
+        if spec.egress_mode and entry is None:
+            # A job on its own network has no resolver of its own: /etc/resolv.conf names the
+            # broker, which answers every query with the signed-binding checks and audit (G1.6
+            # item 4). Same for both channels; the L3 gateway also carries the DNS queries to the
+            # broker's own listener. A deployment-profile job (the authorized lab) has no job
+            # network - it joins the lab network and resolves through the deployment's own
+            # resolver (the profile's `-r`, the lab's `/etc/hosts`), so it must not ask for
+            # `broker_ip` of a network that was never created.
+            argv += ["--dns", self.broker_ip(spec.job_id)]
+        if entry is not None:
+            # The deployment profile of this job (lab endpoint data, or an internet provider
+            # config): trusted deploy config, never a job input - see aegis.m06_runner.profile.
+            argv += entry.argv()
         for key, value in self._egress_env(spec).items():
             argv += ["--env", f"{key}={value}"]
         argv += ["--mount", f"type=bind,src={layout.output},dst=/out,rw,Z"]
+        layout.ensure_input_permissions()
         if any(layout.input.iterdir()):
             argv += ["--mount", f"type=bind,src={layout.input},dst=/in,ro,Z"]
+        # A deployment-profile job joins the profile's own network (`run`: the lab) and never
+        # creates a job network, so there is no broker address to resolve for it: asking would call
+        # `broker_ip` for a network that does not exist and every lab job would fail before a
+        # container started. An internet-profile job keeps its per-job network, so its profile may
+        # still carry the `${broker_*}` placeholders.
+        endpoints = (
+            self._broker_endpoints(spec)
+            if spec.network == "exec" and spec.network_profile != "lab"
+            else {}
+        )
         argv += [
             self.image_reference(spec.image_digest),
             *spec.args,
-            *(lab.args if lab is not None else ()),
+            *self._profile_args(entry, **endpoints),
         ]
         return argv
+
+    def _write_l3_hook(self, spec: ContainerSpec) -> Path:
+        """Write the per-job OCI hook config that gives the L3 job its only route.
+
+        The hook binary/script is deployment-owned (`PodmanRunner.l3_hook`), never named by a task;
+        the runner only writes this job's arguments (the broker address). A runner with no hook
+        configured refuses the job: an L3 job would otherwise start on an internal network with no
+        route at all, or (worse, if someone wired one) an unfiltered one.
+        """
+        hook = self.l3_hook
+        if hook is None:
+            raise RunnerError(
+                "an L3 job needs the deployment's OCI route hook (PodmanRunner.l3_hook); refusing "
+                "to start a job without it"
+            )
+        hook = Path(hook)
+        if not hook.is_file() or not os.access(hook, os.X_OK):
+            raise RunnerError(f"the L3 route hook {hook} is missing or not executable")
+        directory = self.layout(spec.job_id).create().hooks
+        directory.mkdir(parents=True, exist_ok=True)
+        hook_config = directory / "aegis-l3-route.json"
+        hook_config.write_text(
+            json.dumps(
+                {
+                    "version": "1.0.0",
+                    "hook": {
+                        "path": str(hook),
+                        "args": [str(hook), self.broker_ip(spec.job_id), "eth0"],
+                        "env": ["PATH=/usr/sbin:/usr/bin:/sbin:/bin"],
+                    },
+                    "when": {"always": True},
+                    # `createContainer` is the stage that runs inside the container's network
+                    # namespace; `prestart` runs on the host and cannot see the job's interface.
+                    "stages": ["createContainer"],
+                },
+                indent=1,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return directory
+
+    def _broker_endpoints(self, spec: ContainerSpec) -> dict[str, str | None]:
+        """The broker endpoints a deployment profile may substitute for this job.
+
+        A broker-channel job gets all three (DNS, HTTP proxy URL, SOCKS authority); an L3 job has
+        only the DNS listener (the gateway carries its traffic, there is no L7 proxy); a job with
+        no egress gets none, so a profile that asks for one is refused instead of running with a
+        literal token.
+        """
+        if not spec.egress_mode:
+            return {}
+        ip = self.broker_ip(spec.job_id)
+        if spec.egress_mode == "l3":
+            return {"broker_dns": f"{ip}:53", "broker_http": None, "broker_socks": None}
+        return {
+            "broker_dns": f"{ip}:53",
+            "broker_http": f"http://{ip}:{BROKER_HTTP_PORT}",
+            "broker_socks": f"{ip}:{BROKER_SOCKS_PORT}",
+        }
+
+    def _profile_args(
+        self,
+        entry: JobProfile | None,
+        *,
+        broker_dns: str | None = None,
+        broker_http: str | None = None,
+        broker_socks: str | None = None,
+    ) -> list[str]:
+        """The deployment profile's extra argv, with the broker placeholders resolved."""
+        if entry is None:
+            return []
+        values = {
+            BROKER_DNS: broker_dns,
+            BROKER_HTTP: broker_http,
+            BROKER_SOCKS: broker_socks,
+        }
+        resolved: list[str] = []
+        for element in entry.args:
+            if element not in values:
+                resolved.append(element)
+                continue
+            value = values[element]
+            if value is None:
+                # A profile that needs a broker endpoint on a job without that broker would run
+                # with the literal token: refuse instead of silently passing it to the tool.
+                raise RunnerError(
+                    f"profile of {entry.image_digest} uses {element} but the job has no such "
+                    "broker endpoint"
+                )
+            resolved.append(value)
+        return resolved
 
     @staticmethod
     def _egress_env(spec: ContainerSpec) -> dict[str, str]:
@@ -603,7 +844,7 @@ class PodmanRunner(ContainerRunner):
                 self._subnets[job_id] = str(subnets[0].get("subnet"))
             return name
         subnet = self._free_subnet()
-        _podman(
+        argv = [
             "network",
             "create",
             "--internal",
@@ -617,7 +858,8 @@ class PodmanRunner(ContainerRunner):
             "--label",
             f"{RUNNER_LABEL}={self.owner}",
             name,
-        )
+        ]
+        _podman(*argv)
         self._subnets[job_id] = subnet
         return name
 

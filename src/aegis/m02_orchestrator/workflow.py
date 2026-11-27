@@ -18,13 +18,13 @@ back as the `job_completed` signal, sent by the outbox dispatcher when it sees `
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import is_cancelled_exception
+from temporalio.exceptions import ActivityError, ApplicationError, is_cancelled_exception
 
 with workflow.unsafe.imports_passed_through():
     from aegis.m02_orchestrator.activities import (
@@ -35,6 +35,9 @@ with workflow.unsafe.imports_passed_through():
     )
     from aegis.m02_orchestrator.types import (
         AGENT_QUEUE,
+        REFUSAL_BUDGET_EXHAUSTED,
+        REFUSAL_NOT_RUNNING,
+        SESSION_REFUSED_ERROR,
         CampaignOutcome,
         CampaignRunInput,
         CampaignSnapshot,
@@ -45,7 +48,7 @@ with workflow.unsafe.imports_passed_through():
         SessionRequest,
     )
 
-__all__ = ["CampaignWorkflow"]
+__all__ = ["CampaignWorkflow", "SessionRefusal", "session_refusal"]
 
 ACTIVITY_TIMEOUT = timedelta(seconds=30)
 SESSION_TIMEOUT = timedelta(minutes=30)
@@ -53,6 +56,35 @@ HEARTBEAT_TIMEOUT = timedelta(seconds=3)
 RETRY = RetryPolicy(maximum_attempts=5)
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 SESSION_ACTIVITY = "run_agent_session"
+
+
+@dataclass(frozen=True, slots=True)
+class SessionRefusal:
+    """The business reason a `run_agent_session` activity was refused (M03 -> M02 seam)."""
+
+    code: str
+    message: str
+
+
+def session_refusal(error: BaseException) -> SessionRefusal | None:
+    """The refusal an activity failure carries, or None for any other failure.
+
+    M03 raises it as a **non-retryable** `ApplicationError` of type `SessionRefused` whose
+    `details[0].code` names the reason. Temporal surfaces it to the workflow as an
+    `ActivityError` whose cause is that `ApplicationError`; a refusal is a campaign decision, so
+    the workflow must see it instead of Temporal retrying the activity (the 926-retry storm of
+    D4, item 61 trial). Any other failure keeps the existing behaviour.
+    """
+    if not isinstance(error, ActivityError):
+        return None
+    cause = error.cause
+    if not isinstance(cause, ApplicationError) or cause.type != SESSION_REFUSED_ERROR:
+        return None
+    details = cause.details
+    code = details[0].get("code") if details and isinstance(details[0], dict) else None
+    if not isinstance(code, str) or not code:
+        return None
+    return SessionRefusal(code=code, message=cause.message)
 
 
 @workflow.defn(name="CampaignWorkflow")
@@ -196,14 +228,14 @@ class CampaignWorkflow:
             outcome = await self._run_session(inp)
             if outcome is None:  # cancelled mid-session; the loop top handles the cancel
                 continue
-            self._cursor = outcome.cursor
-            self._cycle += 1
-            self._idle_cycles = self._idle_cycles + 1 if outcome.idle else 0
             if outcome.stop_reason is not None:
                 self._stop_reason = outcome.stop_reason
                 await self._finish(inp.campaign_id, "complete", outcome.stop_reason)
                 self._state = "COMPLETED"
                 return self._outcome(inp.campaign_id, "COMPLETED", outcome.stop_reason)
+            self._cursor = outcome.cursor
+            self._cycle += 1
+            self._idle_cycles = self._idle_cycles + 1 if outcome.idle else 0
             threshold = snapshot.idle_cycles_before_pause
             if self._idle_cycles >= threshold:
                 reason = f"no progress for {self._idle_cycles} session(s)"
@@ -244,12 +276,56 @@ class CampaignWorkflow:
         except Exception as exc:
             # A cancelled activity surfaces as ActivityError whose cause is a cancelled failure,
             # not as asyncio.CancelledError (G0.1 memo). Only the campaign cancel may swallow it.
-            if not (self._cancel_requested and is_cancelled_exception(exc)):
+            if self._cancel_requested and is_cancelled_exception(exc):
+                return None
+            refusal = session_refusal(exc)
+            if refusal is None:
                 raise
-            return None
+            return await self._refused(inp, refusal)
         finally:
             self._session_task = None
         return result
+
+    async def _refused(
+        self, inp: CampaignRunInput, refusal: SessionRefusal
+    ) -> SessionOutcome | None:
+        """Turn a business refusal into a campaign decision instead of an endless activity retry.
+
+        `budget.max_agent_sessions` is a hard cap of the signed policy snapshot: once it is spent
+        no later session can start and resuming cannot help, so the campaign ends
+        `COMPLETED`/`budget_exhausted` (the same state/reason M03 already reports when the token
+        or step budget runs out). A campaign that is no longer RUNNING is not an error at all:
+        the workflow adopts the committed row (a terminal campaign stops on the next tick, a
+        paused one waits for its resume signal). Every other refusal is a producer bug and fails
+        the workflow loudly, so the campaign watcher re-reads the campaign row instead of the
+        same activity being retried.
+        """
+        if refusal.code == REFUSAL_BUDGET_EXHAUSTED:
+            return SessionOutcome(
+                cursor=self._cursor,
+                cycle=self._cycle,
+                stop_reason="budget_exhausted",
+                detail=refusal.message,
+            )
+        if refusal.code == REFUSAL_NOT_RUNNING:
+            snapshot: CampaignSnapshot = await workflow.execute_activity(
+                load_campaign,
+                inp.campaign_id,
+                start_to_close_timeout=ACTIVITY_TIMEOUT,
+                retry_policy=RETRY,
+            )
+            if snapshot.status in TERMINAL_STATUSES:
+                self._state = snapshot.status
+                self._stop_reason = f"campaign_{snapshot.status.lower()}"
+            elif snapshot.status == "PAUSED":
+                self._paused = True
+                self._state = "PAUSED"
+            return None  # the loop re-reads the campaign through `dispatch_ready`
+        raise ApplicationError(
+            f"session refused for a reason M02 cannot act on: {refusal.code}: {refusal.message}",
+            type=SESSION_REFUSED_ERROR,
+            non_retryable=True,
+        )
 
     async def _cancel(self, inp: CampaignRunInput) -> CampaignOutcome:
         outcome: CancelOutcome = await workflow.execute_activity(

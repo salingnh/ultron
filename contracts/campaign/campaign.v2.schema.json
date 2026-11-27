@@ -51,6 +51,108 @@
     "ended_at": {
       "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
     },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limits",
+        "used",
+        "remaining"
+      ],
+      "properties": {
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_duration_hours"
+          ],
+          "properties": {
+            "max_duration_hours": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_llm_cost_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_llm_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_jobs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_agent_sessions": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "used": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hours",
+            "llm_cost_usd",
+            "llm_tokens",
+            "jobs",
+            "agent_sessions"
+          ],
+          "properties": {
+            "hours": {
+              "type": "number",
+              "minimum": 0
+            },
+            "llm_cost_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "llm_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "jobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "agent_sessions": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "remaining": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hours"
+          ],
+          "properties": {
+            "hours": {
+              "type": "number",
+              "minimum": 0
+            },
+            "llm_cost_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "llm_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "jobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "agent_sessions": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
     "budget_remaining": {
       "type": "object",
       "additionalProperties": false,
@@ -73,6 +175,20 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "jobs_by_status": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "assets_by_kind": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
         "jobs_total": {
           "type": "integer"
         },

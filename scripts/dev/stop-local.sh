@@ -13,7 +13,9 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 require_cmd podman
-STATE_DIR="$REPO_ROOT/.local"
+if [ -f "$ENV_FILE" ]; then
+  load_env
+fi
 
 stop_bg m06 "aegis.m06_runner"
 stop_bg m23 "aegis.m23_graph"
@@ -23,19 +25,45 @@ stop_bg mcp "aegis.m05_registry.mcp"
 "$DEV_DIR/stop-api.sh"
 
 if [ -f "$STATE_DIR/stack.started" ]; then
-  log "dev stack: started by run-local - removing compose project $DEV_PROJECT"
-  make --no-print-directory -C "$REPO_ROOT" dev-down
-  rm -f "$STATE_DIR/stack.started"
+  if [ "$(stack_verdict "$DEV_PROJECT" "$REPO_ROOT/deploy/dev" "$COMPOSE_FILE" \
+    "$(dev_stack_fingerprint)" "$STACK_IDENTITY")" != "ours" ]; then
+    log "dev stack: not this checkout's any more - left in place (dev-down refuses to remove it)"
+    rm -f "$STATE_DIR/stack.started"
+  else
+    log "dev stack: started by run-local - removing compose project $DEV_PROJECT"
+    make --no-print-directory -C "$REPO_ROOT" dev-down
+    rm -f "$STATE_DIR/stack.started"
+  fi
 else
   log "dev stack: left as run-local found it (not started by it) - 'make dev-down' removes it"
 fi
 
 if [ -f "$STATE_DIR/lab.started" ]; then
-  log "lab: started by run-local - removing compose project $LAB_PROJECT"
-  make --no-print-directory -C "$REPO_ROOT" lab-down
-  rm -f "$STATE_DIR/lab.started"
+  if [ "$(stack_verdict "$LAB_PROJECT" "$REPO_ROOT/deploy/lab" \
+    "$REPO_ROOT/deploy/lab/compose.yaml" \
+    "$(stack_config_fingerprint "$REPO_ROOT/deploy/lab/compose.yaml" \
+      "$REPO_ROOT/deploy/lab/images.env" "$REPO_ROOT/.env" AEGIS_LAB_PROJECT)" \
+    "$REPO_ROOT/deploy/lab/.run/identity")" != "ours" ]; then
+    log "lab: not this checkout's any more - left in place (lab-down refuses to remove it)"
+    rm -f "$STATE_DIR/lab.started"
+  else
+    log "lab: started by run-local - removing compose project $LAB_PROJECT"
+    make --no-print-directory -C "$REPO_ROOT" lab-down
+    rm -f "$STATE_DIR/lab.started"
+  fi
 else
   log "lab: left as run-local found it (not started by it) - 'make lab-down' removes it"
+fi
+
+if [ -f "$STATE_DIR/uplink.started" ]; then
+  uplink=$(cat "$STATE_DIR/uplink.started")
+  if [ -n "$uplink" ] && podman network exists "$uplink" >/dev/null 2>&1; then
+    log "uplink: started by run-local - removing network $uplink"
+    podman network rm -f "$uplink" >/dev/null
+  fi
+  rm -f "$STATE_DIR/uplink.started"
+else
+  log "uplink: left as run-local found it (not created by it)"
 fi
 
 log "stop-local: done; tokens (.local/operator-token, .local/service-token) are kept (NEW_TOKEN=1 rotates)"

@@ -36,6 +36,14 @@ ENV_NAMES = {
     "passive": "AEGIS_LAB_PASSIVE_IMAGE",
     "dnsx": "AEGIS_LAB_DNSX_IMAGE",
     "subfinder": "AEGIS_LAB_SUBFINDER_IMAGE",
+    "naabu": "AEGIS_LAB_NAABU_IMAGE",
+    "web-legacy": "AEGIS_LAB_WEB_LEGACY_IMAGE",
+    "app": "AEGIS_LAB_APP_IMAGE",
+    "ssh": "AEGIS_LAB_SSH_IMAGE",
+    "cache": "AEGIS_LAB_CACHE_IMAGE",
+    "httpd": "AEGIS_LAB_HTTPD_IMAGE",
+    "fingerprintx": "AEGIS_LAB_FINGERPRINTX_IMAGE",
+    "httpx": "AEGIS_LAB_HTTPX_IMAGE",
 }
 
 
@@ -167,6 +175,80 @@ def parse_images() -> dict[str, str]:
     return values
 
 
+def check_services(
+    inventory: dict, index: dict[str, dict[str, list[str]]], images: dict[str, str]
+) -> list[str]:
+    """The G1.6a service containers: one story between inventory, zone and image pins.
+
+    Each entry names a host, the container address, the image key that serves it and the ports it
+    answers on. The host must resolve (A record) to exactly that address in the zone, the image key
+    must exist in `images` (and therefore in `images.env`), and the ports must be real port numbers;
+    the probe list must cover the name too, so `make lab-check` queries it.
+    """
+    problems: list[str] = []
+    services = inventory.get("services") or []
+    if not services:
+        return ["inventory has no services: the G1.6a lab containers would be untracked"]
+    for service in services:
+        host = str(service.get("host", "")).lower()
+        address = str(service.get("address", ""))
+        image = str(service.get("image", ""))
+        host_fqdn = host if host.endswith(".") else host + "."
+        answers = sorted(index.get(host_fqdn, {}).get("A", []))
+        if answers != [address]:
+            problems.append(
+                f"service {host}: zone A records {answers} do not match the inventory address "
+                f"{address!r}"
+            )
+        if image not in inventory["images"]:
+            problems.append(f"service {host}: image key {image!r} is not in inventory images")
+        elif image not in ENV_NAMES or ENV_NAMES[image] not in images:
+            problems.append(f"service {host}: image key {image!r} has no images.env pin")
+        ports = service.get("ports") or []
+        if not ports or not all(isinstance(port, int) and 1 <= port <= 65535 for port in ports):
+            problems.append(
+                f"service {host}: ports {ports!r} are not a non-empty list of port numbers"
+            )
+    return problems
+
+
+def check_naabu_fixture(inventory: dict) -> list[str]:
+    """`fixtures/naabu.expected.json` is derived from the inventory's services, not from a run."""
+    path = LAB / "fixtures" / "naabu.expected.json"
+    if not path.is_file():
+        return ["missing deploy/lab/fixtures/naabu.expected.json: make lab-naabu compares a run to it"]
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    ports = [int(port) for port in expected.get("ports") or []]
+    services = inventory.get("services") or []
+    problems: list[str] = []
+    if not ports:
+        problems.append("naabu fixture has no port list")
+    derived_targets = sorted({str(service["address"]) for service in services})
+    if sorted(expected.get("targets") or []) != derived_targets:
+        problems.append(
+            f"naabu fixture targets {sorted(expected.get('targets') or [])} do not match the "
+            f"inventory service addresses {derived_targets}"
+        )
+    derived_open = sorted(
+        (str(service["address"]), int(port), "tcp")
+        for service in services
+        for port in service.get("ports") or []
+        if int(port) in ports
+    )
+    fixture_open = sorted(
+        (str(item["ip"]), int(item["port"]), str(item["protocol"]))
+        for item in expected.get("open") or []
+    )
+    if fixture_open != derived_open:
+        problems.append(
+            f"naabu fixture open ports {fixture_open} do not match the inventory {derived_open}"
+        )
+    negative = expected.get("negative_control") or {}
+    if negative.get("port") in [port for _, port, _ in derived_open]:
+        problems.append(f"naabu fixture negative control {negative.get('port')} is an open service port")
+    return problems
+
+
 def passive_names(zone: str, fixture: Path) -> set[str]:
     zone = zone.rstrip(".")
     names: set[str] = set()
@@ -249,9 +331,15 @@ def main() -> int:
 
     images = parse_images()
     for key, env_name in ENV_NAMES.items():
+        if key not in inventory["images"]:
+            problems.append(f"inventory images has no {key!r}, but images.env pins {env_name}")
+            continue
         want = inventory["images"][key]["ref"]
         if images.get(env_name) != want:
             problems.append(f"{env_name} is {images.get(env_name)!r}, inventory records {want!r}")
+
+    problems.extend(check_services(inventory, index, images))
+    problems.extend(check_naabu_fixture(inventory))
 
     if problems:
         print(f"lab inventory: FAIL ({len(problems)} problem(s))", file=sys.stderr)

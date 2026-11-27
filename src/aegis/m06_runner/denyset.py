@@ -142,6 +142,28 @@ def deny_reason(address: IPAddress) -> DenyReason | None:
     return None
 
 
+#: SIIT's deprecated IPv4-translated prefix. Python parses these as plain IPv6 addresses, so they
+#: would never match an IPv4 rule; a job has no reason to reach one, so they are refused as a whole.
+SIIT_TRANSLATED = ipaddress.ip_network("::ffff:0:0:0/96")
+
+
+def checked_address(address: IPAddress) -> tuple[IPAddress, DenyReason | None]:
+    """The address to judge after normalising embedded forms, and a reason to refuse it outright.
+
+    IPv4-mapped IPv6 is the same destination as its embedded IPv4 (the kernel dials it as IPv4), so
+    every later check - platform networks, the campaign denylist, private ranges - must see the IPv4
+    address, not an IPv6 one that can never be inside an IPv4 network. SIIT's IPv4-translated form
+    has no legitimate use here and is refused as a whole.
+    """
+    if isinstance(address, ipaddress.IPv6Address):
+        if address in SIIT_TRANSLATED:
+            return address, DenyReason.RESERVED
+        mapped = address.ipv4_mapped
+        if mapped is not None:
+            return mapped, None
+    return address, None
+
+
 def denied_host(host: str) -> DenyReason | None:
     """Why the name/literal `host` is in the deny set itself, or None.
 

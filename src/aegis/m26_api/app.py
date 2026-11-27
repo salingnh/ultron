@@ -14,7 +14,8 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from aegis.m26_api.errors import install_error_handlers
+from aegis.m04_model.deployment import model_status
+from aegis.m26_api.errors import UnhandledErrorMiddleware, install_error_handlers
 from aegis.m26_api.operator import OperatorAuthenticator
 from aegis.m26_api.registry import RouterRegistry
 
@@ -99,6 +100,9 @@ def create_app(
     app.state.graph_driver = graph_driver
     install_error_handlers(app)
     _drop_default_422(app)
+    # Added before CORSMiddleware so Starlette wraps UnhandledErrorMiddleware inside CORS: an
+    # unhandled 500 becomes an `error.v2` JSON response that still carries CORS headers.
+    app.add_middleware(UnhandledErrorMiddleware)
     if cors_origins:
         # An explicit allowlist, never "*": the operator token travels in a header, so a browser
         # origin that is not named here must not be able to read a response or send a preflight.
@@ -113,8 +117,13 @@ def create_app(
 
     @app.get("/healthz", tags=["ops"], operation_id="healthz", include_in_schema=False)
     def healthz() -> dict[str, Any]:
-        """Liveness only: the process is up; dependencies are reported by readiness checks."""
-        return {"status": "ok"}
+        """Liveness, plus the model mode this deployment's environment selects (G1.6).
+
+        The model block is configuration, not a probe: the API process reads the same environment
+        the workers inherit, so an operator can tell scripted from live without a database call.
+        It never carries the credential (`aegis.m04_model.deployment.model_status`).
+        """
+        return {"status": "ok", "model": model_status()}
 
     routers.include_all(app)
     return app

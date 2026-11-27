@@ -6,12 +6,15 @@ and the ingestion endpoint is a thread in this process. The isolation tests use 
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
 import socket
 import subprocess
 import threading
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,7 +26,16 @@ from aegis.common.repo import repository_root
 from aegis.contracts_gen.capability.approved_task_v2_schema import ApprovedTask
 from aegis.contracts_gen.capability.provider_manifest_v2_schema import ProviderManifest
 from aegis.m05_registry.signing import KeyRing
+from aegis.m06_runner.authorization import Authorization
 from aegis.m06_runner.values import text
+
+#: The RoE authorization the internet fixtures sign: a real structured object, as M05 requires.
+AUTHORIZATION = Authorization(
+    owner="owner",
+    reference="owner, item 61, 2026-11-25",
+    date="2026-11-25",
+    suffixes=("internal.example",),
+)
 
 REPO_ROOT = repository_root()
 CONTAINER_DIR = REPO_ROOT / "tests" / "container"
@@ -42,7 +54,11 @@ SEAWEEDFS = (
     "docker.io/chrislusf/seaweedfs@sha256:"
     "7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9"
 )
-PROBE_IMAGE = "localhost/aegis-probe:g13a"
+# The tag is per test process: several workers build this image on one host, and a shared tag let a
+# concurrent suite's build (another worktree, older sources) become the image a broker container
+# ran - a real failure on 2026-11-25 (a stale netpolicy in the broker). The image id is what the
+# tests use; the tag only exists to name the build.
+PROBE_IMAGE = f"localhost/aegis-probe:{os.getpid()}"
 
 PODMAN = shutil.which("podman") or "podman"
 
@@ -88,14 +104,32 @@ def image_present(image: str) -> bool:
 # --- contract fixtures ----------------------------------------------------------------------
 
 
-#: The published development signing key (OI-7); tests sign the tasks M06 must verify.
+#: The published development signing key (OI-7); lab tasks use it (M06 refuses it for internet).
 DEV_RING = KeyRing.dev()
+#: A test-only key for internet tasks: M06 refuses an internet task signed with the published
+#: development key, so the test suite signs those with its own id.
+INTERNET_RING = KeyRing(
+    active_key_id="g16-test-1",
+    keys={
+        "g16-test-1": hashlib.sha256(b"aegis-test-internet-key-not-a-deployment-key").digest(),
+        "g1-dev-1": KeyRing.dev().keys["g1-dev-1"],
+    },
+)
+#: Verifies both the dev key and the internet test key (a job runner in tests may see either).
+ANY_RING = INTERNET_RING
+
+
+def ring_for(task: Any) -> KeyRing:
+    """The ring that must verify this task: internet test tasks are not signed with the dev key."""
+    return INTERNET_RING if str(task.network_profile) == "internet" else DEV_RING
 
 
 def sign_task(
-    payload: dict[str, Any], *, key_ring: KeyRing = DEV_RING
+    payload: dict[str, Any], *, key_ring: KeyRing | None = None
 ) -> tuple[ApprovedTask, dict[str, Any]]:
     """Sign a task dict the way M05 does and return `(DTO, exact signed document)`."""
+    if key_ring is None:
+        key_ring = INTERNET_RING if payload.get("network_profile") == "internet" else DEV_RING
     body = {
         key: value for key, value in payload.items() if key not in {"signature", "signature_key_id"}
     }
@@ -149,7 +183,7 @@ def manifest(name: str = "manifest.subfinder.yaml") -> tuple[ProviderManifest, b
 
 
 def target_bound_manifest() -> tuple[ProviderManifest, bytes]:
-    return manifest("manifest.target-bound.yaml")
+    return manifest("manifest.naabu.yaml")
 
 
 def task_for_manifest(
@@ -182,8 +216,14 @@ def probe_manifest(
     timeout_seconds: int | None = None,
     args_template: list[str] | None = None,
     egress_sources: list[dict[str, Any]] | None = None,
+    target_bound: bool = False,
 ) -> tuple[ProviderManifest, bytes]:
-    """A manifest whose tool is the probe image; parser/args are test-only overrides."""
+    """A manifest whose tool is the probe image; parser/args are test-only overrides.
+
+    `target_bound` gives it the port-scan shape (Naabu's): `targetBinding: required`,
+    `targetPorts: from_input` and a manifest port cap, so an internet job reaches exactly the
+    addresses the campaign signed.
+    """
     payload = _fixture("manifest.subfinder.yaml")
     payload["metadata"]["name"] = "aegis-probe"
     payload["spec"]["capability"] = "dns.enumerate_subdomains"
@@ -197,16 +237,34 @@ def probe_manifest(
         "${input.max_results}",
     ]
     payload["spec"]["parser"]["entrypoint"] = "adapters.probe.parser:parse"
+    # The probe tool reads the proxy environment; it must not inherit Subfinder's proxyFlag (which
+    # would demand a deployment profile entry the test runner does not have).
+    payload["spec"]["permissions"].pop("proxyFlag", None)
+    payload["spec"]["permissions"].pop("proxyFlagFormat", None)
     if timeout_seconds is not None:
         payload["spec"]["budget"]["timeoutSeconds"] = timeout_seconds
     if egress_sources is not None:
         payload["spec"]["permissions"]["egressSources"] = egress_sources
+    if target_bound:
+        payload["spec"]["permissions"].update(
+            {
+                "egressSources": egress_sources or [],
+                "targetBinding": "required",
+                "targetPorts": "from_input",
+            }
+        )
     if not egress:
         # The contract forbids explicit nulls here (additionalProperties false + const rules):
         # omitting the egress fields is how `networkAccess: none` is expressed.
         permissions = payload["spec"]["permissions"]
         permissions["networkAccess"] = "none"
-        for key in ("egressMode", "proxyAware", "egressSources", "targetBinding", "targetPorts"):
+        for key in (
+            "egressMode",
+            "proxyAware",
+            "egressSources",
+            "targetBinding",
+            "targetPorts",
+        ):
             permissions.pop(key, None)
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
     value = ProviderManifest.model_validate(payload)
@@ -346,8 +404,37 @@ def create_network(name: str, *, internal: bool, label: str = "aegis.test=g13a")
     return name
 
 
+def ci_job_label_args() -> list[str]:
+    job = os.environ.get("AEGIS_CI_JOB", "").strip()
+    return ["--label", f"aegis.ci-job={job}"] if job else []
+
+
+def record_container_volumes(name: str) -> None:
+    log_path = os.environ.get("AEGIS_CI_VOLUME_LOG", "").strip()
+    if not log_path or not podman_available():
+        return
+    mounts = podman(
+        "container",
+        "inspect",
+        name,
+        "--format",
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}',
+        check=False,
+    ).stdout
+    names = [line.strip() for line in mounts.splitlines() if line.strip()]
+    if names:
+        with Path(log_path).open("a", encoding="utf-8") as handle:
+            for volume in names:
+                handle.write(f"{volume}\n")
+
+
 def remove_network(name: str) -> None:
     podman("network", "rm", "-f", name, check=False)
+
+
+def remove_container(name: str) -> None:
+    record_container_volumes(name)
+    podman("rm", "-f", "-v", name, check=False)
 
 
 def run_detached(
@@ -359,7 +446,17 @@ def run_detached(
     label: str = "aegis.test=g13a",
     user: str = "65534:65534",
 ) -> str:
-    argv = ["run", "--detach", "--name", name, "--label", label, "--user", user]
+    argv = [
+        "run",
+        "--detach",
+        "--name",
+        name,
+        "--label",
+        label,
+        *ci_job_label_args(),
+        "--user",
+        user,
+    ]
     for network in networks:
         argv += ["--network", network]
     argv += [image, *args]
@@ -380,3 +477,85 @@ def host_lan_ip() -> str:
 
 def unique(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+# --- helpers for the safety-review regressions ------------------------------------------------
+
+
+def fixture_payload(name: str) -> dict[str, Any]:
+    """A mutable copy of one valid contract fixture."""
+    payload: dict[str, Any] = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+    return payload
+
+
+def record(name: str) -> Any:
+    """A ``ManifestRecord`` for a fixture manifest (the M05 input the binding builder takes)."""
+    from aegis.m05_registry.manifest import ManifestRecord
+
+    raw = (FIXTURES / name).read_bytes()
+    return ManifestRecord(
+        sha256=hashlib.sha256(raw).hexdigest(), raw=raw, document=yaml.safe_load(raw)
+    )
+
+
+class StaticBinder:
+    """A ``TargetBinder`` over a fixed table (no DNS in tests)."""
+
+    def __init__(self, table: dict[str, list[str]]) -> None:
+        self.table = table
+
+    def addresses(self, value: str) -> tuple[str, ...]:
+        if value not in self.table:
+            # The real binder raises for a name the resolver does not know; an unknown probe name
+            # (the wildcard check) must not look answered.
+            from aegis.m05_registry.errors import M05Error
+
+            raise M05Error.policy_denied("target_unresolvable", f"{value} does not resolve")
+        return tuple(self.table[value])
+
+
+def resolved_targets(rec: Any, values: list[str]) -> Any:
+    """The ``ResolvedTargets`` M05 would build for these raw values (one ref per value)."""
+    from aegis.m05_registry.targets import ResolvedTargets
+
+    refs: list[dict[str, str]] = []
+    kinds: list[str] = []
+    raw: list[str] = []
+    for value in values:
+        text = str(value)
+        if text.startswith("dns:"):
+            refs.append({"canonical_key": text})
+            kinds.append("domain")
+        else:
+            refs.append({"canonical_key": f"ip:{text}"})
+            kinds.append("ip")
+        raw.append(text)
+    return ResolvedTargets(refs=tuple(refs), kinds=tuple(kinds), raw=tuple(raw))
+
+
+def build_policy_for(
+    task: Any,
+    manifest: Any,
+    raw: bytes,
+    *,
+    authorization: Authorization | None = AUTHORIZATION,
+    task_body: Mapping[str, Any] | None = None,
+    **kwargs: Any,
+) -> Any:
+    """``spec.build_policy`` with the internet profile's mandatory inputs filled in."""
+    from aegis.m06_runner import spec as spec_module
+
+    kwargs.setdefault("platform_cidrs", ("10.88.0.0/16",))
+    kwargs.setdefault("per_host_rps", 1.0)
+    kwargs.setdefault("per_host_max_connections", 1)
+    values = kwargs.pop("input_values", {"targets": ["internal.example"], "concurrency": 1})
+    return spec_module.build_policy(
+        task,
+        manifest,
+        values,
+        job_id="job-safety",
+        task_body=task_body or body_of(task),
+        key_ring=ANY_RING,
+        authorization=authorization,
+        **kwargs,
+    )

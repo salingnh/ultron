@@ -156,7 +156,10 @@ class ContainerSpec:
     timeout_seconds: int
     max_output_bytes: int
     network: Literal["exec", "none"]
-    egress_mode: Literal["broker"] | None = None
+    #: Deployment network of the job (the campaign's signed `network_profile`): `lab` attaches the
+    #: container to the deployment's lab network, `internet` to its own per-job network + broker.
+    network_profile: Literal["lab", "internet"] = "lab"
+    egress_mode: Literal["broker", "l3"] | None = None
     egress_binding: tuple[str, ...] = ()
     egress_proxy: str | None = None
     raw_socket: bool = False

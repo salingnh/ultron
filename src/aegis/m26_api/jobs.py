@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Respons
 from pydantic import ValidationError
 
 from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
+from aegis.m05_registry.egress import SystemTargetBinder, TargetBinder
 from aegis.m05_registry.errors import M05Error
 from aegis.m05_registry.registry import PostgresManifestRegistry
 from aegis.m05_registry.service import JobService, PostgresJobService
@@ -65,11 +66,18 @@ def build_job_service(
     connect: Callable[[], Any] | None = None,
     manifests: Callable[[], list[bytes]] | None = None,
     key_ring: KeyRing | None = None,
+    binder: TargetBinder | None = None,
 ) -> PostgresJobService:
     """The production M05: registry seeded from `adapters/**/manifest.yaml`, keys from env.
 
     A manifest that cannot be admitted aborts start-up: a registry that silently drops a provider
     would make every job of that capability look "unknown" instead of "the deployment is broken".
+
+    The target binder is the system resolver (`SystemTargetBinder`), not `None`: signing a
+    target-bound internet job resolves the target name (wildcard probe and DNS provenance), and
+    without a binder M05 refuses every such job with "target-bound provider needs a server-side
+    resolver" (item 61, internet-active-1). `binder` exists so tests can substitute a deterministic
+    resolver without rebuilding this production path.
     """
     opener = connect or (lambda: psycopg.connect(dsn))
     registry = PostgresManifestRegistry(opener)
@@ -79,6 +87,7 @@ def build_job_service(
         opener,
         registry=registry,
         key_ring=key_ring or KeyRing.from_env(),
+        binder=binder or SystemTargetBinder(),
     )
 
 

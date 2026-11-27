@@ -21,6 +21,7 @@ class Type(StrEnum):
     knowledge_delta_v2 = "knowledge.delta.v2"
     intel_revision_v2 = "intel.revision.v2"
     finding_changed_v2 = "finding.changed.v2"
+    vulnerability_matched_v2 = "vulnerability.matched.v2"
 
 
 class EventEnvelope(BaseModel):
