@@ -310,6 +310,9 @@ def test_http_transport_uses_anthropic_headers() -> None:
     ("status", "code"),
     [
         (429, ErrorCode.RATE_LIMITED),
+        # 402 Payment Required is "out of credits" (the owner's live OpenCode answer): the same
+        # exhausted-quota class as 429, so the ledger and the campaign budget see one failure kind.
+        (402, ErrorCode.RATE_LIMITED),
         (500, ErrorCode.INTERNAL_ERROR),
         (401, ErrorCode.INTERNAL_ERROR),
         (400, ErrorCode.INPUT_INVALID),

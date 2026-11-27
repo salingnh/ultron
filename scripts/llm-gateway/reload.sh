@@ -19,6 +19,8 @@ require_rootless
 require_env_file
 ensure_master_key
 load_env
+require_model_base_url
+require_port_free
 require_owner_config
 render_and_validate
 load_images

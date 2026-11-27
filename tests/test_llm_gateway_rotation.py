@@ -19,6 +19,9 @@ The container-backed test proves, in order:
    `provider_error` / `RATE_LIMITED` usage row instead of raising;
 6. the cost M04 records is the gateway's per-request number, not its own price table.
 
+`tests/test_llm_gateway_payment.py` covers the same rotation for an account that is out of credits
+(HTTP 402) in a gateway of its own, so that test does not inherit this module's cooldowns.
+
 The other tests are configuration checks with no container: they keep the example, the fixed base,
 the renderer, the validator and the compose isolation from drifting away from what the container
 test exercised (including what the renderer and validator refuse).
@@ -285,6 +288,45 @@ def test_the_validator_refuses_a_rendered_config_that_would_not_rotate(tmp_path:
         "keep it os.environ/AEGIS_MODEL_API_KEY",
     ):
         assert expected in result.stderr, f"the validator must name {expected}: {result.stderr}"
+
+
+def test_a_native_provider_endpoint_needs_nothing_but_its_model(tmp_path: Path) -> None:
+    """`opencode_go/<model>` and `openrouter/<model>` are providers the pinned image knows.
+
+    The owner's OpenCode Go subscription and OpenRouter are reached through LiteLLM's own provider
+    adapters: the config names the model and the key variable, and there is no `api_base` to keep
+    in step with a provider's URL (the image also supplies the session header OpenCode Go requires,
+    which is why M04 sends `x-litellm-session-id`).
+    """
+    owner = {
+        "group": "aegis-smart",
+        "endpoints": [
+            {
+                "name": "opencode-go",
+                "model": "opencode_go/deepseek-v4.1-flash",
+                "api_key": "os.environ/LLM_KEY_A",
+            },
+            {
+                "name": "openrouter-free",
+                "model": "openrouter/nvidia/nemotron-3.5-super-vl:free",
+                "api_key": "os.environ/LLM_KEY_B",
+            },
+        ],
+    }
+    config_path, environment_path = render_owner_files(
+        tmp_path,
+        owner,
+        environment={"AEGIS_MODEL_API_KEY": MASTER_KEY, "LLM_KEY_A": "sk-a", "LLM_KEY_B": "sk-b"},
+    )
+    document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    params = [entry["litellm_params"] for entry in document["model_list"]]
+    assert [entry["model"] for entry in params] == [
+        "opencode_go/deepseek-v4.1-flash",
+        "openrouter/nvidia/nemotron-3.5-super-vl:free",
+    ]
+    assert all("api_base" not in entry for entry in params), params
+    result = validate_pipeline(config_path, environment_path)
+    assert result.returncode == 0, result.stderr
 
 
 def test_the_compose_project_is_loopback_only_and_mounts_only_rendered_files() -> None:
