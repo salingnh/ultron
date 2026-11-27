@@ -7,7 +7,7 @@
 # keeps a second copy of those lists. There is one chain: the contract schema is one baseline
 # migration, and a database built by the replaced chain is reset, not upgraded.
 #
-#   * python   - every suite the README lists, on Python 3.14 in a container, with
+#   * python   - every suite the README lists, on the Python of .python-version in a container, with
 #                AEGIS_TEST_PG_DSN pointing at this script's own throwaway PostgreSQL 16.
 #                A suite named test_*.py that skips, or that does not end with unittest's
 #                "OK", fails the job: a skipped harness is not evidence.
@@ -70,7 +70,7 @@ mapfile -t CLEAN_FILES < <(absolute "${CLEAN_CHAIN[@]}")
 
 log "plan from contracts/README.md: ${#PYTHON_CHECKS[@]} python checks, clean chain ${#CLEAN_CHAIN[@]} files"
 
-# --- throwaway PostgreSQL 16 + python 3.14 ------------------------------------
+# --- throwaway PostgreSQL 16 + pinned python ------------------------------------
 log "network $NETWORK + postgres $PG (throwaway)"
 podman network create --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" --label "$CI_JOB_LABEL" "$NETWORK" >/dev/null
 podman run -d --name "$PG" --network "$NETWORK" --network-alias pg \
@@ -85,15 +85,20 @@ done
 podman exec "$PG" pg_isready -U aegis -d postgres >/dev/null 2>&1 || die "PostgreSQL did not become ready"
 log "postgres $(podman exec "$PG" psql -tAc 'SHOW server_version' -U aegis -d postgres)"
 
-log "python 3.14 environment (pinned image, throwaway temp dir)"
+PYTHON_VERSION=$(<"$REPO_ROOT/.python-version")
+log "python $PYTHON_VERSION environment (pinned image, throwaway temp dir)"
 PY=$(ci_container pip)
 status=0
 output=$(podman run --rm --name "$PY" --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" \
-  --label "$CI_JOB_LABEL" \
+  --label "$CI_JOB_LABEL" -e PYTHON_VERSION="$PYTHON_VERSION" \
   -v "$VENV_DIR:/opt/venv" -v "$REPO_ROOT:/src:ro" -w /src --security-opt label=disable \
   "$AEGIS_PYTHON_IMAGE" sh -c '
     set -eu
     echo "[ci] $(python3 -V 2>&1)"
+    [ "$(python3 -V)" = "Python $PYTHON_VERSION" ] || {
+      echo "[ci] the image does not run the Python of .python-version ($PYTHON_VERSION)"
+      exit 1
+    }
     python3 -m venv /opt/venv
     for requirement in "$@"; do
       echo "[ci] requirements: $requirement"

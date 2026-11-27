@@ -3,8 +3,8 @@
 #
 # Differences from a plain `make` run on the host:
 #   * uv is required and resolved even when the runner service did not inherit ~/.local/bin in
-#     PATH; `uv sync --frozen` installs the committed lockfile for Python 3.14 (uv downloads the
-#     interpreter when the host only has another version);
+#     PATH; `uv sync --frozen` installs the committed lockfile for the exact Python in
+#     .python-version (uv fails when it can neither find nor download that release);
 #   * a throwaway PostgreSQL 16 container is published on a random loopback port and its DSN is
 #     exported as AEGIS_TEST_PG_DSN, so the migration-runner database tests really run instead of
 #     being skipped;
@@ -54,8 +54,9 @@ trap 'exit 143' TERM
 trap cleanup EXIT
 
 log "python gate: $("$UV" --version), $(python3 -V 2>&1 || true)"
-log "locked environment (uv sync --frozen --python 3.14)"
-"$UV" sync --frozen --python 3.14
+PYTHON_VERSION=$(<"$REPO_ROOT/.python-version")
+log "locked environment (uv sync --frozen --python $PYTHON_VERSION)"
+"$UV" sync --frozen --python "$PYTHON_VERSION"
 log "project interpreter: $(uv run --frozen python -V 2>&1)"
 
 log "throwaway PostgreSQL 16 as $PG (loopback port, random password)"

@@ -7,7 +7,7 @@
 # Build context is the repository root:
 #   podman build -f deploy/broker/Containerfile -t localhost/aegis-broker:g16 .
 #   make broker-image
-FROM docker.io/library/python@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67
+FROM docker.io/library/python:3.14.10-alpine3.24@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67
 
 # `nft` and `ip` are the L3 gateway's tools (G1.6 item 5). The base image is digest-pinned (Alpine);
 # the two packages come from the distribution's repository, so the built image is reproducible in
