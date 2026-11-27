@@ -13,7 +13,7 @@ that only a database and a real HTTP server can show:
 * the SDK client reaches the real Streamable HTTP server from inside a session;
 * `budget.max_agent_sessions` refuses another cycle.
 
-They need `AEGIS_TEST_PG_DSN` (the gate provides a throwaway PostgreSQL 16); without it they skip,
+They need `AEGIS_TEST_PG_DSN` (the gate provides a throwaway PostgreSQL 18); without it they skip,
 and `AEGIS_NO_SKIPS=1` fails the gate if one is skipped.
 """
 

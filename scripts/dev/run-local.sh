@@ -10,7 +10,7 @@
 #   make run-local API_PORT=8001    a different API port
 #
 # Steps:
-#   1. make dev-up   - PostgreSQL 16, Neo4j, SeaweedFS, Temporal (idempotent);
+#   1. make dev-up   - PostgreSQL 18, Neo4j, SeaweedFS, Temporal (idempotent);
 #      LAB=1: make lab-up - the authorized DNS lab (internal network, no published port);
 #   2. python -m aegis.migrations - apply the contract chain (one bookkeeper, see apply-schema.sh);
 #   3. a dev operator token, printed once (only its sha256 goes to .local/operators.json) and kept

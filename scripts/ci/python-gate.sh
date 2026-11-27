@@ -6,7 +6,7 @@
 #     release of scripts/ci/uv.env, and that uv provides the exact Python in .python-version
 #     itself (uv-managed only; it fails when it cannot) before `uv sync --frozen` installs the
 #     committed lockfile;
-#   * a throwaway PostgreSQL 16 container is published on a random loopback port and its DSN is
+#   * a throwaway PostgreSQL 18 container is published on a random loopback port and its DSN is
 #     exported as AEGIS_TEST_PG_DSN, so the migration-runner database tests really run instead of
 #     being skipped;
 #   * a throwaway Neo4j 5.26 (the same pinned image the contract gate uses) is published on a
@@ -60,10 +60,10 @@ log "locked environment (uv sync --frozen --python $PYTHON_VERSION)"
 log "project interpreter: $("$UV" run --frozen python -c \
   'import platform, sys; print("Python", platform.python_version(), "from", sys.base_prefix)')"
 
-log "throwaway PostgreSQL 16 as $PG (loopback port, random password)"
+log "throwaway PostgreSQL 18 as $PG (loopback port, random password)"
 start_container "$PG" "$AEGIS_PG_IMAGE" \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_USER=aegis -e POSTGRES_DB=postgres \
-  --tmpfs /var/lib/postgresql/data -p 127.0.0.1::5432
+  --tmpfs /var/lib/postgresql -p 127.0.0.1::5432
 
 for _ in $(seq 1 60); do
   podman exec "$PG" pg_isready -U aegis -d postgres >/dev/null 2>&1 && break

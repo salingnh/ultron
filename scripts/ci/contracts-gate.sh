@@ -8,7 +8,7 @@
 # migration, and a database built by the replaced chain is reset, not upgraded.
 #
 #   * python   - every suite the README lists, on the Python of .python-version in a container, with
-#                AEGIS_TEST_PG_DSN pointing at this script's own throwaway PostgreSQL 16.
+#                AEGIS_TEST_PG_DSN pointing at this script's own throwaway PostgreSQL 18.
 #                A suite named test_*.py that skips, or that does not end with unittest's
 #                "OK", fails the job: a skipped harness is not evidence.
 #   * postgres - the README's clean chain on an empty database.
@@ -70,13 +70,13 @@ mapfile -t CLEAN_FILES < <(absolute "${CLEAN_CHAIN[@]}")
 
 log "plan from contracts/README.md: ${#PYTHON_CHECKS[@]} python checks, clean chain ${#CLEAN_CHAIN[@]} files"
 
-# --- throwaway PostgreSQL 16 + pinned python ------------------------------------
+# --- throwaway PostgreSQL 18 + pinned python ------------------------------------
 log "network $NETWORK + postgres $PG (throwaway)"
 podman network create --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" --label "$CI_JOB_LABEL" "$NETWORK" >/dev/null
 podman run -d --name "$PG" --network "$NETWORK" --network-alias pg \
   --label "$CI_SUITE_LABEL" --label "aegis.ci.run=$CI_RUN" --label "$CI_JOB_LABEL" \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_USER=aegis -e POSTGRES_DB=postgres \
-  --tmpfs /var/lib/postgresql/data "$AEGIS_PG_IMAGE" >/dev/null
+  --tmpfs /var/lib/postgresql "$AEGIS_PG_IMAGE" >/dev/null
 
 for _ in $(seq 1 60); do
   podman exec "$PG" pg_isready -U aegis -d postgres >/dev/null 2>&1 && break

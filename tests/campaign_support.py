@@ -169,7 +169,7 @@ def database() -> Iterator[str]:
 def requires_postgres() -> pytest.MarkDecorator:
     return pytest.mark.skipif(
         not os.environ.get(DSN_ENV),
-        reason=f"set {DSN_ENV} to a PostgreSQL 16 server to run the campaign database tests",
+        reason=f"set {DSN_ENV} to a PostgreSQL 18 server to run the campaign database tests",
     )
 
 

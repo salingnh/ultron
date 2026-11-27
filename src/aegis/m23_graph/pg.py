@@ -42,7 +42,7 @@ from aegis.m23_graph.models import (
     VulnerabilitySnapshot,
 )
 
-#: ids.v2 requires UUIDv7 and PostgreSQL 16 cannot mint one; M27 owns the
+#: ids.v2 requires UUIDv7; M27 owns the
 #: helper today (G1.4a proposal 2 asks for one shared `aegis.common` copy).
 from aegis.m27_ingestion.ids import uuid7  # noqa: E402
 

@@ -24,7 +24,7 @@ SHELL := /bin/bash
 # tests/test_makefile_help.py fails when a .PHONY target has no entry here.
 define HELP
 make help            this list
-make dev-up          start PostgreSQL 16, Neo4j 5.26, SeaweedFS (S3) and Temporal;
+make dev-up          start PostgreSQL 18, Neo4j 5.26, SeaweedFS (S3) and Temporal;
                      apply migrations, graph constraints and the raw bucket
 make dev-down        remove only this checkout's dev compose project (containers + volumes);
                      AEGIS_DEV_PROJECT in .env names it when several checkouts share a host
@@ -57,7 +57,7 @@ make vulnlab-check   PROFILE=lab|internet: every origin (lab) or public hostname
                      another checkout's running stack too)
 make vulnlab-test    PROFILE=lab|internet: one campaign per catalog case, assert the
                      detections and CVE candidates (needs make run-local)
-make contracts-gate  README contract gate: validator, tests, PostgreSQL 16 chains
+make contracts-gate  README contract gate: validator, tests, PostgreSQL 18 chains
 make graph-check     Neo4j Cypher smoke (CI: neo4j step)
 make ci-local        contracts-gate + graph-check
 make deps            create/refresh the locked Python 3.14 environment (uv sync --frozen)
@@ -127,8 +127,11 @@ dev-down:
 
 # The contract schema is one baseline migration, so a database built by the replaced 0001..0016 chain
 # is reset instead of upgraded: drop the dev project's volumes and apply the baseline again.
+# A reset also has to work when the stack was started from other files (the PostgreSQL 18 layout,
+# a new image pin): that is exactly the `config:` case the guard refuses for `dev-up`, so the reset
+# sets the deliberate-recreate flag for its own down step. Another checkout's stack is still refused.
 dev-reset:
-	@scripts/dev/dev-down.sh
+	@AEGIS_STACK_RECREATE=1 scripts/dev/dev-down.sh
 	@scripts/dev/dev-up.sh
 
 dev-status:

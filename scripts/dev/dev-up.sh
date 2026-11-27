@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One command for the G0.4a dev environment: PostgreSQL 16, Neo4j 5.26, SeaweedFS (S3) and
+# One command for the G0.4a dev environment: PostgreSQL 18, Neo4j 5.26, SeaweedFS (S3) and
 # Temporal with its persistence, all from digest-pinned images, followed by the contract
 # migrations, the graph constraints and the raw/evidence bucket with Object Lock.
 #

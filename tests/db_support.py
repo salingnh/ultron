@@ -27,7 +27,7 @@ DSN_ENV = "AEGIS_TEST_PG_DSN"
 REPO = Path(__file__).resolve().parents[1]
 requires_postgres = pytest.mark.skipif(
     not os.environ.get(DSN_ENV),
-    reason=f"set {DSN_ENV} to a PostgreSQL 16 server to run the database tests",
+    reason=f"set {DSN_ENV} to a PostgreSQL 18 server to run the database tests",
 )
 OPERATOR = {"kind": "operator", "id": "op-g11c"}
 # `policy_version` must match `^roe-[1-9][0-9]*$` and is unique per database. A random value in
