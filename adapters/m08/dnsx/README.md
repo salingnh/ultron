@@ -13,7 +13,7 @@ dưới `adapters/m08/dnsx/` và **không sửa một dòng nào trong `src/aegi
 | Tool | dnsx `v1.2.2` (phát hành 2025-02-01; upstream có v1.3.x nhưng không có image — pin là bản image mới nhất) |
 | Image | `docker.io/projectdiscovery/dnsx:v1.2.2@sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec` |
 | Giấy phép | MIT (attribution: repo upstream, giữ nguyên trong image; SBOM SPDX 2.3 (138 package) ở `spikes/g0.2-sandbox/sbom/`) |
-| Adapter version | `1.0.0` |
+| Adapter version | `1.0.2` |
 | Manifest | [`manifest.yaml`](manifest.yaml) — byte trùng `contracts/fixtures/valid/manifest.dnsx.yaml` (test so byte) |
 | Parser | `adapters.m08.dnsx.parser:parse` |
 
@@ -39,10 +39,11 @@ dòng một object cho một tên được truy vấn: `host`, `ttl`, các tập
 
 ### Không emit (cần quyết định contract trước)
 
-- **`cname`/`mx`/`ns`/`txt`**: `argsTemplate` của manifest đã pin không render `record_types` vào
-  argv, nên bản chạy sản phẩm không hỏi DNSx các bản ghi này; cách ánh xạ đích CNAME thành asset
-  hay cạnh (`ALIAS_OF`/`RESOLVES_TO`) là quyết định hình dạng của S1.5b. Lần chạy lab có `-cname`
-  như một phép dò inventory, không phải argv của manifest.
+- **`mx`/`ns`/`txt`**: manifest đã pin không hỏi DNSx các bản ghi này.
+- **`cname`** (từ adapter 1.0.2, manifest có `-cname`): đích CNAME được emit thành observation
+  `dns.record` `{type: CNAME, value, ttl}` trên tên được hỏi, **không** thành asset hay cạnh riêng.
+  M05 dùng chuỗi CNAME này làm provenance để quyết định target `ip:`/`service:` có được quét chủ động
+  hay chỉ thụ động (CNAME ra ngoài `authorized_suffixes`, xem `02-nen-tang.md` §Ký target).
 - **`soa`/`ns`/`raw_resp`**: không phải định danh tài sản; SOA thuộc zone, không thuộc tên được
   hỏi.
 

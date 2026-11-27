@@ -72,7 +72,13 @@ Các phương án kỹ thuật chưa khóa được ghi ngay tại đặc tả l
 - [x] Profile internet, DNS qua broker, gateway L3 (#63, #70, #72).
 - [x] LLM thật OpenAI/Anthropic qua `.env` (#62).
 - [x] UI đồ thị/bảng dịch vụ/panel CVE (#75).
-- [ ] LLM gateway xoay vòng endpoint (item 62).
-- [ ] Chạy thử internet trên domain của chủ (icomm.vn, salingnh.com), thụ động trước.
+- [x] LLM gateway xoay vòng endpoint: LiteLLM proxy do chủ cấu hình (#78); chưa có lần gọi thật bằng key của chủ.
+- [x] Quét internet trên domain của chủ: thụ động icomm.vn/salingnh.com; chủ động icomm.vn qua seed IP (zone có wildcard) dưới trần thấp, sau hai lần review an toàn độc lập (#83, #87, #88, #93, #96, #98, #99, #105).
+- [x] UI vận hành: form tạo campaign + ủy quyền có cấu trúc, panel RoE, nhật ký agent, ngân sách/bộ đếm thật (#84, #85, #89, #91, #97, #104).
+- [x] Intel đầy đủ: NVD mọi năm resumable, KEV từ cisagov/kev-data tự làm mới, khớp CVE đúng ngữ nghĩa cấu hình NVD, rút ứng viên lỗi thời (#95, #100, #101, #102, #103, #106).
+- [x] Sửa lỗi từ stack thử nghiệm: đồ thị 500, CORS khi lỗi, context graph của agent, ngân sách phiên, khả năng thấy ứng viên theo campaign (#90, #94, #101, #104); rò volume test/CI (#92).
+- [ ] Xếp hạng/thu gọn danh sách CVE trong bảng dịch vụ (ultron-agy).
+- [ ] Khớp CVE theo bản vá của distro (Ubuntu/Debian tracker hoặc OSV) trước xác minh G2.
+- [ ] N7: bộ đọc upstream DNS của broker kiểm rcode/qid.
 - [ ] Redis version: chuyển sang bản release fingerprintx đầu tiên đọc INFO (không pin pre-release); AJP chưa có detector.
-- [ ] Follow-up: index matcher thay catalog trong RAM; MCP truy vấn CVE cho service/app; lịch tự động sync feed (M02).
+- [ ] Follow-up: MCP truy vấn CVE cho service/app; lịch tự động chạy `make intel-sync` (M02); bằng chứng nền tảng (OS) cho cấu hình "chạy trên".

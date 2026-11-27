@@ -71,6 +71,8 @@ make demo-recovery  # 3. SIGKILL runner giữa job: chạy tiếp, không trùng
 make soak-start     # 4. soak rút gọn 24 h (SOAK_HOURS=... để đổi), chạy nền
 ```
 
+Ứng viên CVE thật cần intel: trên stack mới chạy `make intel-sync` (NVD đủ mọi năm lần đầu ~30 phút, sau đó tăng dần; KEV từ `cisagov/kev-data`; EPSS khi đặt `AEGIS_EPSS_SOURCE`) trước `make vulnlab-test PROFILE=lab`. Lệnh thoát khác 0 nghĩa là intel chưa mới, không có nguồn dự phòng. Demo và CI dùng fixture đã commit, không gọi mạng.
+
 Tạo thêm một campaign mẫu qua API: `make seed-demo AEGIS_DEV_TOKEN=$(cat .local/operator-token)`. Campaign này dùng target của fixture contract (`internal.example`, `10.20.0.0/24`), lab không trả lời các tên đó, nên nó chạy một lượt enumerate, không có tên mới và tự tạm dừng với lý do "no progress for 3 session(s)" — đó là hành vi đúng. Campaign chạy trọn vòng trên lab là `make demo-g1`.
 
 ### `make demo-g1` — bằng chứng cổng G1
@@ -122,6 +124,7 @@ Dừng hết: `make stop-local` (hoặc `make soak-stop` trước nếu muốn d
 - Token chỉ in một lần vì trên đĩa chỉ có sha256; mất token thì `make run-local NEW_TOKEN=1`. `.local/operator-token` và `.local/service-token` là tiện ích dev (mode 600, đã git-ignore) để script demo dùng.
 - `make seed-demo AEGIS_DEV_TOKEN=<token>` tạo thêm một campaign demo qua `POST /campaigns`.
 - `AEGIS_CORS_ORIGINS` đổi danh sách origin được phép (mặc định `http://127.0.0.1:5173,http://localhost:5173`).
-- M06 chạy image đã pin theo digest; runner không pull. `make run-local` dựng broker image (`deploy/broker/Containerfile`), đặt `AEGIS_M06_INTERNET_PROFILE`, `AEGIS_L3_HOOK` và tạo uplink riêng `aegis-uplink`; job internet phân giải DNS qua broker, không cần cấu hình thêm. Campaign demo/CI khai `network_profile: lab`; campaign của người vận hành mặc định `internet`. Chạy thử internet (chỉ trên tài sản bạn sở hữu, thụ động trước): `make internet-smoke DOMAIN=<domain>`.
+- M06 chạy image đã pin theo digest; runner không pull. `make run-local` dựng broker image (`deploy/broker/Containerfile`), đặt `AEGIS_M06_INTERNET_PROFILE`, `AEGIS_L3_HOOK` và tạo uplink riêng `aegis-uplink`; job internet phân giải DNS qua broker, không cần cấu hình thêm. Campaign demo/CI khai `network_profile: lab`; campaign của người vận hành mặc định `internet`. Chạy thử internet (chỉ trên tài sản bạn sở hữu, thụ động trước): `make internet-smoke DOMAIN=<domain>`. Campaign internet bắt buộc có `authorization` có cấu trúc (owner, reference, date, `authorized_suffixes`) và trần tốc độ/kết nối; dải IP nội bộ luôn bị chặn trừ CIDR seed khai rõ; zone có wildcard DNS (vd icomm.vn) chỉ quét chủ động được qua seed IP. Luật đầy đủ: `docs/living/dac-ta-ky-thuat/02-nen-tang.md` §Profile mạng của job.
+- Một máy chỉ có một lab (subnet lab cố định `10.114.53.0/24`): checkout sau dùng chung lab đang chạy; muốn lab riêng phải gỡ lab cũ trước.
 - Mỗi checkout chạy stack riêng: đặt `AEGIS_DEV_PROJECT`/`AEGIS_LAB_PROJECT`/`AEGIS_VULNLAB_PROJECT` và port riêng trong `.env`; `dev-up`/`dev-down`/`lab-down`/`vulnlab-*` từ chối đụng stack do checkout khác tạo.
 - `make ci-local` và `make ci-python` là đúng hai job CI; `make demo-g15a` là bằng chứng flow/SSE riêng của G1.5a.
