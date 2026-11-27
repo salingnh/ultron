@@ -34,6 +34,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -451,13 +452,31 @@ def _wait_for_projection(assets: dict[str, str]) -> list[dict[str, Any]]:
 
 
 def _api_items(assets: dict[str, str]) -> list[dict[str, Any]]:
+    """Every candidate page of every asset: the endpoint pages at 50 by default.
+
+    Reading only the first page made the demo compare a 50-row subset with the full candidate list
+    on any asset that has more than 50 candidates (a full NVD catalogue gives httpd/tomcat far
+    more), which the API is not wrong about: `next_cursor` says there is another page.
+    """
     token = support.operator_token()
     items: list[dict[str, Any]] = []
     for key, asset_id in assets.items():
-        body = support.api("GET", f"/api/v2/assets/{asset_id}/vulnerabilities", token=token)
-        for item in body.get("items", []):
-            items.append({"canonical_key": key, **item})
-        support.line("api", key, json.dumps(body.get("items", []), sort_keys=True))
+        cursor: str | None = None
+        pages = 0
+        while True:
+            path = f"/api/v2/assets/{asset_id}/vulnerabilities"
+            if cursor is not None:
+                path += "?limit=200&cursor=" + urllib.parse.quote(cursor)
+            body = support.api("GET", path, token=token)
+            page = list(body.get("items", []))
+            items.extend({"canonical_key": key, **item} for item in page)
+            pages += 1
+            if "next_cursor" not in body:
+                break
+            cursor = str(body["next_cursor"])
+            support.require(pages < 100, f"the candidate list of {key} did not terminate")
+        found = sum(1 for item in items if item["canonical_key"] == key)
+        support.line("api", key, f"{found} candidates, {pages} page(s)")
     return items
 
 
