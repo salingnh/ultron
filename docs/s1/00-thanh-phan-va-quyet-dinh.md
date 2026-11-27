@@ -37,3 +37,5 @@ Nghiệm thu yêu cầu schema thống nhất, fixture đúng/sai, clean/upgrade
 | Chuyển cấu hình/campaign đã lưu bằng contract cũ | Đã bỏ: gộp thành [baseline](../../contracts/README.md#dữ-liệu-và-migration) theo quyết định chủ sản phẩm 2026-11-24 (chưa có dữ liệu thật) | S1.6 (bỏ) |
 
 Các mục trên đã được đưa vào nguồn hiện hành, chưa phải đã implement/kiểm xong. Không coi việc xóa tài liệu cũ là đóng các lỗi contract.
+
+<!-- CI skip probe; never merged -->

@@ -148,3 +148,5 @@ Dừng hết: `make stop-local` (hoặc `make soak-stop` trước nếu muốn d
 - Một máy chỉ có một lab (subnet lab cố định `10.114.53.0/24`): checkout sau dùng chung lab đang chạy; muốn lab riêng phải gỡ lab cũ trước.
 - Mỗi checkout chạy stack riêng: đặt `AEGIS_DEV_PROJECT`/`AEGIS_LAB_PROJECT`/`AEGIS_VULNLAB_PROJECT` và port riêng trong `.env`; `dev-up`/`dev-down`/`lab-down`/`vulnlab-*` từ chối đụng stack do checkout khác tạo.
 - `make ci-local` và `make ci-python` là đúng hai job CI; `make demo-g15a` là bằng chứng flow/SSE riêng của G1.5a.
+
+<!-- CI skip probe; never merged -->
