@@ -17,7 +17,7 @@ Every id, key and hash is generated per run and every assertion is scoped to tha
 the smoke can run again against the same database (dev stack) and only adds its own
 namespaced fixtures instead of deleting anything.
 
-Talks to the HTTP Query API (Neo4j 5.x) with the standard library only.
+Talks to the HTTP Query API (Neo4j 2026.10) with the standard library only.
 
 Environment: NEO4J_URI (http://127.0.0.1:17474), NEO4J_USER (neo4j),
 NEO4J_PASSWORD (required), NEO4J_DATABASE (neo4j), NEO4J_READY_TIMEOUT (180).

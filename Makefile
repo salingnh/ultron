@@ -24,7 +24,7 @@ SHELL := /bin/bash
 # tests/test_makefile_help.py fails when a .PHONY target has no entry here.
 define HELP
 make help            this list
-make dev-up          start PostgreSQL 18, Neo4j 5.26, SeaweedFS (S3) and Temporal;
+make dev-up          start PostgreSQL 18, Neo4j 2026.10, SeaweedFS (S3) and Temporal;
                      apply migrations, graph constraints and the raw bucket
 make dev-down        remove only this checkout's dev compose project (containers + volumes);
                      AEGIS_DEV_PROJECT in .env names it when several checkouts share a host

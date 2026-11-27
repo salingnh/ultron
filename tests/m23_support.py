@@ -2,7 +2,7 @@
 
 Two external services are needed, and both are **throwaway**: a PostgreSQL 18 the test may
 create and drop databases on (`AEGIS_TEST_PG_DSN`, the same variable the other DB tests use) and
-a Neo4j 5.26 that the test may wipe. The graph is not taken from whatever `AEGIS_TEST_NEO4J_URI`
+a Neo4j 2026.10 that the test may wipe. The graph is not taken from whatever `AEGIS_TEST_NEO4J_URI`
 happens to point at: `tests/graph_support.ensure_test_graph` accepts only a container carrying the
 `aegis.test.graph=1` label and otherwise starts its own, so a run can never wipe a shared graph
 (the incident that produced that guard is described there).
@@ -54,7 +54,7 @@ TEST_GENERATION = "m23-projector#g-test"
 requires_neo4j = pytest.mark.skipif(
     not os.environ.get(NEO4J_URI_ENV) and shutil.which("podman") is None,
     reason=f"set {NEO4J_URI_ENV} (+ {NEO4J_PASSWORD_ENV}) or install podman so the harness can "
-    "start a throwaway Neo4j 5.26",
+    "start a throwaway Neo4j 2026.10",
 )
 requires_pipeline = pytest.mark.skipif(
     not os.environ.get(PG_DSN_ENV)
