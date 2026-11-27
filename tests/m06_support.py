@@ -59,6 +59,12 @@ PROBE_IMAGE = f"localhost/aegis-probe:{os.getpid()}"
 PODMAN = shutil.which("podman") or "podman"
 
 
+def remove_probe_image() -> None:
+    """Drop this process's probe tag; the tag is per process, so nobody else uses it."""
+    if podman_available():
+        podman("rmi", PROBE_IMAGE, check=False)
+
+
 def podman_available() -> bool:
     return shutil.which("podman") is not None
 

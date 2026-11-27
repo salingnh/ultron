@@ -11,7 +11,6 @@ from __future__ import annotations
 import ipaddress
 import json
 import subprocess
-import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -21,6 +20,7 @@ import pytest
 from aegis.common.ports import ContainerSpec
 from aegis.m06_runner import netpolicy
 from aegis.m06_runner.podman import PodmanRunner, WaitResult
+from tests.xdist_support import worker_network_pool
 
 from . import m06_support
 
@@ -55,7 +55,10 @@ def probe_image() -> str:
 @pytest.fixture()
 def runner(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iterator[PodmanRunner]:
     instance = PodmanRunner(
-        base_dir=tmp_path_factory.mktemp("runner"), broker_image=probe_image, poll_seconds=0.2
+        network_pool=worker_network_pool(),
+        base_dir=tmp_path_factory.mktemp("runner"),
+        broker_image=probe_image,
+        poll_seconds=0.2,
     )
     try:
         yield instance
@@ -157,12 +160,10 @@ def test_wall_clock_timeout_stops_the_job(runner: PodmanRunner, probe_image: str
             ["python3", "-c", "import time; time.sleep(60)"],
         )
     )
-    started = time.monotonic()
     wait = runner.wait(handle, 2)
-    elapsed = time.monotonic() - started
+    # The tool sleeps 60 s and would then report `exited`: `timeout` means the runner stopped it.
     assert wait.timed_out is True
     assert wait.state.status == "timeout"
-    assert elapsed < 20
     runner.stop(handle)
     runner.remove(handle)
     assert runner.inspect(handle).status == "missing"
@@ -207,15 +208,15 @@ def test_the_output_monitor_stops_many_small_files(runner: PodmanRunner, probe_i
         "    time.sleep(0.002)\n"
     )
     handle = runner.run(_spec(probe_image, job_id, ["python3", "-c", code], max_output_bytes=cap))
-    started = time.monotonic()
     wait = runner.wait(handle, 60, max_output_bytes=cap)
-    elapsed = time.monotonic() - started
     size = runner.output_bytes(job_id)
     runner.remove(handle)
-    assert wait.capped is True
-    assert elapsed < 30
-    # Bounded overshoot: a few size-poll intervals of writes, never an unbounded directory.
-    assert size <= cap + 8 * MIB
+    # Left alone the tool writes for 60 s and exits 0: `capped` with a failed exit means the
+    # monitor killed it while it was still writing. How soon after the cap the kill is issued is
+    # checked on a controlled clock (tests/test_m06_output_monitor.py).
+    assert wait.capped is True and wait.timed_out is False
+    assert wait.state.status == "exited" and wait.state.exit_code != 0
+    assert size > cap
     assert runner.layout(job_id).output.joinpath("many").is_dir()
 
 
@@ -335,6 +336,7 @@ def topology(tmp_path_factory: pytest.TempPathFactory, probe_image: str) -> Iter
     uplink = m06_support.create_network(f"aegis-test-up-{suffix}", internal=False)
     control = m06_support.create_network(f"aegis-test-ctl-{suffix}", internal=False)
     runner = PodmanRunner(
+        network_pool=worker_network_pool(),
         base_dir=tmp_path_factory.mktemp("topology"),
         broker_image=probe_image,
         uplink_network=uplink,

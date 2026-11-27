@@ -344,11 +344,11 @@ class GatewayProcess:
         run = os.environ.get("GITHUB_RUN_ID") or f"local-{os.getpid()}"
         # Named and labelled like every other CI container, so scripts/ci/cleanup.sh removes this
         # one too when a gate is killed before its own trap runs.
-        self.container = f"aegis-ci-{run}-{self.name}"
+        self.container = f"aegis-ci-{run}-{self.name}-{os.getpid()}"
         self.labels = {"aegis.ci.suite": suite, "aegis.ci.run": run}
         job = os.environ.get("AEGIS_CI_JOB", "").strip()
         if job:
-            self.labels["aegis-ci-job"] = job
+            self.labels["aegis.ci-job"] = job
 
     @classmethod
     def spawn(cls, config: Mapping[str, Any], *, name: str = "llm-gateway") -> GatewayProcess:

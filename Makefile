@@ -235,7 +235,7 @@ lint:
 	@uv run --frozen mypy
 
 test:
-	@uv run --frozen pytest
+	@uv run --frozen pytest $(PYTEST_ARGS)
 
 codegen:
 	@uv run --frozen python scripts/codegen.py

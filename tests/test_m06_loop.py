@@ -132,7 +132,7 @@ def test_the_denylist_and_the_caps_come_from_the_signed_policy_version(database:
     assert plan.per_host_max_connections == 1
 
 
-def test_a_tick_terminalizes_a_job_it_cannot_plan(database: str) -> None:
+def test_a_tick_terminalizes_a_job_it_cannot_plan(database: str, tmp_path: Path) -> None:
     """No `VALIDATING` job may survive a tick whose cause is definite (review P5)."""
     from aegis.m06_runner.job import JobRunner
     from aegis.m06_runner.lifecycle import JobLifecycle
@@ -140,7 +140,7 @@ def test_a_tick_terminalizes_a_job_it_cannot_plan(database: str) -> None:
     from tests.fakes.evidence_store import FakeEvidenceStore
 
     _, job_id = _validating(database)
-    runner = PodmanRunner(base_dir=Path("/tmp/aegis-m06-loop-reject"))
+    runner = PodmanRunner(base_dir=tmp_path)
     job_runner = JobRunner(
         runner,
         FakeEvidenceStore(),

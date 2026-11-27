@@ -11,8 +11,8 @@
 #     no persisted credentials in the checkout, read-only GITHUB_TOKEN;
 #   * no `pull_request_target`, no expression is interpolated into a `run:` shell line.
 #
-# The job runs `scripts/ci/python-gate.sh`, which is `make lint test codegen-check` plus a
-# throwaway PostgreSQL 18 (the migration-runner tests must run, not skip).
+# The job runs `scripts/ci/python-gate.sh`, which is `make lint test codegen-check` (pytest in
+# parallel workers) plus a throwaway PostgreSQL 18 (the migration-runner tests must run, not skip).
 name: python
 
 on:
@@ -44,17 +44,27 @@ jobs:
         with:
           persist-credentials: false
           clean: true
+          # The merge commit and its parents: job-scope.sh diffs against the base.
+          fetch-depth: 2
+
+      # A pull request that cannot affect this job skips every step below. The job still runs and
+      # reports its check, so a required check is never left pending.
+      - name: Decide whether this change affects the job
+        id: scope
+        run: scripts/ci/job-scope.sh python
 
       - name: Record job volume scope
+        if: steps.scope.outputs.run == 'true'
         run: scripts/ci/check-volume-leak.sh --record
 
       - name: Python gate (make lint test codegen-check)
+        if: steps.scope.outputs.run == 'true'
         run: scripts/ci/python-gate.sh
 
       - name: Remove CI containers
-        if: always()
+        if: always() && steps.scope.outputs.run == 'true'
         run: scripts/ci/cleanup.sh
 
       - name: Guard against leaked podman volumes
-        if: always()
+        if: always() && steps.scope.outputs.run == 'true'
         run: scripts/ci/check-volume-leak.sh

@@ -177,7 +177,13 @@ def test_a_bound_target_is_reached_and_audited_with_its_profile(
         with running_broker(policy, tmp_path, upstream, monkeypatch) as (port, audit):
             client, head = _connect(port, "crt.sh:443")
             assert head.startswith(ACCEPTED), head
-            assert client.recv(4096).startswith(b"REACHED")
+            # The upstream's greeting may share a segment with the proxy's reply head.
+            received = head.partition(b"\r\n\r\n")[2]
+            while b"\n" not in received:
+                chunk = client.recv(4096)
+                assert chunk, received
+                received += chunk
+            assert received == b"REACHED\n"
             client.close()
     finally:
         upstream.close()

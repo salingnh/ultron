@@ -14,6 +14,7 @@ tests prove both refuse instead of trusting the environment:
 from __future__ import annotations
 
 import inspect
+import re
 from typing import Any
 
 import pytest
@@ -202,6 +203,51 @@ def test_start_container_mounts_tmpfs_and_stop_removes_volumes(
     graph_support.stop_test_graph()
     assert any(call[:3] == ("rm", "-f", "-v") for call in calls), calls
     assert graph_support._STARTED == []
+
+
+def test_the_harness_password_can_never_be_read_as_an_option() -> None:
+    """`neo4j-admin set-initial-password` reads a leading `-` as an option and exits 64."""
+    passwords = {graph_support._new_password() for _ in range(200)}
+    assert len(passwords) == 200
+    assert all(re.fullmatch(r"[0-9a-f]{36}", password) for password in passwords)
+
+
+def test_a_graph_that_exits_at_start_is_reported_at_once_with_its_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import atexit
+    import subprocess
+
+    calls: list[tuple[str, ...]] = []
+    commands: list[str] = []
+
+    def fake_podman(*args: str) -> str:
+        calls.append(args)
+        if args[0] == "run":
+            return "cid-789"
+        if args[0] == "port":
+            return "127.0.0.1:47689"
+        if args[:2] == ("inspect", "--format"):
+            return "exited 64"
+        return ""
+
+    def fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(argv[1])
+        if argv[1] == "logs":
+            return subprocess.CompletedProcess(argv, 0, "", "Missing required parameter")
+        return subprocess.CompletedProcess(argv, 1, "", "")
+
+    monkeypatch.setattr(graph_support, "_podman", fake_podman)
+    monkeypatch.setattr(graph_support, "_pinned_image", lambda: "neo4j:test")
+    monkeypatch.setattr(atexit, "register", lambda fn: fn)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(graph_support, "_STARTED", [])
+
+    with pytest.raises(SharedGraphRefused, match="exited 64(.|\n)*Missing required parameter"):
+        graph_support._start_container()
+
+    assert commands == ["exec", "logs"], "one readiness probe, then the log: no waiting"
+    assert any(call[:3] == ("rm", "-f", "-v") for call in calls), calls
 
 
 def test_start_container_cleans_up_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
