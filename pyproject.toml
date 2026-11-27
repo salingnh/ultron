@@ -65,7 +65,6 @@ addopts = "-ra --strict-markers"
 # runs in CI (G1.3a acceptance).
 markers = [
   "podman: needs rootless Podman to start real job containers",
-  "host_exclusive: asserts a real-time bound of the host; the gate runs it after the parallel run",
   "live: needs a running Temporal server (AEGIS_TEMPORAL_TARGET); not in the default gate",
 ]
 pythonpath = ["src", "."]

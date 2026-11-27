@@ -27,10 +27,11 @@ from tests.graph_support import NEO4J_URI_ENV
 from tests.pg import DSN_ENV, throwaway_database
 
 WORKER_ENV = "PYTEST_XDIST_WORKER"
-#: Test files that `--dist loadgroup` keeps on one worker each. The four sandbox files assert
-#: wall-clock and output-size bounds on real job containers, which hold while at most two of them
-#: run side by side (measured: 2 lanes cost no per-test time, 4 lanes broke the output-cap bound),
-#: so they share two lanes. The gateway file starts one ~1.3 GB proxy per worker that runs it.
+#: Test files that `--dist loadgroup` keeps on one worker each. The four sandbox files drive real
+#: job containers, and podman slows down under concurrent use: run side by side in two lanes their
+#: tests take as long as they do serially, while spread over eight workers they took about three
+#: times as long without making the run shorter. The gateway file starts one ~1.3 GB proxy per
+#: worker that runs it.
 LANES = {
     "test_podman_isolation.py": "sandbox-a",
     "test_l3_job.py": "sandbox-a",

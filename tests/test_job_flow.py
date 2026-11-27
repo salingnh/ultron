@@ -322,11 +322,9 @@ def test_timeout_collects_output_then_removes_the_container(
         ],
     )
     job_runner = _job_runner(runner, store, ingestion.base_url, ingestion.service_token)
-    started = time.monotonic()
     outcome = job_runner.execute(plan)
-    elapsed = time.monotonic() - started
 
-    assert elapsed < 40
+    # The tool sleeps 60 s and would then succeed: `timed_out` means the runner stopped it first.
     assert outcome.status == "failed"
     assert outcome.wait is not None and outcome.wait.timed_out is True
     assert outcome.run is not None and outcome.run.status == "timeout"

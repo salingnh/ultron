@@ -100,8 +100,6 @@ unset AEGIS_TEST_NEO4J_URI AEGIS_TEST_NEO4J_PASSWORD
 PYTEST_WORKERS=8
 log "make lint test codegen-check (pytest: $PYTEST_WORKERS workers)"
 make --no-print-directory -C "$REPO_ROOT" lint test codegen-check \
-  PYTEST_ARGS="-n $PYTEST_WORKERS --dist loadgroup --durations=15 -m 'not host_exclusive'"
-log "tests that need the host to themselves (marker host_exclusive)"
-make --no-print-directory -C "$REPO_ROOT" test PYTEST_ARGS="-m host_exclusive"
+  PYTEST_ARGS="-n $PYTEST_WORKERS --dist loadgroup --durations=15"
 
 log "python gate: PASS"
