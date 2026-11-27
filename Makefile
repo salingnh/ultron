@@ -102,11 +102,13 @@ make soak-stop       stop the soak; its report stays in .local/soak/report.txt
 make llm-smoke       ONE real provider call with the key from .env (never in CI);
                      prints the provider answer, tokens and cost - see .env.example
 make llm-gateway-up  start the owner LLM gateway (LiteLLM proxy, pinned image) on
-                     127.0.0.1 only; its config and keys live in ~/.config/ultron/llm-gateway
-                     and are validated before a container exists
+                     127.0.0.1 only; endpoints come from ~/.config/ultron/llm-gateway/config.yaml,
+                     every key from this checkout's .env (one file, mode 600), and both are
+                     merged with deploy/llm-gateway/base.yaml and validated before a container
+                     exists
 make llm-gateway-status   container, readiness, model groups, and per endpoint
                      healthy/cooling-down with its cooldown count
-make llm-gateway-reload   apply an edited owner config: recreate only the gateway
+make llm-gateway-reload   apply edited endpoints or keys (.env): recreate only the gateway
                      container, then prove the router serves the file groups/endpoints
 make llm-gateway-down     remove only this checkout gateway project
 make llm-gateway-test     two fake upstreams (one 429, one OK) behind the pinned gateway:

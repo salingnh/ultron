@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Apply an edited owner configuration without restarting ultron: `make llm-gateway-reload`.
+# Apply an edited configuration without restarting ultron: `make llm-gateway-reload`.
 #
-# The proxy reads its config file once at boot (this version has no supported "reload file" route),
-# so applying an edit means recreating THIS ONE container. ultron keeps running: its
-# AEGIS_MODEL_BASE_URL still points at the same loopback port, and the short window where the
-# container is down is a provider_error at worst, not a process restart.
+# "Configuration" is now two files: the owner's endpoints (outside the checkout) and the checkout's
+# `.env` (the keys, and the fixed base from the repository). The proxy reads its config once at boot
+# (this version has no supported "reload file" route), so applying an edit means rendering again and
+# recreating THIS ONE container. ultron keeps running: its AEGIS_MODEL_BASE_URL still points at the
+# same loopback port, and the short window where the container is down is a provider_error at worst.
 #
-# Order: validate the new files first (a typo must not take a working gateway down), then ownership,
+# Order: validate the new inputs first (a typo must not take a working gateway down), then ownership,
 # then recreate, then prove the running router serves exactly the groups and endpoints the file
 # describes - a reload that "succeeded" but loaded the old file is the failure mode this checks.
 set -euo pipefail
@@ -15,10 +16,13 @@ set -euo pipefail
 require_cmd podman "install rootless podman 5.x"
 require_cmd podman-compose "install with: python3 -m pip install --user podman-compose"
 require_rootless
+require_env_file
+ensure_master_key
+load_env
 require_owner_config
+render_and_validate
 load_images
-export AEGIS_LLM_GATEWAY_CONFIG_DIR="$CONFIG_DIR" AEGIS_LLM_GATEWAY_PORT="$PORT" \
-  AEGIS_LLM_GATEWAY_PROJECT="$PROJECT"
+export_gateway_env
 # Recreating this stack with a changed configuration IS the point of a reload, so the same
 # deliberate flag the stack helper prints for a config change is set here, for this one call.
 AEGIS_STACK_RECREATE=1 require_gateway_stack_ownership
@@ -33,8 +37,9 @@ compose up -d --force-recreate gateway
 record_gateway_stack_identity
 wait_ready 240
 
-# What the file says must be what the router serves: every group, and every member deployment.
-expected=$(python3 - "$CONFIG_FILE" <<'PY'
+# What the rendered file says must be what the router serves: every group, and every member
+# deployment (the effective document, so a base change or a default is included too).
+expected=$(python3 - "$RENDERED_CONFIG" <<'PY'
 import sys
 
 import yaml

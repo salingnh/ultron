@@ -2,8 +2,15 @@
 
 No test in this module opens a socket to a model provider. Two fake upstreams answer in-process on
 loopback, and the pinned LiteLLM image is started with `--network=host` so it reaches them at
-127.0.0.1: the same image, the same config shape and the same request path a live gateway uses,
-without a key or a cent.
+127.0.0.1: the same image, the same configuration pipeline and the same request path a live gateway
+uses, without a key or a cent.
+
+The pipeline is the repository's own, not a test-only shortcut: an owner-shaped `config.yaml` (the
+shipped `config.example.yaml`, its endpoints pointed at the fakes) is merged over
+`deploy/llm-gateway/base.yaml` by `scripts/llm-gateway/render.py`, the result is checked by
+`scripts/llm-gateway/validate.py`, and the container is given exactly the two files those scripts
+produce - so a test passing here means the files `make llm-gateway-up` renders are the ones that
+rotate.
 
 Every fake answers all three shapes a gateway may call:
   * POST /v1/chat/completions - OpenAI Chat Completions (the OpenAI standard, and what the gateway
@@ -21,6 +28,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -37,14 +45,17 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 GATEWAY_DIR = REPO / "deploy" / "llm-gateway"
 EXAMPLE_CONFIG = GATEWAY_DIR / "config.example.yaml"
+BASE_CONFIG = GATEWAY_DIR / "base.yaml"
 IMAGES_FILE = GATEWAY_DIR / "images.env"
-STATUS_SCRIPT = REPO / "scripts" / "llm-gateway" / "status.py"
+RENDER_SCRIPT = REPO / "scripts" / "llm-gateway" / "render.py"
 VALIDATE_SCRIPT = REPO / "scripts" / "llm-gateway" / "validate.py"
+STATUS_SCRIPT = REPO / "scripts" / "llm-gateway" / "status.py"
 
+#: The one credential: the key ultron sends and the gateway's master key (AEGIS_MODEL_API_KEY).
 MASTER_KEY = "sk-llm-gateway-test-master-key-not-a-real-secret"
-UPSTREAM_KEYS = {
-    "UPSTREAM_A_API_KEY": "sk-test-upstream-a",
-    "UPSTREAM_B_API_KEY": "sk-test-upstream-b",
+OWNER_KEYS = {
+    "LLM_KEY_A": "sk-test-upstream-a",
+    "LLM_KEY_B": "sk-test-upstream-b",
 }
 QUOTA_MESSAGE = "insufficient_quota: you exceeded your current quota"
 
@@ -208,51 +219,93 @@ class FakeUpstream:
             self._server = None
 
 
-def gateway_config(
-    upstreams: Sequence[FakeUpstream], *, cooldown_time: int = 300
-) -> dict[str, Any]:
-    """The shipped example config, with its endpoint slots pointed at the fake upstreams.
+def gateway_config(upstreams: Sequence[FakeUpstream]) -> dict[str, Any]:
+    """The shipped example, with its endpoint slots pointed at the fake upstreams.
 
-    The routing settings, privacy settings and master-key rule are the ones the repository ships;
-    only `api_base`, `model`, the ids and the group membership are replaced, so a test passing here
-    means the example the owner copies is the one that rotates.
+    It is the OWNER's shape (endpoints in priority order, keys by variable name): the fixed defaults
+    are not restated here, because a test that passed its own `litellm_settings` would prove nothing
+    about `deploy/llm-gateway/base.yaml`.
     """
     document = yaml.safe_load(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
     assert isinstance(document, dict)
-    templates = document["model_list"][: len(upstreams)]
-    model_list: list[dict[str, Any]] = []
-    for index, (template, upstream) in enumerate(zip(templates, upstreams, strict=True)):
+    assert len(document["endpoints"]) >= len(upstreams), "the example has fewer endpoints"
+    endpoints: list[dict[str, Any]] = []
+    for index, upstream in enumerate(upstreams):
         letter = chr(ord("a") + index)
-        endpoint = f"fake-endpoint-{letter}"
-        params = dict(template["litellm_params"])
-        params.update(
-            model="openai/fake-model",
-            api_base=upstream.base_url,
-            api_key=f"os.environ/UPSTREAM_{letter.upper()}_API_KEY",
-            timeout=10,
-            max_retries=0,
-        )
-        model_list.append(
+        endpoints.append(
             {
-                "model_name": endpoint,
-                "litellm_params": params,
-                "model_info": {
-                    "id": endpoint,
-                    # 11 input + 3 output tokens at these prices is $0.000017: a number no price
-                    # in gateway_env() produces, so "the gateway reported it" is provable.
-                    "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000002,
-                },
+                "name": f"fake-endpoint-{letter}",
+                "model": "openai/fake-model",
+                "api_base": upstream.base_url,
+                "api_key": f"os.environ/LLM_KEY_{letter.upper()}",
+                "timeout": 10,
+                # 11 input + 3 output tokens at these prices is $0.000017: a number no price in
+                # gateway_env() produces, so "the gateway reported it" is provable.
+                "input_cost_per_token": 0.000001,
+                "output_cost_per_token": 0.000002,
             }
         )
-    document["model_list"] = model_list
-    group = document["router_settings"]["routing_groups"][0]
-    group["models"] = [entry["model_name"] for entry in model_list]
-    group["model_priorities"] = {
-        entry["model_name"]: index for index, entry in enumerate(model_list, start=1)
-    }
-    document["router_settings"]["cooldown_time"] = cooldown_time
+    document["endpoints"] = endpoints
     return document
+
+
+def gateway_environment() -> dict[str, str]:
+    """What `.env` holds for the gateway: the one key, plus one per upstream endpoint."""
+    return {"AEGIS_MODEL_API_KEY": MASTER_KEY, **OWNER_KEYS}
+
+
+def render_owner_files(
+    directory: Path, owner: Mapping[str, Any], *, environment: Mapping[str, str] | None = None
+) -> tuple[Path, Path]:
+    """Write the owner's files and run the repository's renderer over them, like `up.sh` does.
+
+    Returns the two files a running gateway is given: the effective config and the environment
+    subset. Raises with the renderer's own message when the configuration is refused, which is what
+    the refusal tests assert on.
+    """
+    result = run_render(directory, owner, environment=environment)
+    assert result.returncode == 0, f"render refused the configuration: {result.stderr}"
+    return directory / "render" / "config.yaml", directory / "render" / "gateway.env"
+
+
+def run_render(
+    directory: Path, owner: Mapping[str, Any], *, environment: Mapping[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run `scripts/llm-gateway/render.py` on an owner document; the caller checks the result."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "config.yaml").write_text(
+        yaml.safe_dump(dict(owner), sort_keys=False), encoding="utf-8"
+    )
+    chosen = environment if environment is not None else gateway_environment()
+    process_env = {**os.environ, **chosen}
+    return subprocess.run(
+        [
+            sys.executable,
+            str(RENDER_SCRIPT),
+            "--config",
+            str(directory / "config.yaml"),
+            "--base",
+            str(BASE_CONFIG),
+            "--out-dir",
+            str(directory / "render"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=process_env,
+    )
+
+
+def validate_pipeline(
+    config_path: Path, environment_path: Path
+) -> subprocess.CompletedProcess[str]:
+    """Run the validator the scripts run, against a rendered pair."""
+    return subprocess.run(
+        [sys.executable, str(VALIDATE_SCRIPT), str(config_path), str(environment_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def gateway_env(base_url: str, model: str, *, provider: str = "openai") -> dict[str, str]:
@@ -274,11 +327,13 @@ def gateway_env(base_url: str, model: str, *, provider: str = "openai") -> dict[
 
 @dataclass
 class GatewayProcess:
-    """The pinned image running the owner's config shape on loopback, for one test module."""
+    """The pinned image running the rendered configuration on loopback, for one test module."""
 
     config: Mapping[str, Any]
     name: str = "llm-gateway"
-    config_dir: Path = field(default_factory=Path)
+    work_dir: Path = field(default_factory=Path)
+    config_path: Path = field(default_factory=Path)
+    environment_path: Path = field(default_factory=Path)
     port: int = 0
     container: str = ""
     labels: dict[str, str] = field(default_factory=dict)
@@ -293,32 +348,30 @@ class GatewayProcess:
         self.labels = {"aegis.ci.suite": suite, "aegis.ci.run": run}
         job = os.environ.get("AEGIS_CI_JOB", "").strip()
         if job:
-            self.labels["aegis.ci-job"] = job
+            self.labels["aegis-ci-job"] = job
 
     @classmethod
     def spawn(cls, config: Mapping[str, Any], *, name: str = "llm-gateway") -> GatewayProcess:
         process = cls(config=config, name=name)
-        process.config_dir = Path(tempfile.mkdtemp(prefix="aegis-llm-gateway-test-"))
+        process.work_dir = Path(tempfile.mkdtemp(prefix="aegis-llm-gateway-test-"))
         return process
 
     @property
     def base_url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
-    def _write_owner_files(self) -> None:
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        (self.config_dir / "config.yaml").write_text(
-            yaml.safe_dump(dict(self.config), sort_keys=False), encoding="utf-8"
-        )
-        secrets = [f"LITELLM_MASTER_KEY={MASTER_KEY}"]
-        secrets += [f"{name}={value}" for name, value in UPSTREAM_KEYS.items()]
-        path = self.config_dir / "secrets.env"
-        path.write_text("\n".join(secrets) + "\n", encoding="utf-8")
-        path.chmod(0o600)
+    @property
+    def effective(self) -> dict[str, Any]:
+        """The document the container actually booted with (base merged over the owner's file)."""
+        document = yaml.safe_load(self.config_path.read_text(encoding="utf-8"))
+        assert isinstance(document, dict)
+        return document
 
     def start(self, *, timeout: float = 180) -> GatewayProcess:
         assert shutil.which("podman"), "podman is required (the CI python gate provides it)"
-        self._write_owner_files()
+        self.config_path, self.environment_path = render_owner_files(self.work_dir, self.config)
+        validation = validate_pipeline(self.config_path, self.environment_path)
+        assert validation.returncode == 0, f"the rendered config is not valid: {validation.stderr}"
         subprocess.run(
             ["podman", "rm", "-f", "-v", self.container], check=False, capture_output=True
         )
@@ -337,9 +390,9 @@ class GatewayProcess:
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "-v",
-            f"{self.config_dir}:/app/config:ro,z",
+            f"{self.config_path.parent}:/app/config:ro,z",
             "--env-file",
-            str(self.config_dir / "secrets.env"),
+            str(self.environment_path),
             pinned_image(),
             "--config",
             "/app/config/config.yaml",
@@ -392,10 +445,10 @@ class GatewayProcess:
             subprocess.run(
                 ["podman", "rm", "-f", "-v", self.container], check=False, capture_output=True
             )
-        # The config dir is this test's own throwaway copy of the owner's files; leaving it behind
-        # would litter a shared runner (and CI runs on one) with a secrets file per run.
-        if self.config_dir.parts:
-            shutil.rmtree(self.config_dir, ignore_errors=True)
+        # The work dir is this test's own throwaway copy (an owner config and an environment file
+        # holding fake keys); leaving it behind would litter a shared runner with one per run.
+        if self.work_dir.parts:
+            shutil.rmtree(self.work_dir, ignore_errors=True)
 
     def logs(self, tail: int = 60) -> str:
         result = subprocess.run(
@@ -422,15 +475,15 @@ class GatewayProcess:
 
     def status_table(self) -> str:
         """Run `make llm-gateway-status`'s reader against this gateway's live payloads."""
-        info = self.config_dir / "model-info.json"
-        metrics = self.config_dir / "metrics.txt"
+        info = self.work_dir / "model-info.json"
+        metrics = self.work_dir / "metrics.txt"
         info.write_text(json.dumps(self.model_info()), encoding="utf-8")
         metrics.write_text(self.metrics(), encoding="utf-8")
         result = subprocess.run(
             [
                 "python3",
                 str(STATUS_SCRIPT),
-                str(self.config_dir / "config.yaml"),
+                str(self.config_path),
                 str(info),
                 str(metrics),
             ],

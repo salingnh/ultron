@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
-"""Check the owner's LLM gateway files before a container exists (G1.6).
+"""Check the rendered LLM gateway configuration before a container exists (G1.6).
 
-    python3 scripts/llm-gateway/validate.py <config.yaml> <secrets.env>
+    python3 scripts/llm-gateway/validate.py <rendered config.yaml> <gateway.env>
 
-`make llm-gateway-up` and `make llm-gateway-reload` run this first: a typo in the routing order or
-a key name that is not in secrets.env would otherwise surface as a proxy that starts and then
-fails the first campaign, minutes later. Everything checked here is a property this repository
-relies on, not a general LiteLLM linter:
+`make llm-gateway-up` and `make llm-gateway-reload` run `render.py` and then this: a typo in the
+routing order, or a key name that `.env` does not really set, would otherwise surface as a proxy
+that starts and then fails the first campaign, minutes later. The argument is the EFFECTIVE document
+(the owner's endpoints merged over deploy/llm-gateway/base.yaml), so what is checked here is exactly
+what the container boots with. Everything checked is a property this repository relies on, not a
+general LiteLLM linter:
 
-* the master key exists (a proxy without one answers anyone on the loopback port);
-* every deployment is reachable: `api_key` names a variable that secrets.env really sets;
+* the master key is `AEGIS_MODEL_API_KEY` and it exists - one key, the same `.env` value ultron
+  sends, and a proxy without one answers anyone on the loopback port;
+* the fixed base is really in effect: bodies are never logged, `/metrics` keeps its auth on,
+  retries are bounded at the endpoint and at the router, and no spend log is attempted without a
+  database;
+* every deployment is reachable: `api_key` names a variable the environment file really sets;
 * every endpoint is priced, so the gateway can report a real per-request cost (helper only - M04
   falls back to its own price and says so, but a missing price means the invoice and the ledger
   disagree);
 * every routing group member exists, priorities cover exactly the members, and there is at least
-  one group (the client asks for a group name, never an endpoint);
-* retries are bounded (`num_retries`/`max_retries`), so an exhausted pool cannot become a storm;
-* request/response bodies are never logged, and `/metrics` keeps its auth on.
+  one group (the client asks for a group name, never an endpoint), and at least two endpoints (one
+  endpoint cannot rotate).
 
-Secrets are read to check that a name exists and is non-empty; no value is printed.
+Values are read to check that a name exists and is non-empty; no value is printed.
 """
 
 from __future__ import annotations
@@ -38,6 +43,9 @@ except ImportError:  # pragma: no cover - the gate installs PyYAML, a host may n
     raise SystemExit(2) from None
 
 ENV_REFERENCE = "os.environ/"
+#: The one credential of this deployment: the key ultron sends and the gateway's master key.
+MASTER_KEY_ENV = "AEGIS_MODEL_API_KEY"
+MASTER_KEY = ENV_REFERENCE + MASTER_KEY_ENV
 
 
 class Report:
@@ -54,9 +62,9 @@ class Report:
         self.warnings.append(message)
 
 
-def parse_secrets(path: Path) -> dict[str, str]:
-    """`KEY=VALUE` lines of a secrets file; a duplicate or malformed line is an error, not a guess."""
-    secrets: dict[str, str] = {}
+def parse_env_file(path: Path) -> dict[str, str]:
+    """`KEY=VALUE` lines of an environment file; a duplicate or malformed line is an error, not a guess."""
+    environment: dict[str, str] = {}
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -68,10 +76,10 @@ def parse_secrets(path: Path) -> dict[str, str]:
         value = value.strip().strip('"').strip("'")
         if not name or any(character.isspace() for character in name):
             raise ValueError(f"{path.name}:{number}: '{name}' is not a variable name")
-        if name in secrets:
+        if name in environment:
             raise ValueError(f"{path.name}:{number}: {name} is set twice")
-        secrets[name] = value
-    return secrets
+        environment[name] = value
+    return environment
 
 
 def reference(value: Any) -> str | None:
@@ -82,7 +90,7 @@ def reference(value: Any) -> str | None:
 
 
 def check_key(
-    report: Report, secrets: Mapping[str, str], where: str, value: Any, *, required: bool
+    report: Report, environment: Mapping[str, str], where: str, value: Any, *, required: bool
 ) -> None:
     if value is None and not required:
         return
@@ -90,10 +98,10 @@ def check_key(
     if name is None:
         report.error(f"{where}: set it to os.environ/<NAME>, never a literal key in config.yaml")
         return
-    if name not in secrets:
-        report.error(f"{where}: {name} is not set in secrets.env")
-    elif not secrets[name]:
-        report.error(f"{where}: {name} is empty in secrets.env")
+    if name not in environment:
+        report.error(f"{where}: {name} is not set in .env")
+    elif not environment[name]:
+        report.error(f"{where}: {name} is empty in .env")
 
 
 def positive_price(report: Report, where: str, info: Mapping[str, Any], name: str) -> bool:
@@ -103,13 +111,24 @@ def positive_price(report: Report, where: str, info: Mapping[str, Any], name: st
     return True
 
 
-def check(document: Mapping[str, Any], secrets: Mapping[str, str]) -> Report:
+def check(document: Mapping[str, Any], environment: Mapping[str, str]) -> Report:
     report = Report()
 
     general = document.get("general_settings") or {}
     check_key(
-        report, secrets, "general_settings.master_key", general.get("master_key"), required=True
+        report,
+        environment,
+        "general_settings.master_key",
+        general.get("master_key"),
+        required=True,
     )
+    # One key for both sides: an owner-set master key would be a second value to keep in sync with
+    # AEGIS_MODEL_API_KEY, and a mismatch is a call that the gateway refuses with 401.
+    if general.get("master_key") not in (None, MASTER_KEY):
+        report.error(
+            f"general_settings.master_key: keep it {MASTER_KEY} - the gateway's master key is the "
+            "same .env value ultron sends, not a separate one"
+        )
     if general.get("disable_spend_logs") is not True:
         report.error(
             "general_settings.disable_spend_logs: set it to true - this deployment has no database"
@@ -158,7 +177,7 @@ def check(document: Mapping[str, Any], secrets: Mapping[str, str]) -> Report:
             report.error(f"{label}: litellm_params.model is required (e.g. openai/gpt-4o-mini)")
         check_key(
             report,
-            secrets,
+            environment,
             f"{label}.litellm_params.api_key",
             params.get("api_key"),
             required=True,
@@ -257,7 +276,7 @@ def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print(__doc__, file=sys.stderr)
         return 2
-    config_path, secrets_path = Path(argv[1]), Path(argv[2])
+    config_path, environment_path = Path(argv[1]), Path(argv[2])
     try:
         document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
@@ -267,12 +286,12 @@ def main(argv: list[str]) -> int:
         print(f"config: {config_path}: the document must be a mapping", file=sys.stderr)
         return 2
     try:
-        secrets = parse_secrets(secrets_path)
+        environment = parse_env_file(environment_path)
     except (OSError, ValueError) as error:
-        print(f"secrets: {error}", file=sys.stderr)
+        print(f"environment: {error}", file=sys.stderr)
         return 2
 
-    report = check(document, secrets)
+    report = check(document, environment)
     for warning in report.warnings:
         print(f"validate: warning: {warning}", file=sys.stderr)
     if report.errors:

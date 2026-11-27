@@ -94,7 +94,10 @@ write_secret() {
 # Resolve .env and project/network names once before checking whether our dev/lab stacks exist.
 if [ ! -f "$ENV_FILE" ]; then
   cp "$ENV_EXAMPLE" "$ENV_FILE"
-  log "created .env from .env.example (local dev values, git-ignored)"
+  # .env is the one file that holds secrets (model keys, gateway upstream keys): private from the
+  # first write, never after a key was already in it.
+  chmod 600 "$ENV_FILE"
+  log "created .env from .env.example (local dev values, git-ignored, mode 600)"
 fi
 load_env
 

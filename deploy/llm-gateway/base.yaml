@@ -1,0 +1,48 @@
+# Fixed LLM gateway defaults (G1.6) - repository state, merged UNDER the owner's config.yaml.
+#
+# The owner's file (`~/.config/ultron/llm-gateway/config.yaml`) lists endpoints and their order and
+# nothing else: these values must never vary per deployment, because they are what makes the gateway
+# safe and its failure mode predictable. `scripts/llm-gateway/render.py` merges this document with
+# the owner's file and writes the single config the container boots with; the owner's file is never
+# mounted, and a copy of these keys inside it is refused (not silently ignored).
+#
+# What is here, and why it cannot be a per-deployment choice:
+#   * no request/response body logging - prompts and answers contain scan data (targets, findings);
+#   * one attempt per endpoint, at the endpoint and at the router - the next endpoint in the group
+#     IS the retry, so an exhausted pool costs one call per endpoint instead of a retry storm;
+#   * a cooldown after a failure, so a spent quota window is skipped instead of waited on;
+#   * /metrics behind the master key, because the routing state tells an attacker which endpoint is
+#     exhausted;
+#   * no spend log and no database: this is the MIT core, and cost/usage live in `aegis.model_usage`,
+#     which M04 writes from the gateway's `x-litellm-response-cost` header;
+#   * the master key is `AEGIS_MODEL_API_KEY` - the same `.env` value ultron sends, so there is one
+#     key to set and no second copy that can drift out of sync.
+#
+# Changing anything here is a repository change: `make llm-gateway-test` (tests/llm_gateway_support.py
+# renders this file exactly like up.sh does) and `scripts/llm-gateway/validate.py` both refuse a
+# deployment where one of these guarantees is missing.
+
+router_settings:
+  # The next endpoint in the group is the retry.
+  num_retries: 0
+  # A 429 is usually a spent quota window: cool the endpoint for five minutes and move on.
+  allowed_fails: 0
+  cooldown_time: 300
+
+litellm_settings:
+  # PRIVACY: never log request or response bodies.
+  turn_off_message_logging: true
+  set_verbose: false
+  json_logs: false
+  # Tolerate a parameter an upstream does not support instead of failing the call.
+  drop_params: true
+  # litellm_deployment_state / litellm_deployment_cooled_down_total: what `make llm-gateway-status`
+  # reads (the proxy has no cooldown API of its own).
+  callbacks: ["prometheus"]
+  require_auth_for_metrics_endpoint: true
+
+general_settings:
+  # Both the key this proxy requires and the key ultron presents (AEGIS_MODEL_API_KEY in .env).
+  master_key: os.environ/AEGIS_MODEL_API_KEY
+  # No database in this deployment: nothing is persisted by the gateway itself.
+  disable_spend_logs: true
