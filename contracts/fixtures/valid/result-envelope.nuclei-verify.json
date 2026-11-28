@@ -1,0 +1,64 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-00000000e008",
+  "dedup_key": "job:01934f6a-0000-7000-8000-00000000d008:envelope",
+  "job_id": "01934f6a-0000-7000-8000-00000000d008",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "capability": "verify.check",
+  "provider": {
+    "name": "nuclei-verify",
+    "version": "v3.11.1",
+    "adapter_version": "1.0.0",
+    "image_digest": "sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb"
+  },
+  "policy_version": "roe-1",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": [
+      "service:10.114.59.31:80/tcp",
+      "service:10.114.59.32:80/tcp"
+    ],
+    "complete": true
+  },
+  "results": {
+    "assets": [],
+    "observations": [],
+    "relationships": [],
+    "findings": []
+  },
+  "evidence": [
+    {
+      "local_ref": "raw",
+      "sha256": "721602aff84bdda68ea5bb78d33cb58e143c433bde2169c8999b98fb3a1e2d88",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d008/721602aff84bdda68ea5bb78d33cb58e143c433bde2169c8999b98fb3a1e2d88",
+      "size_bytes": 12765,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
+  ],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "b5b2458e905678d513c783e64a9d2d3ca7371a71116bf04ad6518f75a9ac7c64",
+    "started_at": "2026-11-28T00:00:00Z",
+    "finished_at": "2026-11-28T00:00:05Z",
+    "seed_targets": [
+      {
+        "canonical_key": "service:10.114.59.31:80/tcp"
+      },
+      {
+        "canonical_key": "service:10.114.59.32:80/tcp"
+      }
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-00000000d008",
+    "capability_id": "verify.check",
+    "provider_version": "v3.11.1",
+    "policy_version": "roe-1"
+  }
+}

@@ -108,7 +108,8 @@ def _lab_pin(provider: str) -> str | None:
         return None
     for line in LAB_IMAGES.read_text(encoding="utf-8").splitlines():
         name, _, value = line.strip().partition("=")
-        if name.startswith("AEGIS_LAB_") and name.endswith("_IMAGE") and provider.upper() in name:
+        wanted = provider.upper().replace("-", "_")
+        if name.startswith("AEGIS_LAB_") and name.endswith("_IMAGE") and wanted in name:
             return value
     return None
 

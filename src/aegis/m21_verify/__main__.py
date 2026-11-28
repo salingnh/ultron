@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from aegis.m21_verify import controls as control_map
+from aegis.common import verification_controls as control_map
 from aegis.m21_verify.evidence import EvidenceError, MemoryEvidenceReader, reader_from_env
 from aegis.m21_verify.writer import VerificationError, decide_campaign, decide_job
 

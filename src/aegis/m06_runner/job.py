@@ -34,7 +34,7 @@ from aegis.contracts_gen.common.ids_v2_schema import Classification
 from aegis.contracts_gen.ingestion.ingest_receipt_v2_schema import IngestReceipt
 from aegis.contracts_gen.ingestion.result_envelope_v2_schema import ResultEnvelope
 from aegis.m05_registry.signing import KeyRing
-from aegis.m06_runner import collector, parser_host
+from aegis.m06_runner import collector, parser_host, verification
 from aegis.m06_runner import envelope as envelopes
 from aegis.m06_runner import profile as profiles
 from aegis.m06_runner import spec as specs
@@ -155,10 +155,30 @@ class JobRunner:
         body = _task_body(plan)
         profile = str(plan.task.network_profile)
         lab = profile == "lab"
+        deployment = self.runner.profiles.get(profile)
+        entry = self.runner.profile_entry(profile, text(plan.task.image_digest))
+        if text(plan.task.capability) == "verify.check":
+            # The verification gate runs before anything else: no policy, no network, no container.
+            # A profile without the pack, a pack whose bytes moved, or a lab-only check on the
+            # internet is refused here (D29 layer 2).
+            if deployment is None:
+                raise specs.SpecError(
+                    "DEPENDENCY_MISSING",
+                    f"a verify.check job needs the {profile} deployment profile",
+                )
+            verification.check_verification(
+                capability=text(plan.task.capability),
+                network_profile=profile,
+                image_digest=text(plan.task.image_digest),
+                provider=text(plan.task.provider),
+                input_values=plan.input,
+                manifest=plan.manifest,
+                profile=deployment,
+                entry=entry,
+            )
         # A provider without networkAccess has no network at all; its deployment profile still
         # supplies local, read-only inputs (G2-D: the offline vulnerability DB at /cache/db).
         egress = plan.manifest.spec.permissions.networkAccess == "egress"
-        entry = self.runner.profile_entry(profile, text(plan.task.image_digest))
         if egress and not lab and not plan.platform_cidrs:
             # The platform's own networks must be in every internet policy; without the set the
             # job is refused rather than dispatched with an incomplete deny list (B1).

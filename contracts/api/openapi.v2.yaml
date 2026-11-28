@@ -1055,6 +1055,158 @@ paths:
             application/json:
               schema:
                 $ref: ../common/error.v2.schema.json
+  /findings/{finding_id}/verification-checks:
+    parameters:
+    - $ref: '#/components/parameters/FindingId'
+    get:
+      tags:
+      - findings
+      operationId: listVerificationChecks
+      summary: Các check xác minh động áp dụng cho finding dưới profile đã ký của campaign
+      description: 'Giao của registry đã review (`contracts/verification/checks.v2.yaml`,
+        `appliesTo.findingRule` = rule_id của finding), danh sách check được duyệt của
+        deployment cho profile đã ký của campaign (`AEGIS_VERIFY_APPROVALS`; không đặt thì
+        không check nào), và profile đó: check L1/C1 chỉ khả dụng ở lab. Mỗi mục nói lý do
+        không khả dụng để UI hiển thị; không có tham số nào để chọn template/URL/payload.'
+      security:
+      - operatorToken: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - check_id
+                      - title
+                      - class
+                      - lab_only
+                      - available
+                      properties:
+                        check_id:
+                          type: string
+                        title:
+                          type: string
+                        class:
+                          type: string
+                          enum:
+                          - E1
+                          - L1
+                          - C1
+                        lab_only:
+                          type: boolean
+                        available:
+                          type: boolean
+                        unavailable_reason:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /findings/{finding_id}/verifications:
+    parameters:
+    - $ref: '#/components/parameters/FindingId'
+    get:
+      tags:
+      - findings
+      operationId: listVerifications
+      summary: Các lần xác minh đã quyết định của finding, mới nhất trước
+      description: 'Đọc bảng append-only `verification_run`: chỉ job verify.check đã
+        COMPLETED và được nhận envelope mới có hàng; một job FAILED/CANCELLED không có hàng
+        và trạng thái của nó là job. outcome là quyết định của M21 (VERIFIED chỉ ở lab với
+        đủ hai đối chứng âm; OBSERVED là E1 trên internet; NOT_REPRODUCED không phải FIXED
+        và không phải FALSE_POSITIVE). Keyset `(created_at, verification_id)` giảm dần.'
+      security:
+      - operatorToken: []
+      parameters:
+      - name: cursor
+        in: query
+        schema:
+          type: string
+          maxLength: 512
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: ../verification/verification-run.v2.schema.json
+                  next_cursor:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags:
+      - findings
+      operationId: requestVerification
+      summary: Yêu cầu một lần xác minh động cho finding (job verify.check)
+      description: 'Body chỉ có `check_id` (enum của pack đã duyệt) và `expected_seq`;
+        target là asset của finding, đối chứng và canary là dữ liệu triển khai, giá trị kỳ
+        vọng nằm ở M21. M26 dựng toàn bộ input của job phía server và M05 dựng lại rồi từ
+        chối nếu lệch (D29 lớp 1). 202 trả job v2 (job là trạng thái của yêu cầu); cùng
+        Idempotency-Key cùng body trả 200 kèm Idempotent-Replayed. 403 khi check chưa được
+        duyệt cho profile đã ký, lab-only trên internet, target ngoài scope, hoặc campaign của
+        finding đã kết thúc (không còn workflow để dispatch job); 409 khi expected_seq lệch
+        (field=/expected_seq).'
+      security:
+      - operatorToken: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../verification/verification-request.v2.schema.json
+      responses:
+        '200':
+          description: Replay của cùng Idempotency-Key và cùng body (Idempotent-Replayed)
+          content:
+            application/json:
+              schema:
+                $ref: ../capability/job.v2.schema.json
+        '202':
+          description: Đã nhận; job verify.check đã được đưa vào hàng đợi
+          content:
+            application/json:
+              schema:
+                $ref: ../capability/job.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
   /findings/{finding_id}/assessment:
     parameters:
     - $ref: '#/components/parameters/FindingId'

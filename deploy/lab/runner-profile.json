@@ -131,6 +131,25 @@
           "ruleSet": "grype-db@2026-11-27T06:22:11Z"
         }
       ]
+    },
+    {
+      "imageDigest": "sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb",
+      "args": [],
+      "env": {
+        "HOME": "/tmp"
+      },
+      "hosts": {},
+      "mounts": [
+        {
+          "source": "verify",
+          "target": "/opt/verify"
+        }
+      ],
+      "verify": {
+        "pack": "verify",
+        "target": "/opt/verify",
+        "sha256": "ce06b8b25491ae6263ef1246d1fbe1f8f6f37ed011d2371e30d56d6dfc032687"
+      }
     }
   ]
 }

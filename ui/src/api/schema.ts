@@ -432,6 +432,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/findings/{finding_id}/verification-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                finding_id: components["parameters"]["FindingId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Các check xác minh động áp dụng cho finding dưới profile đã ký của campaign
+         * @description Giao của registry đã review (`contracts/verification/checks.v2.yaml`, `appliesTo.findingRule` = rule_id của finding), danh sách check được duyệt của deployment cho profile đã ký của campaign (`AEGIS_VERIFY_APPROVALS`; không đặt thì không check nào), và profile đó: check L1/C1 chỉ khả dụng ở lab. Mỗi mục nói lý do không khả dụng để UI hiển thị; không có tham số nào để chọn template/URL/payload.
+         */
+        get: operations["listVerificationChecks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/findings/{finding_id}/verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                finding_id: components["parameters"]["FindingId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Các lần xác minh đã quyết định của finding, mới nhất trước
+         * @description Đọc bảng append-only `verification_run`: chỉ job verify.check đã COMPLETED và được nhận envelope mới có hàng; một job FAILED/CANCELLED không có hàng và trạng thái của nó là job. outcome là quyết định của M21 (VERIFIED chỉ ở lab với đủ hai đối chứng âm; OBSERVED là E1 trên internet; NOT_REPRODUCED không phải FIXED và không phải FALSE_POSITIVE). Keyset `(created_at, verification_id)` giảm dần.
+         */
+        get: operations["listVerifications"];
+        put?: never;
+        /**
+         * Yêu cầu một lần xác minh động cho finding (job verify.check)
+         * @description Body chỉ có `check_id` (enum của pack đã duyệt) và `expected_seq`; target là asset của finding, đối chứng và canary là dữ liệu triển khai, giá trị kỳ vọng nằm ở M21. M26 dựng toàn bộ input của job phía server và M05 dựng lại rồi từ chối nếu lệch (D29 lớp 1). 202 trả job v2 (job là trạng thái của yêu cầu); cùng Idempotency-Key cùng body trả 200 kèm Idempotent-Replayed. 403 khi check chưa được duyệt cho profile đã ký, lab-only trên internet, target ngoài scope, hoặc campaign của finding đã kết thúc (không còn workflow để dispatch job); 409 khi expected_seq lệch (field=/expected_seq).
+         */
+        post: operations["requestVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/findings/{finding_id}/assessment": {
         parameters: {
             query?: never;
@@ -1954,6 +2002,137 @@ export interface components {
             evidence_id?: components["schemas"]["Id"];
             expected_seq: number;
         };
+        /** Format: aegis-ip-address */
+        IPAddress: string | unknown | unknown;
+        Port: number;
+        NullableId: components["schemas"]["Id"] | null;
+        RunTarget: {
+            asset_id: components["schemas"]["Id"];
+            canonical_key: components["schemas"]["CanonicalKey"];
+            address: components["schemas"]["IPAddress"];
+            port: components["schemas"]["Port"];
+        };
+        Control: {
+            /** @enum {string} */
+            role: "patched_twin" | "benign";
+            address: components["schemas"]["IPAddress"];
+            port: components["schemas"]["Port"];
+            /** @description Asset của đối chứng khi nó đã có trong graph; null khi đối chứng là endpoint lab chưa thành asset. */
+            asset_id?: components["schemas"]["NullableId"];
+        };
+        Canary: {
+            /** @description Băm nội dung canary (L1 đọc ra, E1 listing đối chiếu tên). */
+            sha256?: components["schemas"]["Sha256"];
+            /** @description Băm tên tệp canary cho oracle liệt kê thư mục. */
+            name_sha256?: components["schemas"]["Sha256"];
+        };
+        Matched: {
+            positive: boolean;
+            control_a: boolean;
+            control_b: boolean;
+            discriminating: boolean;
+            reason: string;
+        };
+        EvidenceRefs: {
+            positive: components["schemas"]["Id"];
+            control_a: components["schemas"]["NullableId"];
+            control_b: components["schemas"]["NullableId"];
+        };
+        /**
+         * Lần xác minh động v2 (đọc)
+         * @description Response của GET /api/v2/findings/{id}/verifications: read model của bảng append-only aegis.verification_run. Mỗi hàng ứng với một job verify.check đã COMPLETED và envelope được nhận (một job FAILED/CANCELLED không có hàng; trạng thái của nó là job). outcome là quyết định của M21, không phải trạng thái job: VERIFIED chỉ ở lab với positive và cả hai đối chứng âm (patched twin + benign) trả lời và không khớp; OBSERVED là E1 trên internet (một target, không twin, không đổi trạng thái finding); NOT_REPRODUCED không phải FIXED và không phải FALSE_POSITIVE. Không có nội dung response thô hay giá trị canary ở đây: chỉ băm và tham chiếu evidence.
+         */
+        "verification-run.v2.schema": {
+            verification_id: components["schemas"]["Id"];
+            finding_id: components["schemas"]["Id"];
+            campaign_id: components["schemas"]["Id"];
+            /** @description Job verify.check đã sinh ra hàng này; duy nhất, nên replay theo job_id trả lại hàng cũ. */
+            job_id: components["schemas"]["Id"];
+            /** @description ID check đã chạy, lấy từ registry contracts/verification/checks.v2.yaml (cùng enum với verification-request.v2). */
+            check_id: string;
+            /**
+             * @description E1 = cấu hình, L1 = hành vi, C1 = credential (V7). Chỉ E1 chạy được trên internet.
+             * @enum {string}
+             */
+            check_class: "E1" | "L1" | "C1";
+            /**
+             * @description network_profile đã ký của campaign lúc chạy. L1/C1 chỉ có thể ở lab; E1 ở lab có đối chứng, ở internet chỉ OBSERVED.
+             * @enum {string}
+             */
+            network_profile: "lab" | "internet";
+            /** @description Băm nội dung của pack đã mount (registry + template, thứ tự đường dẫn đã sắp); khớp profile và ApprovedTask đã ký. */
+            check_pack_sha256: components["schemas"]["Sha256"];
+            /** @description Asset của finding, do server phân giải từ finding/asset_id; không có target nào đến từ request body. */
+            target: components["schemas"]["RunTarget"];
+            /** @description Đối chứng âm đã cấu hình cho lần chạy (lab: patched twin + benign; internet E1: rỗng). Cờ khớp của từng đối chứng nằm ở matched. */
+            controls: components["schemas"]["Control"][];
+            /** @description Băm của canary dùng cho lần chạy; không bao giờ có giá trị canary ở read model. Vắng khi check không cần canary (E1 certificate/protocol/header). */
+            canary?: components["schemas"]["Canary"];
+            /** @enum {string} */
+            outcome: "VERIFIED" | "NOT_REPRODUCED" | "INCONCLUSIVE" | "OBSERVED";
+            /** @description Tóm tắt đầu vào của bảng quyết định M21, không có body: positive/control_a/control_b là kết quả khớp của từng vai; discriminating = lần chạy có đủ đối chứng để phân biệt. */
+            matched: components["schemas"]["Matched"];
+            requests_sent: number;
+            /** @description Trần cứng của check trong registry. M21 từ chối một lần chạy vượt trần (INCONCLUSIVE). */
+            request_cap: number;
+            evidence: components["schemas"]["EvidenceRefs"];
+            /** @description transition_seq của finding sau lần chạy khi VERIFIED; null khi không chuyển trạng thái (OBSERVED/NOT_REPRODUCED/INCONCLUSIVE). */
+            transition_seq: number | null;
+            requested_by: components["schemas"]["RequestedBy"];
+            /** @description Bên quyết định; hiện chỉ M21 ghi hàng verification_run. */
+            decided_by: components["schemas"]["Actor"];
+            started_at: components["schemas"]["Timestamp"];
+            finished_at: components["schemas"]["Timestamp"];
+            $defs: {
+                Port: number;
+                NullableId: components["schemas"]["Id"] | null;
+                RunTarget: {
+                    asset_id: components["schemas"]["Id"];
+                    canonical_key: components["schemas"]["CanonicalKey"];
+                    address: components["schemas"]["IPAddress"];
+                    port: components["schemas"]["Port"];
+                };
+                Control: {
+                    /** @enum {string} */
+                    role: "patched_twin" | "benign";
+                    address: components["schemas"]["IPAddress"];
+                    port: components["schemas"]["Port"];
+                    /** @description Asset của đối chứng khi nó đã có trong graph; null khi đối chứng là endpoint lab chưa thành asset. */
+                    asset_id?: components["schemas"]["NullableId"];
+                };
+                Canary: {
+                    /** @description Băm nội dung canary (L1 đọc ra, E1 listing đối chiếu tên). */
+                    sha256?: components["schemas"]["Sha256"];
+                    /** @description Băm tên tệp canary cho oracle liệt kê thư mục. */
+                    name_sha256?: components["schemas"]["Sha256"];
+                };
+                Matched: {
+                    positive: boolean;
+                    control_a: boolean;
+                    control_b: boolean;
+                    discriminating: boolean;
+                    reason: string;
+                };
+                EvidenceRefs: {
+                    positive: components["schemas"]["Id"];
+                    control_a: components["schemas"]["NullableId"];
+                    control_b: components["schemas"]["NullableId"];
+                };
+            };
+        } & (unknown & unknown & unknown & unknown);
+        /**
+         * Yêu cầu xác minh động v2
+         * @description Body của POST /api/v2/findings/{id}/verifications, bắt buộc kèm Idempotency-Key (cùng bảng idempotency_record và ngữ nghĩa replay như POST /api/v2/findings/{id}/transitions). Chỉ có check_id (enum của contracts/verification/checks.v2.yaml) và expected_seq: không có target, URL, port, payload, template hay tham số brute-force nào, nên không đầu vào tự do nào của người gọi tới được template, URL hay argv. Target là asset của finding do server phân giải; đối chứng và canary là dữ liệu triển khai; giá trị kỳ vọng nằm ở M21. check_id ngoài enum → 400 INPUT_INVALID; expected_seq khác transition_seq hiện tại của finding → 409 INPUT_INVALID với field=/expected_seq; check không được duyệt hoặc labOnly trên campaign internet → 403 POLICY_DENIED.
+         */
+        "verification-request.v2.schema": {
+            /**
+             * @description ID check đã duyệt trong pack. Đây là enum của hợp đồng: thêm check là sửa pack + enum trong cùng PR đã review, không phải tham số người vận hành; người gọi không chọn template, target hay payload.
+             * @enum {string}
+             */
+            check_id: "cve-2021-41773-traversal" | "config.tls.certificate" | "config.tls.protocol" | "config.http.version-header" | "config.http.directory-listing";
+            /** @description transition_seq hiện tại của finding mà người gọi đã thấy; lệch là 409 INPUT_INVALID (field=/expected_seq), không ghi gì. */
+            expected_seq: number;
+        };
     };
     responses: {
         /** @description Lỗi chuẩn */
@@ -2708,6 +2887,113 @@ export interface operations {
                     "application/json": components["schemas"]["error.v2.schema"];
                 };
             };
+        };
+    };
+    listVerificationChecks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                finding_id: components["parameters"]["FindingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            check_id: string;
+                            title: string;
+                            /** @enum {string} */
+                            class: "E1" | "L1" | "C1";
+                            lab_only: boolean;
+                            available: boolean;
+                            unavailable_reason?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listVerifications: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                finding_id: components["parameters"]["FindingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["verification-run.v2.schema"][];
+                        next_cursor?: string;
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    requestVerification: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                finding_id: components["parameters"]["FindingId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["verification-request.v2.schema"];
+            };
+        };
+        responses: {
+            /** @description Replay của cùng Idempotency-Key và cùng body (Idempotent-Replayed) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["job.v2.schema"];
+                };
+            };
+            /** @description Đã nhận; job verify.check đã được đưa vào hàng đợi */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["job.v2.schema"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     assessFinding: {

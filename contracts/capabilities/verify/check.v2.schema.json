@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capabilities/verify/check.v2.schema.json",
+  "title": "verify.check v2",
+  "description": "Input của một lần kiểm chứng động (G2-B, M21). KHÔNG có trường tự do: người vận hành chỉ gửi `check_id` (enum của pack đã duyệt) và `expected_seq`; mọi trường dưới đây do M26 dựng phía server từ finding, pack và bản đồ đối chứng của deployment, và M05 dựng lại rồi từ chối nếu lệch. `targets` là asset của finding đứng đầu, sau đó là các endpoint đối chứng đã ký (patched twin); target đi vào `/in/targets.txt`, không có URL, payload hay tham số brute-force nào. `benign_path` là đường dẫn của đối chứng âm trên chính host positive (template gửi cả hai path tới mọi target, nên adapter cần biết path nào là đối chứng); nó chỉ được so với bản đồ deployment, không bao giờ đi vào argv. `check_pack_sha256` và `request_cap` ghim pack và trần request mà job chạy; M06 so lại với pack đã mount trước khi tạo container, M21 từ chối lần chạy vượt trần.",
+  "type": "object",
+  "required": [
+    "check_id",
+    "check_pack_sha256",
+    "expected_seq",
+    "request_cap",
+    "finding_id",
+    "targets",
+    "ports",
+    "controls",
+    "benign_path"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "check_id": {
+      "description": "ID check trong `contracts/verification/checks.v2.yaml`. Enum này cũng là enum của verification-request.v2 và là tham số duy nhất của tool có thể đi vào argv (`-id`).",
+      "type": "string",
+      "maxLength": 64,
+      "enum": [
+        "cve-2021-41773-traversal",
+        "config.tls.certificate",
+        "config.tls.protocol",
+        "config.http.version-header",
+        "config.http.directory-listing"
+      ]
+    },
+    "check_pack_sha256": {
+      "description": "Băm nội dung pack triển khai (`deploy/<profile>/verify`) mà job đã ký và M06 phải mount đúng byte. M21 so lại với tài liệu kết quả.",
+      "$ref": "../../common/ids.v2.schema.json#/$defs/Sha256"
+    },
+    "expected_seq": {
+      "description": "transition_seq của finding mà người vận hành đã thấy lúc gửi; lần chạy chỉ chuyển trạng thái khi finding còn ở đúng seq này (lệch là INCONCLUSIVE `stale`, không ghi đè quyết định khác).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "request_cap": {
+      "description": "Trần request của check trong registry (`requests.cap`), dựng lại từ pack; M21 từ chối một tài liệu kết quả khai trần khác.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "finding_id": {
+      "description": "Finding được kiểm chứng. M05 đọc finding này để lấy asset, rule_id và transition_seq; target không bao giờ đến từ request body.",
+      "$ref": "../../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "targets": {
+      "description": "Khóa chuẩn của các target đã ký: asset của finding đứng đầu, sau đó các endpoint đối chứng (patched twin). Mỗi phần tử phải là asset/target của campaign, nếu không M05 trả POLICY_DENIED `verification_target_not_in_scope`. Tối đa 2 vì mỗi check có đúng một positive và một patched twin.",
+      "type": "array",
+      "items": {
+        "$ref": "../../common/ids.v2.schema.json#/$defs/CanonicalKey"
+      },
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "ports": {
+      "description": "Cổng của các target đã ký, dựng lại từ chính các khóa service (targetBinding=required dựng binding egress từ input.ports, không từ output của tool). M06/phòng thủ ghim đúng tập này; một cổng nằm trong khóa mà thiếu ở đây sẽ không được mở.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "controls": {
+      "description": "Vai của từng endpoint đối chứng, trỏ tới một phần tử của `targets`. `benign` vắng mặt nghĩa là đối chứng âm là một path trên chính host positive (`benign_path`).",
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "role",
+          "target"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "patched_twin",
+              "benign"
+            ]
+          },
+          "target": {
+            "$ref": "../../common/ids.v2.schema.json#/$defs/CanonicalKey"
+          }
+        }
+      }
+    },
+    "benign_path": {
+      "description": "Đường dẫn của đối chứng âm trên host positive (ví dụ một tệp không tồn tại). Adapter gán request này cho vai benign; M21 so nó với canary/đối chứng của deployment.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "^/"
+    }
+  }
+}

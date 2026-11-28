@@ -219,6 +219,7 @@ MANIFEST_FIXTURES = [
     "valid/manifest.dnsx.yaml",
     "valid/manifest.fingerprintx.yaml",
     "valid/manifest.httpx.yaml",
+    "valid/manifest.nuclei-verify.yaml",
 ]
 manifests = {name: load(ROOT / "fixtures" / name) for name in MANIFEST_FIXTURES}
 for name, manifest in manifests.items():

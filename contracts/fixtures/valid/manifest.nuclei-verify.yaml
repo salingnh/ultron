@@ -1,0 +1,90 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: nuclei-verify
+  version: 1.0.0
+  module: M21
+  license: MIT
+  upstream: https://github.com/projectdiscovery/nuclei
+  licenseNotes: >-
+    Image pin v3.11.1 (MIT). The templates are not upstream's - the only request bytes a lab check
+    sends are the reviewed templates under deploy/lab/verify/templates, hash-pinned in the check
+    registry and mounted read-only as the pack. `-duc` disables the template update download, `-ni`
+    disables interactsh/OAST and `-dr` disables redirects, so the job never leaves the signed target
+    set and never calls a collaborator.
+spec:
+  capability: verify.check
+  providerVersion: v3.11.1
+  runtime:
+    type: container
+    image: registry.internal/aegis/nuclei
+    imageDigest: sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb
+    argsTemplate:
+    - -duc
+    - -ni
+    - -dr
+    - -j
+    - -o
+    - /out/result.jsonl
+    - -l
+    - /in/targets.txt
+    - -t
+    - /opt/verify/templates
+    - -id
+    - ${input.check_id}
+    - -c
+    - '1'
+    - -bs
+    - '1'
+    - -rl
+    - '2'
+    - -retries
+    - '0'
+    targetsFormat: host_port
+    outputPath: /out
+  inputSchemaRef: schema://verify/check/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - service
+  permissions:
+    scopeRequired: false
+    # The check has no adversary but still gets no route: lab jobs join the internal lab network; an
+    # internet job would need the broker, and the internet deployment profile has no entry for this
+    # image at all (a lab-only check is refused before any container). The provider declares the
+    # broker truthfully, so nothing about the lab's direct attachment is hidden in the manifest.
+    networkAccess: egress
+    egressMode: broker
+    proxyAware: true
+    egressSources: []
+    targetBinding: required
+    targetPorts: from_input
+    rawSocket: false
+  budget:
+    timeoutSeconds: 120
+    maxConcurrency: 4
+    cpu: 1.0
+    memoryMb: 512
+    maxOutputMb: 16
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m21.nuclei_verify.parser:parse
+    outputFormat: jsonl
+  emits:
+    assetKinds: []
+    predicates: []
+    relationships: []
+    findings: false
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation

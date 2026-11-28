@@ -366,6 +366,10 @@ def test_every_mounted_operation_requires_the_operator_token(
         "getFindingHistory",
         "transitionFinding",
         "assessFinding",
+        # G2-B: the verification checks list, the request and the run read model.
+        "listVerificationChecks",
+        "requestVerification",
+        "listVerifications",
         # G2 slice C: the JSON report snapshot and the delta between two instants.
         "getSnapshotReport",
         "getDeltaReport",

@@ -149,10 +149,18 @@ document["network"] = network
 for job in document.get("jobs", []):
     for mount in job.get("mounts", []):
         mount["source"] = str((source.parent / mount["source"]).resolve())
+    # The verification pack is hashed by M06 exactly as the profile names it; the copy lives in
+    # .local/, so a relative pack path must be resolved against the original profile too.
+    if isinstance(job.get("verify"), dict) and "pack" in job["verify"]:
+        job["verify"]["pack"] = str((source.parent / job["verify"]["pack"]).resolve())
 target.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
 PY_PROFILE
     export AEGIS_M06_LAB_PROFILE="$LAB_PROFILE_LOCAL"
   fi
+  # The approved verification checks are deployment policy (G2-B, D29): this lab deployment
+  # approves the one reviewed L1 check; the internet list stays empty. A deployment that does not
+  # name the file approves nothing, so no check runs by default.
+  export AEGIS_VERIFY_APPROVALS="${AEGIS_VERIFY_APPROVALS:-$REPO_ROOT/deploy/lab/verify-approvals.json}"
 fi
 # The internet profile (G1.6) is what an operator campaign needs: its `network` is the broker's
 # uplink, and the broker image is the stdlib-only broker container. Both are deploy config; a job

@@ -421,6 +421,13 @@ class PostgresJobService:
             self._check_target_kinds(record, targets)
             check_declared_destinations(record, merged_input)
             profile = network_profile(campaign.policy)
+            if record.capability == "verify.check":
+                # G2-B layer 1 (D29): the signed input is rebuilt from the finding, the approved
+                # check pack and the deployment's control map; a submission that differs in any
+                # field is refused here, before a decision or a task exists.
+                from aegis.m05_registry.verification import check_request
+
+                merged_input = check_request(conn, campaign=campaign, submitted=merged_input)
             platform_cidrs: tuple[str, ...] = ()
             if profile == "internet":
                 authorization_value = campaign.policy.get("authorization")

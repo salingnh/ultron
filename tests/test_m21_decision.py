@@ -28,7 +28,7 @@ from typing import Any
 import pytest
 
 from aegis.common import verification
-from aegis.m21_verify import controls as control_map
+from aegis.common import verification_controls as control_map
 from aegis.m21_verify import oracle
 from aegis.m21_verify.result import load_result
 
