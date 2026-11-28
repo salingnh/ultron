@@ -17,7 +17,7 @@ committed fixture slice (no network).
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -66,7 +66,14 @@ def database() -> Iterator[tuple[str, list[str]]]:
 def _ingest_with_coverage(dsn: str, job_id: str, coverage: dict[str, Any]) -> Any:
     """One envelope whose coverage is the interesting part (the assets are the g16c fixtures)."""
     with connect(dsn) as connection:
-        seed_evidence(connection, job_id, sha256=m23_support.EVIDENCE_SHA, size_bytes=1)
+        # The fixture's helper is typed for the tuple row factory M27 uses; the row factory is
+        # irrelevant to this INSERT (tests/m23_support.ingest casts the same way).
+        seed_evidence(
+            cast(psycopg.Connection[tuple[object, ...]], connection),
+            job_id,
+            sha256=m23_support.EVIDENCE_SHA,
+            size_bytes=1,
+        )
     envelope = build_envelope(
         job_id,
         assets=fixtures.service_assets(),

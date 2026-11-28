@@ -372,7 +372,6 @@ class CampaignWorkflow:
             args=[inp.campaign_id, proposed],
             start_to_close_timeout=FINALIZE_TIMEOUT,
             retry_policy=RETRY,
-            result_type=FinalCampaign,
         )
         self._stop_reason = final.reason
         await self._finish(inp.campaign_id, "complete", final.reason)

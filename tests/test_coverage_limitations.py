@@ -13,7 +13,7 @@ two halves that close that gap:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from aegis.m06_runner.job import _egress_limitations
 
@@ -173,15 +173,14 @@ def test_a_paced_job_envelope_reports_incomplete_coverage(tmp_path: Any) -> None
         )(),
     )
     runner = AuditedRunner()
-    job_runner = JobRunner(runner, FakeEvidenceStore(), key_ring=m06_support.ANY_RING)
+    job_runner = JobRunner(cast(Any, runner), FakeEvidenceStore(), key_ring=m06_support.ANY_RING)
     job_runner._build_and_submit(plan, layout, outcome, "2026-11-28T00:00:00Z")
 
     assert outcome.envelope is not None
     coverage = outcome.envelope.coverage
     assert coverage.complete is False
-    codes = [limitation.code for limitation in coverage.limitations or []]
-    assert codes == ["EGRESS_PACED"]
-    message = (coverage.limitations or [None])[0]
-    assert "unprobed, not closed" in (message.message if message is not None else "")
+    limitations = coverage.limitations or []
+    assert [limitation.code for limitation in limitations] == ["EGRESS_PACED"]
+    assert "unprobed, not closed" in (limitations[0].message or "")
     # The envelope snapshot on disk is what a later reader (or an evidence audit) sees.
     assert '"complete":false' in (layout.root / "envelope.json").read_text().replace(" ", "")
