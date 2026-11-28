@@ -19,9 +19,11 @@ payload as well. `validate_model()` does the dump-and-check in one step.
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import sys
+from collections.abc import Mapping
 from functools import cache
 from pathlib import Path
 from types import ModuleType
@@ -185,16 +187,40 @@ def _validator(reference: str) -> Draft202012Validator:
     return Draft202012Validator(schema, registry=_registry(), format_checker=format_checker())
 
 
-def _absolute_refs(node: Any) -> Any:
-    """Rewrite an OpenAPI document's `../x.schema.json` refs to the contract `$id` URLs."""
+def _absolute_refs(node: Any, components: Mapping[str, Any] | None = None) -> Any:
+    """Rewrite an inline OpenAPI response schema into a standalone one.
+
+    Sibling contract files (`../x.schema.json`) become their `$id` URLs. A `#/components/...`
+    pointer is not valid once the schema is taken out of the document, so it is replaced by the
+    component it names - resolved from the same document, recursively, server-provided and finite.
+    """
     if isinstance(node, dict):
-        rewritten = {key: _absolute_refs(value) for key, value in node.items()}
-        reference = rewritten.get("$ref")
+        reference = node.get("$ref")
         if isinstance(reference, str) and reference.startswith("../"):
-            rewritten["$ref"] = CONTRACTS_BASE_URI + reference.removeprefix("../")
-        return rewritten
+            return {
+                **{key: _absolute_refs(value, components) for key, value in node.items()},
+                "$ref": CONTRACTS_BASE_URI + reference.removeprefix("../"),
+            }
+        if (
+            isinstance(reference, str)
+            and reference.startswith("#/components/")
+            and components is not None
+        ):
+            target: Any = components
+            for part in reference.removeprefix("#/components/").split("/"):
+                if not isinstance(target, Mapping) or part not in target:
+                    raise ContractUnavailable(f"{reference}: component does not exist")
+                target = target[part]
+            replacement = _absolute_refs(copy.deepcopy(target), components)
+            extra = {key: value for key, value in node.items() if key != "$ref"}
+            if not extra:
+                return replacement
+            merged = dict(replacement)
+            merged.update({key: _absolute_refs(value, components) for key, value in extra.items()})
+            return merged
+        return {key: _absolute_refs(value, components) for key, value in node.items()}
     if isinstance(node, list):
-        return [_absolute_refs(item) for item in node]
+        return [_absolute_refs(item, components) for item in node]
     return node
 
 
@@ -219,8 +245,9 @@ def openapi_response_validator(
         raise ContractUnavailable(
             f"{path} {method.upper()} {status_code} has no inline JSON response schema ({error})"
         ) from error
+    components = document_.get("components") or {}
     return Draft202012Validator(
-        _absolute_refs(schema),
+        _absolute_refs(schema, components),
         registry=_registry(),
         format_checker=format_checker(),
     )

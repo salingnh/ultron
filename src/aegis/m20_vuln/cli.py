@@ -9,6 +9,12 @@
 * the same `run` then raises/refreshes the **findings** of those candidates
   (`aegis.m20_vuln.findings`) and assesses their severity (C07) when a live model is configured;
   `--no-findings` keeps the run at the candidate level (the G1.6 behaviour).
+* `reassess` - consume the `intel.revision.v2` events published since the consumer's checkpoint
+  and re-assess the findings whose CVEs they name (`aegis.m20_vuln.intel_reassess`). It is the
+  feed-driven half of C07: a KEV/EPSS/withdrawal/distro change updates the history without a scan
+  job, exactly once per finding and input revision; a replay of the same events adds no row and
+  calls no model. A second live instance is refused by the dispatcher lease instead of duplicating
+  the work.
 * `status` - candidate counts per asset (the operator's view of what matching produced: the
   newest decision of every pair, so a retraction removes the pair from the count).
 
@@ -23,7 +29,7 @@ import os
 import sys
 from typing import Any
 
-from aegis.m20_vuln import severity, visibility
+from aegis.m20_vuln import intel_reassess, severity, visibility
 from aegis.m20_vuln.findings import FindingsEngine
 from aegis.m20_vuln.matching import Matcher, changed_vulnerabilities, connect_from_env
 
@@ -67,6 +73,25 @@ def _run(argv: argparse.Namespace) -> int:
             "withdrawals": findings.withdrawals,
         }
     print(json.dumps(document, indent=2))
+    return 0
+
+
+def _reassess(argv: argparse.Namespace) -> int:
+    connection = connect_from_env()
+    try:
+        client = severity.model_from_env(os.environ["AEGIS_PG_DSN"])
+        model, provider, model_name = (None, None, None) if client is None else client
+        report = intel_reassess.run_once(
+            connection,
+            model=model,
+            provider=provider,
+            model_name=model_name,
+            consumer=argv.consumer,
+            batch=argv.batch,
+        )
+    finally:
+        connection.close()
+    print(json.dumps(report.as_dict(), indent=2, default=str))
     return 0
 
 
@@ -123,10 +148,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="stop at candidates: do not raise/refresh finding rows (G1.6 behaviour)",
     )
+    reassess = sub.add_parser(
+        "reassess", help="re-assess the findings an intel.revision.v2 event names"
+    )
+    reassess.add_argument(
+        "--consumer",
+        default=intel_reassess.CONSUMER,
+        help="outbox consumer generation (default: m20-severity#g1)",
+    )
+    reassess.add_argument(
+        "--batch", type=int, default=intel_reassess.DEFAULT_BATCH, help="events per pass"
+    )
     sub.add_parser("status", help="candidate counts per asset")
     parsed = parser.parse_args(argv)
     if parsed.command == "status":
         return _status()
+    if parsed.command == "reassess":
+        return _reassess(parsed)
     return _run(parsed)
 
 

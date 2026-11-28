@@ -1292,12 +1292,115 @@ paths:
                         - 'null'
         '401':
           $ref: '#/components/responses/Error'
+  /reports/snapshot:
+    get:
+      tags:
+      - reports
+      operationId: getSnapshotReport
+      summary: Báo cáo JSON của finding tại một thời điểm
+      description: 'Ảnh chụp đọc từ dữ liệu đã lưu: mỗi finding lấy trạng thái theo `finding_transition`
+        và mức nghiêm trọng theo `severity_assessment` có `created_at` không muộn hơn `as_of`,
+        kèm evidence và sha256 của lần quan sát không muộn hơn `as_of`. `first_seen` là lúc M20
+        tạo hàng; `last_seen` trong ảnh là lần quan sát gần nhất không muộn hơn `as_of` (rơi về
+        `first_seen` khi chưa có). `assets` là các tài sản có ít nhất một finding mở tại `as_of`
+        (không FIXED/FALSE_POSITIVE/ACCEPTED_RISK): đó là tồn kho phơi nhiễm mà báo cáo delta so
+        sánh. Cột của `asset` là bộ đệm hiện hành; lịch sử nằm ở finding/transition.
+
+        `counts` tổng hợp theo trạng thái và mức nghiêm trọng của chính ảnh chụp. Không phân
+        trang: đây là bản xuất, không phải màn hình danh sách. Cần operator token.
+
+        '
+      security:
+      - operatorToken: []
+      parameters:
+      - name: as_of
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Thời điểm của ảnh chụp (mặc định hiện tại).
+      - name: campaign_id
+        in: query
+        schema:
+          $ref: ../common/ids.v2.schema.json#/$defs/Id
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - generated_at
+                - as_of
+                - counts
+                - findings
+                - assets
+                properties:
+                  generated_at:
+                    type: string
+                    format: date-time
+                  as_of:
+                    type: string
+                    format: date-time
+                  campaign_id:
+                    $ref: ../common/ids.v2.schema.json#/$defs/Id
+                  counts:
+                    type: object
+                    required:
+                    - findings
+                    - assets
+                    - by_status
+                    - by_severity
+                    properties:
+                      findings:
+                        type: integer
+                        minimum: 0
+                      assets:
+                        type: integer
+                        minimum: 0
+                      by_status:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          minimum: 0
+                      by_severity:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          minimum: 0
+                  findings:
+                    type: array
+                    items:
+                      $ref: ../finding/finding.v2.schema.json
+                  assets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Asset'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
   /reports/delta:
     get:
       tags:
       - reports
       operationId: getDeltaReport
       summary: Báo cáo thay đổi giữa hai thời điểm
+      description: 'So sánh hai ảnh chụp của `/reports/snapshot` (cùng `campaign_id`), nên mọi
+        danh sách là một phép so sánh tập hợp từ dữ liệu đã lưu, không phải một truy vấn khác
+        nhau cho từng mục. Mỗi finding nằm trong đúng một danh sách: `findings_fixed` khi trạng
+        thái tại `to` là FIXED và tại `from` chưa FIXED; `findings_regressed` khi REGRESSED và
+        trước đó chưa REGRESSED; nếu không, `findings_new` khi chưa có tại `from` và
+        `findings_changed` khi có ở cả hai mà trạng thái (ngoài hai ca trên) hoặc mức nghiêm
+        trọng khác. Thứ tự ưu tiên fixed/regressed trước new: một finding vừa xuất hiện vừa được
+        đóng trong cùng cửa sổ nằm ở `findings_fixed` và không lặp lại. `assets_new`/`assets_gone`
+        là thay đổi của tồn kho tài sản đang phơi nhiễm (asset có finding mở), nên cũng không
+        trùng nhau. `from` phải trước `to`. Cần operator token.
+
+        '
+      security:
+      - operatorToken: []
       parameters:
       - name: from
         in: query
@@ -1362,6 +1465,10 @@ paths:
                     type: array
                     items:
                       $ref: ../finding/finding.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
 components:
   securitySchemes:
     operatorToken:

@@ -569,8 +569,10 @@ def test_raising_assesses_every_finding_even_without_a_model(
         assert record["severity"] == "UNRATED"
         assert record["failure"]["code"] == "DEPENDENCY_MISSING"
         assert validation.problems("finding/severity-assessment.v2.schema.json", record) == []
-    assert second.assessments == 3 and second.assessments_created == 0
-    assert second.unrated == 3
+    # The queue holds only findings whose input revision has no record: a re-run of the same
+    # observation is no new evidence, so it assesses nothing and calls no model.
+    assert second.assessments == 0 and second.assessments_created == 0
+    assert second.unrated == 0
     assert after is not None and int(after["n"]) == 3
 
 

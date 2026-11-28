@@ -494,6 +494,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Báo cáo JSON của finding tại một thời điểm
+         * @description Ảnh chụp đọc từ dữ liệu đã lưu: mỗi finding lấy trạng thái theo `finding_transition` và mức nghiêm trọng theo `severity_assessment` có `created_at` không muộn hơn `as_of`, kèm evidence và sha256 của lần quan sát không muộn hơn `as_of`. `first_seen` là lúc M20 tạo hàng; `last_seen` trong ảnh là lần quan sát gần nhất không muộn hơn `as_of` (rơi về `first_seen` khi chưa có). `assets` là các tài sản có ít nhất một finding mở tại `as_of` (không FIXED/FALSE_POSITIVE/ACCEPTED_RISK): đó là tồn kho phơi nhiễm mà báo cáo delta so sánh. Cột của `asset` là bộ đệm hiện hành; lịch sử nằm ở finding/transition.
+         *     `counts` tổng hợp theo trạng thái và mức nghiêm trọng của chính ảnh chụp. Không phân trang: đây là bản xuất, không phải màn hình danh sách. Cần operator token.
+         */
+        get: operations["getSnapshotReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/reports/delta": {
         parameters: {
             query?: never;
@@ -501,7 +522,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Báo cáo thay đổi giữa hai thời điểm */
+        /**
+         * Báo cáo thay đổi giữa hai thời điểm
+         * @description So sánh hai ảnh chụp của `/reports/snapshot` (cùng `campaign_id`), nên mọi danh sách là một phép so sánh tập hợp từ dữ liệu đã lưu, không phải một truy vấn khác nhau cho từng mục. Mỗi finding nằm trong đúng một danh sách: `findings_fixed` khi trạng thái tại `to` là FIXED và tại `from` chưa FIXED; `findings_regressed` khi REGRESSED và trước đó chưa REGRESSED; nếu không, `findings_new` khi chưa có tại `from` và `findings_changed` khi có ở cả hai mà trạng thái (ngoài hai ca trên) hoặc mức nghiêm trọng khác. Thứ tự ưu tiên fixed/regressed trước new: một finding vừa xuất hiện vừa được đóng trong cùng cửa sổ nằm ở `findings_fixed` và không lặp lại. `assets_new`/`assets_gone` là thay đổi của tồn kho tài sản đang phơi nhiễm (asset có finding mở), nên cũng không trùng nhau. `from` phải trước `to`. Cần operator token.
+         */
         get: operations["getDeltaReport"];
         put?: never;
         post?: never;
@@ -1829,9 +1853,9 @@ export interface components {
             } & (unknown & unknown);
             /** @description Nguồn kích hoạt lần đánh giá: scan=finding mới hoặc evidence mới trong lần chạy; intel_revision=feed tri thức đổi (C07/M18); verification=kết quả M21; operator_request=người vận hành yêu cầu đánh giá lại. */
             trigger: components["schemas"]["Trigger"];
-            /** @description Revision của ảnh chụp đầu vào (finding/evidence/intel/graph) do M20 chọn khi kích hoạt; cùng finding và cùng revision là cùng một lần đánh giá. */
+            /** @description Ảnh chụp đầu vào của lần đánh giá do M20 chọn khi kích hoạt, dạng băm nội dung chứ không phải bộ đếm toàn cục: băm hàng finding (status/transition_seq/first_seen/last_seen), các finding_run (evidence) của finding, revision intel mới nhất của từng nguồn cho CVE của finding, quyết định khớp hiện hành và exposure/criticality của asset. Vì thế một revision feed làm đổi số này dù graph_revision không đổi, còn thay đổi intel của CVE khác thì không. Cùng finding và cùng số = cùng đầu vào = một lần đánh giá. */
             input_revision: number;
-            /** @description Khóa chống trùng: 'severity:<finding_id>:<input_revision>'. Lần đánh giá lại phải có input_revision mới; retry cùng đầu vào trả bản ghi đã có, không gọi model lần nữa. */
+            /** @description Khóa chống trùng: 'severity:<finding_id>:<input_revision>'. Cơ sở dữ liệu sinh cột cùng tên (0012) với unique (finding_id, input_revision), nên lần đánh giá lại phải có input_revision mới; retry cùng đầu vào trả bản ghi đã có, không gọi model lần nữa. */
             dedup_key: string;
             /** @description Tín hiệu thô đã lưu dùng cho lần đánh giá thất bại; là con trỏ đối chiếu, không phải nguồn trích dẫn cho một kết luận. Chỉ có khi failure. */
             raw_signals?: components["schemas"]["RawSignal"][];
@@ -2803,6 +2827,50 @@ export interface operations {
             401: components["responses"]["Error"];
         };
     };
+    getSnapshotReport: {
+        parameters: {
+            query?: {
+                /** @description Thời điểm của ảnh chụp (mặc định hiện tại). */
+                as_of?: string;
+                campaign_id?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        generated_at: string;
+                        /** Format: date-time */
+                        as_of: string;
+                        campaign_id?: components["schemas"]["Id"];
+                        counts: {
+                            findings: number;
+                            assets: number;
+                            by_status: {
+                                [key: string]: number;
+                            };
+                            by_severity: {
+                                [key: string]: number;
+                            };
+                        };
+                        findings: components["schemas"]["finding.v2.schema"][];
+                        assets: components["schemas"]["Asset"][];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+        };
+    };
     getDeltaReport: {
         parameters: {
             query: {
@@ -2836,6 +2904,8 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
         };
     };
 }

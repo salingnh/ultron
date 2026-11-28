@@ -218,13 +218,13 @@ class SeverityAssessment(BaseModel):
     )
     input_revision: conint(ge=0) = Field(
         ...,
-        description="Revision của ảnh chụp đầu vào (finding/evidence/intel/graph) do M20 chọn khi kích hoạt; cùng finding và cùng revision là cùng một lần đánh giá.",
+        description="Ảnh chụp đầu vào của lần đánh giá do M20 chọn khi kích hoạt, dạng băm nội dung chứ không phải bộ đếm toàn cục: băm hàng finding (status/transition_seq/first_seen/last_seen), các finding_run (evidence) của finding, revision intel mới nhất của từng nguồn cho CVE của finding, quyết định khớp hiện hành và exposure/criticality của asset. Vì thế một revision feed làm đổi số này dù graph_revision không đổi, còn thay đổi intel của CVE khác thì không. Cùng finding và cùng số = cùng đầu vào = một lần đánh giá.",
     )
     dedup_key: constr(
         pattern=r"^severity:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[0-9]+$"
     ) = Field(
         ...,
-        description="Khóa chống trùng: 'severity:<finding_id>:<input_revision>'. Lần đánh giá lại phải có input_revision mới; retry cùng đầu vào trả bản ghi đã có, không gọi model lần nữa.",
+        description="Khóa chống trùng: 'severity:<finding_id>:<input_revision>'. Cơ sở dữ liệu sinh cột cùng tên (0012) với unique (finding_id, input_revision), nên lần đánh giá lại phải có input_revision mới; retry cùng đầu vào trả bản ghi đã có, không gọi model lần nữa.",
     )
     raw_signals: list[RawSignal] | None = Field(
         None,
