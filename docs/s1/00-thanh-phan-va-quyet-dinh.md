@@ -8,6 +8,14 @@ CPU/RAM/timeout, cách ly mạng, schema validation, ngân sách và provenance 
 
 Phạm vi nghiệp vụ vẫn gồm pentest chủ động, xác minh động và kiểm thử credential. Các năng lực được biểu diễn bằng tool/input, priority và dependency. Việc hợp nhất giữ các quyết định còn hiệu lực về bằng chứng, cảnh báo và chất lượng finding tại nguồn phụ trách; thay đổi mô hình điều phối không tự hủy các yêu cầu đó.
 
+## Chỉ đạo chủ sản phẩm ngày 2026-11-28 (phạm vi G2)
+
+- Xác minh động làm đủ chức năng; kiểm dạng khai thác chỉ chạy trong lab cô lập, trên internet chỉ đọc version/cấu hình của domain thuộc chủ sản phẩm. Cách biểu diễn ràng buộc này cùng D29 sẽ chốt sau bản thiết kế xác minh G2.
+- Email/keyword tới finding chuyển sang G3; Telegram tạm bỏ khỏi G2 và chuyển sang G3.
+- Severity: đánh giá mọi finding trong ngân sách LLM của campaign; hết ngân sách thì UNRATED có lý do.
+- Secret giữ cleartext theo luật dữ liệu hiện hành.
+- Contract v2 được sửa tại chỗ tới khi ký cổng G2; dữ liệu dev không tương thích được reset.
+
 ## Lựa chọn triển khai giữ lại
 
 Python 3.14; Temporal + LangGraph; Podman rootless; UUIDv7; PostgreSQL metadata; Neo4j projection; SeaweedFS/S3; collector tải raw và parser cô lập; evidence SHA-256; lịch sử append-only và trạng thái có history; React/TypeScript cho UI. Các lựa chọn này đã có trong thiết kế, chưa có bằng chứng triển khai dịch vụ.

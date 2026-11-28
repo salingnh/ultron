@@ -16,7 +16,7 @@ Mã module chỉ truy vết trách nhiệm kỹ thuật trong các thành phần
 | M20 | Correlation, dedup finding và severity có lý do | finding.changed.v2, assessment history |
 | M21 | Đối chiếu bằng chứng bằng tool đã đăng ký | Finding transition với evidence |
 | M23 | Graph projection và các truy vấn đăng ký | knowledge.delta.v2, graph query |
-| M24 | Báo cáo và theo dõi finding; JSON ở G2, SARIF/HTML ở G4; Telegram | Report/alert/triage history |
+| M24 | Báo cáo và theo dõi finding; JSON ở G2, Telegram ở G3, SARIF/HTML ở G4 | Report/alert/triage history |
 | M25 | Audit, metrics, trace | Bằng chứng hoạt động của hệ thống |
 | M26 | UI/API/SSE | Campaign/job/graph/evidence view |
 | M27 | Kiểm schema/provenance/checksum, dedup, chuẩn hóa | Metadata/outbox |
@@ -40,7 +40,7 @@ M24 nhận thay đổi finding/severity, khử trùng delivery khi retry và g�
 
 Giữ cảnh báo asset mới trong G2 bên cạnh finding/intel thay đổi. G4 giao SARIF/HTML hợp chuẩn, báo cáo delta giữa hai thời điểm và bản tổng hợp từ graph, gán chủ xử lý, gợi ý khắc phục và yêu cầu rescan. Bản xuất giữ nguồn/evidence và giá trị theo chính sách dữ liệu. API/format hiện hành còn JSON; G4 phải khóa contract xuất/triage và kiểm chuẩn trước khi mở định dạng mới.
 
-Ca nghiệm thu: giả lập CVE vừa vào KEV hoặc EPSS đổi → tìm package/asset liên quan → đánh giá lại → Telegram có dẫn chứng; không chạy lại scanner chỉ để có thông báo. Mục tiêu độ trễ tại bảng NFR của đặc tả tổng quan, chưa có số đo vận hành.
+Ca nghiệm thu: giả lập CVE vừa vào KEV hoặc EPSS đổi → tìm package/asset liên quan → đánh giá lại → báo cáo delta có dẫn chứng (G2), Telegram có dẫn chứng (G3); không chạy lại scanner chỉ để có thông báo. Mục tiêu độ trễ tại bảng NFR của đặc tả tổng quan, chưa có số đo vận hành.
 
 ## M21 — kiểm chứng động
 
