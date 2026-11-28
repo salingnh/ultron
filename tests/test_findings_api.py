@@ -698,3 +698,46 @@ def test_served_openapi_matches_the_contract_for_the_findings_operations() -> No
         }
         served_names = {parameter["name"] for parameter in served_operation.get("parameters", [])}
         assert contract_names <= served_names, operation_id
+
+
+def test_the_published_shape_carries_what_the_findings_screen_reads() -> None:
+    """The exact fields the UI reads for severity are contract, not an implementation detail.
+
+    The list carries `severity`; the detail carries the whole `severity_assessment` record
+    (reasons, citations, uncertainty, inputs, failure for the UNRATED reason); the history carries
+    every assessment. Pinned here so a later shape edit cannot silently drop one of them.
+    """
+    finding = json.loads(
+        (repository_root() / "contracts/finding/finding.v2.schema.json").read_text(encoding="utf-8")
+    )
+    assert {"severity", "severity_assessment"} <= set(finding["properties"])
+    assessment = json.loads(
+        (repository_root() / "contracts/finding/severity-assessment.v2.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    required = {
+        "severity",
+        "reasons",
+        "uncertainty",
+        "recommended_actions",
+        "assessed_by",
+        "inputs",
+        "trigger",
+        "input_revision",
+        "dedup_key",
+    }
+    assert required <= set(assessment["required"])
+    assert {"source_refs", "raw_signals", "failure"} <= set(assessment["properties"])
+    assert {"cvss", "kev", "epss"} <= set(assessment["properties"]["inputs"]["properties"])
+    failure = assessment["$defs"]["Failure"]
+    assert {"code", "message"} <= set(failure["required"])
+    contract = yaml.safe_load(
+        (repository_root() / "contracts/api/openapi.v2.yaml").read_text(encoding="utf-8")
+    )
+    history = contract["paths"]["/findings/{finding_id}/history"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    assert history["properties"]["assessments"]["items"]["$ref"].endswith(
+        "severity-assessment.v2.schema.json"
+    )

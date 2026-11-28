@@ -17,9 +17,16 @@ operator endpoint of M26) uses:
   agent session uses). An exhausted budget, a missing model, a provider error, a refusal, a
   truncated answer or invalid output all store a UNRATED record whose `failure` says why; the
   finding keeps its previous severity, which is not reused as a new result;
-* `dedup_key = severity:<finding_id>:<input_revision>` where `input_revision` is the campaign's
-  newest knowledge revision; the same finding at the same revision returns the stored record and
-  calls no model, so a retry never buys a second answer.
+* `dedup_key = severity:<finding_id>:<input_revision>` where `input_revision` is **content
+  addressed**: a digest of the finding row, its evidence runs, the newest intel revision of each
+  source for its CVEs and its current match decision. An intel revision therefore changes it even
+  when `graph_revision` does not, an intel change that does not name the finding's CVEs leaves it
+  alone, and the same inputs always map to the same key. `severity_assessment` mirrors both members
+  in generated columns with a unique `(finding_id, input_revision)` (0012), so a retry - or two
+  callers racing - returns the stored record and never buys a second answer;
+* `pending_findings`/`assess_pending` are the queue the finding engine and the intel consumer use:
+  every open finding whose current revision has no record is assessed once, ordered by KEV and EPSS
+  only to decide who spends the campaign's LLM budget first. The order never influences the result.
 
 The call is recorded in an `agent_session` row (one step, one model call) because the contract
 requires `assessed_by.session_id` to exist and the caller must not invent a session. That row is
@@ -29,9 +36,11 @@ the provenance of the call - status SUCCEEDED/FAILED, stop_reason on failure - n
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -46,13 +55,19 @@ from aegis.m04_model.usage import PostgresUsageSink
 from aegis.m27_ingestion.ids import uuid7
 
 __all__ = [
+    "ASSESSABLE_STATUSES",
     "Assessment",
     "PROMPT_VERSION",
+    "PendingFinding",
+    "QueueReport",
     "RESPONSE_SCHEMA",
     "SEVERITY_SCHEMA",
     "SeverityAssessor",
     "assess_findings",
+    "assess_pending",
+    "input_revision",
     "model_from_env",
+    "pending_findings",
 ]
 
 SEVERITY_SCHEMA = "finding/severity-assessment.v2.schema.json"
@@ -70,6 +85,9 @@ DEFAULT_TIMEOUT_SECONDS = 120.0
 PROMPT_EVIDENCE_LIMIT = 10
 FAILURE_ATTEMPT = 1
 _KNOWN_INTEL_SOURCES = ("nvd", "kev", "epss")
+#: Statuses whose severity is still being assessed: a finding that describes an open issue. A
+#: closed finding (FIXED/FALSE_POSITIVE/ACCEPTED_RISK) keeps its last record instead.
+ASSESSABLE_STATUSES = ("CANDIDATE", "CORROBORATED", "VERIFIED", "REGRESSED")
 
 
 class SeverityError(RuntimeError):
@@ -111,6 +129,8 @@ class _Context:
     signals: list[dict[str, Any]]
     budget: Budget
     policy_version: str
+    #: The current match decision: whether the pair is still a candidate and why it was retracted.
+    match: dict[str, Any] | None = None
 
 
 def model_from_env(dsn: str) -> tuple[ModelClient, str, str] | None:
@@ -286,22 +306,133 @@ def _campaign_of(conn: psycopg.Connection[Any], finding: Mapping[str, Any]) -> s
     return campaign_id
 
 
-def _input_revision(conn: psycopg.Connection[Any], campaign_id: str) -> int:
-    row = conn.execute(
-        "SELECT coalesce(max(revision), 0) AS revision FROM graph_revision WHERE campaign_id = %s",
-        (campaign_id,),
+def _stamp(value: object) -> str | None:
+    """A stored instant as the canonical string the digest is computed over."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    render = getattr(value, "isoformat", None)
+    return None if not callable(render) else str(render()).replace("+00:00", "Z")
+
+
+def _revision_document(conn: psycopg.Connection[Any], finding: Mapping[str, Any]) -> dict[str, Any]:
+    """The exact input a stored assessment is a judgement of.
+
+    Only what the prompt reads and what can change a verdict: the finding row, its evidence runs,
+    the newest intel revision of every source for its CVEs and its current match decision. A global
+    campaign counter would re-assess every finding on every unrelated scan or feed refresh; this
+    document changes only when this finding's own inputs change.
+    """
+    finding_id = str(finding["finding_id"])
+    vulnerability_ids = sorted(str(value) for value in finding["vulnerability_ids"] or ())
+    asset_id = str(finding["asset_id"])
+    runs = conn.execute(
+        "SELECT scan_id, seen, status, evidence_id, observed_at FROM finding_run"
+        " WHERE finding_id = %s ORDER BY observed_at, scan_id",
+        (finding_id,),
+    ).fetchall()
+    intel = conn.execute(
+        "SELECT source, vulnerability_id, withdrawn,"
+        "       CASE source"
+        "         WHEN 'kev' THEN jsonb_build_object('date_added', kev -> 'date_added')"
+        "         WHEN 'epss' THEN jsonb_build_object("
+        "             'score', epss -> 'score', 'percentile', epss -> 'percentile',"
+        "             'date', epss -> 'date')"
+        "         WHEN 'nvd' THEN jsonb_build_object('cvss', cvss)"
+        "         ELSE NULL"
+        "       END AS signature"
+        "  FROM vulnerability_current"
+        " WHERE vulnerability_id = ANY(%s) ORDER BY source, vulnerability_id",
+        (vulnerability_ids,),
+    ).fetchall()
+    match = conn.execute(
+        "SELECT match_id, matched, match_method, retraction_reason FROM package_vuln_match"
+        " WHERE package_asset_id = %s AND vulnerability_id = ANY(%s)"
+        " ORDER BY created_at DESC, match_id DESC LIMIT 1",
+        (asset_id, vulnerability_ids),
     ).fetchone()
-    return int(row["revision"]) if row is not None else 0
+    return {
+        "finding": {
+            "finding_id": finding_id,
+            "asset_id": asset_id,
+            "rule_id": str(finding["rule_id"]),
+            "status": str(finding["status"]),
+            "transition_seq": int(finding["transition_seq"]),
+            "vulnerability_ids": vulnerability_ids,
+            "first_seen": _stamp(finding["first_seen"]),
+            "last_seen": _stamp(finding["last_seen"]),
+        },
+        "asset": {
+            "exposure": str(finding["exposure"] or "unknown"),
+            "criticality": str(finding["criticality"] or "unknown"),
+        },
+        "runs": [
+            {
+                "scan_id": str(row["scan_id"]),
+                "seen": bool(row["seen"]),
+                "status": str(row["status"]),
+                "evidence_id": None if row["evidence_id"] is None else str(row["evidence_id"]),
+                "observed_at": _stamp(row["observed_at"]),
+            }
+            for row in runs
+        ],
+        "intel": [
+            {
+                "source": str(row["source"]),
+                "vulnerability_id": str(row["vulnerability_id"]),
+                "withdrawn": bool(row["withdrawn"]),
+                # The fields an assessment reads, not the revision id: a new KEV catalog version
+                # that leaves this CVE's entry alone is provenance, not a new input. A KEV add or
+                # removal, an EPSS score, an NVD CVSS or a withdrawal changes the signature.
+                # A distro/OSV record has no such field here: its material effect reaches the
+                # finding through the matcher's decision (below), which is what the prompt shows.
+                "signature": row["signature"],
+            }
+            for row in intel
+        ],
+        "match": None
+        if match is None
+        else {
+            "match_id": str(match["match_id"]),
+            "matched": bool(match["matched"]),
+            "match_method": None if match["match_method"] is None else str(match["match_method"]),
+            "retraction_reason": None
+            if match["retraction_reason"] is None
+            else str(match["retraction_reason"]),
+        },
+    }
+
+
+def _revision_from_document(document: Mapping[str, Any]) -> int:
+    payload = json.dumps(
+        document,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return int(hashlib.sha256(payload.encode("utf-8")).hexdigest()[:13], 16)
+
+
+def input_revision(conn: psycopg.Connection[Any], finding: Mapping[str, Any]) -> int:
+    """The content-addressed revision of one finding's assessment input (52-bit digest).
+
+    The value is an identifier, not an order: `dedup_key` needs an integer, and the digest is what
+    makes "same inputs, same key" true across processes and replays. A collision would deduplicate
+    two different inputs; 52 bits keeps that far below any realistic finding count, and the stored
+    record carries the full input snapshot for an operator to compare.
+    """
+    return _revision_from_document(_revision_document(conn, finding))
 
 
 def _existing(
-    conn: psycopg.Connection[Any], finding_id: str, dedup_key: str
+    conn: psycopg.Connection[Any], finding_id: str, revision: int
 ) -> dict[str, Any] | None:
+    """The stored record of this finding at this input revision (0012's unique pair)."""
     row = conn.execute(
         "SELECT assessment_id, severity, assessment FROM severity_assessment"
-        " WHERE finding_id = %s AND assessment ->> 'dedup_key' = %s"
-        " ORDER BY created_at DESC LIMIT 1",
-        (finding_id, dedup_key),
+        " WHERE finding_id = %s AND input_revision = %s",
+        (finding_id, revision),
     ).fetchone()
     return None if row is None else dict(row)
 
@@ -329,6 +460,7 @@ def _prompt_inputs(context: _Context) -> str:
         },
         "evidence": context.evidence[:PROMPT_EVIDENCE_LIMIT],
         "inputs": context.inputs,
+        "match": context.match,
         "input_revision": context.input_revision,
     }
     return (
@@ -424,7 +556,8 @@ class SeverityAssessor:
     ) -> _Context:
         finding = dict(finding) if finding is not None else self._finding(finding_id)
         campaign_id = _campaign_of(self._conn, finding)
-        revision = _input_revision(self._conn, campaign_id)
+        revision_document = _revision_document(self._conn, finding)
+        revision = _revision_from_document(revision_document)
         budget, policy_version = _campaign_budget(self._conn, campaign_id)
         evidence = _evidence_of(self._conn, finding_id)
         vulnerability_ids = [str(item) for item in finding["vulnerability_ids"]]
@@ -451,6 +584,7 @@ class SeverityAssessor:
             signals=signals,
             budget=budget,
             policy_version=policy_version,
+            match=revision_document["match"],
         )
 
     def _finding(self, finding_id: str, *, for_update: bool = False) -> dict[str, Any]:
@@ -476,7 +610,7 @@ class SeverityAssessor:
         """One assessment (or the stored record of the same input revision)."""
         finding = self._finding(finding_id, for_update=True)
         context = self.context(finding_id, trigger=trigger, finding=finding)
-        existing = _existing(self._conn, finding_id, context.dedup_key)
+        existing = _existing(self._conn, finding_id, context.input_revision)
         if existing is not None:
             return Assessment(
                 assessment_id=str(existing["assessment_id"]),
@@ -775,6 +909,194 @@ class SeverityAssessor:
         self, finding_ids: Iterable[str], *, trigger: str = "scan"
     ) -> list[Assessment]:
         return [await self.assess(finding_id, trigger=trigger) for finding_id in finding_ids]
+
+
+def _epoch(value: object) -> float:
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    stamp = getattr(value, "timestamp", None)
+    return 0.0 if not callable(stamp) else float(stamp())
+
+
+def _signals(
+    conn: psycopg.Connection[Any], vulnerability_ids: Sequence[str]
+) -> dict[str, tuple[bool, float | None]]:
+    """KEV listing and EPSS score per CVE, for *ordering* the queue only.
+
+    Nothing here enters the prompt inputs or the result: `_intel_inputs` reads the same rows for
+    the assessment itself. Ordering decides who spends a finite budget first, not what the model
+    says - a KEV finding is not "more severe" until the model says so.
+    """
+    if not vulnerability_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT vulnerability_id, source, kev, epss FROM vulnerability_current"
+        " WHERE vulnerability_id = ANY(%s) AND NOT withdrawn",
+        (list(vulnerability_ids),),
+    ).fetchall()
+    collected: dict[str, list[Any]] = {}
+    for row in rows:
+        entry = collected.setdefault(str(row["vulnerability_id"]), [False, None])
+        if str(row["source"]) == "kev" and row["kev"] is not None:
+            entry[0] = True
+        if str(row["source"]) == "epss":
+            payload = row["epss"] if isinstance(row["epss"], dict) else {}
+            score = payload.get("score")
+            if isinstance(score, (int, float)):
+                entry[1] = max(entry[1] or 0.0, float(score))
+    return {key: (bool(value[0]), value[1]) for key, value in collected.items()}
+
+
+@dataclass(frozen=True, slots=True)
+class PendingFinding:
+    """One finding the queue would assess: its current input revision and the ordering signals."""
+
+    finding_id: str
+    campaign_id: str
+    kev_listed: bool
+    epss_score: float | None
+    last_seen: Any
+    input_revision: int
+
+
+@dataclass
+class QueueReport:
+    """Counters of one queue pass; the CLI and the finding engine print them."""
+
+    candidates: int = 0
+    assessed: int = 0
+    created: int = 0
+    unrated: int = 0
+    model_calls: int = 0
+    findings: list[dict[str, Any]] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        document = dict(self.__dict__)
+        document.pop("findings")
+        return document
+
+
+def pending_findings(
+    connection: psycopg.Connection[Any],
+    *,
+    campaign_id: str | None = None,
+    only_vulnerabilities: Iterable[str] | None = None,
+) -> list[PendingFinding]:
+    """Open findings with no record at their current input revision, in budget-spending order.
+
+    "Every finding is assessed" is the owner decision; this is the only place that decides which
+    ones still need an answer. A finding is pending when its content-addressed revision (finding,
+    evidence runs, intel, match decision) has no `severity_assessment` row yet - so a new scan
+    result, a changed intel revision or a status change queues it, and a plain retry does not.
+    """
+    only = None if only_vulnerabilities is None else sorted(set(only_vulnerabilities))
+    rows = connection.execute(
+        "SELECT f.finding_id, f.asset_id, f.rule_id, f.status, f.transition_seq,"
+        "       f.vulnerability_ids, f.first_seen, f.last_seen, f.first_campaign_id,"
+        "       a.exposure, a.criticality"
+        "  FROM finding f JOIN asset a ON a.asset_id = f.asset_id"
+        " WHERE f.status = ANY(%s)"
+        "   AND (%s::uuid IS NULL OR EXISTS ("
+        "          SELECT 1 FROM asset_campaign ac"
+        "           WHERE ac.asset_id = f.asset_id AND ac.campaign_id = %s::uuid))"
+        "   AND (%s::text[] IS NULL OR f.vulnerability_ids && %s::text[])"
+        " ORDER BY f.finding_id",
+        (list(ASSESSABLE_STATUSES), campaign_id, campaign_id, only, only),
+    ).fetchall()
+    if not rows:
+        return []
+    findings = [dict(row) for row in rows]
+    every_cve = sorted({str(cve) for row in findings for cve in row["vulnerability_ids"] or ()})
+    signals = _signals(connection, every_cve)
+    revisions: dict[str, int] = {
+        str(row["finding_id"]): input_revision(connection, row) for row in findings
+    }
+    stored = connection.execute(
+        "SELECT finding_id, input_revision FROM severity_assessment"
+        " WHERE finding_id = ANY(%s::uuid[])",
+        ([str(row["finding_id"]) for row in findings],),
+    ).fetchall()
+    done = {(str(row["finding_id"]), int(row["input_revision"])) for row in stored}
+    pending: list[PendingFinding] = []
+    for row in findings:
+        finding_id = str(row["finding_id"])
+        revision = revisions[finding_id]
+        if (finding_id, revision) in done:
+            continue
+        kev_listed = False
+        epss_score: float | None = None
+        for cve in row["vulnerability_ids"] or ():
+            listed, score = signals.get(str(cve), (False, None))
+            kev_listed = kev_listed or listed
+            if score is not None:
+                epss_score = score if epss_score is None else max(epss_score, score)
+        pending.append(
+            PendingFinding(
+                finding_id=finding_id,
+                campaign_id=str(row["first_campaign_id"]),
+                kev_listed=kev_listed,
+                epss_score=epss_score,
+                last_seen=row["last_seen"],
+                input_revision=revision,
+            )
+        )
+    pending.sort(
+        key=lambda item: (
+            0 if item.kev_listed else 1,
+            -(item.epss_score or 0.0),
+            -_epoch(item.last_seen),
+            item.finding_id,
+        )
+    )
+    return pending
+
+
+def assess_pending(
+    connection: psycopg.Connection[Any],
+    *,
+    campaign_id: str | None = None,
+    only_vulnerabilities: Iterable[str] | None = None,
+    trigger: str = "scan",
+    model: ModelClient | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    prompt_version: str = PROMPT_VERSION,
+    trace_id: str | None = None,
+) -> QueueReport:
+    """Assess every pending finding once, in KEV/EPSS order, each in its own transaction."""
+    assessor = SeverityAssessor(
+        connection,
+        model=model,
+        provider=provider,
+        model_name=model_name,
+        prompt_version=prompt_version,
+        trace_id=trace_id,
+    )
+    pending = pending_findings(
+        connection, campaign_id=campaign_id, only_vulnerabilities=only_vulnerabilities
+    )
+    report = QueueReport(candidates=len(pending))
+    for item in pending:
+        with connection.transaction():
+            outcome = asyncio.run(assessor.assess(item.finding_id, trigger=trigger))
+        report.assessed += 1
+        if outcome.created:
+            report.created += 1
+        if outcome.severity == "UNRATED":
+            report.unrated += 1
+        if outcome.model_called:
+            report.model_calls += 1
+        report.findings.append(
+            {
+                "finding_id": item.finding_id,
+                "severity": outcome.severity,
+                "created": outcome.created,
+                "kev": item.kev_listed,
+                "epss": item.epss_score,
+                "input_revision": outcome.record.get("input_revision", item.input_revision),
+            }
+        )
+    return report
 
 
 def assess_findings(

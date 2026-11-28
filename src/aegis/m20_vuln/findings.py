@@ -91,8 +91,8 @@ RETRACTABLE = ("CANDIDATE", "CORROBORATED", "VERIFIED", "REGRESSED")
 REMEDIABLE = ("CANDIDATE", "CORROBORATED", "VERIFIED", "REGRESSED")
 #: Operator decisions that a re-run of the matcher does not override.
 OPERATOR_FINAL = ("FALSE_POSITIVE", "ACCEPTED_RISK")
-#: A finding is assessed while it describes an open issue.
-ASSESSABLE = ("CANDIDATE", "CORROBORATED", "REGRESSED")
+#: Statuses the severity queue assesses (the one definition lives in `aegis.m20_vuln.severity`).
+ASSESSABLE = severity.ASSESSABLE_STATUSES
 
 
 def finding_fingerprint(asset_id: str, rule_id: str, location: Mapping[str, Any] | None) -> str:
@@ -208,7 +208,6 @@ class FindingsEngine:
         only = None if only_vulnerabilities is None else sorted(set(only_vulnerabilities))
         matched, retracted = self._pairs(campaign_id, only)
         report.pairs = len(matched)
-        touched: list[str] = []
         for pair in matched:
             if dry_run:
                 report.findings.append(
@@ -222,7 +221,6 @@ class FindingsEngine:
                 continue
             with self._conn.transaction():
                 finding_id, created, changed = self._raise(pair, report)
-            touched.append(finding_id)
             if changed:
                 report.findings.append(
                     {
@@ -248,8 +246,9 @@ class FindingsEngine:
                 self._retract(pair, report)
         if assess and not dry_run:
             self._assess(
-                sorted(set(touched)),
                 report,
+                campaign_id=campaign_id,
+                only_vulnerabilities=only,
                 model=model,
                 provider=provider,
                 model_name=model_name,
@@ -854,37 +853,35 @@ class FindingsEngine:
 
     def _assess(
         self,
-        finding_ids: Sequence[str],
         report: FindingsReport,
         *,
+        campaign_id: str | None,
+        only_vulnerabilities: Sequence[str] | None,
         model: ModelClient | None,
         provider: str | None,
         model_name: str | None,
         prompt_version: str,
     ) -> None:
-        assessable: list[str] = []
-        for finding_id in finding_ids:
-            row = self._conn.execute(
-                "SELECT status FROM finding WHERE finding_id = %s", (finding_id,)
-            ).fetchone()
-            if row is not None and str(row["status"]) in ASSESSABLE:
-                assessable.append(finding_id)
-        for finding_id in assessable:
-            with self._conn.transaction():
-                outcome = severity.assess_findings(
-                    self._conn,
-                    [finding_id],
-                    trigger="scan",
-                    model=model,
-                    provider=provider,
-                    model_name=model_name,
-                    prompt_version=prompt_version,
-                )[0]
-            report.assessments += 1
-            if outcome.created:
-                report.assessments_created += 1
-            if outcome.severity == "UNRATED":
-                report.unrated += 1
+        """Assess every open finding of the pass whose inputs changed, once.
+
+        The queue is `aegis.m20_vuln.severity.assess_pending`: it does not start from the findings
+        this pass touched, because a finding whose evidence or intel changed since its last record
+        still needs an answer even when this run re-matched a different slice of the catalogue.
+        A delta run narrows the queue to the CVEs it re-checked, the same way it narrows matching.
+        """
+        outcome = severity.assess_pending(
+            self._conn,
+            campaign_id=campaign_id,
+            only_vulnerabilities=only_vulnerabilities,
+            trigger="scan",
+            model=model,
+            provider=provider,
+            model_name=model_name,
+            prompt_version=prompt_version,
+        )
+        report.assessments = outcome.assessed
+        report.assessments_created = outcome.created
+        report.unrated = outcome.unrated
 
 
 def _title(pair: _Pair, product: Sequence[Cpe]) -> str:
