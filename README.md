@@ -10,7 +10,7 @@ Bắt đầu từ [PRD](PRD.md), [kiến trúc](ARCHITECTURE.md), [thiết kế 
 
 `make run-local` dựng **toàn bộ** hệ G1 trên máy này và in ra đúng những gì cần để mở giao diện hoặc chạy demo:
 
-1. `make dev-up` — PostgreSQL 16, Neo4j, SeaweedFS, Temporal (idempotent); `LAB=1` (mặc định) dựng luôn lab DNS có uỷ quyền cho Subfinder/DNSx;
+1. `make dev-up` — PostgreSQL 18, Neo4j 2026.10, SeaweedFS, Temporal 1.32 (idempotent; `dev-up` tạo/cập nhật schema Temporal bằng `temporal-sql-tool` rồi đăng ký namespace `default`, nên đừng chạy `podman-compose up` trực tiếp); `LAB=1` (mặc định) dựng luôn lab DNS có uỷ quyền cho Subfinder/DNSx;
 2. `python -m aegis.migrations` — áp chuỗi migration theo `contracts/README.md`;
 3. sinh operator token (in **một lần**, chỉ lưu sha256 trong `.local/operators.json`) và internal service token cho endpoint ingestion (`.local/service-token`); cả hai để trong `.local/run-local.env` (mode 600) cho các script demo;
 4. `uvicorn aegis.m26_api.main:app` — API (campaigns, jobs, flow, events, assets, `POST /ingestion/results`);
@@ -92,6 +92,12 @@ Trỏ ultron vào gateway trong `.env` (xem `.env.example`): `AEGIS_SESSION_LIVE
 Ba lệnh dưới đây là bằng chứng của cổng G1 (`docs/living/02-ke-hoach-trien-khai.md` dòng 28 và 33). Chúng cần một checkout sạch, rootless Podman và image đã có trên máy (`make lab-up` dùng image Subfinder/DNSx đã pin).
 
 Nếu máy đã có stack `aegis-dev` từ bản trước khi gộp migration (chuỗi 0001–0017): chạy `make dev-reset` trước (xóa volume của `aegis-dev` rồi dựng lại bằng `0001_baseline.sql`); DB theo chuỗi cũ không được nâng cấp tại chỗ.
+
+**Nâng major (G1.7, 2026-11-28): PostgreSQL 18, Neo4j 2026.10, Temporal 1.32, Python 3.14.** Với stack dev có từ trước:
+- PostgreSQL 18 giữ cluster trong `/var/lib/postgresql/18/docker` và khai báo volume `/var/lib/postgresql`, nên volume 16 cũ không còn được mount. Dữ liệu dev dùng một lần: `make dev-reset`. Muốn giữ dữ liệu: `pg_dump -Fc` từ container `postgres:16` mount volume cũ (`/var/lib/postgresql/data`) rồi `pg_restore --no-owner` vào `postgres:18` trên volume mới, hoặc `pg_upgrade`. Không hạ cấp 18 xuống 16.
+- Temporal 1.29.7 → 1.32.2: schema chỉ nâng tiến; volume cũ thì `make dev-reset`.
+- Neo4j 2026.10 mở trực tiếp store 5.26 (dữ liệu và ràng buộc giữ nguyên); store hỏng thì `python -m aegis.m23_graph rebuild` (replay outbox). Không hạ cấp về 5.26.
+- CI tự cài đúng `uv` và Python 3.14.10 (ghim trong `scripts/ci/uv.env`, kiểm sha256), không phụ thuộc Python có sẵn trên runner; nâng `uv` thì sửa cả hai dòng của file đó.
 
 ```bash
 make run-local      # 1. dựng toàn bộ hệ + lab, in token; để nguyên terminal này

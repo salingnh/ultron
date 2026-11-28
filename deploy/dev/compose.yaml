@@ -23,7 +23,10 @@ services:
     ports:
       - "127.0.0.1:${AEGIS_PG_PORT:-15432}:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      # PostgreSQL 18 keeps its cluster under /var/lib/postgresql/<major>/docker and declares
+      # /var/lib/postgresql as its volume; the pre-18 /var/lib/postgresql/data path is no longer
+      # the data directory, so mount the declared volume instead.
+      - pg_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-aegis} -d $${POSTGRES_DB:-aegis}"]
       interval: 5s
@@ -40,6 +43,12 @@ services:
       NEO4J_server_memory_heap_initial__size: ${AEGIS_NEO4J_HEAP:-512m}
       NEO4J_server_memory_heap_max__size: ${AEGIS_NEO4J_HEAP:-512m}
       NEO4J_server_memory_pagecache_size: ${AEGIS_NEO4J_PAGECACHE:-256m}
+      # 2026 defaults that do not belong in a loopback-only dev database: X-Forward headers were
+      # accepted from any source (spoofable), Fleet discovery broadcast on the container network and
+      # Fleet Manager registered the server for online monitoring. All three are off explicitly.
+      NEO4J_server_http_x__forward_enabled: "false"
+      NEO4J_server_fleet__discovery_enabled: "false"
+      NEO4J_dbms_fleet__manager_enabled: "false"
     ports:
       - "127.0.0.1:${AEGIS_NEO4J_HTTP_PORT:-17474}:7474"
       - "127.0.0.1:${AEGIS_NEO4J_BOLT_PORT:-17687}:7687"
@@ -81,18 +90,25 @@ services:
       pg:
         condition: service_healthy
     environment:
-      # auto-setup creates the `temporal` and `temporal_visibility` databases in the dev
-      # PostgreSQL instance and then runs the Temporal server with that persistence.
+      # The server only renders its embedded config template from these. It creates no database,
+      # schema or namespace: `make dev-up` runs temporal-sql-tool on `temporal` and
+      # `temporal_visibility` in the dev PostgreSQL before this starts, and registers the
+      # `default` namespace after (deploy/dev/temporal/). Start the stack through `make dev-up`.
       DB: postgres12
       DB_PORT: "5432"
       POSTGRES_SEEDS: pg
       POSTGRES_USER: ${AEGIS_PG_USER:-aegis}
       POSTGRES_PWD: ${AEGIS_PG_PASSWORD:?set in .env - see .env.example}
+      # The dev frontend has no authorizer and is published on loopback only; said explicitly.
+      TEMPORAL_ALLOW_NO_AUTH: "true"
     ports:
       - "127.0.0.1:${AEGIS_TEMPORAL_PORT:-17233}:7233"
+    volumes:
+      - ./temporal/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro,z
     healthcheck:
-      # The image's docker config binds the frontend to the container address, not loopback.
-      test: ["CMD-SHELL", "temporal operator cluster health --address $$(hostname):7233 >/dev/null 2>&1"]
+      # The server image has no Temporal CLI, so this only shows that the frontend listens (it
+      # binds the container address, not loopback). `make dev-up` then waits for cluster health.
+      test: ["CMD-SHELL", "nc -z $$(hostname) 7233"]
       interval: 10s
       timeout: 10s
       retries: 30

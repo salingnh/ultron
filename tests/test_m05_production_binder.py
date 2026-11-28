@@ -17,6 +17,7 @@ stub never reaches the network, so the suite's system-resolver guard stays untou
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 from collections.abc import Iterator
 from typing import Any
 
@@ -24,6 +25,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from aegis.common import platform
 from aegis.contracts_gen.capability.job_submit_v2_schema import JobSubmit
 from aegis.m01_campaign.campaigns import create_campaign
 from aegis.m01_campaign.status import apply_workflow_action
@@ -143,6 +145,18 @@ def _record_provenance(dsn: str, *, campaign_id: str, scope_id: str, policy_vers
     envelope["provider"]["version"] = "v1.2.2"
     receipt = IngestionService.from_dsn(dsn).submit_payload(envelope)
     assert receipt.accepted and not receipt.quarantined, receipt
+
+
+@pytest.fixture(autouse=True)
+def _fixed_platform_networks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The deny set lists, then inspects, every podman network of the host. Other jobs and other
+    pytest workers create and remove networks in between, so the host's list is not part of this
+    test: the subject is the binder wiring."""
+    monkeypatch.setattr(
+        platform,
+        "platform_networks",
+        lambda: (platform.PlatformNetwork("podman", (ipaddress.ip_network("10.88.0.0/16"),)),),
+    )
 
 
 @pytest.fixture

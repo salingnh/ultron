@@ -1,4 +1,4 @@
-"""Campaign REST over a real PostgreSQL 16 database (card G1.1b).
+"""Campaign REST over a real PostgreSQL 18 database (card G1.1b).
 
 Every test runs against the full published migration chain in a throwaway database,
 so the triggers of 0005/0009/0010/0011/0012/0014 are exercised on the rows the API

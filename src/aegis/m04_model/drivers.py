@@ -220,7 +220,7 @@ def _build_response(
         text = "\n".join(block["text"] for block in parsed.blocks if block.get("type") == "text")
         try:
             candidate: Any = json.loads(text)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             finish = FinishReason.invalid_output
         else:
             if not isinstance(candidate, dict) or list(validate(candidate)):

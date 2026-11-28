@@ -138,7 +138,7 @@ def _json_safe(value: object) -> object:
 def _uuid_or_none(value: object) -> str | None:
     try:
         return str(UUID(str(value)))
-    except (ValueError, TypeError, AttributeError):
+    except ValueError, TypeError, AttributeError:
         return None
 
 

@@ -26,9 +26,9 @@
       "role": "authoritative DNS for the lab zone (lab infrastructure, not a capability provider)"
     },
     "passive": {
-      "ref": "docker.io/library/python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b",
-      "version": "3.12.16 (slim-trixie image, built 2026-11-05)",
-      "released": "2026-11-05",
+      "ref": "docker.io/library/python:3.14.10-slim-trixie@sha256:22eafb370920ad8b429e0aec3fff433e0669968519f5d60469d83729c138b28b",
+      "version": "3.14.10 (slim-trixie image, built 2026-11-24)",
+      "released": "2026-11-24",
       "license": "PSF-2.0",
       "role": "runs the local passive-source stub; same pin as deploy/dev/images.env AEGIS_PYTHON_IMAGE (bump both together)"
     },
@@ -89,7 +89,7 @@
       "role": "lab service on httpd.lab.aegis.test: Apache httpd 80, the exact CPE/version CVE-2021-41773 matches (G1.6a/G1.6c)"
     },
     "fingerprintx": {
-      "ref": "localhost/aegis/fingerprintx:v1.1.19@sha256:b52677ad03e665840e96ddf1f6f85aa27eac2900eb2926298d77e95aa8e164e1",
+      "ref": "localhost/aegis/fingerprintx:v1.1.19@sha256:48ce97d72380bad8eaba16ec8c3e54e9225b450b146d7572a39d9f14013b54fe",
       "version": "v1.1.19",
       "released": "2026-01-01",
       "license": "Apache-2.0",

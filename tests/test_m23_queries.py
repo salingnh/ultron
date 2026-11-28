@@ -1,4 +1,4 @@
-"""The six `graph.*` query functions against PostgreSQL 16 and Neo4j 5.26 (G1.4b).
+"""The six `graph.*` query functions against PostgreSQL 18 and Neo4j 2026.10 (G1.4b).
 
 Every output is checked against `contracts/mcp/graph-queries.v2.schema.json` with the shared
 `aegis.validation` hook, and the acceptance items of the card are the ones asserted hardest:

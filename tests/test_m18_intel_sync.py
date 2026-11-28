@@ -1,4 +1,4 @@
-"""M18 feed sync against PostgreSQL 16 (G1.6 slice C): immutable snapshots, revisions, events.
+"""M18 feed sync against PostgreSQL 18 (G1.6 slice C): immutable snapshots, revisions, events.
 
 The S3 half is an in-memory stand-in with the same `put`/`head` contract (the real client is
 exercised by the demo and by M28's own tests); everything below it is the real schema, the real

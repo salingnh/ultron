@@ -18,7 +18,7 @@ every test gets its own throwaway database, created and dropped by the harness.
     export AEGIS_TEST_PG_DSN=postgresql://postgres:<pw>@127.0.0.1:<port>/<db>
     python3 -I contracts/tests/test_outbox_ordering.py
 
-Point it at a throwaway PostgreSQL 16 server, never a shared one. Optional measurement tuning:
+Point it at a throwaway PostgreSQL 18 server, never a shared one. Optional measurement tuning:
 AEGIS_S13_WRITERS (8), AEGIS_S13_EVENTS (50); the S1.3 report records the 8x250 run.
 """
 from __future__ import annotations
@@ -294,7 +294,7 @@ def refresh_in_thread(disp: "Dispatcher") -> tuple[threading.Thread, dict]:
 
 def setUpModule():
     if not DSN:
-        raise unittest.SkipTest("AEGIS_TEST_PG_DSN is not set: the C04 harness needs a PostgreSQL 16 server")
+        raise unittest.SkipTest("AEGIS_TEST_PG_DSN is not set: the C04 harness needs a PostgreSQL 18 server")
     if psycopg is None:
         raise unittest.SkipTest("psycopg is not installed (pip install -r contracts/tests/requirements-db.txt)")
 

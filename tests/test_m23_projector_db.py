@@ -1,4 +1,4 @@
-"""M23 projector against PostgreSQL 16 and Neo4j 5.26 (G1.4b).
+"""M23 projector against PostgreSQL 18 and Neo4j 2026.10 (G1.4b).
 
 The contract chain, M27 and the committed Cypher are the real ones; the two services are
 throwaway (see `tests/m23_support.py`). What these tests pin, in the order the card asks for:
@@ -15,7 +15,6 @@ throwaway (see `tests/m23_support.py`). What these tests pin, in the order the c
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -30,10 +29,9 @@ from aegis.m23_graph.contract import RELATIONSHIP_TYPES
 from aegis.m23_graph.models import ASSET_EVENT
 from aegis.m23_graph.projector import Projector, ProjectorBusy, ProjectorConfig
 from aegis.m27_ingestion.ids import uuid7
+from tests import graph_support
 from tests.m23_support import (
     CAMPAIGN_ID,
-    NEO4J_PASSWORD_ENV,
-    NEO4J_URI_ENV,
     assert_deltas_satisfy_contract,
     connect,
     cursor,
@@ -682,8 +680,9 @@ def test_the_rebuild_command_replays_under_a_new_generation(
 
     dsn, jobs = database
     monkeypatch.setenv("AEGIS_PG_DSN", dsn)
-    monkeypatch.setenv("AEGIS_NEO4J_URI", os.environ[NEO4J_URI_ENV])
-    monkeypatch.setenv("AEGIS_NEO4J_PASSWORD", os.environ[NEO4J_PASSWORD_ENV])
+    graph_uri, graph_password = graph_support.ensure_test_graph()
+    monkeypatch.setenv("AEGIS_NEO4J_URI", graph_uri)
+    monkeypatch.setenv("AEGIS_NEO4J_PASSWORD", graph_password)
     with graph_driver() as driver:
         ingest(dsn, jobs[0], assets=[domain("dns:cli.test")])
         project_all(dsn, driver, consumer="m23-projector#g7", partitions=2)

@@ -142,7 +142,7 @@ def test_job_scoped_guard_fails_when_recorded_anonymous_volume_survived_removal(
 @pytest.mark.parametrize(
     ("path", "required_tmpfs"),
     [
-        ("scripts/ci/python-gate.sh", ("/data:", "/logs:")),
+        ("tests/graph_support.py", ("/data:", "/logs:")),
         ("scripts/ci/neo4j-smoke.sh", ("/data:", "/logs:")),
         ("tests/test_evidence_store_seaweedfs.py", ("/data:",)),
     ],

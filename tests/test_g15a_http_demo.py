@@ -84,7 +84,7 @@ def _print(title: str, body: Any) -> None:
 def test_the_flow_and_the_event_stream_over_http(dsn: str) -> None:
     evidence: dict[str, Any] = {
         "api": "uvicorn on 127.0.0.1",
-        "database": "throwaway PostgreSQL 16",
+        "database": "throwaway PostgreSQL 18",
     }
     authorization = f"Bearer {support.OPERATORS['op-soc-1']}"
     with (

@@ -1,6 +1,6 @@
 # Interface nội bộ giữa các module
 
-Ngữ nghĩa không phụ thuộc ngôn ngữ; chữ ký viết bằng Python vì backend là Python 3.12. Kiểu dữ liệu sinh từ JSON Schema trong `contracts/` (Pydantic v2 qua `datamodel-code-generator`), không định nghĩa tay lần hai.
+Ngữ nghĩa không phụ thuộc ngôn ngữ; chữ ký viết bằng Python vì backend là Python 3.14. Kiểu dữ liệu sinh từ JSON Schema trong `contracts/` (Pydantic v2 qua `datamodel-code-generator`), không định nghĩa tay lần hai.
 
 Các bản giả trong `tests/fakes/` là đầu ra cần triển khai, chưa có trong repo; dùng chúng để kiểm contract mà không gọi dịch vụ ngoài.
 

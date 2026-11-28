@@ -467,7 +467,7 @@ class _DnsTcpHandler(socketserver.BaseRequestHandler):
                 return
             message = _read_exact(conn, length)
             reply = forwarder.handle(message)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return
         if reply:
             try:
