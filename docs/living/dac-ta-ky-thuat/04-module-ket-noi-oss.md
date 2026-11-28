@@ -52,12 +52,14 @@ Kiểm trên máy dev (Fedora 44, rootless Podman 5.8.9): digest lấy bằng `s
 | dnsx | v1.2.2 | 2025-02-01 | 661 | `sha256:8fced0bedf3655e06c9f1805f6277d60d4988a4b13209e24b3d7cde7baa656ec` | MIT | SPDX (138) |
 | bbot | v3.0.2 | 2026-08-24 | 92 | `sha256:40ed0733e0163feee844d49346eb15e40872fa7008f621358eed9b9a7807382e` | AGPL-3.0 | SPDX (277) |
 | naabu | v2.7.0 | 2026-10-28 | 27 | `sha256:67c120a669954b768354197fc04328e08027898dc821bc8f276b3e26cd21f6aa` | MIT | SPDX (146) |
+| trivy | v0.76.2 | 2026-11-05 | 23 | `sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb` | Apache-2.0 | CycloneDX |
 
 Ghi chú bắt buộc khi lập manifest:
 
 - **dnsx**: upstream đã có v1.3.0/v1.3.1 nhưng Docker Hub không có image tương ứng (tag mới nhất là v1.2.2), nên pin là v1.2.2. `provider_version`/`adapter_version` phải ghi đúng khoảng lệch; không mô tả hành vi v1.3 khi chưa có image.
 - **bbot**: AGPL-3.0, chỉ chạy như container riêng, không link vào mã lõi, giữ attribution. Bản 3.1.0 (2026-11-12) mới 12 ngày tuổi nên chưa được nhận theo luật 14 ngày (đủ điều kiện từ 2026-11-26), và các tag 3.1.x trên Docker Hub hiện là `rc`.
 - **naabu**: chỉ dùng cho kiểm raw socket. Trong rootless Podman, `-s syn` tự hạ xuống CONNECT dù `NET_RAW` hiệu lực (xem §Sandbox ở [Nền tảng](02-nen-tang.md)); `-proxy` nhận `host:port` không kèm scheme. Chưa đăng ký egress nếu chưa chứng minh được chế độ quét thực tế.
+- **trivy**: provider chính SBOM/vulnerability cho artifact (G2-D). Image upstream của Aqua, không sửa; quét ảnh đã lưu dạng oci-archive (`--input`), không chạy ảnh, `networkAccess: none`. CSDL lỗ hổng là phụ thuộc triển khai tách rời ảnh: snapshot `trivy-db`/`trivy-java-db` mount read-only, ghim sha256 trong runner profile; lệch bản → `DEPENDENCY_MISSING` trước khi tạo container. `coverage.rule_set` ghi `trivy-db@<UpdatedAt>`.
 - Mọi lần nâng pin phải chạy lại parser/conformance, ghi ngày phát hành và kiểm lại 14 ngày; SBOM phải sinh lại từ digest mới.
 
 Conformance giữ đủ: describe không side effect; validate từ chối input sai trước khi gọi OSS; start idempotent; status có retry_after; cancel/timeout dừng container và audit; collect có raw/hash/coverage; health nêu tool version/phụ thuộc. Parser tất định, không mạng/credential/biến môi trường kế thừa/DB; cùng fixture giữ canonical ID và predicate hợp lệ. Kiểm output giả chỉ dẫn, output lớn, upgrade và canary theo nền tảng.
