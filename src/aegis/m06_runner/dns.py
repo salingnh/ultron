@@ -23,6 +23,14 @@ broker forwards to; unset = the control plane's system resolver). The broker nev
 payloads: it parses the query, resolves it, and writes the answer itself, so a job cannot smuggle
 traffic through the resolver.
 
+An upstream answer is *checked* before it is read (N7, the same rules `common.dns_cname` applies):
+its id must be the id of the query that was sent, and its rcode must be an answer - NXDOMAIN for the
+queried name is "no address"/"no chain", a first-hop CNAME NXDOMAIN is an empty chain, NXDOMAIN
+mid-chain is a broken chain, and every other rcode (SERVFAIL, REFUSED, FORMERR, ...) raises. A
+reader that ignores either turns a broken resolver into a wrong answer (an empty address list is a
+containment decision here, not a guess), so a raise maps to SERVFAIL/RESOLVE_FAILED at the front
+end, never to NOERROR with no records.
+
 Standard library only, like the rest of the broker image.
 """
 
@@ -341,7 +349,15 @@ def build_response(
 
 
 class UpstreamResolver:
-    """Forward queries to one pinned DNS server (`--dns-upstream host:port`), never to a job."""
+    """Forward queries to one pinned DNS server (`--dns-upstream host:port`), never to a job.
+
+    Every answer is checked against the query that was sent: a different id, an answer that is
+    not a response, or an rcode that is not `NOERROR` (NXDOMAIN is handled by the caller: it means
+    "no address" for A/AAAA and "no chain" only on the first CNAME hop) raises `ValueError`,
+    exactly like `common.dns_cname.cname_chain`. An unchecked answer would let a stale or spoofed
+    packet decide an empty address list - and the broker treats "no address allowed" as a denial,
+    not as an error.
+    """
 
     def __init__(self, host: str, port: int = 53, timeout: float = 5.0) -> None:
         self.host = host
@@ -354,32 +370,71 @@ class UpstreamResolver:
             addresses.extend(self._ask(name, qtype))
         return addresses
 
-    def _ask_wire(self, name: str, qtype: int) -> bytes:
-        query = build_query(int.from_bytes(os.urandom(2), "big"), name, qtype)
+    def _ask_wire(self, name: str, qtype: int) -> tuple[int, int, bytes]:
+        """Send one query; return `(qid, rcode, message)` after checking it answers this query."""
+        qid = int.from_bytes(os.urandom(2), "big")
+        query = build_query(qid, name, qtype)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
             client.settimeout(self.timeout)
             client.sendto(query, (self.host, self.port))
             data, _ = client.recvfrom(4096)
-        if len(data) >= _HEADER.size and struct.unpack_from("!H", data, 2)[0] & 0x0200:
-            return self._ask_tcp(query)
-        return data
+        answer_qid, answer_rcode = self._check(data, qid, name)
+        if struct.unpack_from("!H", data, 2)[0] & 0x0200:
+            answer_qid, answer_rcode, data = self._ask_tcp(query, qid, name)
+        return answer_qid, answer_rcode, data
+
+    @staticmethod
+    def _check(message: bytes, qid: int, name: str) -> tuple[int, int]:
+        """`(qid, rcode)` of a response, refusing anything that does not answer the query."""
+        if len(message) < _HEADER.size:
+            raise ValueError(f"the DNS response for {name!r} is a short message")
+        answer_qid, flags = struct.unpack_from("!HH", message)
+        if not flags & 0x8000:
+            raise ValueError(f"the DNS answer for {name!r} is not a response")
+        if answer_qid != qid:
+            raise ValueError(f"the DNS response for {name!r} carries qid {answer_qid}, not {qid}")
+        return answer_qid, flags & 0x000F
 
     def _ask(self, name: str, qtype: int) -> list[str]:
-        return parse_addresses(self._ask_wire(name, qtype))
+        _qid, rcode, data = self._ask_wire(name, qtype)
+        if rcode == RCODE_NXDOMAIN:
+            return []  # the name itself does not exist; that is an answer, not an error
+        if rcode != RCODE_NOERROR:
+            raise ValueError(
+                f"the DNS lookup of {name!r} answered {rcode_name(rcode)}, not an answer"
+            )
+        return parse_addresses(data)
+
+    def _ask_cname_raw(self, name: str) -> tuple[int, list[str]]:
+        """`(rcode, targets)` for one CNAME query; the chain walker decides which rcodes answer."""
+        _qid, rcode, data = self._ask_wire(name, TYPE_CNAME)
+        if rcode != RCODE_NOERROR:
+            return rcode, []
+        return rcode, parse_cnames(data)
 
     def _ask_cname_once(self, name: str) -> list[str]:
-        return parse_cnames(self._ask_wire(name, TYPE_CNAME))
+        rcode, targets = self._ask_cname_raw(name)
+        if rcode == RCODE_NXDOMAIN:
+            return []
+        if rcode != RCODE_NOERROR:
+            raise ValueError(
+                f"the CNAME lookup of {name!r} answered {rcode_name(rcode)}, not an answer"
+            )
+        return targets
 
     def cnames(self, name: str) -> list[str]:
         """Follow up to 5 CNAME hops for `name` against the pinned upstream."""
-        return _follow_cnames(name, self._ask_cname_once)
+        return _follow_cnames(name, self._ask_cname_raw)
 
-    def _ask_tcp(self, query: bytes) -> bytes:
+    def _ask_tcp(self, query: bytes, qid: int, name: str) -> tuple[int, int, bytes]:
+        """Retry a truncated UDP answer over TCP and check the TCP answer the same way."""
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as client:
             client.sendall(struct.pack("!H", len(query)) + query)
             header = _read_exact(client, 2)
             (length,) = struct.unpack("!H", header)
-            return _read_exact(client, length)
+            data = _read_exact(client, length)
+        answer_qid, rcode = self._check(data, qid, name)
+        return answer_qid, rcode, data
 
 
 def _system_nameserver(path: str = "/etc/resolv.conf") -> str | None:
@@ -398,12 +453,28 @@ def _system_nameserver(path: str = "/etc/resolv.conf") -> str | None:
     return None
 
 
-def _follow_cnames(name: str, query_once: Callable[[str], list[str]]) -> list[str]:
+def _follow_cnames(name: str, query_once: Callable[[str], tuple[int, list[str]]]) -> list[str]:
+    """Walk a CNAME chain with `dns_cname.cname_chain`'s rules: only NOERROR is an answer.
+
+    First-hop NXDOMAIN means the name does not exist (there is no chain); NXDOMAIN at any later hop
+    is a broken chain and raises; every other rcode raises as well, so a SERVFAIL can never look
+    like "no CNAME".
+    """
     current = _normalize(name)
     hops: list[str] = []
     seen = {current}
-    for _ in range(5):
-        targets = query_once(current)
+    for hop in range(5):
+        rcode, targets = query_once(current)
+        if rcode == RCODE_NXDOMAIN:
+            if hop == 0:
+                return hops
+            raise ValueError(
+                f"the CNAME chain of {name!r} breaks at {current!r}: the resolver answered NXDOMAIN"
+            )
+        if rcode != RCODE_NOERROR:
+            raise ValueError(
+                f"the CNAME lookup of {current!r} answered {rcode_name(rcode)}, not an answer"
+            )
         if not targets:
             break
         added = False
@@ -424,7 +495,7 @@ def system_cname_resolver(name: str) -> list[str]:
     server = _system_nameserver()
     if server is None:
         return []
-    return _follow_cnames(name, UpstreamResolver(server, 53, timeout=2.0)._ask_cname_once)
+    return _follow_cnames(name, UpstreamResolver(server, 53, timeout=2.0)._ask_cname_raw)
 
 
 def system_resolver(name: str) -> list[str]:
@@ -511,12 +582,12 @@ class DnsForwarder:
                     for item in self._resolve_cnames(name)
                     if _normalize(str(item))
                 )
-            except OSError:
+            except OSError, ValueError:
                 return Answer((), (), "RESOLVE_FAILED", RCODE_SERVFAIL)
             return Answer(cnames, (), "OK", RCODE_NOERROR)
         try:
             resolved = self.resolver(name)
-        except OSError:
+        except OSError, ValueError:
             return Answer((), (), "RESOLVE_FAILED", RCODE_SERVFAIL)
         allowed: list[str] = []
         denied: list[str] = []
