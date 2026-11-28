@@ -33,8 +33,17 @@ Nhãn giao diện dùng tiếng Việt; giữ thuật ngữ finding, endpoint, C
 | --success / --success-bg | #0F766E / #DAF2EE | #62D6C7 / #11352F | Thành công, verified |
 | --warning / --warning-bg | #9A4506 / #FCE8D0 | #F4B874 / #3B2A14 | Cần chú ý |
 | --neutral / --neutral-bg | #55616B / #E7EBEE | #A3AFB9 / #222E38 | Trung tính |
+| --danger / --danger-bg | #B91C1C / #FEE2E2 | #F87171 / #450A0A | Nguy hiểm, severity CRITICAL |
 
-Chữ đạt tương phản tối thiểu 4.5:1. Các trạng thái cần phân biệt phải có nhãn và khác độ sáng; ưu tiên cặp xanh dương/cam. Severity dùng nhãn chữ và chip; bảng màu từng severity được chốt cùng màn hình finding.
+Chữ đạt tương phản tối thiểu 4.5:1. Các trạng thái cần phân biệt phải có nhãn và khác độ sáng; ưu tiên cặp xanh dương/cam. Severity dùng nhãn chữ và chip (chốt cùng màn Findings G2):
+
+| Severity | Token | Ghi chú |
+| --- | --- | --- |
+| CRITICAL | --danger / --danger-bg | Khẩn cấp |
+| HIGH | --warning / --warning-bg | Cao |
+| MEDIUM | --accent / --accent-bg | Trung bình |
+| LOW, INFO | --neutral / --neutral-bg | Phân biệt bằng nhãn chữ |
+| UNRATED | --neutral / --neutral-bg, viền nét đứt | Chưa đánh giá hoặc đánh giá lỗi; luôn kèm lý do |
 
 - Font giao diện: IBM Plex Sans 400/500/600, fallback system-ui, -apple-system, Segoe UI, Roboto, sans-serif.
 - Code, ID, canonical key, hash và mã module: JetBrains Mono 500, fallback ui-monospace, Menlo, Consolas, monospace.
