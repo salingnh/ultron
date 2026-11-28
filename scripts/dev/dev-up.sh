@@ -31,6 +31,10 @@ check_dev_ports_free
 # must not recreate the owner's containers (that is the incident scripts/lib/stack.sh describes).
 require_dev_stack_ownership
 
+storage_root=$(podman_storage_root)
+[ -n "$storage_root" ] || die "cannot read podman's storage root (podman info)"
+require_disk_space "$storage_root"
+
 log "compose project $DEV_PROJECT: starting"
 # Temporal needs its schema before it starts. The order is kept here: podman-compose does not wait
 # for a one-shot service to complete, or notice that it failed.

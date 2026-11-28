@@ -12,5 +12,11 @@ CREATE CONSTRAINT hypothesis_id IF NOT EXISTS FOR (h:Hypothesis) REQUIRE h.hypot
 CREATE CONSTRAINT relationship_id IF NOT EXISTS FOR ()-[r:SUBDOMAIN_OF]-() REQUIRE r.relationship_id IS UNIQUE;
 // Mỗi loại cạnh từ PostgreSQL có ràng buộc relationship_id tương tự (projector sinh từ danh sách loại cạnh).
 CREATE INDEX asset_kind IF NOT EXISTS FOR (a:Asset) ON (a.kind);
-CREATE INDEX asset_campaigns IF NOT EXISTS FOR (a:Asset) ON (a.campaign_ids);
 CREATE INDEX finding_status IF NOT EXISTS FOR (f:Finding) ON (f.status, f.severity);
+// Không đánh chỉ mục Asset.campaign_ids: Neo4j giới hạn kích thước khóa chỉ mục, còn projector
+// nối thêm một id cho mỗi chiến dịch (projector-upserts.cypher câu 1) nên một tài sản gặp vài trăm
+// chiến dịch là vượt giới hạn và MỌI lần ghi node đó hỏng (đo được: property size 8181). Không truy
+// vấn nào dùng chỉ mục này: lọc theo chiến dịch là phép "thuộc danh sách" (`$campaign_id IN
+// coalesce(a.campaign_ids, [])`, PROFILE cho NodeByLabelScan + Filter); chỉ mục RANGE chỉ phục vụ
+// so sánh cả danh sách. DROP ... IF EXISTS áp dụng cả cho database đã có chỉ mục.
+DROP INDEX asset_campaigns IF EXISTS;
