@@ -37,11 +37,18 @@ valid:
   valid/manifest.fingerprintx.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.httpx.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.trivy.yaml: capability/provider-manifest.v2.schema.json
+  valid/manifest.syft.yaml: capability/provider-manifest.v2.schema.json
+  valid/manifest.grype.yaml: capability/provider-manifest.v2.schema.json
   valid/approved-task.fingerprintx.json: capability/approved-task.v2.schema.json
   valid/approved-task.httpx.json: capability/approved-task.v2.schema.json
   valid/approved-task.trivy.json: capability/approved-task.v2.schema.json
   valid/result-envelope.trivy.json: ingestion/result-envelope.v2.schema.json
   valid/capability-input.scan-artifact.json: capabilities/vuln/scan-artifact.v2.schema.json
+  valid/capability-input.sbom-generate.json: capabilities/sbom/generate.v2.schema.json
+  valid/approved-task.syft.json: capability/approved-task.v2.schema.json
+  valid/approved-task.grype.json: capability/approved-task.v2.schema.json
+  valid/result-envelope.syft.json: ingestion/result-envelope.v2.schema.json
+  valid/result-envelope.grype.json: ingestion/result-envelope.v2.schema.json
   valid/approved-task.dnsx-internet.json: capability/approved-task.v2.schema.json
   valid/approved-task.internet-private.json: capability/approved-task.v2.schema.json
 invalid:

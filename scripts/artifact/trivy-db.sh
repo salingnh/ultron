@@ -20,7 +20,7 @@ cd "$ROOT"
 
 IMAGES_ENV="deploy/lab/images.env"
 PROFILE="deploy/lab/runner-profile.json"
-STORE="deploy/lab/.run/artifact/trivy-db"
+STORE="$ROOT/deploy/lab/.run/artifact/trivy-db"
 
 # shellcheck disable=SC1090
 source "$IMAGES_ENV"

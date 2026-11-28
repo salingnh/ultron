@@ -1,0 +1,74 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: grype
+  version: 1.0.0
+  module: M13
+  license: Apache-2.0
+  upstream: https://github.com/anchore/grype
+  licenseNotes: >-
+    Apache-2.0. Image pin v0.121.3 (release 2026-11-09, 19 days before the adapter was written) is
+    Anchore's upstream image, unmodified; `adapters/m13/grype/sbom.cdx.json` records the packages of
+    that digest and README.md the attribution. The vulnerability database is a deployment
+    dependency, not part of the image: an offline Grype DB snapshot is mounted read-only, its file
+    sha256 pinned in the runner profile (M06 refuses drift) and its build recorded in
+    `coverage.rule_set` from the tool's own report. No network at scan time.
+spec:
+  capability: vuln.scan_artifact
+  providerVersion: v0.121.3
+  runtime:
+    type: container
+    image: registry.internal/aegis/grype
+    imageDigest: sha256:13113eeceab017260370cf540e1d25442c59665fd07d1b09b66d63bb0c282887
+    argsTemplate:
+    - docker-archive:/in/image.tar
+    - -o
+    - json=/out/result.json
+    - -q
+    outputPath: /out
+    artifactSource: oci-archive
+    ruleSet: pinned
+    scratchMb: 1024
+  inputSchemaRef: schema://vuln/scan-artifact/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - oci_image
+  permissions:
+    scopeRequired: false
+    networkAccess: none
+    rawSocket: false
+  budget:
+    timeoutSeconds: 900
+    maxConcurrency: 1
+    cpu: 2
+    memoryMb: 4096
+    maxOutputMb: 256
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m13.grype.parser:parse
+    outputFormat: json
+  emits:
+    assetKinds:
+    - oci_image
+    - package
+    predicates:
+    - artifact.digest
+    - package.installed
+    - asset.seen
+    relationships:
+    - CONTAINS_PACKAGE
+    findings: true
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation

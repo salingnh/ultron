@@ -1,0 +1,44 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c8",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000d8",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "network_profile": "lab",
+  "capability": "vuln.scan_artifact",
+  "provider": "grype",
+  "provider_version": "v0.121.3",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "49f12bef826305b13e689c30eb45d4d370ed6bfe1d8f3e9702542a7fd70ec74e",
+  "image_digest": "sha256:13113eeceab017260370cf540e1d25442c59665fd07d1b09b66d63bb0c282887",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000005",
+  "input": {
+    "targets": [
+      "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    ]
+  },
+  "targets": [
+    {
+      "seed_id": "01934f6a-0000-7000-8000-0000000000b6"
+    }
+  ],
+  "idempotency_key": "fixture:grype-conformance",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: vuln.scan_artifact on one operator-supplied image digest, no network; no execution",
+  "trace": {
+    "trace_id": "dddddddddddddddddddddddddddddddd"
+  },
+  "signature": "hmac-sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "none",
+    "target_binding": "none",
+    "entries": [],
+    "target_addresses": []
+  },
+  "priority": 60,
+  "depends_on": []
+}

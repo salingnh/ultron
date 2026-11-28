@@ -1,0 +1,44 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c7",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000d7",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "network_profile": "lab",
+  "capability": "sbom.generate",
+  "provider": "syft",
+  "provider_version": "v1.57.1",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "8a228e8135a3b093c51ef1508806cd5f553102ce64f0195cd1cb792715dfeee2",
+  "image_digest": "sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000005",
+  "input": {
+    "targets": [
+      "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    ]
+  },
+  "targets": [
+    {
+      "seed_id": "01934f6a-0000-7000-8000-0000000000b6"
+    }
+  ],
+  "idempotency_key": "fixture:syft-conformance",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: sbom.generate on one operator-supplied image digest, no network; no execution",
+  "trace": {
+    "trace_id": "dddddddddddddddddddddddddddddddd"
+  },
+  "signature": "hmac-sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "none",
+    "target_binding": "none",
+    "entries": [],
+    "target_addresses": []
+  },
+  "priority": 60,
+  "depends_on": []
+}

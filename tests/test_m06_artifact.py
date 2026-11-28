@@ -242,3 +242,45 @@ def test_the_image_is_copied_from_local_storage_by_digest(tmp_path: Path) -> Non
         assert missing.value.code == "DEPENDENCY_MISSING"
     finally:
         podman_module._podman = original  # noqa: SLF001
+
+
+def test_an_sbom_job_has_no_rule_set_requirement(tmp_path: Path) -> None:
+    """Syft produces an SBOM and uses no database, so its job needs no pinned rule set.
+
+    `runtime.ruleSet: pinned` is the manifest's declaration that a verified deployment rule set is
+    required (Trivy, Grype); the SBOM provider does not declare it, and the same no-network profile
+    entry is enough to plan it.
+    """
+    syft_scanner = "sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060"
+    profile = profiles.DeploymentProfile.from_document(
+        {
+            "network": "aegis-lab-lab",
+            "jobs": [{"imageDigest": syft_scanner, "env": {"HOME": "/tmp"}}],
+        },
+        kind="lab",
+        base_dir=tmp_path,
+    )
+    runner = PodmanRunner(base_dir=tmp_path / "run", profiles={"lab": profile})
+    payload = json.loads(
+        (m06_support.FIXTURES / "approved-task.syft.json").read_text(encoding="utf-8")
+    )
+    payload.pop("signature", None)
+    payload.pop("signature_key_id", None)
+    task, document = m06_support.sign_task(payload)
+    manifest, raw = m06_support.manifest("manifest.syft.yaml")
+    plan = JobPlan(
+        job_id="01934f6a-0000-7000-8000-00000000a003",
+        task=task,
+        manifest=manifest,
+        input=dict(task.input),
+        manifest_bytes=raw,
+        task_body=document,
+    )
+    spec, policy = JobRunner(runner, store=None, key_ring=m06_support.DEV_RING).prepare(plan)  # type: ignore[arg-type]
+    assert policy.mode == "none"
+    assert (
+        spec.artifact_digest
+        == "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    )
+    assert spec.scratch_mb == 1024
+    assert "docker-archive:/in/image.tar" in spec.args

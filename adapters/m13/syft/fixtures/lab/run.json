@@ -1,0 +1,21 @@
+{
+  "raw": {
+    "file": "sbom.json",
+    "sha256": "43ace10e3181cf6819a1b2a2a2df41230f30fa8d4f5543b3f254155f243860c7",
+    "size_bytes": 330731
+  },
+  "input": {
+    "targets": [
+      "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    ]
+  },
+  "expected": "expected.json",
+  "cross_check": {
+    "file": "tests/fixtures/artifact/python-3.12-alpine-syft.json",
+    "kind": "sbom"
+  },
+  "tool": {
+    "provider": "syft"
+  },
+  "command": "offline, image never run, network none"
+}

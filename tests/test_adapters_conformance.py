@@ -248,6 +248,31 @@ def _assert_lab_cross_check(adapter: Adapter, run: dict[str, Any], parsed: dict[
                 )
         assert set(by_key) == {entry["key"] for entry in expected["applications"]}
         return
+    if cross_check["kind"] == "sbom":
+        # G2-D: an SBOM (Syft) has no findings; its packages must cover the committed inventory and
+        # hang from the image, and the SBOM record must name the tool that produced it.
+        by_key = {asset["canonical_key"]: asset for asset in parsed["assets"]}
+        assert len(by_key) == expected["package_count"], (
+            f"{adapter.provider}: {len(by_key)} packages, the run inventory has "
+            f"{expected['package_count']}"
+        )
+        assert parsed["findings"] == [], "an SBOM provider must not emit findings"
+        for key in expected["must_include"]:
+            assert key in by_key, f"{adapter.provider}: {key} is not an asset"
+        for key in expected["must_not_include"]:
+            assert key not in by_key, f"{adapter.provider}: invented package {key}"
+        image_key = "oci:" + expected["image"]
+        edges = {(edge["from"], edge["to"]) for edge in parsed["relationships"]}
+        assert all((image_key, key) in edges for key in by_key), (
+            f"{adapter.provider}: a package asset has no CONTAINS_PACKAGE edge from {image_key}"
+        )
+        records = [
+            observation["value"]
+            for observation in parsed["observations"]
+            if observation["predicate"] == "artifact.sbom"
+        ]
+        assert records and records[0]["tool"] == adapter.provider, "no SBOM record from the tool"
+        return
     if cross_check["kind"] == "packages":
         # G2-D: the image inventory is an independent, hand-written record of one real run (the
         # package count, the purl of the packages the run must find and the CVEs of each). The

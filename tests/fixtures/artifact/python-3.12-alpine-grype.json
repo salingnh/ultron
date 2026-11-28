@@ -1,0 +1,16 @@
+{
+  "image": "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+  "package_count": 10,
+  "finding_count": 79,
+  "must_include": [
+    {
+      "purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+      "cves": [
+        "CVE-2026-107364"
+      ]
+    }
+  ],
+  "must_not_include": [
+    "purl:pkg:apk/alpine/not-installed@0"
+  ]
+}

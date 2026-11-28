@@ -1,0 +1,12 @@
+{
+  "image": "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+  "package_count": 40,
+  "must_include": [
+    "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+    "purl:pkg:pypi/pip@25.0.1",
+    "purl:pkg:generic/python@3.12.16"
+  ],
+  "must_not_include": [
+    "purl:pkg:apk/alpine/not-installed@0"
+  ]
+}

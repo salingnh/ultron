@@ -25,6 +25,7 @@ from aegis.m05_registry.mcp.service import McpToolService
 from tests.mcp_support import (
     CAMPAIGN_ID,
     ENUMERATE,
+    OBJECTIVE_ID,
     OTHER_OBJECTIVE_ID,
     OTHER_SESSION_ID,
     RUN_OPERATOR,
@@ -213,3 +214,69 @@ def test_wrapper_defaults_are_merged_before_submission() -> None:
     job = next(iter(service.jobs.jobs.values()))  # type: ignore[attr-defined]
     assert job["priority"] == 50
     assert job["depends_on"] == []
+
+
+def _artifact_arguments(**overrides: Any) -> dict[str, Any]:
+    value: dict[str, Any] = {
+        "input": {"targets": ["sha256:" + "a" * 64]},
+        "rationale": "Analyse one operator-supplied image digest",
+        "objective_id": OBJECTIVE_ID,
+    }
+    value.update(overrides)
+    return value
+
+
+def test_a_shared_capability_can_name_its_provider() -> None:
+    """G2-D: `vuln.scan_artifact` is served by two providers; the request chooses one.
+
+    Without a name the registry default applies (the last registered, grype in this fixture set);
+    naming a provider pins that manifest for the job. An unknown name is refused, never silently
+    substituted with the default.
+    """
+    service = make_service()
+    jobs = service.jobs
+    assert isinstance(jobs, FakeJobService)
+
+    default = structured(
+        call(
+            service,
+            tool_name="vuln.scan_artifact",
+            call_arguments=_artifact_arguments(),
+            request_meta=meta(**{"aegis.io/idempotency_key": "artifact:default"}),
+        )
+    )
+    assert default["provider"] == "grype"
+    assert jobs.submissions[-1]["provider"] == "grype"
+
+    trivy = structured(
+        call(
+            service,
+            tool_name="vuln.scan_artifact",
+            call_arguments=_artifact_arguments(provider="trivy"),
+            request_meta=meta(**{"aegis.io/idempotency_key": "artifact:trivy"}),
+        )
+    )
+    assert trivy["provider"] == "trivy"
+    assert jobs.submissions[-1]["provider"] == "trivy"
+    assert jobs.submissions[-1]["capability"] == "vuln.scan_artifact"
+
+    with pytest.raises(MCPError) as refused:
+        call(
+            service,
+            tool_name="vuln.scan_artifact",
+            call_arguments=_artifact_arguments(provider="osv"),
+            request_meta=meta(**{"aegis.io/idempotency_key": "artifact:osv"}),
+        )
+    data = refused.value.data if isinstance(refused.value.data, dict) else {}
+    assert data.get("code") == "INPUT_INVALID"
+    assert data.get("field") == "/arguments/provider"
+
+
+def test_the_tool_description_lists_every_provider_of_a_capability() -> None:
+    from tests.mcp_support import GRAPH_TOOLS  # noqa: F401 - the catalogue includes graph tools
+
+    service = make_service()
+    listed = service.list_tools(request_meta=meta(), mcp_session_id=TRANSPORT)
+    tools = {tool.name: tool for tool in listed.tools}
+    assert "providers: grype, trivy" in (tools["vuln.scan_artifact"].description or "")
+    assert "providers: syft" in (tools["sbom.generate"].description or "")

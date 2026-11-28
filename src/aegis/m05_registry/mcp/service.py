@@ -155,12 +155,20 @@ class McpToolService:
             if path is None:  # pragma: no cover - admission already refuses this
                 continue
             seen.add(capability)
+            providers = sorted(
+                {
+                    item.provider
+                    for item in self.registry.all()
+                    if item.capability == capability and capability not in denied
+                }
+            )
             specs.append(
                 ToolSpec(
                     name=capability,
                     description=(
-                        f"Request one {capability} job through M05 (provider {record.provider}); "
-                        "returns a job id immediately, results arrive later as knowledge."
+                        f"Request one {capability} job through M05 (providers: "
+                        f"{', '.join(providers)}; name one in `provider` or the registry default "
+                        "applies); returns a job id immediately, results arrive later as knowledge."
                     ),
                     input_schema=schemas.capability_request_schema(path).schema,
                     output_schema=schemas.capability_response_schema().schema,
@@ -256,11 +264,34 @@ class McpToolService:
             )
         return meta, context
 
-    def _published(self, context: SessionContext, tool_name: str) -> ManifestRecord:
+    def _published(
+        self, context: SessionContext, tool_name: str, provider: str | None = None
+    ) -> ManifestRecord:
+        """The admitted manifest that serves this capability (optionally for one provider).
+
+        Several providers may serve one capability (G2-D: `vuln.scan_artifact` is served by Trivy
+        and Grype); the request may name one, and the pins/schema/defaults then come from that
+        manifest. Without a name the registry default applies (the last registered), exactly as
+        before. A name that does not serve the capability is refused rather than substituted.
+        """
         denied = self.policies.capability_denylist(context.campaign_id)
-        for record in self.registry.all():
-            if record.capability == tool_name and tool_name not in denied:
-                return record
+        matches = [
+            record
+            for record in self.registry.all()
+            if record.capability == tool_name
+            and tool_name not in denied
+            and (provider is None or record.provider == provider)
+        ]
+        if matches:
+            return matches[-1]
+        if provider is not None and tool_name not in denied:
+            raise invalid_params(
+                field="/arguments/provider",
+                message=(
+                    f"provider {provider!r} does not serve capability {tool_name!r}; "
+                    "call tools/list for the capabilities this session may request"
+                ),
+            )
         raise invalid_params(
             field="/name",
             message=(
@@ -276,7 +307,17 @@ class McpToolService:
         tool_name: str,
         arguments: Mapping[str, Any] | None,
     ) -> types.CallToolResult:
-        record = self._published(context, tool_name)
+        provider: str | None = None
+        if isinstance(arguments, Mapping) and "provider" in arguments:
+            raw_provider = arguments["provider"]
+            if not isinstance(raw_provider, str):
+                raise invalid_params(
+                    field="/arguments/provider",
+                    message="provider must be a string",
+                    trace_id=meta.trace_id,
+                )
+            provider = raw_provider
+        record = self._published(context, tool_name, provider)
         path = schema_reference_path(record.input_schema_ref)
         if path is None:  # pragma: no cover - admission already refuses this
             raise invalid_params(
@@ -319,6 +360,9 @@ class McpToolService:
             {
                 "campaign_id": context.campaign_id,
                 "capability": record.capability,
+                # Pin the provider the caller chose (or the registry default): a second provider
+                # registering for the capability later must not change what this request means.
+                "provider": record.provider,
                 "input": payload["input"],
                 "rationale": payload["rationale"],
                 "priority": payload.get("priority", DEFAULT_PRIORITY),

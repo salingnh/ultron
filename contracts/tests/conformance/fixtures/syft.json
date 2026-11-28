@@ -1,0 +1,19 @@
+{
+  "provider": "syft",
+  "manifest": "fixtures/valid/manifest.syft.yaml",
+  "task": "fixtures/valid/approved-task.syft.json",
+  "envelope": "fixtures/valid/result-envelope.syft.json",
+  "raw": "tests/conformance/fixtures/syft/raw",
+  "raw_file": "sbom.json",
+  "job_id": "01934f6a-0000-7000-8000-00000000d007",
+  "event_id": "01934f6a-0000-7000-8000-00000000e007",
+  "started_at": "2026-11-28T00:00:00Z",
+  "finished_at": "2026-11-28T00:00:05Z",
+  "retry_after_seconds": 5,
+  "coverage_subjects": [
+    "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+  ],
+  "dependencies": [
+    "image:sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060"
+  ]
+}

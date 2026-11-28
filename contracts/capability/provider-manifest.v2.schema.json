@@ -133,6 +133,13 @@
                 "oci-archive"
               ]
             },
+            "ruleSet": {
+              "description": "`pinned`: job này chỉ chạy khi deployment đã pin bộ luật/dữ liệu mà kết luận dựa vào (profile `pinnedInputs` có `ruleSet`) và M06 ghi nhãn đã verify vào `coverage.rule_set`. Dùng cho scanner có vulnerability DB offline (Trivy, Grype); một adapter chỉ sinh SBOM không khai báo trường này. Chỉ có nghĩa cùng `artifactSource`.",
+              "type": "string",
+              "enum": [
+                "pinned"
+              ]
+            },
             "scratchMb": {
               "description": "Dung lượng tmpfs ghi được ở `/cache` (MiB) cho công cụ cần scratch ngoài `/tmp` (vD cache phân tích của Trivy). Không khai báo = không có `/cache`; `/tmp` vẫn là tmpfs 64 MiB của sandbox.",
               "type": "integer",
@@ -568,6 +575,30 @@
                 "contains": {
                   "const": "oci_image"
                 }
+              }
+            }
+          }
+        },
+        {
+          "description": "ruleSet chỉ có nghĩa khi job đọc artifact của chính nó.",
+          "if": {
+            "required": [
+              "runtime"
+            ],
+            "properties": {
+              "runtime": {
+                "required": [
+                  "ruleSet"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "runtime": {
+                "required": [
+                  "artifactSource"
+                ]
               }
             }
           }
