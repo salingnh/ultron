@@ -42,6 +42,10 @@ class TargetsFormat(StrEnum):
     host_port = "host_port"
 
 
+class ArtifactSource(StrEnum):
+    oci_archive = "oci-archive"
+
+
 class Runtime(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -64,6 +68,14 @@ class Runtime(BaseModel):
     targetsFormat: TargetsFormat | None = Field(
         "canonical",
         description="Dạng giá trị M06 ghi vào file target cho tool đọc (`/in/targets.txt`). `canonical` (mặc định): bỏ tiền tố khóa chuẩn, giữ nguyên phần còn lại - dạng của Subfinder/DNSx. `host_port`: thêm bỏ hậu tố transport của khóa service để tool nhận `host:port` (fingerprintx, httpx); target /udp bị từ chối trước khi chạy vì file không biểu diễn được transport. Registry kiểm luật này và M06 render đúng một lần, không đoán theo tool.",
+    )
+    artifactSource: ArtifactSource | None = Field(
+        None,
+        description="Nguồn artifact mà M06 phải đưa vào sandbox từ mục tiêu của job: `oci-archive` = đúng một target `oci:` của task được lưu thành `image.tar` (docker-archive) trong `/in` từ local image store của runner, không pull registry, không chạy image. Chỉ hợp lệ khi `permissions.networkAccess = none` và manifest nhận target kind `oci_image`; thiếu image trong store là job FAILED `DEPENDENCY_MISSING` trước khi container tồn tại.",
+    )
+    scratchMb: conint(ge=16, le=8192) | None = Field(
+        None,
+        description="Dung lượng tmpfs ghi được ở `/cache` (MiB) cho công cụ cần scratch ngoài `/tmp` (vD cache phân tích của Trivy). Không khai báo = không có `/cache`; `/tmp` vẫn là tmpfs 64 MiB của sandbox.",
     )
 
 

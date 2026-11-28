@@ -1,0 +1,2538 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01934f6a-0000-7000-8000-00000000e006",
+  "dedup_key": "job:01934f6a-0000-7000-8000-00000000d006:envelope",
+  "job_id": "01934f6a-0000-7000-8000-00000000d006",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "capability": "vuln.scan_artifact",
+  "provider": {
+    "name": "trivy",
+    "version": "v0.76.2",
+    "adapter_version": "1.0.0",
+    "image_digest": "sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb"
+  },
+  "policy_version": "roe-1",
+  "status": "succeeded",
+  "coverage": {
+    "subjects": [
+      "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    ],
+    "complete": true
+  },
+  "results": {
+    "assets": [
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/.python-rundeps@20261105.193119",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": ".python-rundeps",
+          "version": "20261105.193119"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/alpine-baselayout-data@3.7.2-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "alpine-baselayout-data",
+          "version": "3.7.2-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/alpine-baselayout@3.7.2-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "alpine-baselayout",
+          "version": "3.7.2-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/alpine-keys@2.6-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "alpine-keys",
+          "version": "2.6-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/alpine-release@3.24.4-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "alpine-release",
+          "version": "3.24.4-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/apk-tools@3.0.9-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "apk-tools",
+          "version": "3.0.9-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/busybox-binsh@1.37.0-r31",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "busybox-binsh",
+          "version": "1.37.0-r31"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/busybox@1.37.0-r31",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "busybox",
+          "version": "1.37.0-r31"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/ca-certificates-bundle@20261020-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "ca-certificates-bundle",
+          "version": "20261020-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/ca-certificates@20261020-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "ca-certificates",
+          "version": "20261020-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/gdbm@1.26-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "gdbm",
+          "version": "1.26-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/keyutils-libs@1.6.3-r4",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "keyutils-libs",
+          "version": "1.6.3-r4"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/krb5-conf@1.0-r2",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "krb5-conf",
+          "version": "1.0-r2"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "krb5-libs",
+          "version": "1.22.2-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libapk@3.0.9-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libapk",
+          "version": "3.0.9-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libbz2@1.0.8-r6",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libbz2",
+          "version": "1.0.8-r6"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libcom_err@1.47.4-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libcom_err",
+          "version": "1.47.4-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libcrypto3",
+          "version": "3.5.9-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libffi@3.5.2-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libffi",
+          "version": "3.5.2-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libintl@1.0-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libintl",
+          "version": "1.0-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libncursesw@6.6_p20260516-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libncursesw",
+          "version": "6.6_p20260516-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libnsl@2.0.1-r2",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libnsl",
+          "version": "2.0.1-r2"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libpanelw@6.6_p20260516-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libpanelw",
+          "version": "6.6_p20260516-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libssl3",
+          "version": "3.5.9-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libtirpc-conf@1.3.5-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libtirpc-conf",
+          "version": "1.3.5-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libtirpc@1.3.5-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libtirpc",
+          "version": "1.3.5-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libuuid@2.42.3-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libuuid",
+          "version": "2.42.3-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/libverto@0.3.2-r2",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "libverto",
+          "version": "0.3.2-r2"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/musl-utils@1.2.6-r3",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "musl-utils",
+          "version": "1.2.6-r3"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/musl@1.2.6-r3",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "musl",
+          "version": "1.2.6-r3"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/ncurses-terminfo-base@6.6_p20260516-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "ncurses-terminfo-base",
+          "version": "6.6_p20260516-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/readline@8.3.3-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "readline",
+          "version": "8.3.3-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/scanelf@1.3.9-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "scanelf",
+          "version": "1.3.9-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/sqlite-libs@3.53.4-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "sqlite-libs",
+          "version": "3.53.4-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/ssl_client@1.37.0-r31",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "ssl_client",
+          "version": "1.37.0-r31"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/tzdata@2026f-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "tzdata",
+          "version": "2026f-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/xz-libs@5.8.4-r0",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "xz-libs",
+          "version": "5.8.4-r0"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:apk/alpine/zlib@1.3.2-r1",
+        "attributes": {
+          "ecosystem": "apk",
+          "name": "zlib",
+          "version": "1.3.2-r1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      },
+      {
+        "kind": "package",
+        "canonical_key": "purl:pkg:pypi/pip@25.0.1",
+        "attributes": {
+          "ecosystem": "pypi",
+          "name": "pip",
+          "version": "25.0.1"
+        },
+        "discovered_from": [
+          "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+        ]
+      }
+    ],
+    "observations": [
+      {
+        "subject": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "predicate": "artifact.digest",
+        "value": "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "predicate": "artifact.sbom",
+        "value": {
+          "format": "trivy-json",
+          "schema_version": 2,
+          "tool": "trivy",
+          "tool_version": "0.76.2",
+          "os_family": "alpine",
+          "os_version": "3.24.4",
+          "packages": 39,
+          "vulnerabilities": 38
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/.python-rundeps@20261105.193119",
+        "predicate": "package.installed",
+        "value": {
+          "version": "20261105.193119",
+          "ecosystem": "apk"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/.python-rundeps@20261105.193119",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-baselayout-data@3.7.2-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.7.2-r1",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-baselayout-data@3.7.2-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-baselayout@3.7.2-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.7.2-r1",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-baselayout@3.7.2-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-keys@2.6-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "2.6-r0",
+          "ecosystem": "apk",
+          "license": "MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-keys@2.6-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-release@3.24.4-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.24.4-r0",
+          "ecosystem": "apk",
+          "license": "MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/alpine-release@3.24.4-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/apk-tools@3.0.9-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.0.9-r0",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/apk-tools@3.0.9-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/busybox-binsh@1.37.0-r31",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.37.0-r31",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/busybox-binsh@1.37.0-r31",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/busybox@1.37.0-r31",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.37.0-r31",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/busybox@1.37.0-r31",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ca-certificates-bundle@20261020-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "20261020-r0",
+          "ecosystem": "apk",
+          "license": "MPL-2.0, MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ca-certificates-bundle@20261020-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ca-certificates@20261020-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "20261020-r0",
+          "ecosystem": "apk",
+          "license": "MPL-2.0, MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ca-certificates@20261020-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/gdbm@1.26-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.26-r0",
+          "ecosystem": "apk",
+          "license": "GPL-3.0-or-later"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/gdbm@1.26-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/keyutils-libs@1.6.3-r4",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.6.3-r4",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-or-later, LGPL-2.0-or-later"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/keyutils-libs@1.6.3-r4",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-conf@1.0-r2",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.0-r2",
+          "ecosystem": "apk",
+          "license": "MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-conf@1.0-r2",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.22.2-r1",
+          "ecosystem": "apk",
+          "license": "MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libapk@3.0.9-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.0.9-r0",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libapk@3.0.9-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libbz2@1.0.8-r6",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.0.8-r6",
+          "ecosystem": "apk",
+          "license": "bzip-2-1.0.6"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libbz2@1.0.8-r6",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcom_err@1.47.4-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.47.4-r0",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-or-later, LGPL-2.0-or-later, BSD-3-Clause, MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcom_err@1.47.4-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.5.9-r0",
+          "ecosystem": "apk",
+          "license": "Apache-2.0"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libffi@3.5.2-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.5.2-r1",
+          "ecosystem": "apk",
+          "license": "MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libffi@3.5.2-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libintl@1.0-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.0-r0",
+          "ecosystem": "apk",
+          "license": "LGPL-2.1-or-later"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libintl@1.0-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libncursesw@6.6_p20260516-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "6.6_p20260516-r0",
+          "ecosystem": "apk",
+          "license": "X-11"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libncursesw@6.6_p20260516-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libnsl@2.0.1-r2",
+        "predicate": "package.installed",
+        "value": {
+          "version": "2.0.1-r2",
+          "ecosystem": "apk",
+          "license": "LGPL-2.0-or-later"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libnsl@2.0.1-r2",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libpanelw@6.6_p20260516-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "6.6_p20260516-r0",
+          "ecosystem": "apk",
+          "license": "X-11"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libpanelw@6.6_p20260516-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.5.9-r0",
+          "ecosystem": "apk",
+          "license": "Apache-2.0"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libtirpc-conf@1.3.5-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.3.5-r1",
+          "ecosystem": "apk",
+          "license": "BSD-3-Clause"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libtirpc-conf@1.3.5-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libtirpc@1.3.5-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.3.5-r1",
+          "ecosystem": "apk",
+          "license": "BSD-3-Clause"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libtirpc@1.3.5-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libuuid@2.42.3-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "2.42.3-r1",
+          "ecosystem": "apk",
+          "license": "BSD-3-Clause"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libuuid@2.42.3-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libverto@0.3.2-r2",
+        "predicate": "package.installed",
+        "value": {
+          "version": "0.3.2-r2",
+          "ecosystem": "apk",
+          "license": "MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libverto@0.3.2-r2",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/musl-utils@1.2.6-r3",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.2.6-r3",
+          "ecosystem": "apk",
+          "license": "MIT, BSD-2-Clause, GPL-2.0-or-later"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/musl-utils@1.2.6-r3",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/musl@1.2.6-r3",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.2.6-r3",
+          "ecosystem": "apk",
+          "license": "MIT"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/musl@1.2.6-r3",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ncurses-terminfo-base@6.6_p20260516-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "6.6_p20260516-r0",
+          "ecosystem": "apk",
+          "license": "X-11"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ncurses-terminfo-base@6.6_p20260516-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/readline@8.3.3-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "8.3.3-r1",
+          "ecosystem": "apk",
+          "license": "GPL-3.0-or-later"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/readline@8.3.3-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/scanelf@1.3.9-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.3.9-r1",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/scanelf@1.3.9-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/sqlite-libs@3.53.4-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "3.53.4-r0",
+          "ecosystem": "apk",
+          "license": "blessing"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/sqlite-libs@3.53.4-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ssl_client@1.37.0-r31",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.37.0-r31",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-only"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/ssl_client@1.37.0-r31",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/tzdata@2026f-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "2026f-r0",
+          "ecosystem": "apk",
+          "license": "Public-Domain"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/tzdata@2026f-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/xz-libs@5.8.4-r0",
+        "predicate": "package.installed",
+        "value": {
+          "version": "5.8.4-r0",
+          "ecosystem": "apk",
+          "license": "GPL-2.0-or-later, 0BSD, Public-Domain, LGPL-2.1-or-later"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/xz-libs@5.8.4-r0",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/zlib@1.3.2-r1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "1.3.2-r1",
+          "ecosystem": "apk",
+          "license": "Zlib"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/zlib@1.3.2-r1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "predicate": "package.installed",
+        "value": {
+          "version": "25.0.1",
+          "ecosystem": "pypi",
+          "license": "MIT",
+          "location": "usr/local/lib/python3.12/site-packages/pip-25.0.1.dist-info/METADATA"
+        },
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "predicate": "asset.seen",
+        "value": true,
+        "observed_at": "2026-11-28T00:00:12Z"
+      }
+    ],
+    "relationships": [
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/.python-rundeps@20261105.193119",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/alpine-baselayout-data@3.7.2-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/alpine-baselayout@3.7.2-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/alpine-keys@2.6-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/alpine-release@3.24.4-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/apk-tools@3.0.9-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/busybox-binsh@1.37.0-r31",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/busybox@1.37.0-r31",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/ca-certificates-bundle@20261020-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/ca-certificates@20261020-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/gdbm@1.26-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/keyutils-libs@1.6.3-r4",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/krb5-conf@1.0-r2",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libapk@3.0.9-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libbz2@1.0.8-r6",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libcom_err@1.47.4-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libffi@3.5.2-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libintl@1.0-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libncursesw@6.6_p20260516-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libnsl@2.0.1-r2",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libpanelw@6.6_p20260516-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libtirpc-conf@1.3.5-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libtirpc@1.3.5-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libuuid@2.42.3-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/libverto@0.3.2-r2",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/musl-utils@1.2.6-r3",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/musl@1.2.6-r3",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/ncurses-terminfo-base@6.6_p20260516-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/readline@8.3.3-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/scanelf@1.3.9-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/sqlite-libs@3.53.4-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/ssl_client@1.37.0-r31",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/tzdata@2026f-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/xz-libs@5.8.4-r0",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:apk/alpine/zlib@1.3.2-r1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      },
+      {
+        "type": "CONTAINS_PACKAGE",
+        "from": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+        "to": "purl:pkg:pypi/pip@25.0.1",
+        "confidence": 1.0,
+        "observed_at": "2026-11-28T00:00:12Z"
+      }
+    ],
+    "findings": [
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-107364",
+        "category": "vulnerability",
+        "title": "CVE-2026-107364: krb5: Unauthenticated KDC DoS based on ASN.1 decoder read overrun",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-107364"
+        ],
+        "cwe_ids": [],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "In all released versions of MIT krb5, an unauthenticated attacker can cause a KDC process to perform a large read overrun, likely causing the process to terminate."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-107708",
+        "category": "vulnerability",
+        "title": "CVE-2026-107708: krb5: krb5: Denial of Service via malformed PAC in S4U2Proxy requests",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-107708"
+        ],
+        "cwe_ids": [
+          "CWE-476"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "MIT krb5 through 1.22.2 contains a NULL pointer dereference vulnerability in the KDC's get_pac_princ_with_realm() that returns success while leaving the client principal NULL on malformed names. A malicious or compromised cross-realm trusted KDC can send an S4U2Proxy request with a PAC carrying a malformed client name to crash krb5kdc and deny authentication."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-107778",
+        "category": "vulnerability",
+        "title": "CVE-2026-107778: krb5: krb5: Denial of Service via crafted forwarded credentials",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-107778"
+        ],
+        "cwe_ids": [
+          "CWE-476"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "MIT Kerberos 5 (krb5) through 1.22.2 contains a NULL pointer dereference in make_cred_list() in rd_cred.c that allows authenticated Kerberos clients to crash services by sending mismatched KRB-CRED arrays. Attackers can send forwarded credentials with more tickets than ticket_info entries through gss_accept_sec_context() to crash GSS-API acceptor services, causing denial of service."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-107884",
+        "category": "vulnerability",
+        "title": "CVE-2026-107884: krb5: Unauthorized key reset of protected principal via kpasswd",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-107884"
+        ],
+        "cwe_ids": [],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "In MIT krb5 release 1.15 and later, a client with kadmin administrative privileges can bypass the lockdown_keys attribute by using the password change protocol instead of the kadmin protocol."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-111423",
+        "category": "vulnerability",
+        "title": "CVE-2026-111423: krb5: Improper authorization via flawed PAC checksum verification",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-111423"
+        ],
+        "cwe_ids": [],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "In MIT krb5 release 1.21 and later, server applications will erroneously treat the PAC within a ticket as verified when the server checksum is invalid."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112314",
+        "category": "vulnerability",
+        "title": "CVE-2026-112314: krb5: MIT krb5 GSS-RPC client memory leak on XID mismatch retries",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112314"
+        ],
+        "cwe_ids": [
+          "CWE-772"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "clnttcp_call() in lib/rpc/clnt_tcp.c in MIT Kerberos 5 (aka krb5) does not free the RPC reply verifier between retries, which allows remote attackers to cause a denial of service (memory leak in GSS-RPC client programs) by injecting RPC replies with mismatched XIDs or by triggering authentication retries."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112315",
+        "category": "vulnerability",
+        "title": "CVE-2026-112315: krb5: MIT krb5 kadmind unauthenticated memory leak DoS in RPCSEC_GSS buffer decode failure",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112315"
+        ],
+        "cwe_ids": [
+          "CWE-772"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "The RPCSEC_GSS authentication routines in lib/rpc/authgss_prot.c in MIT Kerberos 5 (aka krb5) 1.4 and later do not free partially decoded buffers on failure, which allows remote attackers to cause a denial of service (memory leak in kadmind) via crafted RPCSEC_GSS messages."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112316",
+        "category": "vulnerability",
+        "title": "CVE-2026-112316: krb5: MIT krb5 kadmind authenticated memory leak DoS in xdr_krb5_tl_data() decode failure",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112316"
+        ],
+        "cwe_ids": [
+          "CWE-772"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "xdr_krb5_tl_data() in lib/kadm5/kadm_rpc_xdr.c in MIT Kerberos 5 (aka krb5) does not free partially decoded data on failure, which allows remote authenticated users to cause a denial of service (memory leak in kadmind) via crafted RPC requests that trigger a decode failure."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112317",
+        "category": "vulnerability",
+        "title": "CVE-2026-112317: krb5: MIT krb5 KDC unauthenticated memory leak DoS in KDB keytab key decryption error path",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112317"
+        ],
+        "cwe_ids": [
+          "CWE-772"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "krb5_ktkdb_get_entry() in lib/kdb/keytab.c in MIT Kerberos 5 (aka krb5) 1.2.8 and later does not free decrypted key material when a post-decryption check fails, which allows remote attackers to cause a denial of service (memory leak in the KDC or kadmind) via requests that repeatedly trigger key decryption failures."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112318",
+        "category": "vulnerability",
+        "title": "CVE-2026-112318: krb5: MIT krb5 kadmind authenticated DoS exploiting dereference of null policy name pointers",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112318"
+        ],
+        "cwe_ids": [
+          "CWE-476"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "The policy RPC stubs in kadmin/server/server_stubs.c in MIT Kerberos 5 (aka krb5) 1.5.3 and later do not reject a NULL policy name decoded by xdr_nullstring(), which allows remote authenticated users to cause a denial of service (kadmind crash via NULL pointer dereference) by sending a policy request with an empty policy name that reaches authorization checks or logging code."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112319",
+        "category": "vulnerability",
+        "title": "CVE-2026-112319: krb5: MIT krb5 kadmind authenticated memory exhaustion DoS via unbounded RPC XDR allocation",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112319"
+        ],
+        "cwe_ids": [
+          "CWE-770"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "The GSS-RPC layer in MIT Kerberos 5 (aka krb5) does not enforce size limits on XDR-decoded data, which allows remote authenticated users to cause a denial of service (memory exhaustion or excessive CPU consumption in kadmind) via crafted RPC requests that trigger unbounded memory allocations during XDR decoding."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112320",
+        "category": "vulnerability",
+        "title": "CVE-2026-112320: krb5: MIT krb5 kadmind unauthenticated memory leak DoS via GSS-RPC auth flavor switching",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112320"
+        ],
+        "cwe_ids": [
+          "CWE-772"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "The GSS-RPC transport layer in MIT Kerberos 5 (aka krb5) 1.4 and later does not release the previous authentication context when a client switches from an RPCSEC_GSS or AUTH_GSSAPI flavor to a non-GSS flavor on the same TCP connection. This allows remote attackers to cause a denial of service (memory exhaustion in kadmind) by repeatedly establishing and abandoning GSS authentication contexts."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112321",
+        "category": "vulnerability",
+        "title": "CVE-2026-112321: krb5: MIT krb5 kadmind unauthenticated memory leak DoS via AUTH_GSSAPI_INIT error paths",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112321"
+        ],
+        "cwe_ids": [
+          "CWE-772"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "The AUTH_GSSAPI handler in lib/rpc/svc_auth_gssapi.c in MIT Kerberos 5 (aka krb5) does not free decoded arguments on certain error paths, which allows remote attackers to cause a denial of service (memory exhaustion in kadmind) via crafted AUTH_GSSAPI_INIT requests that trigger authentication failures."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112322",
+        "category": "vulnerability",
+        "title": "CVE-2026-112322: krb5: MIT krb5 kadmind unauthenticated CPU DoS via AUTH_GSSAPI client states cleanup",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112322"
+        ],
+        "cwe_ids": [
+          "CWE-770"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "clean_client() in lib/rpc/svc_auth_gssapi.c in MIT Kerberos 5 (aka krb5) restarts its scan from the head of the client list after each removal, resulting in quadratic CPU cost. Remote attackers can cause a denial of service (CPU consumption in kadmind) by accumulating a large number of AUTH_GSSAPI client entries."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-112323",
+        "category": "vulnerability",
+        "title": "CVE-2026-112323: krb5: MIT krb5 kadmind unauthenticated memory exhaustion via failed AUTH_GSSAPI_INIT requests",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-112323"
+        ],
+        "cwe_ids": [
+          "CWE-772"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "The AUTH_GSSAPI handler in lib/rpc/svc_auth_gssapi.c in MIT Kerberos 5 (aka krb5) 1.5.2 and later allows remote attackers to cause a denial of service (memory exhaustion in kadmind) by sending repeated failed AUTH_GSSAPI_INIT requests. Each failed request allocates client state that is only freed after a 15-minute expiration timeout, allowing an attacker to accumulate memory faster than it is reclaimed."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-118380",
+        "category": "vulnerability",
+        "title": "CVE-2026-118380: krb5: kadmind: request alteration and protected information disclosure",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-118380"
+        ],
+        "cwe_ids": [],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "In MIT krb5 release 1.4 and later, an active network attacker can alter the arguments sent by a legitimate client to RPC services protected by RPCSEC_GSS, or cause return values to be sent in plain text."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-119079",
+        "category": "vulnerability",
+        "title": "CVE-2026-119079: krb5: MIT krb5 KDC unauthenticated CPU DoS via quadratic ASN.1 SEQUENCE OF decoding",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-119079"
+        ],
+        "cwe_ids": [
+          "CWE-408"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "decode_sequence_of() in lib/krb5/asn.1/asn1_encode.c in MIT Kerberos 5 (aka krb5) 1.11 and later grows the decoded element array one entry at a time, which allows remote attackers to cause a denial of service (CPU consumption in the KDC) by sending an unauthenticated AS-REQ or TGS-REQ with a large number of elements in a SEQUENCE OF field over TCP."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-40355",
+        "category": "vulnerability",
+        "title": "CVE-2026-40355: krb5: MIT Kerberos 5: Denial of Service via NULL pointer dereference in NegoEx mechanism",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-40355"
+        ],
+        "cwe_ids": [
+          "CWE-476"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "In MIT Kerberos 5 (aka krb5) before 1.22.3, there is a NULL pointer dereference if an application calls gss_accept_sec_context() on a system with a NegoEx mechanism registered in /etc/gss/mech. An unauthenticated remote attacker can trigger this, causing the process to terminate in parse_nego_message."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-40356",
+        "category": "vulnerability",
+        "title": "CVE-2026-40356: krb5: MIT Kerberos 5 (krb5): Denial of Service via integer underflow and out-of-bounds read",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-40356"
+        ],
+        "cwe_ids": [
+          "CWE-191"
+        ],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "In MIT Kerberos 5 (aka krb5) before 1.22.3, there is an integer underflow and resultant out-of-bounds read if an application calls gss_accept_sec_context() on a system with a NegoEx mechanism registered in /etc/gss/mech. An unauthenticated remote attacker can trigger this, possibly causing the process to terminate in parse_message."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-71199",
+        "category": "vulnerability",
+        "title": "CVE-2026-71199: krb5: Alteration of authentication indicators in CAMMAC container",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-71199"
+        ],
+        "cwe_ids": [],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "In MIT krb5 release 1.14 and later (since authentication indicator support was added), an authenticated attacker can bypass authentication indicator requirements using an unkeyed checksum in the CAMMAC authdata container."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1",
+        "rule_id": "cve:CVE-2026-71200",
+        "category": "vulnerability",
+        "title": "CVE-2026-71200: krb5: Unauthenticated KDC NULL pointer dereference KDC DoS via crafted PKINIT pre-auth request",
+        "location": {
+          "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+          "installed_version": "1.22.2-r1",
+          "fixed_version": "1.22.3-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-71200"
+        ],
+        "cwe_ids": [],
+        "scanner_severity": "high",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/krb5-libs",
+          "installed_version": "1.22.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "If a KDC is configured to allow PKINIT authentication, an unauthenticated attacker can trigger a null pointer dereference, causing the process to terminate."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-107496",
+        "category": "vulnerability",
+        "title": "CVE-2026-107496: openssl: openssl: Denial of Service via crafted EC certificate in CMS encryption",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libcrypto3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-107496"
+        ],
+        "cwe_ids": [
+          "CWE-835"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libcrypto3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: Encrypting a CMS message to an EC certificate whose group order\nis 1 may cause CMS_encrypt() or CMS_encrypt_ex() to loop indefinitely.\n\nImpact summary: An attacker able to supply the recipient certificate to an\napplication performing CMS encryption can cause that application to loop\nindefinitely, consuming CPU and resulting in Denial of Service.\n\nCWE: CWE-835: Loop with Unreachable Exit Condition ('Infinite Loop')\n\nDescription: CMS_encrypt() and CMS_encrypt_ex() encrypt a message to one or\nmore recipient certificates and, for an EC recipient, generate an ephemeral\nkey in the recipient's group. If the certificate declares a group order of 1,\nrandom scalar generation can only produce zero. The key generation routine\nthen retries without limit while waiting for a nonzero private scalar, so the\ncall never returns.\n\nThe OpenSSL TLS and QUIC implementations do not use this path. An application\nis exposed only if it calls CMS_encrypt() or CMS_encrypt_ex() with a recipient\ncertificate whose EC parameters are attacker-controlled. Certificates with\nnormal EC group orders do not trigger the loop.\n\nOpenSSL 4.0 and later reject unknown explicit EC groups in default builds.\nThese versions are affected only when configured with the\nenable-ec_explicit_curves option.\n\nThe result is a hang that consumes a CPU core until the process is\ninterrupted, a Denial of Service. The severity is Low because the attacker\nmust supply the recipient certificate and the application must choose to\nencrypt to it; ordinary CMS encryption to trusted recipients is unaffected.\n\nThe fix makes EC key generation fail when the group has no valid nonzero\nprivate scalar, instead of retrying indefinitely.\n\nFIPS impact: no\nThe FIPS modules in 4.1, 4.0, 3.5 and 3.0 are not affected. The FIPS provider\ndoes not support arbitrary explicit EC domain parameters, so an order-1 group\nis rejected during key import before the vulnerable key generation path is\nreached."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-88822",
+        "category": "vulnerability",
+        "title": "CVE-2026-88822: openssl: openssl: Information disclosure via uninitialized memory in QUIC peer detection",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libcrypto3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-88822"
+        ],
+        "cwe_ids": [
+          "CWE-457"
+        ],
+        "scanner_severity": "low",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libcrypto3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: QUIC, when performing automated peer detection, may allow\nuninitialized stack data to leak into the received address which is then used\nas the destination for outgoing packets.\n\nImpact summary: Applications using QUIC's automated peer detection mechanism\nmay receive an invalid address, leading to connection loss and disclosure of\nuninitialized stack data to an attacker observing the outgoing network traffic.\n\nCWE: CWE-457 (Use of Uninitialized Variable)\n\nDescription: The OpenSSL QUIC stack contains a feature in which, when using an\nalready connected socket, it will auto-detect the peer address during the SSL\nhandshake.  This feature uses the getpeername() function, passing a buffer of\nsufficient length to hold any supported address family, but passes a buffer\nlength that is only sized such that larger addresses, such as IPv6, cannot be\nretrieved. The getpeername() function however, still returns the full address\nlength, which is accepted as the valid input buffer length, leading to the\naddress buffer containing uninitialized stack data instead of the actual peer\naddress. The invalid peer address is then used as destination for the outgoing\npackets which leads to a connectivity breakage and a leakage of the\nuninitialized stack data to passive network observers.\n\nFIPS impact: no\nThe FIPS modules in 4.0, 3.6, 3.5, 3.4, and 3.0 are not affected by this CVE as\nthe affected protocol is not implemented in the FIPS module."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-88823",
+        "category": "vulnerability",
+        "title": "CVE-2026-88823: openssl: OpenSSL: Message authentication bypass via zero-length AAD update",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libcrypto3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-88823"
+        ],
+        "cwe_ids": [
+          "CWE-325"
+        ],
+        "scanner_severity": "low",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libcrypto3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: The AES-GCM-SIV implementation treats a zero-length Additional\nAuthenticated Data (AAD) update as a reset of all the AAD supplied so far,\ninstead of leaving the AAD unchanged. An application that supplies its AAD in\nseveral fragments, one of which is empty, therefore produces or verifies\nmessages whose authentication tag does not cover the AAD supplied before\nthe empty fragment.\n\nImpact summary: Data an application intended to authenticate alongside a\nmessage is silently left unauthenticated. An attacker can forge the AAD of such\na message.\n\nCWE: CWE-325: Missing Cryptographic Step\n\nDescription: An application passing AAD in multiple chunks of which some have\nzero length will have the previous AAD chunks effectively unauthenticated. Also,\non context re-initialisation, the AAD was not reset, which meant that any AAD\naccumulated from the previous context usage were also included in the AAD of the\nnew message.\n\nThe fix makes a zero-length AAD update a no-op and clears any accumulated AAD\nwhenever the context is re-initialised with a key or a nonce.\nA re-initialisation that only changes parameters keeps the AAD.\n\nFIPS impact: no\nThe FIPS modules are not affected, as AES-GCM-SIV is not a FIPS approved\nalgorithm and is implemented only in the default provider, outside the\nOpenSSL FIPS module boundary."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-95691",
+        "category": "vulnerability",
+        "title": "CVE-2026-95691: openssl: openssl: Denial of Service via overlapping QUIC CRYPTO frame processing",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libcrypto3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-95691"
+        ],
+        "cwe_ids": [
+          "CWE-416"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libcrypto3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: A retransmitted QUIC CRYPTO frame can release packet storage\nwhile the TLS record layer retains a direct pointer into that storage causing\nuse after free.\n\nImpact summary: A malicious QUIC server can cause a heap-use-after-free read\nin the OpenSSL QUIC client. The server can also identify one allocator-adjacent\nbyte through the client's protected Handshake response.\n\nCWE: CWE-416: Use After Free\n\nDescription: During CRYPTO stream processing, a pointer into the first frame's\nmemory on the stream is lent to the TLS handshake processing. The memory\nmust remain stable until it is processed and released. However the processing\nof retransmitted CRYPTO frames could release the memory if the retransmitted\nframe fully overlapped the existing frame. This then causes use-after-free read\nwhen the TLS handshake processing continues.\n\nThe use-after-free read can lead to a Denial-of-Service of the client\napplication or a minor leak of information about the heap memory contents\nthat might be overwritten with other data, subsequently allocated by\nthe application, to the peer.\n\nFIPS impact: no\nThe FIPS module is not affected as the QUIC implementation is outside of\nthe OpenSSL FIPS module boundary."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libcrypto3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-95692",
+        "category": "vulnerability",
+        "title": "CVE-2026-95692: openssl: OpenSSL: Denial of Service via out-of-bounds read in AES-GCM-SIV",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libcrypto3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-95692"
+        ],
+        "cwe_ids": [
+          "CWE-125"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libcrypto3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: Setting an AES-GCM-SIV IV shorter than the expected nonce\nlength via EVP_CipherInit_ex() may trigger a heap out-of-bounds read.\nSupplying a longer IV is silently truncated instead of rejected.\n\nImpact summary: An application passing a caller-supplied IV of the wrong\nlength may crash or read beyond its buffer. Because trailing IV bytes are\nignored, an attacker who knows one message and tag may forge messages under a\ndifferent IV.\n\nCWE: CWE-125: Out-of-bounds Read\n\nDescription: AES-GCM-SIV copies the caller-supplied IV or nonce into its\ninternal state using a copy whose length is taken from the expected nonce size\nrather than from the length the caller actually provided. When the caller\npasses a shorter IV, the copy reads past the end of the caller's buffer;\nAddressSanitizer confirms a heap out-of-bounds read reached through\nEVP_CipherInit_ex() into ossl_aes_gcm_siv_init(). When the caller passes a\nlonger IV, the implementation silently discards the trailing bytes instead of\nrejecting the length.\n\nThe truncation breaks the binding between the IV and the computed\nauthentication tag. An attacker who has observed a message and its tag under\none IV can produce a message and tag that verify under a different IV whose\nfirst bytes match, since the surplus bytes never influence the computation.\nThe message itself is unchanged, so this is a failure of IV commitment rather\nthan a classic existential forgery.\n\nOnly applications that call EVP_CipherInit_ex() (or the equivalent provider\ncipher initialization) with an IV length other than the standard 12 bytes for\nAES-GCM-SIV are affected. The severity is limited because the out-of-bounds\nread is small and attacker-controlled only in length, and the forgery requires\nan unusual IV length choice by the application.\n\nFIPS impact: no\nThe FIPS modules are not affected by this issue, as AES-GCM-SIV is not an\napproved algorithm."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-107496",
+        "category": "vulnerability",
+        "title": "CVE-2026-107496: openssl: openssl: Denial of Service via crafted EC certificate in CMS encryption",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libssl3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-107496"
+        ],
+        "cwe_ids": [
+          "CWE-835"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libssl3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: Encrypting a CMS message to an EC certificate whose group order\nis 1 may cause CMS_encrypt() or CMS_encrypt_ex() to loop indefinitely.\n\nImpact summary: An attacker able to supply the recipient certificate to an\napplication performing CMS encryption can cause that application to loop\nindefinitely, consuming CPU and resulting in Denial of Service.\n\nCWE: CWE-835: Loop with Unreachable Exit Condition ('Infinite Loop')\n\nDescription: CMS_encrypt() and CMS_encrypt_ex() encrypt a message to one or\nmore recipient certificates and, for an EC recipient, generate an ephemeral\nkey in the recipient's group. If the certificate declares a group order of 1,\nrandom scalar generation can only produce zero. The key generation routine\nthen retries without limit while waiting for a nonzero private scalar, so the\ncall never returns.\n\nThe OpenSSL TLS and QUIC implementations do not use this path. An application\nis exposed only if it calls CMS_encrypt() or CMS_encrypt_ex() with a recipient\ncertificate whose EC parameters are attacker-controlled. Certificates with\nnormal EC group orders do not trigger the loop.\n\nOpenSSL 4.0 and later reject unknown explicit EC groups in default builds.\nThese versions are affected only when configured with the\nenable-ec_explicit_curves option.\n\nThe result is a hang that consumes a CPU core until the process is\ninterrupted, a Denial of Service. The severity is Low because the attacker\nmust supply the recipient certificate and the application must choose to\nencrypt to it; ordinary CMS encryption to trusted recipients is unaffected.\n\nThe fix makes EC key generation fail when the group has no valid nonzero\nprivate scalar, instead of retrying indefinitely.\n\nFIPS impact: no\nThe FIPS modules in 4.1, 4.0, 3.5 and 3.0 are not affected. The FIPS provider\ndoes not support arbitrary explicit EC domain parameters, so an order-1 group\nis rejected during key import before the vulnerable key generation path is\nreached."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-88822",
+        "category": "vulnerability",
+        "title": "CVE-2026-88822: openssl: openssl: Information disclosure via uninitialized memory in QUIC peer detection",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libssl3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-88822"
+        ],
+        "cwe_ids": [
+          "CWE-457"
+        ],
+        "scanner_severity": "low",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libssl3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: QUIC, when performing automated peer detection, may allow\nuninitialized stack data to leak into the received address which is then used\nas the destination for outgoing packets.\n\nImpact summary: Applications using QUIC's automated peer detection mechanism\nmay receive an invalid address, leading to connection loss and disclosure of\nuninitialized stack data to an attacker observing the outgoing network traffic.\n\nCWE: CWE-457 (Use of Uninitialized Variable)\n\nDescription: The OpenSSL QUIC stack contains a feature in which, when using an\nalready connected socket, it will auto-detect the peer address during the SSL\nhandshake.  This feature uses the getpeername() function, passing a buffer of\nsufficient length to hold any supported address family, but passes a buffer\nlength that is only sized such that larger addresses, such as IPv6, cannot be\nretrieved. The getpeername() function however, still returns the full address\nlength, which is accepted as the valid input buffer length, leading to the\naddress buffer containing uninitialized stack data instead of the actual peer\naddress. The invalid peer address is then used as destination for the outgoing\npackets which leads to a connectivity breakage and a leakage of the\nuninitialized stack data to passive network observers.\n\nFIPS impact: no\nThe FIPS modules in 4.0, 3.6, 3.5, 3.4, and 3.0 are not affected by this CVE as\nthe affected protocol is not implemented in the FIPS module."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-88823",
+        "category": "vulnerability",
+        "title": "CVE-2026-88823: openssl: OpenSSL: Message authentication bypass via zero-length AAD update",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libssl3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-88823"
+        ],
+        "cwe_ids": [
+          "CWE-325"
+        ],
+        "scanner_severity": "low",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libssl3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: The AES-GCM-SIV implementation treats a zero-length Additional\nAuthenticated Data (AAD) update as a reset of all the AAD supplied so far,\ninstead of leaving the AAD unchanged. An application that supplies its AAD in\nseveral fragments, one of which is empty, therefore produces or verifies\nmessages whose authentication tag does not cover the AAD supplied before\nthe empty fragment.\n\nImpact summary: Data an application intended to authenticate alongside a\nmessage is silently left unauthenticated. An attacker can forge the AAD of such\na message.\n\nCWE: CWE-325: Missing Cryptographic Step\n\nDescription: An application passing AAD in multiple chunks of which some have\nzero length will have the previous AAD chunks effectively unauthenticated. Also,\non context re-initialisation, the AAD was not reset, which meant that any AAD\naccumulated from the previous context usage were also included in the AAD of the\nnew message.\n\nThe fix makes a zero-length AAD update a no-op and clears any accumulated AAD\nwhenever the context is re-initialised with a key or a nonce.\nA re-initialisation that only changes parameters keeps the AAD.\n\nFIPS impact: no\nThe FIPS modules are not affected, as AES-GCM-SIV is not a FIPS approved\nalgorithm and is implemented only in the default provider, outside the\nOpenSSL FIPS module boundary."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-95691",
+        "category": "vulnerability",
+        "title": "CVE-2026-95691: openssl: openssl: Denial of Service via overlapping QUIC CRYPTO frame processing",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libssl3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-95691"
+        ],
+        "cwe_ids": [
+          "CWE-416"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libssl3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: A retransmitted QUIC CRYPTO frame can release packet storage\nwhile the TLS record layer retains a direct pointer into that storage causing\nuse after free.\n\nImpact summary: A malicious QUIC server can cause a heap-use-after-free read\nin the OpenSSL QUIC client. The server can also identify one allocator-adjacent\nbyte through the client's protected Handshake response.\n\nCWE: CWE-416: Use After Free\n\nDescription: During CRYPTO stream processing, a pointer into the first frame's\nmemory on the stream is lent to the TLS handshake processing. The memory\nmust remain stable until it is processed and released. However the processing\nof retransmitted CRYPTO frames could release the memory if the retransmitted\nframe fully overlapped the existing frame. This then causes use-after-free read\nwhen the TLS handshake processing continues.\n\nThe use-after-free read can lead to a Denial-of-Service of the client\napplication or a minor leak of information about the heap memory contents\nthat might be overwritten with other data, subsequently allocated by\nthe application, to the peer.\n\nFIPS impact: no\nThe FIPS module is not affected as the QUIC implementation is outside of\nthe OpenSSL FIPS module boundary."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/libssl3@3.5.9-r0",
+        "rule_id": "cve:CVE-2026-95692",
+        "category": "vulnerability",
+        "title": "CVE-2026-95692: openssl: OpenSSL: Denial of Service via out-of-bounds read in AES-GCM-SIV",
+        "location": {
+          "package_purl": "pkg:apk/alpine/libssl3@3.5.9-r0",
+          "installed_version": "3.5.9-r0",
+          "fixed_version": "3.5.9-r1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-95692"
+        ],
+        "cwe_ids": [
+          "CWE-125"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/libssl3",
+          "installed_version": "3.5.9-r0"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Issue summary: Setting an AES-GCM-SIV IV shorter than the expected nonce\nlength via EVP_CipherInit_ex() may trigger a heap out-of-bounds read.\nSupplying a longer IV is silently truncated instead of rejected.\n\nImpact summary: An application passing a caller-supplied IV of the wrong\nlength may crash or read beyond its buffer. Because trailing IV bytes are\nignored, an attacker who knows one message and tag may forge messages under a\ndifferent IV.\n\nCWE: CWE-125: Out-of-bounds Read\n\nDescription: AES-GCM-SIV copies the caller-supplied IV or nonce into its\ninternal state using a copy whose length is taken from the expected nonce size\nrather than from the length the caller actually provided. When the caller\npasses a shorter IV, the copy reads past the end of the caller's buffer;\nAddressSanitizer confirms a heap out-of-bounds read reached through\nEVP_CipherInit_ex() into ossl_aes_gcm_siv_init(). When the caller passes a\nlonger IV, the implementation silently discards the trailing bytes instead of\nrejecting the length.\n\nThe truncation breaks the binding between the IV and the computed\nauthentication tag. An attacker who has observed a message and its tag under\none IV can produce a message and tag that verify under a different IV whose\nfirst bytes match, since the surplus bytes never influence the computation.\nThe message itself is unchanged, so this is a failure of IV commitment rather\nthan a classic existential forgery.\n\nOnly applications that call EVP_CipherInit_ex() (or the equivalent provider\ncipher initialization) with an IV length other than the standard 12 bytes for\nAES-GCM-SIV are affected. The severity is limited because the out-of-bounds\nread is small and attacker-controlled only in length, and the forgery requires\nan unusual IV length choice by the application.\n\nFIPS impact: no\nThe FIPS modules are not affected by this issue, as AES-GCM-SIV is not an\napproved algorithm."
+      },
+      {
+        "subject": "purl:pkg:apk/alpine/zlib@1.3.2-r1",
+        "rule_id": "cve:CVE-2026-4738",
+        "category": "vulnerability",
+        "title": "CVE-2026-4738: Improper Restriction of Operations within the Bounds of a Memory Buffe ...",
+        "location": {
+          "package_purl": "pkg:apk/alpine/zlib@1.3.2-r1",
+          "installed_version": "1.3.2-r1",
+          "fixed_version": "1.4-r0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-4738"
+        ],
+        "cwe_ids": [
+          "CWE-119"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:apk/alpine/zlib",
+          "installed_version": "1.3.2-r1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "Improper Restriction of Operations within the Bounds of a Memory Buffer vulnerability in OSGeo gdal (frmts/zlib/contrib/infback9 modules). This vulnerability is associated with program files inftree9.C\u200e.\n\nThis issue affects gdal: before 3.11.0."
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "rule_id": "cve:CVE-2025-8869",
+        "category": "vulnerability",
+        "title": "CVE-2025-8869: pip: pip missing checks on symbolic link extraction",
+        "location": {
+          "package_purl": "pkg:pypi/pip@25.0.1",
+          "installed_version": "25.0.1",
+          "fixed_version": "25.3"
+        },
+        "vulnerability_ids": [
+          "CVE-2025-8869"
+        ],
+        "cwe_ids": [],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:pypi/pip",
+          "installed_version": "25.0.1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "When extracting a tar archive pip may not check symbolic links point into the extraction directory if the tarfile module doesn't implement PEP 706.\nNote that upgrading pip to a \"fixed\" version for this vulnerability doesn't fix all known vulnerabilities that are remediated by using a Python version that implements PEP 706.\n\nNote that this is a vulnerability in pip's fallback implementation of tar extraction for Python versions that don't implement PEP 706\nand therefore are not secure to all vulnerabilities in the Python 'tarfile' module. If you're using a Python version that implements PEP 706\nthen pip doesn't use the \"vulnerable\" fallback code.\n\nMitigations include upgrading to a version of pip that includes the fix, upgrading to a Python version that implements PEP 706 (Python >=3.9.17, >=3.10.12, >=3.11.4, or >=3.12),\napplying the linked patch, or inspecting source distributions (sdists) before installation as is already a best-practice."
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "rule_id": "cve:CVE-2026-13346",
+        "category": "vulnerability",
+        "title": "CVE-2026-13346: pip: pip: Arbitrary file installation via malicious package indexes",
+        "location": {
+          "package_purl": "pkg:pypi/pip@25.0.1",
+          "installed_version": "25.0.1",
+          "fixed_version": "26.2.0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-13346"
+        ],
+        "cwe_ids": [
+          "CWE-36"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:pypi/pip",
+          "installed_version": "25.0.1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "pip would incorrectly handle doubly-encoded package URLs from indexes allowing for files to be installed to arbitrary locations on disk even when installing wheels.\n\n\n\n\nThis vulnerability requires downloading or installing a package from a malicious package index to succeed, malicious packages alone are not able to exploit this vulnerability. Note that this vulnerability only materially impacts users running `pip download` with the `--only-binary` option as installing source distributions from an untrusted index is already an unsafe operation that executes code during install time."
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "rule_id": "cve:CVE-2026-1703",
+        "category": "vulnerability",
+        "title": "CVE-2026-1703: pip: pip: Information disclosure via path traversal when installing crafted wheel archives",
+        "location": {
+          "package_purl": "pkg:pypi/pip@25.0.1",
+          "installed_version": "25.0.1",
+          "fixed_version": "26.0"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-1703"
+        ],
+        "cwe_ids": [
+          "CWE-22"
+        ],
+        "scanner_severity": "low",
+        "fingerprint_context": {
+          "package": "pkg:pypi/pip",
+          "installed_version": "25.0.1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "When pip is installing and extracting a maliciously crafted wheel archive, files may be extracted outside the installation directory. The path traversal is limited to prefixes of the installation directory, thus isn't able to inject or overwrite executable files in typical situations."
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "rule_id": "cve:CVE-2026-3219",
+        "category": "vulnerability",
+        "title": "CVE-2026-3219: pip: pip: Incorrect file installation due to improper archive handling",
+        "location": {
+          "package_purl": "pkg:pypi/pip@25.0.1",
+          "installed_version": "25.0.1",
+          "fixed_version": "26.1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-3219"
+        ],
+        "cwe_ids": [
+          "CWE-434"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:pypi/pip",
+          "installed_version": "25.0.1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "pip handles concatenated tar and ZIP files as ZIP files regardless of filename or whether a file is both a tar and ZIP file. This behavior could result in confusing installation behavior, such as installing \"incorrect\" files according to the filename of the archive. New behavior only proceeds with installation if the file identifies uniquely as a ZIP or tar archive, not as both."
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "rule_id": "cve:CVE-2026-6357",
+        "category": "vulnerability",
+        "title": "CVE-2026-6357: pip: pip: Arbitrary code execution or information disclosure via malicious wheel package installation",
+        "location": {
+          "package_purl": "pkg:pypi/pip@25.0.1",
+          "installed_version": "25.0.1",
+          "fixed_version": "26.1"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-6357"
+        ],
+        "cwe_ids": [
+          "CWE-829"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:pypi/pip",
+          "installed_version": "25.0.1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "pip prior to version 26.1 would run self-update check functionality after installing wheel files which required importing well-known Python modules names. These module imports were intentionally deferred to increase startup time of the pip CLI. The patch changes self-update functionality to run before wheels are installed to prevent newly-installed modules from being imported shortly after the installation of a wheel package. Users should still review package contents prior to installation."
+      },
+      {
+        "subject": "purl:pkg:pypi/pip@25.0.1",
+        "rule_id": "cve:CVE-2026-8643",
+        "category": "vulnerability",
+        "title": "CVE-2026-8643: python-pip: Path traversal via malicious entry point name in pip wheel installation allows arbitrary file overwrite",
+        "location": {
+          "package_purl": "pkg:pypi/pip@25.0.1",
+          "installed_version": "25.0.1",
+          "fixed_version": "26.1.2"
+        },
+        "vulnerability_ids": [
+          "CVE-2026-8643"
+        ],
+        "cwe_ids": [
+          "CWE-22"
+        ],
+        "scanner_severity": "medium",
+        "fingerprint_context": {
+          "package": "pkg:pypi/pip",
+          "installed_version": "25.0.1"
+        },
+        "confidence": 0.9,
+        "evidence_refs": [
+          {
+            "local_ref": "raw"
+          }
+        ],
+        "description": "pip would treat console_scripts and gui_scripts as paths instead of file names without sanitizing the resolved absolute path to the installation directory, leading to entry points being installed outside the installation directory."
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "local_ref": "raw",
+      "sha256": "6d43765142285ea82f772ee631c7df897d773efd06566c5de378863b0ea480c9",
+      "uri": "s3://evidence/01934f6a-0000-7000-8000-000000000001/01934f6a-0000-7000-8000-00000000d006/6d43765142285ea82f772ee631c7df897d773efd06566c5de378863b0ea480c9",
+      "size_bytes": 286267,
+      "media_type": "application/x-ndjson",
+      "classification": "INTERNAL",
+      "kind": "raw_output"
+    }
+  ],
+  "errors": [],
+  "provenance": {
+    "input_fingerprint": "697dcef4f276e7c31ecb9b625a54fef0089419ecea36a555535f91dfe5a0d258",
+    "started_at": "2026-11-28T00:00:00Z",
+    "finished_at": "2026-11-28T00:00:12Z",
+    "seed_targets": [
+      {
+        "seed_id": "01934f6a-0000-7000-8000-0000000000b6"
+      }
+    ],
+    "exit_code": 0
+  },
+  "trace": {
+    "trace_id": "cccccccccccccccccccccccccccccccc",
+    "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+    "job_id": "01934f6a-0000-7000-8000-00000000d006",
+    "capability_id": "vuln.scan_artifact",
+    "provider_version": "v0.76.2",
+    "policy_version": "roe-1"
+  }
+}

@@ -36,6 +36,7 @@ from aegis.contracts_gen.ingestion.result_envelope_v2_schema import ResultEnvelo
 from aegis.m05_registry.signing import KeyRing
 from aegis.m06_runner import collector, parser_host
 from aegis.m06_runner import envelope as envelopes
+from aegis.m06_runner import profile as profiles
 from aegis.m06_runner import spec as specs
 from aegis.m06_runner.authorization import Authorization
 from aegis.m06_runner.collector import CollectionError, CollectionResult
@@ -154,9 +155,10 @@ class JobRunner:
         body = _task_body(plan)
         profile = str(plan.task.network_profile)
         lab = profile == "lab"
-        # A provider without networkAccess has no network at all: the profile contributes nothing.
+        # A provider without networkAccess has no network at all; its deployment profile still
+        # supplies local, read-only inputs (G2-D: the offline vulnerability DB at /cache/db).
         egress = plan.manifest.spec.permissions.networkAccess == "egress"
-        entry = self.runner.profile_entry(profile, text(plan.task.image_digest)) if egress else None
+        entry = self.runner.profile_entry(profile, text(plan.task.image_digest))
         if egress and not lab and not plan.platform_cidrs:
             # The platform's own networks must be in every internet policy; without the set the
             # job is refused rather than dispatched with an incomplete deny list (B1).
@@ -171,6 +173,32 @@ class JobRunner:
                 f"campaign profile lab, but this runner has no lab profile entry for "
                 f"{text(plan.task.image_digest)}",
             )
+        if not egress:
+            artifact = plan.manifest.spec.runtime.artifactSource is not None
+            if entry is None and artifact:
+                raise specs.SpecError(
+                    "DEPENDENCY_MISSING",
+                    f"an artifact job needs a deployment profile entry for "
+                    f"{text(plan.task.image_digest)} (the offline rule set it scans with)",
+                )
+            if (
+                artifact
+                and entry is not None
+                and not any(item.rule_set for item in entry.pinned_inputs)
+            ):
+                # A scan whose rule set nobody pinned cannot say which advisories its verdicts came
+                # from, and a re-downloaded DB would silently change every finding. Refuse before
+                # the container exists (the deployment runs scripts/artifact/trivy-db.sh once).
+                raise specs.SpecError(
+                    "DEPENDENCY_MISSING",
+                    "an artifact job needs a pinned rule set (profile pinnedInputs with ruleSet); "
+                    "no vulnerability DB identity is claimed without one",
+                )
+            if entry is not None:
+                try:
+                    profiles.verify_pinned_inputs(entry)
+                except profiles.ProfileError as error:
+                    raise specs.SpecError("DEPENDENCY_MISSING", str(error)) from error
         if egress and not lab:
             self.runner.ensure_network(plan.job_id)
         try:
@@ -370,12 +398,12 @@ class JobRunner:
             except RunnerError as error:
                 # Nothing of this job may stay on the host (network, broker, half-started job).
                 self.runner.discard(plan.job_id)
+                code = getattr(error, "code", "INTERNAL_ERROR")
+                details: dict[str, Any] = {"technical_cause": str(error)[:4000]}
+                if code == "DEPENDENCY_MISSING":
+                    details["next_action"] = "CHECK_PROVIDER"
                 outcome.errors.append(
-                    envelopes.error_object(
-                        "INTERNAL_ERROR",
-                        "the sandbox could not start the job",
-                        technical_cause=str(error)[:4000],
-                    )
+                    envelopes.error_object(code, "the sandbox could not start the job", **details)
                 )
                 outcome.error = str(error)
                 return outcome
@@ -759,6 +787,20 @@ class JobRunner:
             return "partial", []
         return "succeeded", []
 
+    def _rule_set(self, plan: JobPlan) -> str | None:
+        """The verified rule set of the job's pinned inputs (the offline DB), if it pins one."""
+        entry = self.runner.profile_entry(
+            str(plan.task.network_profile), text(plan.task.image_digest)
+        )
+        if entry is None or not entry.pinned_inputs:
+            return None
+        try:
+            return profiles.verify_pinned_inputs(entry)
+        except profiles.ProfileError:
+            # `prepare` refuses an unreadable/drifted pin before the container exists; a job that
+            # still reaches here gets no claimed rule set rather than an unchecked one.
+            return None
+
     def _connect_budget_ms(self, plan: JobPlan) -> int | None:
         """The tool's own connect timeout from this deployment's profile entry, if it declares one.
 
@@ -798,6 +840,7 @@ class JobRunner:
                 limitations=_egress_limitations(
                     self.runner.audit_records(plan.job_id), self._connect_budget_ms(plan)
                 ),
+                rule_set=self._rule_set(plan),
             )
         except (envelopes.EnvelopeError, ValueError) as error:
             outcome.status = "failed"

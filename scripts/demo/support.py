@@ -168,11 +168,16 @@ def operator_token() -> str:
     return token
 
 
-def create_campaign(name: str, objective: str | None = None) -> str:
+def create_campaign(
+    name: str,
+    objective: str | None = None,
+    *,
+    targets: Mapping[str, Sequence[str]] | None = None,
+) -> str:
     created = api(
         "POST",
         "/api/v2/campaigns",
-        payload=campaign_body(name, objective),
+        payload=campaign_body(name, objective, targets=targets),
         token=operator_token(),
         headers={"Idempotency-Key": f"demo-{uuid.uuid4()}"},
     )

@@ -36,8 +36,12 @@ valid:
   valid/result-envelope.httpx.json: ingestion/result-envelope.v2.schema.json
   valid/manifest.fingerprintx.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.httpx.yaml: capability/provider-manifest.v2.schema.json
+  valid/manifest.trivy.yaml: capability/provider-manifest.v2.schema.json
   valid/approved-task.fingerprintx.json: capability/approved-task.v2.schema.json
   valid/approved-task.httpx.json: capability/approved-task.v2.schema.json
+  valid/approved-task.trivy.json: capability/approved-task.v2.schema.json
+  valid/result-envelope.trivy.json: ingestion/result-envelope.v2.schema.json
+  valid/capability-input.scan-artifact.json: capabilities/vuln/scan-artifact.v2.schema.json
   valid/approved-task.dnsx-internet.json: capability/approved-task.v2.schema.json
   valid/approved-task.internet-private.json: capability/approved-task.v2.schema.json
 invalid:
@@ -73,5 +77,6 @@ invalid:
   invalid/roe-policy.legacy-v1.json: campaign/roe-policy.v2.schema.json
   invalid/roe-policy.internet-no-authorization.json: campaign/roe-policy.v2.schema.json
   invalid/manifest.egress-proxy-undeclared.yaml: capability/provider-manifest.v2.schema.json
+  invalid/manifest.artifact-with-egress.yaml: capability/provider-manifest.v2.schema.json
   invalid/approved-task.broker-empty.json: capability/approved-task.v2.schema.json
   invalid/approved-task.private-cidr-not-a-network.json: capability/approved-task.v2.schema.json

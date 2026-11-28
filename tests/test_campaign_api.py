@@ -800,3 +800,40 @@ def test_campaign_list_and_detail_return_counters_and_budget(dsn: str, client: T
         items, _ = list_campaigns(counting, status=None, limit=50)  # type: ignore[arg-type]
         assert len(items) >= 2
         assert counting.queries == 1
+
+
+@requires_postgres
+def test_an_image_seed_is_an_oci_image_target(dsn: str, client: TestClient) -> None:
+    """G2-D: the operator supplies an image digest; the campaign stores it as an `oci_image` seed.
+
+    That row is what an artifact job may point at (M05 refuses a target outside the campaign), and
+    the seed asset is the identity the scan's packages hang from. A tag or a short id is not a
+    digest and is refused by the contract before M01 sees it.
+    """
+    digest = "sha256:" + "9a" * 32
+    body = support.campaign_body(targets={"images": [digest]})
+    response = support.create_campaign(client, key="artifact-seed", body=body)
+    assert response.status_code == 202, response.text
+    campaign_id = response.json()["campaign_id"]
+    seeds = support.fetch_all(
+        dsn,
+        "SELECT kind, raw_value, canonical_key FROM aegis.campaign_target"
+        " WHERE scope_id = (SELECT scope_id FROM aegis.campaign WHERE campaign_id = %s)",
+        (campaign_id,),
+    )
+    assert [(row["kind"], row["raw_value"], row["canonical_key"]) for row in seeds] == [
+        ("oci_image", digest, "oci:" + digest)
+    ]
+    assets = support.fetch_all(
+        dsn,
+        "SELECT canonical_key, kind FROM aegis.asset WHERE canonical_key = %s",
+        ("oci:" + digest,),
+    )
+    assert [(row["canonical_key"], row["kind"]) for row in assets] == [
+        ("oci:" + digest, "oci_image")
+    ]
+
+    bad = support.campaign_body(targets={"images": ["docker.io/library/httpd:2.4.49"]})
+    refused = support.create_campaign(client, key="artifact-seed-bad", body=bad)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["code"] == "INPUT_INVALID"

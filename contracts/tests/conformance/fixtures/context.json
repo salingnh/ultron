@@ -50,6 +50,13 @@
       "kind": "ip",
       "raw_value": "203.0.113.10",
       "canonical_key": "ip:203.0.113.10"
+    },
+    {
+      "target_id": "01934f6a-0000-7000-8000-0000000000b6",
+      "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+      "kind": "oci_image",
+      "raw_value": "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20",
+      "canonical_key": "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
     }
   ],
   "assets": [

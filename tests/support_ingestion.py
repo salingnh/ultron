@@ -66,7 +66,13 @@ def _seed_campaign_rows(connection: psycopg.Connection[tuple[object, ...]]) -> N
 
 
 def _decision(
-    connection: psycopg.Connection[tuple[object, ...]], decision_id: str, key: str, input_json: str
+    connection: psycopg.Connection[tuple[object, ...]],
+    decision_id: str,
+    key: str,
+    input_json: str,
+    *,
+    capability: str = CAPABILITY,
+    provider: str = PROVIDER,
 ) -> None:
     connection.execute(
         "INSERT INTO policy_decision (decision_id, campaign_id, capability, provider, targets,"
@@ -76,8 +82,8 @@ def _decision(
         (
             decision_id,
             CAMPAIGN_ID,
-            CAPABILITY,
-            PROVIDER,
+            capability,
+            provider,
             input_json,
             Jsonb(ACTOR),
             Jsonb([{"seed_id": SEED_ID}]),
@@ -89,12 +95,19 @@ def _decision(
     )
 
 
-def seed_job(connection: psycopg.Connection[tuple[object, ...]], key: str) -> str:
+def seed_job(
+    connection: psycopg.Connection[tuple[object, ...]],
+    key: str,
+    *,
+    capability: str = CAPABILITY,
+    provider: str = PROVIDER,
+    provider_version: str = PROVIDER_VERSION,
+    input_json: str = '{"domains": ["seed.internal.example"]}',
+) -> str:
     """One approved decision + one QUEUED job with the pins and target_refs M27 checks."""
     decision_id = str(uuid7())
     job_id = str(uuid7())
-    input_json = '{"domains": ["seed.internal.example"]}'
-    _decision(connection, decision_id, key, input_json)
+    _decision(connection, decision_id, key, input_json, capability=capability, provider=provider)
     connection.execute(
         "INSERT INTO scan_job (job_id, campaign_id, decision_id, capability, provider,"
         " provider_version, adapter_version, image_digest, manifest_sha256, scan_cycle,"
@@ -105,9 +118,9 @@ def seed_job(connection: psycopg.Connection[tuple[object, ...]], key: str) -> st
             job_id,
             CAMPAIGN_ID,
             decision_id,
-            CAPABILITY,
-            PROVIDER,
-            PROVIDER_VERSION,
+            capability,
+            provider,
+            provider_version,
             IMAGE_DIGEST,
             "b" * 64,
             str(uuid7()),
@@ -235,6 +248,7 @@ def build_envelope(
     provider_name: str = PROVIDER,
     provider_version: str = PROVIDER_VERSION,
     seed_targets: Sequence[dict[str, Any]] | None = None,
+    capability: str = CAPABILITY,
 ) -> dict[str, Any]:
     """A ResultEnvelope as the collector posts it (JSON-ready dict)."""
     return {
@@ -244,7 +258,7 @@ def build_envelope(
         "job_id": job_id,
         "campaign_id": campaign_id,
         "scope_id": scope_id,
-        "capability": CAPABILITY,
+        "capability": capability,
         "provider": {
             "name": provider_name,
             "version": provider_version,

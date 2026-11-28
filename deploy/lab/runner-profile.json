@@ -61,6 +61,37 @@
       },
       "hosts": {},
       "mounts": []
+    },
+    {
+      "imageDigest": "sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb",
+      "args": [],
+      "env": {
+        "HOME": "/tmp"
+      },
+      "hosts": {},
+      "mounts": [
+        {
+          "source": ".run/artifact/trivy-db/db",
+          "target": "/cache/db"
+        },
+        {
+          "source": ".run/artifact/trivy-db/java-db",
+          "target": "/cache/java-db"
+        }
+      ],
+      "pinnedInputs": [
+        {
+          "target": "/cache/db",
+          "file": "trivy.db",
+          "sha256": "d5be36ec1b3d183a6a7148468c2ddc0e5becd61031da21478e391366b8aee960",
+          "ruleSet": "trivy-db@2026-11-28T01:04:49Z"
+        },
+        {
+          "target": "/cache/java-db",
+          "file": "trivy-java.db",
+          "sha256": "e0581658fff805194319f6b981be299c5f0f8f58593f36005b862861c41b876b"
+        }
+      ]
     }
   ]
 }

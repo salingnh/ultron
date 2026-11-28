@@ -309,6 +309,7 @@ _ARRAY_OF_KIND = {
     "url": "urls",
     "email": "emails",
     "keyword": "keywords",
+    "oci_image": "images",
 }
 
 

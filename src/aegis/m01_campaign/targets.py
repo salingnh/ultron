@@ -9,7 +9,9 @@ a URL with credentials, ...). Fabricating a key for those would mint an identity
 the ingestion rules later quarantine.
 
 The rules implemented here are the seed subset of `aegis-norm/1`
-(`contracts/ingestion/normalization.v2.yaml`): domain, ip, url, email. They are a
+(`contracts/ingestion/normalization.v2.yaml`): domain, ip, url, email, plus the
+`oci_image` digest of G2-D (an operator-supplied image, whose identity is the
+digest itself: no registry, tag or repository is part of the key). They are a
 service implementation, not the test reference: `contracts/tests/normalization.py`
 is test-only by its own header, so the tests prove this implementation reproduces
 the published golden vectors byte for byte (`tests/test_campaign_targets.py`).
@@ -57,6 +59,7 @@ SEED_ARRAY_KINDS: dict[str, str] = {
     "urls": "url",
     "emails": "email",
     "keywords": "keyword",
+    "images": "oci_image",
 }
 
 _MAX_KEY_LENGTH = 2048
@@ -317,6 +320,25 @@ def _url(raw: str) -> str:
     return key
 
 
+def _oci_image(raw: str) -> str:
+    """The canonical key of an image seed: `oci:sha256:<64 lower hex>`.
+
+    The operator supplies the digest a deployment already has (G2-D); a tag, a repository or a
+    short id is not identity and is refused here instead of being resolved by a later step, so the
+    campaign snapshot says exactly which image bytes were authorized.
+    """
+    if raw != raw.strip() or _CONTROL.search(raw):
+        raise SeedIdentityError("invalid_image_digest", f"whitespace or control in {raw!r}")
+    value = raw[4:] if raw.startswith("oci:") else raw
+    match = re.fullmatch(r"sha256:([0-9a-fA-F]{64})", value)
+    if match is None:
+        raise SeedIdentityError(
+            "invalid_image_digest",
+            f"expected sha256:<64 hex>, got {raw!r} (a tag or repository is not identity)",
+        )
+    return "oci:sha256:" + match.group(1).lower()
+
+
 def _email(raw: str) -> str:
     if _CONTROL.search(raw) or raw != raw.strip():
         raise SeedIdentityError("invalid_email", f"whitespace or control character in {raw!r}")
@@ -339,6 +361,7 @@ _RULES = {
     "ip": lambda raw: f"ip:{_ip(raw)}",
     "url": _url,
     "email": _email,
+    "oci_image": _oci_image,
 }
 
 

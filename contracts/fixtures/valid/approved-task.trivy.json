@@ -1,0 +1,44 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c6",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000d6",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "network_profile": "lab",
+  "capability": "vuln.scan_artifact",
+  "provider": "trivy",
+  "provider_version": "v0.76.2",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "bc5db50c8a3279e2229b2699dd95d58bfd908180ab59b88b960745788207fa6d",
+  "image_digest": "sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000004",
+  "input": {
+    "targets": [
+      "sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    ]
+  },
+  "targets": [
+    {
+      "seed_id": "01934f6a-0000-7000-8000-0000000000b6"
+    }
+  ],
+  "idempotency_key": "fixture:trivy-conformance",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: vuln.scan_artifact on one operator-supplied image digest, no network; no execution",
+  "trace": {
+    "trace_id": "cccccccccccccccccccccccccccccccc"
+  },
+  "signature": "hmac-sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "none",
+    "target_binding": "none",
+    "entries": [],
+    "target_addresses": []
+  },
+  "priority": 60,
+  "depends_on": []
+}

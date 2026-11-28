@@ -60,6 +60,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal
 
@@ -72,8 +73,10 @@ __all__ = [
     "DeploymentProfile",
     "JobMount",
     "JobProfile",
+    "PinnedInput",
     "ProfileError",
     "ProfileKind",
+    "verify_pinned_inputs",
 ]
 
 ENV_LAB_PROFILE = "AEGIS_M06_LAB_PROFILE"
@@ -120,6 +123,75 @@ class JobMount:
 
 
 @dataclass(frozen=True, slots=True)
+class PinnedInput:
+    """A read-only mount whose bytes a deployment pins, and the rule set those bytes define.
+
+    Trivy's vulnerability DB is the first use (G2-D): the deployment downloads it once, records the
+    digest of `trivy.db` and the rule-set label (`trivy-db@<UpdatedAt>`), mounts the directory
+    read-only and lets M06 verify the file before any container exists. A drift (re-downloaded DB,
+    edited file) is `DEPENDENCY_MISSING`, never a scan against bytes nobody pinned; the verified
+    label goes into `coverage.rule_set`, so a finding's provenance names the DB the scan used.
+    """
+
+    target: str
+    file: str
+    sha256: str
+    rule_set: str | None = None
+
+
+#: sha256 of a pinned file keyed by its identity on disk, so a runner does not re-hash a 2 GB DB on
+#: every job while a changed file (new size or mtime) is always re-read.
+_DIGESTS: dict[tuple[str, int, int], str] = {}
+
+
+def file_digest(path: Path) -> str:
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    cached = _DIGESTS.get(key)
+    if cached is not None:
+        return cached
+    digest = sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(block)
+    value = digest.hexdigest()
+    _DIGESTS[key] = value
+    return value
+
+
+def verify_pinned_inputs(entry: JobProfile) -> str | None:
+    """Verify every pinned input of a profile entry; return its rule-set label (or None).
+
+    Raises `ProfileError` when a pinned input has no mount, the mount has no fixed source (a
+    `sourceEnv` mount is optional by construction and cannot be a pin) or the file is missing or
+    has different bytes. The first label wins: one tool, one rule set.
+    """
+    label: str | None = None
+    for pinned in entry.pinned_inputs:
+        mount = next((item for item in entry.mounts if item.target == pinned.target), None)
+        if mount is None or mount.source is None:
+            raise ProfileError(
+                f"pinned input {pinned.file!r} of {entry.image_digest} has no fixed-source mount "
+                f"at {pinned.target}"
+            )
+        path = mount.source / pinned.file
+        try:
+            found = file_digest(path)
+        except OSError as error:
+            raise ProfileError(
+                f"pinned input {path} of {entry.image_digest} is unreadable: {error}"
+            ) from error
+        if found != pinned.sha256:
+            raise ProfileError(
+                f"pinned input {path} of {entry.image_digest} has sha256 {found}, the deployment "
+                f"pinned {pinned.sha256}"
+            )
+        if label is None:
+            label = pinned.rule_set
+    return label
+
+
+@dataclass(frozen=True, slots=True)
 class JobProfile:
     """What one pinned image needs to run on this deployment's network, beyond its manifest."""
 
@@ -131,12 +203,21 @@ class JobProfile:
     #: The tool's own connect timeout, when the deployment knows it (see the module docstring).
     connect_timeout_ms: int | None = None
     mounts: tuple[JobMount, ...] = ()
+    #: Mounts whose bytes the deployment pins (G2-D: an offline vulnerability DB).
+    pinned_inputs: tuple[PinnedInput, ...] = ()
 
-    def argv(self) -> list[str]:
-        """The Podman flags this profile adds (the network is applied by the runner)."""
+    def argv(self, *, network: bool = True) -> list[str]:
+        """The Podman flags this profile adds (the network is applied by the runner).
+
+        `network=False` is a job the manifest declares without egress (`networkAccess: none`): its
+        endpoint data (resolver hosts, extra argv) has no meaning there, but the read-only mounts
+        and literal environment of the profile still do (an offline DB, a CA bundle). A job that
+        must not reach the network therefore gets exactly the profile's local inputs.
+        """
         argv: list[str] = []
-        for host, address in self.hosts.items():
-            argv += ["--add-host", f"{host}:{address}"]
+        if network:
+            for host, address in self.hosts.items():
+                argv += ["--add-host", f"{host}:{address}"]
         for key, value in self.env.items():
             argv += ["--env", f"{key}={value}"]
         for name in self.env_from_host:
@@ -267,6 +348,23 @@ def _job_from_entry(entry: Any, *, base_dir: Path | None, where: str) -> JobProf
             f"connectTimeoutMs of {digest} must be a positive integer (milliseconds), "
             f"got {timeout!r}"
         )
+    pinned: list[PinnedInput] = []
+    for item in entry.get("pinnedInputs") or []:
+        if not isinstance(item, dict):
+            raise ProfileError(f"a pinnedInput of {digest} must be an object")
+        target = item.get("target")
+        name = item.get("file")
+        checksum = item.get("sha256")
+        label = item.get("ruleSet")
+        if not isinstance(target, str) or not target.startswith("/"):
+            raise ProfileError(f"a pinnedInput of {digest} needs an absolute mount target")
+        if not isinstance(name, str) or not name or name.startswith("/") or ".." in name:
+            raise ProfileError(f"a pinnedInput of {digest} needs a relative file name")
+        if not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{64}", checksum):
+            raise ProfileError(f"a pinnedInput of {digest} needs a lowercase sha256")
+        if label is not None and (not isinstance(label, str) or not label):
+            raise ProfileError(f"the ruleSet of a pinnedInput of {digest} must be a string")
+        pinned.append(PinnedInput(target=target, file=name, sha256=checksum, rule_set=label))
     return JobProfile(
         image_digest=digest,
         args=tuple(args),
@@ -275,4 +373,5 @@ def _job_from_entry(entry: Any, *, base_dir: Path | None, where: str) -> JobProf
         hosts=dict(hosts),
         connect_timeout_ms=timeout,
         mounts=tuple(mounts),
+        pinned_inputs=tuple(pinned),
     )

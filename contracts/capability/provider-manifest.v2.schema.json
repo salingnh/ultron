@@ -125,6 +125,19 @@
                 "host_port"
               ],
               "default": "canonical"
+            },
+            "artifactSource": {
+              "description": "Nguồn artifact mà M06 phải đưa vào sandbox từ mục tiêu của job: `oci-archive` = đúng một target `oci:` của task được lưu thành `image.tar` (docker-archive) trong `/in` từ local image store của runner, không pull registry, không chạy image. Chỉ hợp lệ khi `permissions.networkAccess = none` và manifest nhận target kind `oci_image`; thiếu image trong store là job FAILED `DEPENDENCY_MISSING` trước khi container tồn tại.",
+              "type": "string",
+              "enum": [
+                "oci-archive"
+              ]
+            },
+            "scratchMb": {
+              "description": "Dung lượng tmpfs ghi được ở `/cache` (MiB) cho công cụ cần scratch ngoài `/tmp` (vD cache phân tích của Trivy). Không khai báo = không có `/cache`; `/tmp` vẫn là tmpfs 64 MiB của sandbox.",
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 8192
             }
           },
           "allOf": [
@@ -189,7 +202,7 @@
               "default": "broker"
             },
             "proxyAware": {
-"description": "Khai báo trung thực công cụ có đi ra được qua proxy hay không. Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` không bắt buộc và có thể false: kênh ra do gateway lọc theo IP:port đã ký (G1.6b: fingerprintx khai false; M06 từ chối nó trên đường broker trước khi tạo container, fail closed).",
+              "description": "Khai báo trung thực công cụ có đi ra được qua proxy hay không. Với `egressMode=broker` bắt buộc true: công cụ phải đọc HTTPS_PROXY/ALL_PROXY hoặc có tham số proxy riêng, vì broker L7 là đường ra duy nhất. Với `egressMode=l3` không bắt buộc và có thể false: kênh ra do gateway lọc theo IP:port đã ký (G1.6b: fingerprintx khai false; M06 từ chối nó trên đường broker trước khi tạo container, fail closed).",
               "type": "boolean"
             },
             "proxyFlag": {
@@ -200,7 +213,10 @@
             "proxyFlagFormat": {
               "description": "Dạng giá trị của `proxyFlag`: `url` (http://host:port cho proxy HTTP CONNECT) hoặc `host_port` (host:port trần, vD Naabu từ chối scheme - G0.2). Mặc định `url`.",
               "type": "string",
-              "enum": ["url", "host_port"],
+              "enum": [
+                "url",
+                "host_port"
+              ],
               "default": "url"
             },
             "egressSources": {
@@ -523,7 +539,40 @@
           "type": "object",
           "description": "Giá trị mặc định cho input. Sau khi ghép phải kiểm bằng inputSchemaRef; không nhận tham số ngoài schema."
         }
-      }
+      },
+      "allOf": [
+        {
+          "description": "Artifact source chỉ có nghĩa khi job không ra mạng và target là image đã ký.",
+          "if": {
+            "required": [
+              "runtime"
+            ],
+            "properties": {
+              "runtime": {
+                "required": [
+                  "artifactSource"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "permissions": {
+                "properties": {
+                  "networkAccess": {
+                    "const": "none"
+                  }
+                }
+              },
+              "acceptsTargetKinds": {
+                "contains": {
+                  "const": "oci_image"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "$defs": {

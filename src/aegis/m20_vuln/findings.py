@@ -51,7 +51,7 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 import psycopg
@@ -154,6 +154,21 @@ class _RunPlan:
     detail: str = ""
 
 
+class AssessmentCounters(Protocol):
+    """The counters `_assess` writes; both producers' reports satisfy it structurally."""
+
+    assessments: int
+    assessments_created: int
+    unrated: int
+
+
+class TransitionCounters(AssessmentCounters, Protocol):
+    """The counters a transition/event writes."""
+
+    transitions: int
+    events: int
+
+
 @dataclass
 class FindingsReport:
     """Counters of one raising pass; the CLI and the demo print it."""
@@ -186,11 +201,187 @@ class FindingsReport:
         return document
 
 
-class FindingsEngine:
-    """Raises/refreshes findings from M20's current candidates; every write is idempotent."""
+class FindingWriter:
+    """The writes every M20 finding producer shares: lookup, transition, event, assessment.
+
+    Two producers use it: the CVE matcher (`FindingsEngine`, a CPE/version candidate) and the
+    scanner candidates of the artifact chain (`CandidateFindingsEngine`, a tool-reported
+    finding). A transition is one `finding_transition` row plus one `finding.changed.v2` outbox
+    event in the caller's transaction, so the graph is rebuilt from the same commit; the
+    assessment is C07 and every failure is an UNRATED record with its reason, never a
+    made-up severity.
+    """
 
     def __init__(self, connection: psycopg.Connection[Any]) -> None:
         self._conn = connection
+
+    def _finding_by_fingerprint(
+        self, fingerprint: str, *, for_update: bool = True
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT * FROM finding WHERE fingerprint = %s" + (" FOR UPDATE" if for_update else ""),
+            (fingerprint,),
+        ).fetchone()
+        return None if row is None else dict(row)
+
+    def _transition(
+        self,
+        *,
+        finding_id: str,
+        from_status: str | None,
+        to_status: str,
+        reason: str,
+        evidence_id: str | None,
+        cause: str,
+        old_severity: str | None,
+        new_severity: str | None,
+        campaign_id: str,
+        seq: int,
+        report: TransitionCounters,
+    ) -> None:
+        if rule_for(from_status, to_status, PRODUCER) is None:
+            raise ValueError(
+                f"transitions.v2.yaml refuses {from_status} -> {to_status} by {PRODUCER}"
+            )
+        changed_at = _now(self._conn)
+        if seq > 1:
+            updated = self._conn.execute(
+                "UPDATE finding SET status = %s, transition_seq = %s"
+                " WHERE finding_id = %s AND transition_seq = %s RETURNING transition_seq",
+                (to_status, seq, finding_id, seq - 1),
+            ).fetchone()
+            if updated is None:
+                raise ValueError(
+                    f"finding {finding_id} is not at transition_seq {seq - 1}: "
+                    "a concurrent writer changed it"
+                )
+        self._conn.execute(
+            "INSERT INTO finding_transition (finding_id, seq, from_status, to_status, reason,"
+            " evidence_id, actor, cause, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                finding_id,
+                seq,
+                from_status,
+                to_status,
+                reason,
+                evidence_id,
+                Jsonb({"kind": "module", "id": PRODUCER}),
+                cause,
+                changed_at,
+            ),
+        )
+        report.transitions += 1
+        self._emit(
+            finding_id=finding_id,
+            seq=seq,
+            from_status=from_status,
+            to_status=to_status,
+            reason=reason,
+            evidence_id=evidence_id,
+            cause=cause,
+            old_severity=old_severity,
+            new_severity=new_severity,
+            campaign_id=campaign_id,
+            changed_at=changed_at,
+            report=report,
+        )
+
+    def _emit(
+        self,
+        *,
+        finding_id: str,
+        seq: int,
+        from_status: str | None,
+        to_status: str,
+        reason: str,
+        evidence_id: str | None,
+        cause: str,
+        old_severity: str | None,
+        new_severity: str | None,
+        campaign_id: str,
+        changed_at: str,
+        report: TransitionCounters,
+    ) -> None:
+        row = self._conn.execute(
+            "SELECT asset_id FROM finding WHERE finding_id = %s", (finding_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"finding {finding_id} disappeared while emitting its event")
+        payload: dict[str, Any] = {
+            "finding_id": finding_id,
+            "transition_seq": seq,
+            "asset_id": str(row["asset_id"]),
+            "campaign_id": campaign_id,
+            "old_status": from_status,
+            "new_status": to_status,
+            "old_severity": old_severity,
+            "new_severity": new_severity,
+            "reason": reason,
+            "changed_by": {"kind": "module", "id": PRODUCER},
+            "cause": cause,
+            "changed_at": changed_at,
+        }
+        if evidence_id is not None:
+            payload["evidence_ref"] = evidence_id
+        problems = validation.problems(EVENT_SCHEMA, payload)
+        if problems:
+            pointer, message = problems[0]
+            raise ValueError(
+                f"finding.changed.v2 payload violates the contract at {pointer or '/'}: {message}"
+            )
+        inserted = self._conn.execute(
+            "INSERT INTO outbox_event (event_id, type, producer, dedup_key, campaign_id, payload,"
+            " trace) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            " ON CONFLICT (type, dedup_key) DO NOTHING RETURNING event_id",
+            (
+                str(uuid7()),
+                EVENT_TYPE,
+                PRODUCER,
+                f"{finding_id}:{seq}",
+                campaign_id,
+                Jsonb(payload),
+                Jsonb({"trace_id": uuid4().hex}),
+            ),
+        ).fetchone()
+        if inserted is not None:
+            report.events += 1
+
+    def _assess(
+        self,
+        report: AssessmentCounters,
+        *,
+        campaign_id: str | None,
+        only_vulnerabilities: Sequence[str] | None,
+        model: ModelClient | None,
+        provider: str | None,
+        model_name: str | None,
+        prompt_version: str,
+    ) -> None:
+        """Assess every open finding of the pass whose inputs changed, once.
+
+        The queue is `aegis.m20_vuln.severity.assess_pending`: it does not start from the findings
+        this pass touched, because a finding whose evidence or intel changed since its last record
+        still needs an answer even when this run re-matched a different slice of the catalogue.
+        A delta run narrows the queue to the CVEs it re-checked, the same way it narrows matching.
+        """
+        outcome = severity.assess_pending(
+            self._conn,
+            campaign_id=campaign_id,
+            only_vulnerabilities=only_vulnerabilities,
+            trigger="scan",
+            model=model,
+            provider=provider,
+            model_name=model_name,
+            prompt_version=prompt_version,
+        )
+        report.assessments = outcome.assessed
+        report.assessments_created = outcome.created
+        report.unrated = outcome.unrated
+
+
+class FindingsEngine(FindingWriter):
+    """Raises/refreshes findings from M20's current candidates; every write is idempotent."""
 
     def run(
         self,
@@ -362,15 +553,6 @@ class FindingsEngine:
         if row is None:
             return ()
         return parse_configurations(row["affected"])
-
-    def _finding_by_fingerprint(
-        self, fingerprint: str, *, for_update: bool = True
-    ) -> dict[str, Any] | None:
-        row = self._conn.execute(
-            "SELECT * FROM finding WHERE fingerprint = %s" + (" FOR UPDATE" if for_update else ""),
-            (fingerprint,),
-        ).fetchone()
-        return None if row is None else dict(row)
 
     def _run_plans(
         self, pair: _Pair, scans: Sequence[_ScanObservation]
@@ -727,161 +909,6 @@ class FindingsEngine:
                 "vuln_rev_id": pair.vuln_rev_id,
             }
         )
-
-    def _transition(
-        self,
-        *,
-        finding_id: str,
-        from_status: str | None,
-        to_status: str,
-        reason: str,
-        evidence_id: str | None,
-        cause: str,
-        old_severity: str | None,
-        new_severity: str | None,
-        campaign_id: str,
-        seq: int,
-        report: FindingsReport,
-    ) -> None:
-        if rule_for(from_status, to_status, PRODUCER) is None:
-            raise ValueError(
-                f"transitions.v2.yaml refuses {from_status} -> {to_status} by {PRODUCER}"
-            )
-        changed_at = _now(self._conn)
-        if seq > 1:
-            updated = self._conn.execute(
-                "UPDATE finding SET status = %s, transition_seq = %s"
-                " WHERE finding_id = %s AND transition_seq = %s RETURNING transition_seq",
-                (to_status, seq, finding_id, seq - 1),
-            ).fetchone()
-            if updated is None:
-                raise ValueError(
-                    f"finding {finding_id} is not at transition_seq {seq - 1}: "
-                    "a concurrent writer changed it"
-                )
-        self._conn.execute(
-            "INSERT INTO finding_transition (finding_id, seq, from_status, to_status, reason,"
-            " evidence_id, actor, cause, created_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                finding_id,
-                seq,
-                from_status,
-                to_status,
-                reason,
-                evidence_id,
-                Jsonb({"kind": "module", "id": PRODUCER}),
-                cause,
-                changed_at,
-            ),
-        )
-        report.transitions += 1
-        self._emit(
-            finding_id=finding_id,
-            seq=seq,
-            from_status=from_status,
-            to_status=to_status,
-            reason=reason,
-            evidence_id=evidence_id,
-            cause=cause,
-            old_severity=old_severity,
-            new_severity=new_severity,
-            campaign_id=campaign_id,
-            changed_at=changed_at,
-            report=report,
-        )
-
-    def _emit(
-        self,
-        *,
-        finding_id: str,
-        seq: int,
-        from_status: str | None,
-        to_status: str,
-        reason: str,
-        evidence_id: str | None,
-        cause: str,
-        old_severity: str | None,
-        new_severity: str | None,
-        campaign_id: str,
-        changed_at: str,
-        report: FindingsReport,
-    ) -> None:
-        row = self._conn.execute(
-            "SELECT asset_id FROM finding WHERE finding_id = %s", (finding_id,)
-        ).fetchone()
-        if row is None:
-            raise ValueError(f"finding {finding_id} disappeared while emitting its event")
-        payload: dict[str, Any] = {
-            "finding_id": finding_id,
-            "transition_seq": seq,
-            "asset_id": str(row["asset_id"]),
-            "campaign_id": campaign_id,
-            "old_status": from_status,
-            "new_status": to_status,
-            "old_severity": old_severity,
-            "new_severity": new_severity,
-            "reason": reason,
-            "changed_by": {"kind": "module", "id": PRODUCER},
-            "cause": cause,
-            "changed_at": changed_at,
-        }
-        if evidence_id is not None:
-            payload["evidence_ref"] = evidence_id
-        problems = validation.problems(EVENT_SCHEMA, payload)
-        if problems:
-            pointer, message = problems[0]
-            raise ValueError(
-                f"finding.changed.v2 payload violates the contract at {pointer or '/'}: {message}"
-            )
-        inserted = self._conn.execute(
-            "INSERT INTO outbox_event (event_id, type, producer, dedup_key, campaign_id, payload,"
-            " trace) VALUES (%s, %s, %s, %s, %s, %s, %s)"
-            " ON CONFLICT (type, dedup_key) DO NOTHING RETURNING event_id",
-            (
-                str(uuid7()),
-                EVENT_TYPE,
-                PRODUCER,
-                f"{finding_id}:{seq}",
-                campaign_id,
-                Jsonb(payload),
-                Jsonb({"trace_id": uuid4().hex}),
-            ),
-        ).fetchone()
-        if inserted is not None:
-            report.events += 1
-
-    def _assess(
-        self,
-        report: FindingsReport,
-        *,
-        campaign_id: str | None,
-        only_vulnerabilities: Sequence[str] | None,
-        model: ModelClient | None,
-        provider: str | None,
-        model_name: str | None,
-        prompt_version: str,
-    ) -> None:
-        """Assess every open finding of the pass whose inputs changed, once.
-
-        The queue is `aegis.m20_vuln.severity.assess_pending`: it does not start from the findings
-        this pass touched, because a finding whose evidence or intel changed since its last record
-        still needs an answer even when this run re-matched a different slice of the catalogue.
-        A delta run narrows the queue to the CVEs it re-checked, the same way it narrows matching.
-        """
-        outcome = severity.assess_pending(
-            self._conn,
-            campaign_id=campaign_id,
-            only_vulnerabilities=only_vulnerabilities,
-            trigger="scan",
-            model=model,
-            provider=provider,
-            model_name=model_name,
-            prompt_version=prompt_version,
-        )
-        report.assessments = outcome.assessed
-        report.assessments_created = outcome.created
-        report.unrated = outcome.unrated
 
 
 def _title(pair: _Pair, product: Sequence[Cpe]) -> str:

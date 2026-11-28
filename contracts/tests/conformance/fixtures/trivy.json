@@ -1,0 +1,20 @@
+{
+  "provider": "trivy",
+  "manifest": "fixtures/valid/manifest.trivy.yaml",
+  "task": "fixtures/valid/approved-task.trivy.json",
+  "envelope": "fixtures/valid/result-envelope.trivy.json",
+  "raw": "tests/conformance/fixtures/trivy/raw",
+  "raw_file": "result.json",
+  "job_id": "01934f6a-0000-7000-8000-00000000d006",
+  "event_id": "01934f6a-0000-7000-8000-00000000e006",
+  "started_at": "2026-11-28T00:00:00Z",
+  "finished_at": "2026-11-28T00:00:12Z",
+  "retry_after_seconds": 5,
+  "coverage_subjects": [
+    "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+  ],
+  "dependencies": [
+    "image:sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb",
+    "rule-set:trivy-db"
+  ]
+}

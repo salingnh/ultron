@@ -627,7 +627,8 @@ export interface components {
          * @description Seed IP hoặc CIDR, giữ raw; M07 chuẩn hóa về sau. Không interface scope ID hoặc netmask dạng dotted.
          */
         IPOrCIDR: string;
-        /** @description Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. */
+        ImageDigest: string;
+        /** @description Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. `images` (G2-D) là digest do người vận hành cung cấp cho một campaign phân tích artifact: không crawl registry, không suy ra tag/repository từ digest. */
         Targets: {
             domains?: string[];
             /** @description IP hoặc CIDR. */
@@ -635,6 +636,8 @@ export interface components {
             urls?: string[];
             emails?: string[];
             keywords?: string[];
+            /** @description Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull). */
+            images?: components["schemas"]["ImageDigest"][];
         } | {
             domains: unknown;
         } | {
@@ -645,6 +648,8 @@ export interface components {
             emails: unknown;
         } | {
             keywords: unknown;
+        } | {
+            images: unknown;
         };
         /**
          * Format: date-time
@@ -769,7 +774,7 @@ export interface components {
                 [key: string]: string;
             };
             $defs: {
-                /** @description Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. */
+                /** @description Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. `images` (G2-D) là digest do người vận hành cung cấp cho một campaign phân tích artifact: không crawl registry, không suy ra tag/repository từ digest. */
                 Targets: {
                     domains?: string[];
                     /** @description IP hoặc CIDR. */
@@ -777,6 +782,8 @@ export interface components {
                     urls?: string[];
                     emails?: string[];
                     keywords?: string[];
+                    /** @description Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull). */
+                    images?: components["schemas"]["ImageDigest"][];
                 } | {
                     domains: unknown;
                 } | {
@@ -787,6 +794,8 @@ export interface components {
                     emails: unknown;
                 } | {
                     keywords: unknown;
+                } | {
+                    images: unknown;
                 };
             };
         };
@@ -1386,7 +1395,6 @@ export interface components {
         RelationshipType: "SUBDOMAIN_OF" | "RESOLVES_TO" | "EXPOSES" | "SERVES" | "HAS_ENDPOINT" | "HAS_ARTIFACT" | "CONTAINS_PACKAGE" | "DISCOVERED_FROM" | "SNAPSHOT_OF" | "ALIAS_OF";
         /** @enum {string} */
         Classification: "PUBLIC" | "INTERNAL" | "RESTRICTED";
-        ImageDigest: string;
         "$defs-Asset": {
             kind: components["schemas"]["AssetKind"];
             canonical_key: components["schemas"]["CanonicalKey"];
