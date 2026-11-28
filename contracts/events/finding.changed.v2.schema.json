@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aegis.io/contracts/events/finding.changed.v2.schema.json",
   "title": "Payload finding.changed.v2",
-  "description": "Bên phát: M20|M21|M24. Khóa khử trùng của consumer: finding_id+transition_seq. Bên nhận: M25 (alert), M26 (UI).",
+  "description": "Payload finding.changed.v2. Bên phát: M20|M21|M24|M26 (M26 = endpoint chuyển trạng thái của người vận hành, changed_by là principal đã xác minh). Bên nhận: M25 (alert), M26 (UI). Khóa khử trùng của consumer: finding_id+transition_seq.",
   "type": "object",
   "required": [
     "finding_id",

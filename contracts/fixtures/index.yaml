@@ -13,6 +13,8 @@ valid:
   valid/manifest.dnsx.yaml: capability/provider-manifest.v2.schema.json
   valid/manifest.naabu.yaml: capability/provider-manifest.v2.schema.json
   valid/severity-assessment.json: finding/severity-assessment.v2.schema.json
+  valid/finding.json: finding/finding.v2.schema.json
+  valid/finding.transition-request.json: finding/transition-request.v2.schema.json
   valid/approved-task.subfinder.json: capability/approved-task.v2.schema.json
   valid/approved-task.dnsx.json: capability/approved-task.v2.schema.json
   valid/approved-task.naabu.json: capability/approved-task.v2.schema.json

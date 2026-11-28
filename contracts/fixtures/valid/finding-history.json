@@ -1,0 +1,94 @@
+{
+  "runs": [
+    {
+      "scan_id": "01934f6a-0000-7000-8000-0000000d0001",
+      "seen": true,
+      "status": "CANDIDATE",
+      "severity": "UNRATED",
+      "evidence_id": "01934f6a-0000-7000-8000-0000000e0001",
+      "observed_at": "2026-11-24T10:00:00Z"
+    },
+    {
+      "scan_id": "01934f6a-0000-7000-8000-0000000d0002",
+      "seen": false,
+      "status": "CANDIDATE",
+      "severity": "UNRATED",
+      "observed_at": "2026-11-24T12:00:00Z"
+    }
+  ],
+  "transitions": [
+    {
+      "seq": 1,
+      "from_status": null,
+      "to_status": "CANDIDATE",
+      "reason": "CPE/version match CVE-2021-41773 at intel revision 01934f6a-0000-7000-8000-0000000b0001",
+      "actor": {
+        "kind": "module",
+        "id": "M20"
+      },
+      "cause": "scan",
+      "created_at": "2026-11-24T10:00:05Z"
+    }
+  ],
+  "assessments": [
+    {
+      "severity": "UNRATED",
+      "reasons": [
+        "Lần đánh giá tự động không hoàn tất: không có model được cấu hình."
+      ],
+      "uncertainty": [
+        "Chưa có đánh giá mức nghiêm trọng từ agent cho revision đầu vào này."
+      ],
+      "recommended_actions": [
+        "Cấu hình model rồi đánh giá lại khi đầu vào đổi."
+      ],
+      "inputs": {
+        "cvss": {
+          "version": "3.1",
+          "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+          "base_score": 9.8
+        },
+        "kev": {
+          "listed": true,
+          "date_added": "2021-11-03",
+          "catalog_version": "2026.11.24"
+        },
+        "epss": {
+          "score": 0.97431,
+          "percentile": 0.999,
+          "date": "2026-11-24"
+        },
+        "exposure": "internal",
+        "criticality": "unknown",
+        "intel_snapshot_ids": [
+          "01934f6a-0000-7000-8000-0000000b0001"
+        ]
+      },
+      "trigger": "operator_request",
+      "input_revision": 3,
+      "dedup_key": "severity:01934f6a-0000-7000-8000-0000000f0001:3",
+      "raw_signals": [
+        {
+          "kind": "finding",
+          "ref": "01934f6a-0000-7000-8000-0000000f0001"
+        },
+        {
+          "kind": "evidence",
+          "ref": "01934f6a-0000-7000-8000-0000000e0001"
+        },
+        {
+          "kind": "intel",
+          "ref": "nvd:CVE-2021-41773"
+        }
+      ],
+      "assessed_by": {
+        "kind": "rule"
+      },
+      "failure": {
+        "code": "DEPENDENCY_MISSING",
+        "message": "No model client is configured for this deployment.",
+        "attempt": 1
+      }
+    }
+  ]
+}

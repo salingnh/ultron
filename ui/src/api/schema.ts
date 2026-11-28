@@ -432,6 +432,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/findings/{finding_id}/assessment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                finding_id: components["parameters"]["FindingId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Đánh giá mức nghiêm trọng do agent (C07) cho một finding
+         * @description Gọi M04 với output schema của severity-assessment.v2 và lưu một dòng severity_assessment mới; mã gán assessed_by/inputs/trigger/dedup_key. Cùng finding và cùng input_revision trả bản ghi đã có, không gọi model lần nữa. Model lỗi/không cấu hình thì ghi bản ghi UNRATED có failure (kind=rule) và trả 200: không có mức nghiêm trọng giả, lịch sử giữ nguyên. M20 cũng đánh giá tự động khi một finding được tạo hoặc đầu vào của nó đổi (mọi finding, không chỉ KEV/EPSS), giới hạn bởi ngân sách LLM của campaign; hết ngân sách thì finding giữ UNRATED kèm lý do. Endpoint này là lần đánh giá theo yêu cầu (trigger=operator_request) trên cùng runtime.
+         */
+        post: operations["assessFinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/findings/{finding_id}/history": {
         parameters: {
             query?: never;
@@ -882,7 +904,7 @@ export interface components {
         Severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO" | "UNRATED";
         /**
          * Payload finding.changed.v2
-         * @description Bên phát: M20|M21|M24. Khóa khử trùng của consumer: finding_id+transition_seq. Bên nhận: M25 (alert), M26 (UI).
+         * @description Payload finding.changed.v2. Bên phát: M20|M21|M24|M26 (M26 = endpoint chuyển trạng thái của người vận hành, changed_by là principal đã xác minh). Bên nhận: M25 (alert), M26 (UI). Khóa khử trùng của consumer: finding_id+transition_seq.
          */
         "finding.changed.v2.schema": {
             finding_id: components["schemas"]["Id"];
@@ -2567,6 +2589,8 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
         };
     };
     getFinding: {
@@ -2589,6 +2613,7 @@ export interface operations {
                     "application/json": components["schemas"]["finding.v2.schema"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -2619,6 +2644,8 @@ export interface operations {
                 };
             };
             400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             /** @description Chuyển trạng thái không hợp lệ hoặc expected_seq lệch */
             409: {
                 headers: {
@@ -2628,6 +2655,31 @@ export interface operations {
                     "application/json": components["schemas"]["error.v2.schema"];
                 };
             };
+        };
+    };
+    assessFinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                finding_id: components["parameters"]["FindingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["severity-assessment.v2.schema"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     getFindingHistory: {
@@ -2673,6 +2725,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     getDeltaReport: {
