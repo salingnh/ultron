@@ -37,18 +37,34 @@ OBJECTIVE_MET = "objective_met"
 COVERAGE_INCOMPLETE = "coverage_incomplete"
 MATCHING_FAILED = "matching_failed"
 
-#: The campaign's *current* results that report incomplete coverage.
+#: The campaign's jobs that leave a hole in its surface, by *current* state.
 #:
-#: Joining `scan_job.envelope_event_id` is what makes this a current verdict: a re-run
-#: (generation+1) writes a new envelope, and the superseded row drops out of the view instead of
-#: keeping the campaign incomplete forever. `scan_job_campaign_status` (0001) is the driving index.
+#: Two kinds of hole, one query, because the verdict is about the campaign and not about why a job
+#: is missing:
+#:
+#:   * a current result that reports incomplete coverage (`complete = false`) - the paced/denied
+#:     scan, a partial collection;
+#:   * a scan job whose current state is `FAILED` or `CANCELLED` - it produced no result at all
+#:     (timeout, resource limit, policy refusal, operator cancel). Before this, the campaign could
+#:     claim `objective_met` while its only port scan had failed: review round 1, item 83.
+#:
+#: "Current" is what makes a re-run count: a job is reopened as generation+1 in the *same* row and
+#: its result columns are cleared, so a job that failed and then succeeded is `SUCCEEDED` with its
+#: new envelope and drops out of both halves. `scan_job_campaign_status` (0001) drives the read and
+#: the envelope join is by primary key (one row per result).
 INCOMPLETE_COVERAGE_SQL = """
-SELECT j.job_id, j.capability, i.coverage
+SELECT j.job_id, j.capability, j.status, j.error->>'code' AS error_code, i.coverage
   FROM scan_job j
-  JOIN ingestion_inbox i ON i.event_id = j.envelope_event_id
+  LEFT JOIN ingestion_inbox i ON i.event_id = j.envelope_event_id
  WHERE j.campaign_id = %s
-   AND i.coverage IS NOT NULL
-   AND i.coverage->>'complete' = 'false'
+   AND (
+        j.status IN ('FAILED', 'CANCELLED')
+        OR (
+            j.status = 'SUCCEEDED'
+            AND i.coverage IS NOT NULL
+            AND i.coverage->>'complete' = 'false'
+        )
+   )
  ORDER BY j.finished_at DESC NULLS LAST, j.job_id
 """
 
@@ -57,20 +73,37 @@ MAX_ERROR_CHARS = 300
 
 
 def incomplete_jobs(connection: psycopg.Connection[Any], campaign_id: str) -> list[dict[str, Any]]:
-    """The campaign's current results whose coverage is incomplete, newest first.
+    """The campaign's jobs that leave a hole in its surface, newest first.
 
     The connection is M20's (`dict_row`, autocommit, `search_path = aegis, public`): the same one
     the matcher runs on, so the two reads of one activity see one snapshot of the campaign.
+    `error_code` is the `error.v2` code of a failed job (`EXECUTION_TIMEOUT`, `RESOURCE_LIMIT`,
+    `POLICY_DENIED`, ...), the status text for a cancelled one.
     """
     rows = connection.execute(INCOMPLETE_COVERAGE_SQL, (campaign_id,)).fetchall()
     return [
         {
             "job_id": str(row["job_id"]),
             "capability": str(row["capability"]),
+            "status": str(row["status"]),
+            "error_code": str(row["error_code"] or row["status"]),
             "coverage": row["coverage"],
         }
         for row in rows
     ]
+
+
+def _failed_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in rows if row["status"] in ("FAILED", "CANCELLED")]
+
+
+def _coverage_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in rows if row["status"] == "SUCCEEDED"]
+
+
+def _failure_groups(rows: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """`(capability, error code)` pairs of the jobs that produced no result, sorted and unique."""
+    return sorted({(row["capability"], row["error_code"]) for row in rows})
 
 
 def _limitation_codes(rows: list[dict[str, Any]]) -> list[str]:
@@ -102,13 +135,21 @@ def run_matcher(
 
 
 def _notes(incomplete: list[dict[str, Any]], codes: list[str], error: str | None) -> list[str]:
+    """The human half of the reason: what left a hole, and whether matching failed."""
     notes: list[str] = []
-    if incomplete:
-        named = ", ".join(sorted({row["capability"] for row in incomplete})[:5])
+    covered = _coverage_rows(incomplete)
+    if covered:
+        named = ", ".join(sorted({row["capability"] for row in covered})[:5])
         codes_text = ", ".join(codes) if codes else "no limitation code"
         notes.append(
-            f"{len(incomplete)} job(s) report incomplete scan coverage ({named}; {codes_text})"
+            f"{len(covered)} job(s) report incomplete scan coverage ({named}; {codes_text})"
         )
+    failed = _failed_rows(incomplete)
+    if failed:
+        groups = _failure_groups(failed)
+        shown = ", ".join(f"{capability} {code}" for capability, code in groups[:5])
+        more = "" if len(groups) <= 5 else f" and {len(groups) - 5} more"
+        notes.append(f"{len(failed)} job(s) did not complete ({shown}{more})")
     if error:
         notes.append(f"candidate matching failed ({error})")
     return notes
@@ -117,16 +158,17 @@ def _notes(incomplete: list[dict[str, Any]], codes: list[str], error: str | None
 def finalize(connection: psycopg.Connection[Any], campaign_id: str, proposed: str) -> FinalCampaign:
     """Run the matcher and turn the verified state of the campaign into its final reason.
 
-    `objective_met` is only kept when every current result reported complete coverage and the
-    matcher ran; any other proposed reason (budget/step/cycle stop) keeps its own name and carries
-    the notes, because it already says why the campaign stopped.
+    `objective_met` is only kept when every current result reported complete coverage, no scan job
+    of the campaign is failed or cancelled, and the matcher ran. Any other proposed reason
+    (budget/step/cycle stop) keeps its own name and carries the notes, because it already says why
+    the campaign stopped.
     """
     incomplete = incomplete_jobs(connection, campaign_id)
     codes = _limitation_codes(incomplete)
     matches, retractions, error = run_matcher(connection, campaign_id)
     notes = _notes(incomplete, codes, error)
     reason = proposed
-    if notes and (incomplete or error):
+    if notes:
         if proposed == OBJECTIVE_MET:
             code = COVERAGE_INCOMPLETE if incomplete else MATCHING_FAILED
             reason = f"{code}: " + "; ".join(notes)
@@ -137,6 +179,7 @@ def finalize(connection: psycopg.Connection[Any], campaign_id: str, proposed: st
         reason=reason[:2000],
         incomplete_jobs=tuple(row["job_id"] for row in incomplete),
         limitation_codes=tuple(codes),
+        failure_codes=tuple(sorted({row["error_code"] for row in _failed_rows(incomplete)})),
         matches=matches,
         retractions=retractions,
         matching_error=error,

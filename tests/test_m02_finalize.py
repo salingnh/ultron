@@ -21,6 +21,7 @@ from typing import Any, cast
 
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 from aegis.m02_orchestrator.finalize import (
     COVERAGE_INCOMPLETE,
@@ -34,6 +35,7 @@ from aegis.m27_ingestion.service import IngestionService
 from tests import g16c_support as fixtures
 from tests import m23_support
 from tests.db_support import requires_postgres
+from tests.m02_support import complete_job, run_job
 from tests.m23_support import CAMPAIGN_ID, connect, ingest, pipeline_database
 from tests.support_ingestion import build_envelope, seed_evidence
 
@@ -203,3 +205,127 @@ def test_another_stop_reason_keeps_its_name_and_carries_the_note(
         result = finalize(connection, CAMPAIGN_ID, "budget_exhausted")
     assert result.reason.startswith("budget_exhausted (")
     assert "EGRESS_PACED" in result.reason
+
+
+# --- review round 1: a failed scan is a hole too -------------------------------------------------
+
+TIMEOUT_ERROR = {
+    "code": "EXECUTION_TIMEOUT",
+    "message": "the sandbox ended the job with state timeout",
+    "next_action": "RETRY",
+    "retryable": True,
+}
+
+
+def _fail_job(dsn: str, job_id: str, error: dict[str, Any] | None = None) -> None:
+    """Terminalise a job the way M06's callback would (FAILED needs an error.v2 object)."""
+    run_job(dsn, job_id)  # a FAILED callback is only legal for a job the runner started
+    assert (
+        complete_job(dsn, job_id, status="FAILED", error=error or TIMEOUT_ERROR) == "terminalized"
+    )
+
+
+def _cancel_job(dsn: str, job_id: str) -> None:
+    """An operator cancel of a queued job: intent, then the one terminal CAS (C06)."""
+    with connect(dsn) as connection, connection.transaction():
+        connection.execute(
+            "SELECT aegis.request_job_cancel(%s, %s, %s)",
+            (job_id, Jsonb({"kind": "operator", "id": "op-finalize"}), "test cancel"),
+        )
+    assert complete_job(dsn, job_id, status="CANCELLED") == "terminalized"
+
+
+def _reopen_job(dsn: str, job_id: str) -> None:
+    """Reopen a terminal job the way M06's re-execution does (generation+1, clean result)."""
+    with connect(dsn) as connection, connection.transaction():
+        connection.execute(
+            "UPDATE scan_job SET status = 'QUEUED', generation = generation + 1, attempt = 1,"
+            " started_at = NULL, finished_at = NULL, envelope_event_id = NULL, error = NULL"
+            " WHERE job_id = %s",
+            (job_id,),
+        )
+
+
+def test_a_failed_scan_job_ends_coverage_incomplete(database: tuple[str, list[str]]) -> None:
+    """A scan that never produced a result is not "nothing found": it is an unknown surface.
+
+    Review round 1 (item 83): the campaign could still end `objective_met` while its only port scan
+    had failed - the model's stop proposal was never checked against the jobs that produced no
+    result at all.
+    """
+    dsn, jobs = database
+    fixtures.seed_intel(dsn)
+    failure = {**TIMEOUT_ERROR, "code": "EXECUTION_TIMEOUT"}
+    _fail_job(dsn, jobs[0], failure)
+    with connect(dsn) as connection:
+        pending = incomplete_jobs(connection, CAMPAIGN_ID)
+        result = finalize(connection, CAMPAIGN_ID, OBJECTIVE_MET)
+        PostgresScheduler(lambda: m23_support.connect(dsn)).finish(
+            CAMPAIGN_ID, "complete", result.reason
+        )
+
+    assert [row["job_id"] for row in pending] == [jobs[0]]
+    assert pending[0]["status"] == "FAILED"
+    assert pending[0]["error_code"] == "EXECUTION_TIMEOUT"
+    assert result.reason.startswith(f"{COVERAGE_INCOMPLETE}:")
+    assert "1 job(s) did not complete" in result.reason
+    assert "EXECUTION_TIMEOUT" in result.reason
+    assert "the objective is not claimed" in result.reason
+    assert result.incomplete_jobs == (jobs[0],)
+    assert result.failure_codes == ("EXECUTION_TIMEOUT",)
+    status, reason = _current_reason(dsn, CAMPAIGN_ID)
+    assert status == "COMPLETED"
+    assert reason.startswith(COVERAGE_INCOMPLETE)
+    assert OBJECTIVE_MET not in reason
+
+
+def test_a_cancelled_scan_job_ends_coverage_incomplete(
+    database: tuple[str, list[str]],
+) -> None:
+    dsn, jobs = database
+    _cancel_job(dsn, jobs[0])
+    with connect(dsn) as connection:
+        result = finalize(connection, CAMPAIGN_ID, OBJECTIVE_MET)
+    assert result.reason.startswith(f"{COVERAGE_INCOMPLETE}:")
+    assert "did not complete" in result.reason
+    assert "CANCELLED" in result.reason
+    assert result.failure_codes == ("CANCELLED",)
+
+
+def test_a_job_that_failed_then_succeeded_does_not_block_objective_met(
+    database: tuple[str, list[str]],
+) -> None:
+    """The verdict is the job's *current* state: a successful re-run replaces the failure."""
+    dsn, jobs = database
+    fixtures.seed_intel(dsn)
+    _fail_job(dsn, jobs[0])
+    _reopen_job(dsn, jobs[0])
+    receipt = _ingest_with_coverage(dsn, jobs[0], {"subjects": ["ip:192.0.2.10"], "complete": True})
+    assert receipt.accepted is True
+    assert receipt.duplicate is False
+    with connect(dsn) as connection:
+        result = finalize(connection, CAMPAIGN_ID, OBJECTIVE_MET)
+    assert result.reason == OBJECTIVE_MET
+    assert result.incomplete_jobs == ()
+    assert result.failure_codes == ()
+
+
+def test_a_failed_job_and_a_paced_job_are_named_together(
+    database: tuple[str, list[str]],
+) -> None:
+    """Two kinds of hole, one reason: the count, the capabilities and the codes, not a summary."""
+    dsn, jobs = database
+    fixtures.seed_intel(dsn)
+    _fail_job(dsn, jobs[0])
+    receipt = _ingest_with_coverage(dsn, jobs[1], PACED)
+    assert receipt.accepted is True
+    with connect(dsn) as connection:
+        result = finalize(connection, CAMPAIGN_ID, OBJECTIVE_MET)
+    assert result.reason.startswith(f"{COVERAGE_INCOMPLETE}:")
+    assert "1 job(s) report incomplete scan coverage" in result.reason
+    assert "EGRESS_PACED" in result.reason
+    assert "1 job(s) did not complete" in result.reason
+    assert "EXECUTION_TIMEOUT" in result.reason
+    assert set(result.incomplete_jobs) == set(jobs)
+    assert result.failure_codes == ("EXECUTION_TIMEOUT",)
+    assert result.limitation_codes == ("EGRESS_PACED",)

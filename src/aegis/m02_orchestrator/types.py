@@ -167,6 +167,9 @@ class FinalCampaign:
     incomplete_jobs: tuple[str, ...] = ()
     #: `EGRESS_PACED`, `EGRESS_CAPPED`, ... that made those jobs incomplete.
     limitation_codes: tuple[str, ...] = ()
+    #: `error.v2` codes of the campaign's failed/cancelled jobs (`EXECUTION_TIMEOUT`, ...); a
+    #: job that produced no result at all is a hole in the surface too (review round 1, item 83).
+    failure_codes: tuple[str, ...] = ()
     #: Candidates the matcher produced or retracted for this campaign, and why it failed.
     matches: int = 0
     retractions: int = 0
