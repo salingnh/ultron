@@ -1,0 +1,43 @@
+{
+  "verification_id": "01934f6a-0000-7000-8000-0000000007c1",
+  "finding_id": "01934f6a-0000-7000-8000-0000000007c2",
+  "campaign_id": "01934f6a-0000-7000-8000-0000000007c3",
+  "job_id": "01934f6a-0000-7000-8000-0000000007c4",
+  "check_id": "config.http.version-header",
+  "check_class": "E1",
+  "network_profile": "internet",
+  "check_pack_sha256": "f7554d942b59d2a7fb45c39082866dec85f0a23036f3aad39c632c48d3b352f4",
+  "target": {
+    "asset_id": "01934f6a-0000-7000-8000-0000000007c5",
+    "canonical_key": "app:https://203.0.113.10:443",
+    "address": "203.0.113.10",
+    "port": 443
+  },
+  "controls": [],
+  "outcome": "OBSERVED",
+  "matched": {
+    "positive": true,
+    "control_a": false,
+    "control_b": false,
+    "discriminating": false,
+    "reason": "chỉ OBSERVED trên internet: không có patched twin để phân biệt"
+  },
+  "requests_sent": 1,
+  "request_cap": 3,
+  "evidence": {
+    "positive": "01934f6a-0000-7000-8000-0000000007b1",
+    "control_a": null,
+    "control_b": null
+  },
+  "transition_seq": null,
+  "requested_by": {
+    "kind": "operator",
+    "id": "opaque-principal-7f3c"
+  },
+  "decided_by": {
+    "kind": "module",
+    "id": "M21"
+  },
+  "started_at": "2026-11-28T09:05:00Z",
+  "finished_at": "2026-11-28T09:05:02Z"
+}

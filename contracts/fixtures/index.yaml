@@ -44,6 +44,10 @@ valid:
   valid/capability-input.scan-artifact.json: capabilities/vuln/scan-artifact.v2.schema.json
   valid/approved-task.dnsx-internet.json: capability/approved-task.v2.schema.json
   valid/approved-task.internet-private.json: capability/approved-task.v2.schema.json
+  valid/verification-request.json: verification/verification-request.v2.schema.json
+  valid/verification-run.verified.json: verification/verification-run.v2.schema.json
+  valid/verification-run.observed.json: verification/verification-run.v2.schema.json
+  valid/verification-result.json: verification/verification-result.v2.schema.json
 invalid:
   invalid/result-envelope.bad-key.json: ingestion/result-envelope.v2.schema.json
   invalid/result-envelope.fake-keyword-asset.json: ingestion/result-envelope.v2.schema.json
@@ -80,3 +84,9 @@ invalid:
   invalid/manifest.artifact-with-egress.yaml: capability/provider-manifest.v2.schema.json
   invalid/approved-task.broker-empty.json: capability/approved-task.v2.schema.json
   invalid/approved-task.private-cidr-not-a-network.json: capability/approved-task.v2.schema.json
+  invalid/verification-request.extra-target.json: verification/verification-request.v2.schema.json
+  invalid/verification-request.unknown-check.json: verification/verification-request.v2.schema.json
+  invalid/verification-run.internet-verified.json: verification/verification-run.v2.schema.json
+  invalid/verification-run.verified-without-controls.json: verification/verification-run.v2.schema.json
+  invalid/verification-run.observed-in-lab.json: verification/verification-run.v2.schema.json
+  invalid/verification-result.expected-value.json: verification/verification-result.v2.schema.json

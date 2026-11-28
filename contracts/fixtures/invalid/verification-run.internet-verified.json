@@ -1,0 +1,59 @@
+{
+  "verification_id": "01934f6a-0000-7000-8000-0000000007a1",
+  "finding_id": "01934f6a-0000-7000-8000-0000000007a2",
+  "campaign_id": "01934f6a-0000-7000-8000-0000000007a3",
+  "job_id": "01934f6a-0000-7000-8000-0000000007a4",
+  "check_id": "cve-2021-41773-traversal",
+  "check_class": "L1",
+  "network_profile": "internet",
+  "check_pack_sha256": "ce06b8b25491ae6263ef1246d1fbe1f8f6f37ed011d2371e30d56d6dfc032687",
+  "target": {
+    "asset_id": "01934f6a-0000-7000-8000-0000000007a5",
+    "canonical_key": "service:203.0.113.10:80/tcp",
+    "address": "203.0.113.10",
+    "port": 80
+  },
+  "controls": [
+    {
+      "role": "patched_twin",
+      "address": "203.0.113.11",
+      "port": 80,
+      "asset_id": null
+    },
+    {
+      "role": "benign",
+      "address": "203.0.113.10",
+      "port": 80,
+      "asset_id": "01934f6a-0000-7000-8000-0000000007a5"
+    }
+  ],
+  "canary": {
+    "sha256": "93d0b487ca2b72157b7b8ef025556a20a0ecfe0ffe70329c42075f748b412530"
+  },
+  "outcome": "VERIFIED",
+  "matched": {
+    "positive": true,
+    "control_a": false,
+    "control_b": false,
+    "discriminating": true,
+    "reason": "không được phép: L1/VERIFIED chỉ ở lab"
+  },
+  "requests_sent": 4,
+  "request_cap": 4,
+  "evidence": {
+    "positive": "01934f6a-0000-7000-8000-0000000007b1",
+    "control_a": "01934f6a-0000-7000-8000-0000000007b2",
+    "control_b": "01934f6a-0000-7000-8000-0000000007b3"
+  },
+  "transition_seq": 3,
+  "requested_by": {
+    "kind": "operator",
+    "id": "opaque-principal-7f3c"
+  },
+  "decided_by": {
+    "kind": "module",
+    "id": "M21"
+  },
+  "started_at": "2026-11-28T09:00:00Z",
+  "finished_at": "2026-11-28T09:00:07Z"
+}

@@ -41,6 +41,10 @@ Một schema chỉ được coi là đã phát hành khi biết ai phát và ai 
 | [finding/finding.v2](finding/finding.v2.schema.json), [finding-status.v2](finding/finding-status.v2.schema.json) | M20/M21/M24 | M26 (UI), M25 (alert) | |
 | [finding/severity-assessment.v2](finding/severity-assessment.v2.schema.json) | M20/M21/M24 | M26, M25 | |
 | [finding/transition-request.v2](finding/transition-request.v2.schema.json) + [transitions.v2.yaml](finding/transitions.v2.yaml) | UI → M26 | M20 | body REST, không mang actor (OI-10) |
+| [verification/verification-request.v2](verification/verification-request.v2.schema.json) | UI → M26 | M05 (check id enum), M21 (registry) | body REST của `POST /api/v2/findings/{id}/verifications` + `Idempotency-Key`; chỉ `check_id` (enum pack) và `expected_seq`, không target/URL/payload/template |
+| [verification/verification-run.v2](verification/verification-run.v2.schema.json) | M21 (read model của `verification_run`) | UI | outcome là quyết định của M21, không phải trạng thái job; VERIFIED chỉ ở lab với đủ hai đối chứng âm, OBSERVED là E1 trên internet |
+| [verification/verification-result.v2](verification/verification-result.v2.schema.json) | adapter `nuclei-verify`/`config-verify` (M06 collect, lưu bằng chứng) | M21 | chỉ ghi cái đã thấy (request/response, băm body, giá trị cấu trúc); không có giá trị kỳ vọng hay canary |
+| [verification/checks.v2.yaml](verification/checks.v2.yaml) | registry (contract) | M05 (duyệt/ký), M06 (pack đã mount), M21 (oracle), M26 (danh sách check) | pack đã review: id enum, class E1\|L1\|C1, `labOnly`, template + sha256, trần request; `deploy/{lab,internet}/verify` sinh từ tệp này |
 | [ingestion/result-envelope.v2](ingestion/result-envelope.v2.schema.json) | M06 collector | M27 | |
 | [ingestion/ingest-receipt.v2](ingestion/ingest-receipt.v2.schema.json) | M27 | M06 (REST và nội bộ) | một schema duy nhất (S1.5b) |
 | [ingestion/canonicalization.v2.yaml](ingestion/canonicalization.v2.yaml), [normalization.v2.yaml](ingestion/normalization.v2.yaml), [predicates.v2.yaml](ingestion/predicates.v2.yaml) | registry (contract) | adapter, M07, M27 | |

@@ -12,7 +12,7 @@ SHELL := /bin/bash
 	lab-up lab-down lab-status lab-check lab-dnsx lab-subfinder lab-naabu \
 	lab-fingerprintx lab-httpx lab-httpx-proxy lab-build-fingerprintx demo-g16b \
 	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test intel-kev intel-sync \
-	deps lint test codegen codegen-check migrate ci-python \
+	deps lint test codegen codegen-check verify-pack verify-pack-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-g2d demo-recovery soak-start soak-stop \
 	run-local stop-local seed-demo llm-smoke broker-image internet-smoke intel-schedule \
 	llm-gateway-up llm-gateway-down llm-gateway-status llm-gateway-reload llm-gateway-test \
@@ -66,6 +66,9 @@ make lint            ruff check + ruff format --check + mypy over src/tests/adap
 make test            pytest (database tests run when AEGIS_TEST_PG_DSN is set)
 make codegen         regenerate src/aegis/contracts_gen from contracts/
 make codegen-check   fail if the committed DTOs differ from a fresh generation
+make verify-pack     regenerate the two verification check packs (deploy/lab/verify,
+                     deploy/internet/verify) from contracts/verification/checks.v2.yaml
+make verify-pack-check  fail if the committed check packs disagree with the registry
 make migrate         apply contracts/db/postgres in contracts/README.md order
                      (needs $$AEGIS_PG_DSN; recovery after an interrupted run:
                      python -m aegis.migrations mark-applied VERSION --sha256 SHA)
@@ -257,6 +260,12 @@ codegen:
 
 codegen-check:
 	@uv run --frozen python scripts/codegen.py --check
+
+verify-pack:
+	@uv run --frozen python scripts/verification_pack.py
+
+verify-pack-check:
+	@uv run --frozen python scripts/verification_pack.py --check
 
 migrate:
 	@uv run --frozen python -m aegis.migrations
