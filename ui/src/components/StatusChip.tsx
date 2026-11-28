@@ -1,9 +1,16 @@
 import React from 'react';
-import type { JobStatus, CampaignStatus, ProviderHealth } from '../api/types';
+import type {
+  JobStatus,
+  CampaignStatus,
+  ProviderHealth,
+  FindingStatus,
+  FindingSeverity,
+} from '../api/types';
+import { FINDING_SEVERITY_META, FINDING_STATUS_META } from '../utils/findings';
 
 interface StatusChipProps {
-  status: JobStatus | CampaignStatus | ProviderHealth | string;
-  kind?: 'job' | 'campaign' | 'health';
+  status: JobStatus | CampaignStatus | ProviderHealth | FindingStatus | string;
+  kind?: 'job' | 'campaign' | 'health' | 'finding';
   size?: 'sm' | 'md';
 }
 
@@ -32,6 +39,11 @@ const statusConfig: Record<string, { label: string; variant: 'success' | 'warnin
   healthy: { label: 'Khớp Manifest (Healthy)', variant: 'success' },
   degraded: { label: 'Suy giảm (Degraded)', variant: 'warning' },
   unavailable: { label: 'Không khả dụng', variant: 'danger' },
+
+  // FindingStatus (finding-status.v2.schema.json)
+  ...Object.fromEntries(
+    Object.entries(FINDING_STATUS_META).map(([k, v]) => [k, { label: v.label, variant: v.variant }])
+  ),
 };
 
 const healthTooltips: Record<string, string> = {
@@ -67,6 +79,35 @@ export const StatusChip: React.FC<StatusChipProps> = ({ status, kind, size = 'sm
         }}
       />
       {config.label}
+    </span>
+  );
+};
+
+interface SeverityChipProps {
+  severity: FindingSeverity | string;
+  size?: 'sm' | 'md';
+}
+
+export const SeverityChip: React.FC<SeverityChipProps> = ({ severity, size = 'sm' }) => {
+  const meta =
+    FINDING_SEVERITY_META[severity as FindingSeverity] || {
+      label: severity,
+      variant: 'neutral' as const,
+      rank: 0,
+    };
+  const isUnrated = severity === 'UNRATED';
+
+  return (
+    <span
+      className={`status-chip ${meta.variant}`}
+      style={{
+        fontSize: size === 'sm' ? 'var(--text-xs)' : 'var(--text-sm)',
+        padding: size === 'sm' ? '2px 8px' : '4px 10px',
+        ...(isUnrated ? { borderStyle: 'dashed' } : {}),
+      }}
+      title={`Mức nghiêm trọng: ${meta.label}`}
+    >
+      {meta.label}
     </span>
   );
 };

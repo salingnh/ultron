@@ -11,6 +11,7 @@ import {
   Radio,
   Key,
   Activity,
+  ShieldAlert,
 } from 'lucide-react';
 import { apiClient, getOperatorToken } from '../api/client';
 import { TokenConfigModal } from './TokenConfigModal';
@@ -54,7 +55,7 @@ export const Layout: React.FC = () => {
             <Shield size={22} style={{ color: 'var(--accent)' }} />
             <span>ULTRON</span>
           </div>
-          <span className="brand-badge">Bảng điều khiển tác chiến</span>
+          <span className="brand-badge brand-subtitle">Bảng điều khiển tác chiến</span>
           {apiClient.isMock ? (
             <span
               className="status-chip warning"
@@ -102,6 +103,13 @@ export const Layout: React.FC = () => {
           >
             <Network size={16} />
             <span>Đồ thị Tài sản</span>
+          </NavLink>
+          <NavLink
+            to="/findings"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+          >
+            <ShieldAlert size={16} />
+            <span>Findings</span>
           </NavLink>
           <NavLink
             to="/tools"

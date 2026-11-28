@@ -93,6 +93,43 @@ export type ActivityIdleCycle = components['schemas']['IdleCycle'];
 export type ActivityBlocker = components['schemas']['Blocker'];
 export type ActivityBudget = components['schemas']['Budget'];
 
+// Finding types (contracts/finding/*.v2.schema.json + OpenAPI /findings)
+export type FindingStatus = components['schemas']['finding-status.v2.schema'];
+export type FindingSeverity = components['schemas']['Severity'];
+export type SeverityTrigger = components['schemas']['Trigger'];
+export type SeverityRawSignal = components['schemas']['RawSignal'];
+export type SeverityFailure = components['schemas']['Failure'];
+export type SeverityAssessment = Omit<
+  components['schemas']['severity-assessment.v2.schema'],
+  '$defs'
+> & {
+  $defs?: unknown;
+};
+export type Finding = Omit<
+  components['schemas']['finding.v2.schema'],
+  'location' | 'severity_assessment'
+> & {
+  location?: Record<string, unknown>;
+  severity_assessment?: SeverityAssessment;
+};
+export type FindingEvidenceItem = Finding['evidence'][number];
+export type FindingListResponse = Omit<
+  operations['listFindings']['responses'][200]['content']['application/json'],
+  'items'
+> & {
+  items: Finding[];
+};
+export type ListFindingsParams = NonNullable<operations['listFindings']['parameters']['query']>;
+export type TransitionFindingRequest = components['schemas']['transition-request.v2.schema'];
+export type FindingHistoryResponse = Omit<
+  operations['getFindingHistory']['responses'][200]['content']['application/json'],
+  'assessments'
+> & {
+  assessments: SeverityAssessment[];
+};
+export type FindingRunItem = FindingHistoryResponse['runs'][number];
+export type FindingTransitionItem = FindingHistoryResponse['transitions'][number];
+
 export interface UiError {
   status?: number;
   code: string;

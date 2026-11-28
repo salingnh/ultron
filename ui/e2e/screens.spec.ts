@@ -260,6 +260,31 @@ for (const theme of ['light', 'dark'] as const) {
       }
       await assertNoHorizontalOverflow(page);
       await captureScreen(page, `06-tool-catalogue-${theme}.png`);
+
+      // 7. Findings Screen (list, filters, detail panel, evidence SHA-256, provenance, timeline)
+      await page.goto('/findings');
+      await expect(page.getByText('Quản lý Findings & Bằng chứng')).toBeVisible();
+      const findingsTable = page.getByRole('table', { name: 'Bảng danh sách findings' });
+      const emptyFindings = page.getByText('Chưa có finding nào được ghi nhận');
+      await expect(findingsTable.or(emptyFindings)).toBeVisible();
+      if ((await findingsTable.locator('tbody tr').count()) > 0) {
+        await findingsTable.getByRole('button', { name: /Chi tiết/ }).first().click();
+        const detailPanel = page.getByLabel('Bảng chi tiết Finding');
+        await expect(detailPanel).toBeVisible();
+        await expect(detailPanel.getByText(/Bằng chứng \(Evidence/)).toBeVisible();
+        await expect(detailPanel.getByText(/Nguồn gốc \(Provenance\)/)).toBeVisible();
+        await expect(detailPanel.getByText(/Dòng thời gian trạng thái/)).toBeVisible();
+        if (!isRealMode) {
+          await expect(detailPanel.getByText('Không còn thấy (no longer seen)')).toBeVisible();
+        }
+        const tableOverflow = await findingsTable.locator('..').evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }));
+        expect(tableOverflow.scrollWidth).toBeLessThanOrEqual(tableOverflow.clientWidth + 2);
+      }
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `10-findings-list-detail-${theme}.png`);
     });
   });
 }
@@ -339,6 +364,23 @@ test.describe('Ultron Operations UI - 390px Responsive Verification', () => {
       await page.goto('/tools');
       await expect(page.getByText('Danh mục Công cụ & Bộ điều hợp (Tool Catalogue)')).toBeVisible();
       await assertNoHorizontalOverflow(page);
+
+      await page.goto('/findings');
+      await expect(page.getByText('Quản lý Findings & Bằng chứng')).toBeVisible();
+      const mobileFindingsTable = page.getByRole('table', { name: 'Bảng danh sách findings' });
+      const mobileEmptyFindings = page.getByText('Chưa có finding nào được ghi nhận');
+      await expect(mobileFindingsTable.or(mobileEmptyFindings)).toBeVisible();
+      if ((await mobileFindingsTable.locator('tbody tr').count()) > 0) {
+        const mobileTableOverflow = await mobileFindingsTable.locator('..').evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }));
+        expect(mobileTableOverflow.scrollWidth).toBeLessThanOrEqual(mobileTableOverflow.clientWidth + 2);
+        await mobileFindingsTable.locator('tbody tr').first().getByRole('button').first().click();
+        await expect(page.getByLabel('Bảng chi tiết Finding')).toBeVisible();
+      }
+      await assertNoHorizontalOverflow(page);
+      await captureScreen(page, `10b-mobile-390-findings-${theme}.png`);
     });
   }
 });

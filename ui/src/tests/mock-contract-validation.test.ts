@@ -388,4 +388,92 @@ describe('Mock Fixtures Contract Validation against OpenAPI v2 Schema', () => {
     expect(page1.truncated).toBe(true);
     expect(page1.next_cursor).toBeTruthy();
   });
+
+  it('validates mockHandlers.listFindings() and getFinding() match /findings 200 schemas', async () => {
+    resetMockData();
+    const listSchema = ajv.compile(
+      openApiDoc.paths['/findings']?.get?.responses['200']?.content['application/json']?.schema
+    );
+    const detailSchema = ajv.compile(
+      openApiDoc.paths['/findings/{finding_id}']?.get?.responses['200']?.content['application/json']?.schema
+    );
+
+    const page1 = await mockHandlers.listFindings({ limit: 3 });
+    expect(listSchema(page1)).toBe(true);
+    expect(listSchema.errors).toBeNull();
+    expect(page1.items).toHaveLength(3);
+    expect(page1.next_cursor).toBeTruthy();
+
+    const page2 = await mockHandlers.listFindings({ cursor: page1.next_cursor, limit: 10 });
+    expect(listSchema(page2)).toBe(true);
+    expect(listSchema.errors).toBeNull();
+    expect(page2.items.length).toBeGreaterThanOrEqual(3);
+
+    for (const item of [...page1.items, ...page2.items]) {
+      const detail = await mockHandlers.getFinding(item.finding_id);
+      expect(detailSchema(detail)).toBe(true);
+      expect(detailSchema.errors).toBeNull();
+    }
+  });
+
+  it('validates mockHandlers.getFindingHistory() matches /findings/{id}/history 200 schema', async () => {
+    resetMockData();
+    const historySchema = ajv.compile(
+      openApiDoc.paths['/findings/{finding_id}/history']?.get?.responses['200']?.content['application/json']?.schema
+    );
+    const listRes = await mockHandlers.listFindings({ limit: 20 });
+    for (const item of listRes.items) {
+      const history = await mockHandlers.getFindingHistory(item.finding_id);
+      expect(historySchema(history)).toBe(true);
+      expect(historySchema.errors).toBeNull();
+    }
+  });
+
+  it('validates transitionFinding request/response and 409 error match contracts', async () => {
+    resetMockData();
+    const reqSchema = ajv.compile(
+      openApiDoc.paths['/findings/{finding_id}/transitions']?.post?.requestBody?.content[
+        'application/json'
+      ]?.schema
+    );
+    const resSchema = ajv.compile(
+      openApiDoc.paths['/findings/{finding_id}/transitions']?.post?.responses['200']?.content[
+        'application/json'
+      ]?.schema
+    );
+    const err409Schema = ajv.compile(
+      openApiDoc.paths['/findings/{finding_id}/transitions']?.post?.responses['409']?.content[
+        'application/json'
+      ]?.schema
+    );
+
+    const findingId = '01934f6a-0000-7000-8000-00000000f101';
+    const body = {
+      to: 'FALSE_POSITIVE' as const,
+      reason: 'Da xac minh Apache duoc backport ban va trong lab.',
+      expected_seq: 1,
+    };
+    expect(reqSchema(body)).toBe(true);
+    expect(reqSchema.errors).toBeNull();
+
+    const updated = await mockHandlers.transitionFinding(findingId, body, 'transition-contract-key-1');
+    expect(resSchema(updated)).toBe(true);
+    expect(resSchema.errors).toBeNull();
+    expect(updated.status).toBe('FALSE_POSITIVE');
+
+    // Stale seq must return 409 matching error.v2.schema.json
+    try {
+      await mockHandlers.transitionFinding(
+        findingId,
+        { to: 'CANDIDATE', reason: 'Mo lai voi seq cu', expected_seq: 1 },
+        'transition-contract-key-2'
+      );
+      expect.unreachable('Expected 409 stale expected_seq error');
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number; appError?: unknown };
+      expect(apiErr.status).toBe(409);
+      expect(err409Schema(apiErr.appError)).toBe(true);
+      expect(err409Schema.errors).toBeNull();
+    }
+  });
 });
