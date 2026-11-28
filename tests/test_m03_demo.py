@@ -26,6 +26,7 @@ from aegis.m03_agent.config import SessionConfig
 from aegis.m03_agent.fake_policy import (
     ENUMERATE,
     FINGERPRINT,
+    GENERATE_SBOM,
     PROBE_HTTP,
     RESOLVE,
     SCAN_ARTIFACT,
@@ -480,21 +481,47 @@ class ArtifactDemo(Demo):
         return context
 
 
-def test_an_image_campaign_proposes_the_artifact_scan_then_stops() -> None:
+def test_an_image_campaign_proposes_sbom_then_both_vulnerability_providers() -> None:
+    """G2-D: SBOM (Syft) -> vulnerability match (Trivy) -> corroboration (Grype), then stop.
+
+    The two vulnerability providers share one capability, so the policy names each provider
+    explicitly; the registry's default order is not a contract.
+    """
     demo = ArtifactDemo()
 
     first = demo.session(0)
     assert len(first.outcome.job_ids) == 1
     call = _call(demo.policy.responses[-1])
-    assert call["name"] == SCAN_ARTIFACT
+    assert call["name"] == GENERATE_SBOM
+    assert call["arguments"]["provider"] == "syft"
     assert call["arguments"]["input"]["targets"] == ["oci:" + demo.digest]
-    assert [job["capability"] for job in _job_rows(demo.job_service)] == [SCAN_ARTIFACT]
-
     _complete(demo, first.outcome.job_ids[0], "SUCCEEDED")
+
     second = demo.session(1)
-    assert second.outcome.job_ids == ()
-    assert second.outcome.stop_reason == "objective_met"
-    assert second.result is not None and second.result["decision"] == "stop"
+    assert len(second.outcome.job_ids) == 1
+    call = _call(demo.policy.responses[-1])
+    assert call["name"] == SCAN_ARTIFACT
+    assert call["arguments"]["provider"] == "trivy"
+    _complete(demo, second.outcome.job_ids[0], "SUCCEEDED")
+
+    third = demo.session(2)
+    assert len(third.outcome.job_ids) == 1
+    call = _call(demo.policy.responses[-1])
+    assert call["name"] == SCAN_ARTIFACT
+    assert call["arguments"]["provider"] == "grype"
+    _complete(demo, third.outcome.job_ids[0], "SUCCEEDED")
+
+    assert [job["capability"] for job in _job_rows(demo.job_service)] == [
+        GENERATE_SBOM,
+        SCAN_ARTIFACT,
+        SCAN_ARTIFACT,
+    ]
+    assert [job["provider"] for job in _job_rows(demo.job_service)] == ["syft", "trivy", "grype"]
+
+    fourth = demo.session(3)
+    assert fourth.outcome.job_ids == ()
+    assert fourth.outcome.stop_reason == "objective_met"
+    assert fourth.result is not None and fourth.result["decision"] == "stop"
 
 
 def test_an_image_campaign_without_an_artifact_objective_runs_nothing() -> None:

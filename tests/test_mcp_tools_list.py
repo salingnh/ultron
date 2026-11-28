@@ -52,6 +52,7 @@ CAPABILITIES = (
     "service.fingerprint",
     "web.probe_http",
     "vuln.scan_artifact",
+    "sbom.generate",
 )
 
 

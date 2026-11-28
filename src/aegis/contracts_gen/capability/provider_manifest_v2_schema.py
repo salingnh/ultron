@@ -46,6 +46,10 @@ class ArtifactSource(StrEnum):
     oci_archive = "oci-archive"
 
 
+class RuleSet(StrEnum):
+    pinned = "pinned"
+
+
 class Runtime(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -72,6 +76,10 @@ class Runtime(BaseModel):
     artifactSource: ArtifactSource | None = Field(
         None,
         description="Nguồn artifact mà M06 phải đưa vào sandbox từ mục tiêu của job: `oci-archive` = đúng một target `oci:` của task được lưu thành `image.tar` (docker-archive) trong `/in` từ local image store của runner, không pull registry, không chạy image. Chỉ hợp lệ khi `permissions.networkAccess = none` và manifest nhận target kind `oci_image`; thiếu image trong store là job FAILED `DEPENDENCY_MISSING` trước khi container tồn tại.",
+    )
+    ruleSet: RuleSet | None = Field(
+        None,
+        description="`pinned`: job này chỉ chạy khi deployment đã pin bộ luật/dữ liệu mà kết luận dựa vào (profile `pinnedInputs` có `ruleSet`) và M06 ghi nhãn đã verify vào `coverage.rule_set`. Dùng cho scanner có vulnerability DB offline (Trivy, Grype); một adapter chỉ sinh SBOM không khai báo trường này. Chỉ có nghĩa cùng `artifactSource`.",
     )
     scratchMb: conint(ge=16, le=8192) | None = Field(
         None,

@@ -15,6 +15,11 @@
       "type": "object",
       "description": "Tham số đã có kiểu của tool; M05 ghép inputDefaults và kiểm input schema. Mục tiêu trong input là giá trị thô của seed hoặc canonical_key: M05 phân giải thành TargetRef cho task/Job trả về (khớp campaign_target cùng campaign/scope -> seed_id, không chuyển keyword/CIDR thành asset giả; canonical_key đã có -> canonical_key). Giá trị không khớp seed hoặc asset đã biết trả INPUT_INVALID, không tự suy ra khóa chuẩn."
     },
+    "provider": {
+      "description": "Provider nào phục vụ capability này khi có nhiều provider đã đăng ký (vD `trivy` và `grype` cùng phục vụ `vuln.scan_artifact`). Phải là một provider đang được registry phục vụ cho capability của tool; vắng mặt = mặc định của registry (provider đăng ký sau cùng, như trước đây). Không phải danh tính người gọi: principal vẫn do server gán.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
     "rationale": {
       "description": "Lý do chọn mục tiêu và capability; ghi vào audit (FR-002).",
       "type": "string",

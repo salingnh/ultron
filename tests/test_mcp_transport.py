@@ -58,6 +58,7 @@ async def test_wire_tools_list_is_filtered_and_self_contained() -> None:
             "service.fingerprint",
             "web.probe_http",
             "vuln.scan_artifact",
+            "sbom.generate",
             *GRAPH_TOOLS,
         ]
     )

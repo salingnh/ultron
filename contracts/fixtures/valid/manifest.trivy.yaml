@@ -37,6 +37,7 @@ spec:
     - --quiet
     outputPath: /out
     artifactSource: oci-archive
+    ruleSet: pinned
     scratchMb: 512
   inputSchemaRef: schema://vuln/scan-artifact/v2
   outputSchemaRef: schema://common/result-envelope/v2

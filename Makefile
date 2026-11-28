@@ -95,8 +95,8 @@ make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS
 make demo-g2d        G2-D gate: an operator-supplied image digest -> Trivy SBOM/packages/CVE
                      candidates with no network and without running the image, then M20
                      findings with their provider list, checked in PostgreSQL, Neo4j and the API
-make lab-artifact-db download the offline Trivy vulnerability DBs once and pin their bytes in
-                     deploy/lab/runner-profile.json (the scan itself never uses the network)
+make lab-artifact-db download the offline Trivy + Grype vulnerability DBs once and pin each
+                     file's bytes in deploy/lab/runner-profile.json (scans never use the network)
 make intel-kev       refresh the configured CISA KEV mirror: cisagov/kev-data default-branch
                      HEAD via the GitHub API, validated (shape, bounds, version) and recorded
                      with its commit; no fallback source
@@ -308,6 +308,7 @@ demo-g2d:
 
 lab-artifact-db:
 	@scripts/artifact/trivy-db.sh
+	@scripts/artifact/grype-db.sh
 
 demo-recovery:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \

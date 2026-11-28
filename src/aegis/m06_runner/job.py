@@ -175,6 +175,7 @@ class JobRunner:
             )
         if not egress:
             artifact = plan.manifest.spec.runtime.artifactSource is not None
+            pinned_rule_set = plan.manifest.spec.runtime.ruleSet == "pinned"
             if entry is None and artifact:
                 raise specs.SpecError(
                     "DEPENDENCY_MISSING",
@@ -182,7 +183,7 @@ class JobRunner:
                     f"{text(plan.task.image_digest)} (the offline rule set it scans with)",
                 )
             if (
-                artifact
+                pinned_rule_set
                 and entry is not None
                 and not any(item.rule_set for item in entry.pinned_inputs)
             ):

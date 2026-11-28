@@ -92,6 +92,45 @@
           "sha256": "e0581658fff805194319f6b981be299c5f0f8f58593f36005b862861c41b876b"
         }
       ]
+    },
+    {
+      "imageDigest": "sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060",
+      "args": [],
+      "env": {
+        "HOME": "/tmp",
+        "TMPDIR": "/cache",
+        "SYFT_CACHE_DIR": "/cache/syft",
+        "SYFT_CHECK_FOR_APP_UPDATE": "false"
+      },
+      "hosts": {},
+      "mounts": []
+    },
+    {
+      "imageDigest": "sha256:13113eeceab017260370cf540e1d25442c59665fd07d1b09b66d63bb0c282887",
+      "args": [],
+      "env": {
+        "HOME": "/tmp",
+        "TMPDIR": "/cache",
+        "GRYPE_DB_CACHE_DIR": "/db",
+        "GRYPE_DB_AUTO_UPDATE": "false",
+        "GRYPE_DB_VALIDATE_AGE": "false",
+        "GRYPE_CHECK_FOR_APP_UPDATE": "false"
+      },
+      "hosts": {},
+      "mounts": [
+        {
+          "source": ".run/artifact/grype-db",
+          "target": "/db"
+        }
+      ],
+      "pinnedInputs": [
+        {
+          "target": "/db",
+          "file": "6/vulnerability.db",
+          "sha256": "20c501afe60dc5482e967c911426639c4410d60958a947abe1498c62f9571ac0",
+          "ruleSet": "grype-db@2026-11-27T06:22:11Z"
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,21 @@
+{
+  "raw": {
+    "file": "result.json",
+    "sha256": "22c9fca172516df1e0d6b7018bfa0ca452fb46a706b7079e846f64abc9731c76",
+    "size_bytes": 357753
+  },
+  "input": {
+    "targets": [
+      "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    ]
+  },
+  "expected": "expected.json",
+  "cross_check": {
+    "file": "tests/fixtures/artifact/python-3.12-alpine-grype.json",
+    "kind": "packages"
+  },
+  "tool": {
+    "provider": "grype"
+  },
+  "command": "offline, image never run, network none"
+}

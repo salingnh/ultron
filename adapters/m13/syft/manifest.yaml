@@ -1,0 +1,73 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: syft
+  version: 1.0.0
+  module: M13
+  license: Apache-2.0
+  upstream: https://github.com/anchore/syft
+  licenseNotes: >-
+    Apache-2.0. Image pin v1.57.1 (release 2026-11-09, 19 days before the adapter was written) is
+    Anchore's upstream image, unmodified; `adapters/m13/syft/sbom.cdx.json` records the packages of
+    that digest and README.md the attribution. The SBOM it produces is CycloneDX JSON of the
+    campaign's image digest; no network and no database are used at scan time.
+spec:
+  capability: sbom.generate
+  providerVersion: v1.57.1
+  runtime:
+    type: container
+    image: registry.internal/aegis/syft
+    imageDigest: sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060
+    argsTemplate:
+    - scan
+    - docker-archive:/in/image.tar
+    - -o
+    - cyclonedx-json=/out/sbom.json
+    - -q
+    outputPath: /out
+    artifactSource: oci-archive
+    scratchMb: 1024
+  inputSchemaRef: schema://sbom/generate/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - oci_image
+  permissions:
+    scopeRequired: false
+    networkAccess: none
+    rawSocket: false
+  budget:
+    timeoutSeconds: 900
+    maxConcurrency: 1
+    cpu: 2
+    memoryMb: 3072
+    maxOutputMb: 256
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m13.syft.parser:parse
+    outputFormat: cyclonedx
+  emits:
+    assetKinds:
+    - oci_image
+    - package
+    predicates:
+    - artifact.digest
+    - artifact.sbom
+    - package.installed
+    - asset.seen
+    relationships:
+    - CONTAINS_PACKAGE
+    findings: false
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation

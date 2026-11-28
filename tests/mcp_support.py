@@ -69,6 +69,8 @@ MANIFESTS = (
     "manifest.fingerprintx.yaml",
     "manifest.httpx.yaml",
     "manifest.trivy.yaml",
+    "manifest.syft.yaml",
+    "manifest.grype.yaml",
 )
 PROVIDERS = {
     ENUMERATE: "subfinder",
@@ -77,6 +79,7 @@ PROVIDERS = {
     "service.fingerprint": "fingerprintx",
     "web.probe_http": "httpx",
     "vuln.scan_artifact": "trivy",
+    "sbom.generate": "syft",
 }
 
 
@@ -145,6 +148,9 @@ class FakeJobService:
         from aegis.m05_registry.service import SubmitOutcome
 
         capability = str(plain(request.capability))
+        provider = (
+            PROVIDERS[capability] if request.provider is None else str(plain(request.provider))
+        )
         campaign = str(plain(request.campaign_id))
         actor = dict(self.run_initiator) if requested_by is None else dict(requested_by)
         body_hash = hashlib.sha256(
@@ -172,7 +178,7 @@ class FakeJobService:
             "job_id": job_id,
             "campaign_id": campaign,
             "capability": capability,
-            "provider": PROVIDERS[capability],
+            "provider": provider,
             "status": "QUEUED",
             "policy_version": "roe-1",
             "requested_by": actor,
@@ -191,6 +197,7 @@ class FakeJobService:
             {
                 "campaign_id": campaign,
                 "capability": capability,
+                "provider": provider,
                 "idempotency_key": idempotency_key,
                 "requested_by": actor,
                 "proposed_by": None if proposed_by is None else dict(proposed_by),

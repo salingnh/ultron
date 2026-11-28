@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
+from pathlib import Path
 from typing import Any, cast
 
 import psycopg
@@ -27,6 +29,7 @@ from aegis.migrations import apply_contract_migrations
 from tests.pg import requires_postgres, throwaway_database
 from tests.support_ingestion import (
     CAMPAIGN_ID,
+    FINISHED_AT,
     SEED_ASSET_KEY,
     asset,
     build_envelope,
@@ -409,3 +412,152 @@ def _count(connection: psycopg.Connection[Any], sql: str) -> int:
     row = connection.execute(sql).fetchone()
     assert row is not None
     return int(row[0])
+
+
+ROOT = Path(__file__).resolve().parents[1]
+IMAGE_KEY = "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+SHARED_PURL = "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1"
+SHARED_CVE = "cve:CVE-2026-107364"
+TRIVY_RAW = ROOT / "contracts/tests/conformance/fixtures/trivy/raw/result.json"
+GRYPE_RAW = ROOT / "contracts/tests/conformance/fixtures/grype/raw/result.json"
+
+
+def _image_asset(connection: psycopg.Connection[Any], image_key: str) -> str:
+    """M01 creates the image seed asset with the campaign; the test creates the same rows."""
+    connection.execute(
+        "INSERT INTO asset (asset_id, canonical_key, kind, first_seen, last_seen,"
+        " normalization_version) VALUES (%s, %s, 'oci_image', now(), now(), 'aegis-norm/1')",
+        (str(uuid.uuid4()), image_key),
+    )
+    asset_id = str(
+        cast(
+            tuple[Any, ...],
+            connection.execute(
+                "SELECT asset_id FROM asset WHERE canonical_key = %s", (image_key,)
+            ).fetchone(),
+        )[0]
+    )
+    connection.execute(
+        "INSERT INTO asset_campaign (asset_id, campaign_id, first_seen) VALUES (%s, %s, now())",
+        (asset_id, CAMPAIGN_ID),
+    )
+    return asset_id
+
+
+def _parsed_envelope(
+    connection: psycopg.Connection[Any],
+    dsn: str,
+    job_id: str,
+    provider: str,
+    version: str,
+    raw: Path,
+    parsed: dict[str, Any],
+) -> dict[str, Any]:
+    blob = raw.read_bytes()
+    digest = hashlib.sha256(blob).hexdigest()
+    seed_evidence(connection, job_id, sha256=digest, size_bytes=len(blob))
+    entry = {
+        "local_ref": "raw",
+        "sha256": digest,
+        "uri": f"s3://evidence/{CAMPAIGN_ID}/{job_id}/{digest}",
+        "size_bytes": len(blob),
+        "media_type": "application/json",
+        "classification": "INTERNAL",
+        "kind": "raw_output",
+    }
+    # M06 stamps observation/relationship time; a parser never reads a clock.
+    observations = [{**item, "observed_at": FINISHED_AT} for item in parsed["observations"]]
+    relationships = [{**item, "observed_at": FINISHED_AT} for item in parsed["relationships"]]
+    return build_envelope(
+        job_id,
+        assets=parsed["assets"],
+        observations=observations,
+        relationships=relationships,
+        findings=parsed["findings"],
+        coverage=parsed["coverage_subjects"],
+        evidence=[entry],
+        provider_name=provider,
+        provider_version=version,
+        capability="vuln.scan_artifact",
+    )
+
+
+@requires_postgres
+def test_the_real_trivy_and_grype_reports_merge_into_one_finding() -> None:
+    """G2-D acceptance: two *real* providers on one image -> one finding with two sources.
+
+    The conformance raw files are one run each on the same digest-pinned image. Parsed by the real
+    adapters and ingested through M27, the candidate engine groups the same package+CVE: the
+    fingerprint is provider-independent and `finding_source` keeps one row per tool.
+    """
+    from adapters.m13.grype.parser import parse as parse_grype
+    from adapters.m13.trivy.parser import parse as parse_trivy
+
+    with throwaway_database() as dsn:
+        _migrate(dsn)
+        service = IngestionService.from_dsn(dsn)
+        with _connect(dsn) as connection:
+            seed_campaign(connection)
+            _image_asset(connection, IMAGE_KEY)
+            jobs = {
+                provider: seed_job(
+                    connection,
+                    f"g2d-real:{provider}",
+                    capability="vuln.scan_artifact",
+                    provider=provider,
+                    provider_version=version,
+                )
+                for provider, version in (("trivy", "v0.76.2"), ("grype", "v0.121.3"))
+            }
+            trivy = parse_trivy(
+                TRIVY_RAW.parent,
+                {"input": {"targets": [IMAGE_KEY]}, "provider_version": "v0.76.2"},
+                [{"local_ref": "raw"}],
+            )
+            grype = parse_grype(
+                GRYPE_RAW.parent,
+                {"input": {"targets": [IMAGE_KEY]}, "provider_version": "v0.121.3"},
+                [{"local_ref": "raw"}],
+            )
+            for provider, version, raw, parsed in (
+                ("trivy", "v0.76.2", TRIVY_RAW, trivy),
+                ("grype", "v0.121.3", GRYPE_RAW, grype),
+            ):
+                service.submit_payload(
+                    _parsed_envelope(
+                        connection, dsn, jobs[provider], provider, version, raw, parsed
+                    )
+                )
+
+        with _dict(dsn) as engine:
+            report = CandidateFindingsEngine(engine).run(campaign_id=CAMPAIGN_ID, assess=False)
+        assert report.findings_created > 0
+
+        with _connect(dsn) as connection:
+            row = cast(
+                tuple[Any, ...],
+                connection.execute(
+                    "SELECT finding_id, fingerprint, asset_id FROM finding"
+                    " WHERE asset_id = (SELECT asset_id FROM asset WHERE canonical_key = %s)"
+                    "   AND rule_id = %s",
+                    (SHARED_PURL, SHARED_CVE),
+                ).fetchone(),
+            )
+            finding_id, fingerprint, asset_id = row
+            assert str(fingerprint) == finding_fingerprint(
+                str(asset_id), SHARED_CVE, {"package_purl": SHARED_PURL[5:]}
+            )
+            providers = {
+                str(item[0])
+                for item in connection.execute(
+                    "SELECT provider FROM finding_source WHERE finding_id = %s", (finding_id,)
+                ).fetchall()
+            }
+            assert providers == {"trivy", "grype"}
+            runs = cast(
+                tuple[Any, ...],
+                connection.execute(
+                    "SELECT count(*) FROM finding_run WHERE finding_id = %s", (finding_id,)
+                ).fetchone(),
+            )[0]
+            assert runs == 2

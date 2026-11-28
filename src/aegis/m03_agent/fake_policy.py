@@ -83,6 +83,7 @@ DISCOVER = "network.discover_services"
 FINGERPRINT = "service.fingerprint"
 PROBE_HTTP = "web.probe_http"
 SCAN_ARTIFACT = "vuln.scan_artifact"
+GENERATE_SBOM = "sbom.generate"
 ENUMERATE_RATIONALE = (
     "Enumerate the subdomains of the campaign's authorized domain seeds to find more surface "
     "before resolving them"
@@ -109,6 +110,21 @@ ARTIFACT_RATIONALE = (
     "Analyse the operator-supplied image digest (SBOM, packages, CVE candidates) without running "
     "it, so the campaign's findings hang from the package assets inside that exact image"
 )
+SBOM_RATIONALE = (
+    "Lay out the SBOM of the image digest (packages, licenses, paths) as the independent inventory "
+    "the vulnerability providers' findings attach to; the image is read, never run"
+)
+TRIVY_RATIONALE = (
+    "Match the image's installed packages against the pinned offline Trivy vulnerability database, "
+    "so the graph gains CVE candidates with the tool's own evidence"
+)
+GRYPE_RATIONALE = (
+    "Corroborate the image's CVE candidates with the independent Grype scanner and its pinned "
+    "offline database; M20 merges the same package+CVE into one finding with one source per tool"
+)
+#: The providers this scripted chain names explicitly (the MCP request may select one when several
+#: serve the same capability). Deployment registry order is not a contract: name them.
+ARTIFACT_PROVIDERS = ("syft", "trivy", "grype")
 #: Objective text that asks for the artifact-chain step (G2-D). The live model reads the objective;
 #: the scripted stand-in matches the same words, so a campaign that does not ask for it stays a
 #: pure discovery campaign.
@@ -296,28 +312,61 @@ class ScriptedLabPolicy:
                 "wait",
                 f"{len(pending)} job(s) still in flight; their results arrive in a later session",
             )
-        # G2-D: an image seed is scanned by the artifact provider, never executed; a campaign that
-        # asks for it (objective names image/SBOM/package/artifact/container) is one job per image.
+        # G2-D: an image seed is read by the artifact tools, never executed. The chain is SBOM
+        # (Syft) -> vulnerability match (Trivy) -> independent corroboration (Grype), each one job
+        # per image; the two vulnerability providers are named explicitly so both run even though
+        # they share a capability. A campaign that does not ask for it keeps its discovery chain.
         image_seeds = _refs(bundle, seed=True, prefix="oci:")
         artifact_jobs = [job for job in jobs if job[0] == SCAN_ARTIFACT]
+        sbom_jobs = [job for job in jobs if job[0] == GENERATE_SBOM]
         wants_artifact = any(hint in objective for hint in ARTIFACT_OBJECTIVE_HINTS)
-        if image_seeds and wants_artifact and not artifact_jobs:
+        if image_seeds and wants_artifact and not sbom_jobs:
+            return self._tool_call(
+                request,
+                GENERATE_SBOM,
+                ["sbom"],
+                {
+                    "input": {"targets": image_seeds[:8]},
+                    "provider": ARTIFACT_PROVIDERS[0],
+                    "rationale": SBOM_RATIONALE,
+                    "expected_signal": "packages, licenses and paths of the image SBOM",
+                    "priority": 90,
+                },
+            )
+        if image_seeds and wants_artifact and len(artifact_jobs) == 0:
             return self._tool_call(
                 request,
                 SCAN_ARTIFACT,
                 ["artifact-scan"],
                 {
                     "input": {"targets": image_seeds[:8]},
-                    "rationale": ARTIFACT_RATIONALE,
-                    "expected_signal": "packages, SBOM and CVE candidates for the image digest",
-                    "priority": 90,
+                    "provider": "trivy",
+                    "rationale": TRIVY_RATIONALE,
+                    "expected_signal": "packages and CVE candidates for the image digest",
+                    "priority": 88,
                 },
             )
-        if image_seeds and artifact_jobs:
+        if image_seeds and wants_artifact and len(artifact_jobs) == 1:
+            return self._tool_call(
+                request,
+                SCAN_ARTIFACT,
+                ["artifact-corroborate"],
+                {
+                    "input": {"targets": image_seeds[:8]},
+                    "provider": "grype",
+                    "rationale": GRYPE_RATIONALE,
+                    "expected_signal": (
+                        "an independent provider's CVE candidates for the same image"
+                    ),
+                    "priority": 86,
+                },
+            )
+        if image_seeds and len(artifact_jobs) >= 2:
             return self._decision(
                 request,
                 "stop",
-                "the artifact scan of every image seed is proposed; the campaign objective is met",
+                "the image SBOM and both vulnerability providers are proposed; the campaign "
+                "objective is met",
             )
 
         domain_campaign = bool(seeds)
