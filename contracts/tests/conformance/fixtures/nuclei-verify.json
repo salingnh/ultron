@@ -1,0 +1,20 @@
+{
+  "provider": "nuclei-verify",
+  "manifest": "fixtures/valid/manifest.nuclei-verify.yaml",
+  "task": "fixtures/valid/approved-task.nuclei-verify.json",
+  "envelope": "fixtures/valid/result-envelope.nuclei-verify.json",
+  "raw": "tests/conformance/fixtures/nuclei-verify/raw",
+  "raw_file": "result.jsonl",
+  "job_id": "01934f6a-0000-7000-8000-00000000d008",
+  "event_id": "01934f6a-0000-7000-8000-00000000e008",
+  "started_at": "2026-11-28T00:00:00Z",
+  "finished_at": "2026-11-28T00:00:05Z",
+  "retry_after_seconds": 5,
+  "coverage_subjects": [
+    "service:10.114.59.31:80/tcp",
+    "service:10.114.59.32:80/tcp"
+  ],
+  "dependencies": [
+    "template:deploy/lab/verify/templates/cve-2021-41773-traversal.yaml"
+  ]
+}

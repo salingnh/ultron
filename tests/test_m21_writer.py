@@ -24,7 +24,7 @@ import psycopg
 import pytest
 from psycopg.types.json import Jsonb
 
-from aegis.m21_verify import controls as control_map
+from aegis.common import verification_controls as control_map
 from aegis.m21_verify import writer
 from aegis.m21_verify.evidence import MemoryEvidenceReader, evidence_from_row
 from tests import db_support

@@ -32,8 +32,14 @@ from psycopg.types.json import Jsonb
 
 from aegis.common.finding_transitions import rule_for
 from aegis.common.finding_write import TransitionRefused, write_transition
+from aegis.common.targets import address_port
 from aegis.common.verification import VerificationCheck, load_checks
-from aegis.m21_verify.controls import CheckControls, ControlMap, cached_controls, controls_for
+from aegis.common.verification_controls import (
+    CheckControls,
+    ControlMap,
+    cached_controls,
+    controls_for,
+)
 from aegis.m21_verify.evidence import (
     EvidenceError,
     EvidenceReader,
@@ -44,7 +50,6 @@ from aegis.m21_verify.evidence import (
 )
 from aegis.m21_verify.oracle import Decision, Expectation, FindingFacts, RoleTarget, decide
 from aegis.m21_verify.result import ResultDocument
-from aegis.m21_verify.targets import address_port
 
 __all__ = [
     "DECIDED_BY",
@@ -191,12 +196,16 @@ def _expectation(
     canonical_key = str(canonical["canonical_key"])
     address, port = address_port(canonical_key)
     targets = input_block.get("targets")
-    if not isinstance(targets, list) or list(targets) != [canonical_key]:
+    if not isinstance(targets, list) or not targets or targets[0] != canonical_key:
         raise VerificationError(
             "the signed target is not the finding's asset; a verification target comes from the "
             "finding, never from the request"
         )
     controls = _control_targets(connection, input_block, canonical_key, check=check)
+    declared = {str(item.get("target")) for item in input_block.get("controls") or []}
+    for key in targets[1:]:
+        if str(key) not in declared:
+            raise VerificationError(f"signed target {key!r} is not a declared control endpoint")
     location = finding.get("location") or {}
     expectation = Expectation(
         check=check,

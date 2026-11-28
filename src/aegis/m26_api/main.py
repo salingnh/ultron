@@ -36,6 +36,7 @@ from aegis.m26_api import (
     intel,
     jobs,
     reports,
+    verifications,
     vulnerabilities,
 )
 from aegis.m26_api.app import CORS_ORIGINS_ENV, cors_origins_from_env, create_app
@@ -80,6 +81,7 @@ def build_registry() -> RouterRegistry:
     assets.register(registry)
     vulnerabilities.register(registry)
     findings.register(registry)
+    verifications.register(registry)
     reports.register(registry)
     intel.register(registry)
     register_ingestion(registry)

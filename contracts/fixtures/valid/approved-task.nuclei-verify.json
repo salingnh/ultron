@@ -1,0 +1,69 @@
+{
+  "task_id": "01934f6a-0000-7000-8000-0000000000c8",
+  "decision_id": "01934f6a-0000-7000-8000-0000000000d8",
+  "campaign_id": "01934f6a-0000-7000-8000-000000000001",
+  "scope_id": "01934f6a-0000-7000-8000-0000000000a1",
+  "policy_version": "roe-1",
+  "network_profile": "lab",
+  "capability": "verify.check",
+  "provider": "nuclei-verify",
+  "provider_version": "v3.11.1",
+  "adapter_version": "1.0.0",
+  "manifest_sha256": "70e79462a6ea528f60e4c5cecea7a30fb1c763ce81502b613d2f60a981807564",
+  "image_digest": "sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb",
+  "scan_cycle": "01934f6a-0000-7000-8000-000000000004",
+  "input": {
+    "check_id": "cve-2021-41773-traversal",
+    "check_pack_sha256": "ce06b8b25491ae6263ef1246d1fbe1f8f6f37ed011d2371e30d56d6dfc032687",
+    "expected_seq": 1,
+    "request_cap": 4,
+    "finding_id": "01934f6a-0000-7000-8000-0000000000f1",
+    "targets": [
+      "service:10.114.59.31:80/tcp",
+      "service:10.114.59.32:80/tcp"
+    ],
+    "ports": [
+      80
+    ],
+    "controls": [
+      {
+        "role": "patched_twin",
+        "target": "service:10.114.59.32:80/tcp"
+      }
+    ],
+    "benign_path": "/static/.%2e/.%2e/srv/canary/absent.txt"
+  },
+  "targets": [
+    {
+      "canonical_key": "service:10.114.59.31:80/tcp"
+    },
+    {
+      "canonical_key": "service:10.114.59.32:80/tcp"
+    }
+  ],
+  "idempotency_key": "fixture:nuclei-verify-conformance",
+  "requested_by": {
+    "kind": "operator",
+    "id": "fixture-operator"
+  },
+  "rationale": "Contract fixture: verify.check with the reviewed httpd traversal template against the lab pair; no execution",
+  "trace": {
+    "trace_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "signature": "hmac-sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "signature_key_id": "g1-dev-1",
+  "egress_binding": {
+    "mode": "broker",
+    "target_binding": "required",
+    "entries": [
+      "10.114.59.31:80",
+      "10.114.59.32:80"
+    ],
+    "target_addresses": [
+      "10.114.59.31",
+      "10.114.59.32"
+    ]
+  },
+  "priority": 60,
+  "depends_on": []
+}

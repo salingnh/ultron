@@ -31,9 +31,10 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
-__all__ = ["ResultBuildError", "path_of", "result_document"]
+__all__ = ["ResultBuildError", "parse", "path_of", "result_document"]
 
 _REQUEST_LINE = re.compile(r"^[A-Z]+ (\S+) HTTP/\d\.\d$")
 _STATUS_LINE = re.compile(r"^HTTP/\d\.\d (\d{3})\b")
@@ -147,8 +148,8 @@ def result_document(content: bytes, task: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(input_block, Mapping):
         raise ResultBuildError("the task has no input block")
     targets = input_block.get("targets")
-    if not isinstance(targets, list) or len(targets) != 1:
-        raise ResultBuildError("a verification task names exactly one positive target")
+    if not isinstance(targets, list) or not 1 <= len(targets) <= 2:
+        raise ResultBuildError("a verification task names one positive target and at most one twin")
     controls = input_block.get("controls") or []
     if not isinstance(controls, list):
         raise ResultBuildError("the task's controls must be a list")
@@ -157,6 +158,7 @@ def result_document(content: bytes, task: Mapping[str, Any]) -> dict[str, Any]:
         raise ResultBuildError("the task must name the benign control's path")
 
     rows = _rows(content)
+    # The first target is the finding's asset; every other one must be a signed control endpoint.
     positive_address, positive_port = _canonical_key(targets[0], "input.targets[0]")
     roles: dict[str, tuple[str, int]] = {"positive": (positive_address, positive_port)}
     for control in controls:
@@ -168,6 +170,10 @@ def result_document(content: bytes, task: Mapping[str, Any]) -> dict[str, Any]:
         roles[role] = _canonical_key(control.get("target"), f"input.controls[{role}]")
     if "patched_twin" not in roles:
         raise ResultBuildError("a lab verification run needs the patched twin")
+    declared = {str(control.get("target")) for control in controls}
+    for key in targets[1:]:
+        if str(key) not in declared:
+            raise ResultBuildError(f"target {key!r} is not a signed control endpoint")
     # The benign role is a path on the positive host unless the task names its own endpoint.
     roles.setdefault("benign", roles["positive"])
 
@@ -204,3 +210,29 @@ def result_document(content: bytes, task: Mapping[str, Any]) -> dict[str, Any]:
     document["requests_sent"] = len(unique)
     document["request_cap"] = int(input_block.get("request_cap", 0))
     return document
+
+
+def parse(output_dir: Path, task: Mapping[str, Any], evidence: Any) -> dict[str, Any]:
+    """The adapter's collect step: validate the tool output, emit no graph records.
+
+    A verification job changes no asset and no observation: what it saw is decided by M21 from the
+    same document. The parser still runs inside M06 (the tool output must be well formed before the
+    envelope is accepted) and its coverage is the signed targets, so a run whose file is corrupt is
+    OUTPUT_INVALID instead of a silently empty result.
+    """
+    del evidence  # the result document is re-read from the stored evidence by M21
+    try:
+        content = (Path(output_dir) / "result.jsonl").read_bytes()
+    except OSError as error:
+        raise ResultBuildError(f"the tool output is unreadable: {error}") from error
+    result_document(content, task)
+    targets = task.get("input", {}).get("targets") or []
+    if not isinstance(targets, list) or not all(isinstance(item, str) for item in targets):
+        raise ResultBuildError("the task's targets are not a list of canonical keys")
+    return {
+        "assets": [],
+        "observations": [],
+        "relationships": [],
+        "findings": [],
+        "coverage_subjects": list(targets),
+    }

@@ -1,0 +1,42 @@
+{
+  "provider": "nuclei-verify",
+  "capability": "verify.check",
+  "tool_version": "v3.11.1",
+  "adapter_version": "1.0.0",
+  "image_digest": "sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb",
+  "lab_run": "G2-B feasibility lab (item 87, project g2b-verify): httpd 2.4.49 + Alias and its 2.4.51 twin, canary mounted read-only; run captured at 2026-11-28T06:16Z",
+  "lab_run_at": "2026-11-28T06:16:15Z",
+  "lab_network": "g2b-verify-lab",
+  "command": "-duc -ni -dr -j -o /out/result.jsonl -l /in/targets.txt -t /opt/verify/templates -id cve-2021-41773-traversal -c 1 -bs 1 -rl 2 -retries 0",
+  "input": {
+    "check_id": "cve-2021-41773-traversal",
+    "check_pack_sha256": "ce06b8b25491ae6263ef1246d1fbe1f8f6f37ed011d2371e30d56d6dfc032687",
+    "expected_seq": 1,
+    "request_cap": 4,
+    "finding_id": "01934f6a-0000-7000-8000-0000000000f1",
+    "targets": [
+      "service:10.114.59.31:80/tcp",
+      "service:10.114.59.32:80/tcp"
+    ],
+    "ports": [
+      80
+    ],
+    "controls": [
+      {
+        "role": "patched_twin",
+        "target": "service:10.114.59.32:80/tcp"
+      }
+    ],
+    "benign_path": "/static/.%2e/.%2e/srv/canary/absent.txt"
+  },
+  "raw": {
+    "file": "result.jsonl",
+    "sha256": "721602aff84bdda68ea5bb78d33cb58e143c433bde2169c8999b98fb3a1e2d88",
+    "size_bytes": 12765
+  },
+  "expected": "expected.json",
+  "notes": [
+    "result.jsonl is byte-for-byte the JSONL the pinned Nuclei v3.11.1 image wrote in the recorded lab run (one row per target and path; request/response bytes included).",
+    "The parser emits no graph record: a verification run is decided by M21 from the same document. Its coverage is the signed targets, so a corrupt file is OUTPUT_INVALID rather than an empty result."
+  ]
+}

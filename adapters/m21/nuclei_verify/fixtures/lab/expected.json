@@ -1,0 +1,10 @@
+{
+  "assets": [],
+  "observations": [],
+  "relationships": [],
+  "findings": [],
+  "coverage_subjects": [
+    "service:10.114.59.31:80/tcp",
+    "service:10.114.59.32:80/tcp"
+  ]
+}

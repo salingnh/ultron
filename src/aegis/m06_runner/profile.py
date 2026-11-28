@@ -74,6 +74,7 @@ __all__ = [
     "JobMount",
     "JobProfile",
     "PinnedInput",
+    "VerificationPack",
     "ProfileError",
     "ProfileKind",
     "verify_pinned_inputs",
@@ -192,6 +193,21 @@ def verify_pinned_inputs(entry: JobProfile) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class VerificationPack:
+    """The reviewed verification pack this deployment mounts for one provider image.
+
+    `pack` is the directory M06 hashes (registry copy + reviewed templates), `target` the path it is
+    mounted at inside the container, `sha256` the deployment's pin of those bytes. A
+    `verify.check` job is refused before any container unless the directory, its mount, the
+    profile pin and the signed task's `check_pack_sha256` all name the same bytes.
+    """
+
+    pack: Path
+    target: str
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class JobProfile:
     """What one pinned image needs to run on this deployment's network, beyond its manifest."""
 
@@ -205,6 +221,8 @@ class JobProfile:
     mounts: tuple[JobMount, ...] = ()
     #: Mounts whose bytes the deployment pins (G2-D: an offline vulnerability DB).
     pinned_inputs: tuple[PinnedInput, ...] = ()
+    #: The verification pack a `verify.check` provider runs (G2-B); absent = no verification runs.
+    verify: VerificationPack | None = None
 
     def argv(self, *, network: bool = True) -> list[str]:
         """The Podman flags this profile adds (the network is applied by the runner).
@@ -340,6 +358,24 @@ def _job_from_entry(entry: Any, *, base_dir: Path | None, where: str) -> JobProf
         if not isinstance(source_env, str) or not ENV_NAME.fullmatch(source_env):
             raise ProfileError(f"sourceEnv of a mount of {digest} must be a variable name")
         mounts.append(JobMount(target=target, source_env=source_env))
+    verify: VerificationPack | None = None
+    raw_verify = entry.get("verify")
+    if raw_verify is not None:
+        if not isinstance(raw_verify, dict):
+            raise ProfileError(f"verify of {digest} must be an object")
+        pack = raw_verify.get("pack")
+        target = raw_verify.get("target")
+        checksum = raw_verify.get("sha256")
+        if not isinstance(pack, str) or not pack:
+            raise ProfileError(f"verify.pack of {digest} must be a path")
+        if not isinstance(target, str) or not target.startswith("/"):
+            raise ProfileError(f"verify.target of {digest} must be an absolute path")
+        if not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{64}", checksum):
+            raise ProfileError(f"verify.sha256 of {digest} must be a lowercase sha256")
+        resolved = Path(os.path.expanduser(pack))
+        if not resolved.is_absolute() and base_dir is not None:
+            resolved = (base_dir / resolved).resolve()
+        verify = VerificationPack(pack=resolved, target=target, sha256=checksum)
     timeout = entry.get("connectTimeoutMs")
     if timeout is not None and (
         not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0
@@ -374,4 +410,5 @@ def _job_from_entry(entry: Any, *, base_dir: Path | None, where: str) -> JobProf
         connect_timeout_ms=timeout,
         mounts=tuple(mounts),
         pinned_inputs=tuple(pinned),
+        verify=verify,
     )
