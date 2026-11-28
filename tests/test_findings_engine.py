@@ -42,7 +42,7 @@ LATER = "2026-11-25T09:00:00Z"
 
 @pytest.fixture()
 def database() -> Iterator[tuple[str, list[str]]]:
-    with pipeline_database(jobs=3) as (dsn, jobs):
+    with pipeline_database(jobs=4) as (dsn, jobs):
         _ingest(dsn, jobs[0])
         with connect(dsn) as connection:
             fixtures.seed_intel(dsn)
@@ -71,27 +71,27 @@ def _ingest(
     return receipt
 
 
-def _patched_httpd() -> list[dict[str, Any]]:
+PATCHED_CPE = "cpe:2.3:a:apache:http_server:2.4.51:*:*:*:*:*:*:*"
+
+
+def _httpd_at(version: str, cpe: str, observed_at: str) -> list[dict[str, Any]]:
+    """The G1.6c observations with the httpd product/version pinned to one timestamp."""
+    values = list(fixtures.service_observations())
+    for item in values:
+        if item["predicate"] == "service.product" and "httpd" in json.dumps(item["value"]):
+            item["value"] = {"product": "Apache httpd", "version": version, "cpe": cpe}
+            item["observed_at"] = observed_at
+    return values
+
+
+def _patched_httpd(observed_at: str = LATER) -> list[dict[str, Any]]:
     """The same service assets, with httpd at 2.4.51 (outside CVE-2021-41773's 2.4.49)."""
-    values = list(fixtures.service_observations())
-    for item in values:
-        if item["predicate"] == "service.product" and "httpd" in json.dumps(item["value"]):
-            item["value"] = {
-                "product": "Apache httpd",
-                "version": "2.4.51",
-                "cpe": "cpe:2.3:a:apache:http_server:2.4.51:*:*:*:*:*:*:*",
-            }
-            item["observed_at"] = LATER
-    return values
+    return _httpd_at("2.4.51", PATCHED_CPE, observed_at)
 
 
-def _vulnerable_again() -> list[dict[str, Any]]:
-    """A third scan that reports httpd 2.4.49 again, after the patched rescan."""
-    values = list(fixtures.service_observations())
-    for item in values:
-        if item["predicate"] == "service.product" and "httpd" in json.dumps(item["value"]):
-            item["observed_at"] = "2026-11-26T09:00:00Z"
-    return values
+def _vulnerable_again(observed_at: str = "2026-11-26T09:00:00Z") -> list[dict[str, Any]]:
+    """A scan that reports httpd 2.4.49 again (the vulnerable version)."""
+    return _httpd_at("2.4.49", fixtures.APACHE_CPE, observed_at)
 
 
 def _findings(connection: Any, *, campaign_id: str = CAMPAIGN_ID) -> list[dict[str, Any]]:
@@ -427,6 +427,95 @@ def test_a_finding_without_evidence_is_not_raised() -> None:
     assert report.blocked_no_evidence == 3
     assert report.findings_created == 0
     assert findings == []
+
+
+def test_late_historical_out_of_range_evidence_is_history_not_fixed(
+    database: tuple[str, list[str]],
+) -> None:
+    """Review round 2: an archived rescan that arrives late is history, not remediation.
+
+    The finding is raised from the affected observation at 2026-11-24T10:00Z; a different job's
+    out-of-range observation was taken at 2026-11-23T09:00Z (before it). Ingesting it later must
+    write its `finding_run` but must not close the finding on older evidence.
+    """
+    dsn, jobs = database
+    with connect(dsn) as connection:
+        FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        httpd = _by_cve(_findings(connection))["CVE-2021-41773"]
+    _ingest(dsn, jobs[1], _patched_httpd("2026-11-23T09:00:00Z"), assets=[])
+    with connect(dsn) as connection:
+        report = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        after = _by_cve(_findings(connection))["CVE-2021-41773"]
+        runs = _runs(connection, str(httpd["finding_id"]))
+        transitions = _transitions(connection, str(httpd["finding_id"]))
+        events = _events(connection)
+    assert report.fixed_by_rescan == 0 and report.transitions == 0 and report.events == 0
+    assert after["status"] == "CANDIDATE" and int(after["transition_seq"]) == 1
+    assert after["last_seen"] == datetime(2026, 11, 24, 10, 0, tzinfo=UTC)
+    assert [row["to_status"] for row in transitions] == ["CANDIDATE"]
+    # The older scan is kept as history, with its own observation time.
+    assert len(runs) == 2
+    by_scan = {str(row["scan_id"]): row for row in runs}
+    assert by_scan[jobs[1]]["seen"] is False
+    assert by_scan[jobs[1]]["observed_at"] == datetime(2026, 11, 23, 9, 0, tzinfo=UTC)
+    assert len(events) == 3
+
+
+def test_a_batch_with_a_newer_affected_observation_does_not_close_on_the_older_rescan(
+    database: tuple[str, list[str]],
+) -> None:
+    """The same batch can carry both; the affected observation in it is the threshold."""
+    dsn, jobs = database
+    with connect(dsn) as connection:
+        FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        httpd = _by_cve(_findings(connection))["CVE-2021-41773"]
+    _ingest(dsn, jobs[1], _patched_httpd("2026-11-23T09:00:00Z"), assets=[])
+    _ingest(dsn, jobs[2], _vulnerable_again("2026-11-25T10:00:00Z"), assets=[])
+    with connect(dsn) as connection:
+        report = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        after = _by_cve(_findings(connection))["CVE-2021-41773"]
+        runs = _runs(connection, str(httpd["finding_id"]))
+    assert report.fixed_by_rescan == 0 and report.transitions == 0
+    assert after["status"] == "CANDIDATE" and int(after["transition_seq"]) == 1
+    # The newer affected observation moved `last_seen`; both scans are history.
+    assert after["last_seen"] == datetime(2026, 11, 25, 10, 0, tzinfo=UTC)
+    assert len(runs) == 3
+    by_scan = {str(row["scan_id"]): row for row in runs}
+    assert by_scan[jobs[1]]["seen"] is False
+    assert by_scan[jobs[2]]["seen"] is True
+
+
+def test_a_late_archived_positive_before_the_fix_is_not_a_regression(
+    database: tuple[str, list[str]],
+) -> None:
+    """The inverse chronology: pre-remediation evidence that arrives late stays history."""
+    dsn, jobs = database
+    with connect(dsn) as connection:
+        FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        httpd = _by_cve(_findings(connection))["CVE-2021-41773"]
+    _ingest(dsn, jobs[1], _patched_httpd(), assets=[])
+    with connect(dsn) as connection:
+        fixed = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        assert _by_cve(_findings(connection))["CVE-2021-41773"]["status"] == "FIXED"
+    assert fixed.fixed_by_rescan == 1
+    # Archived scan from before the remediation (but after the creation), ingested late.
+    _ingest(dsn, jobs[2], _vulnerable_again("2026-11-24T12:00:00Z"), assets=[])
+    with connect(dsn) as connection:
+        stale = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        after_stale = _by_cve(_findings(connection))["CVE-2021-41773"]
+        transitions = _transitions(connection, str(httpd["finding_id"]))
+    assert stale.reappeared == 0 and stale.transitions == 0
+    assert after_stale["status"] == "FIXED" and int(after_stale["transition_seq"]) == 2
+    assert [row["to_status"] for row in transitions] == ["CANDIDATE", "FIXED"]
+    # A scan observed after the remediation is a real regression.
+    _ingest(dsn, jobs[3], _vulnerable_again(), assets=[])
+    with connect(dsn) as connection:
+        report = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        after = _by_cve(_findings(connection))["CVE-2021-41773"]
+        transitions = _transitions(connection, str(httpd["finding_id"]))
+    assert report.reappeared == 1
+    assert after["status"] == "REGRESSED" and int(after["transition_seq"]) == 3
+    assert [row["to_status"] for row in transitions] == ["CANDIDATE", "FIXED", "REGRESSED"]
 
 
 def test_the_history_fixtures_match_their_openapi_shapes() -> None:

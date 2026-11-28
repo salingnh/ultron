@@ -26,10 +26,14 @@ product's finding record - the thing the operator sees in the Findings screen:
   `retraction_reason`, new `vuln_rev_id`) and its `vulnerability.matched.v2` event, both written by
   the matcher in the same transaction;
 * **FIXED needs a rescan that observed the affected product at a version outside the affected
-  range** - new remediation evidence with the scan's raw output. A scan that merely does not see
-  the finding (`seen=false` without an out-of-range version) is not evidence, and this engine never
-  writes FIXED from one. A candidate that re-appears after FIXED moves it to **REGRESSED**
-  (`cause = scan`);
+  range, and that scan must be observed after the latest affected observation** - new remediation
+  evidence with the scan's raw output, in observation order. An archived scan that only arrives
+  late is history: its `finding_run` is kept, but it cannot close a finding whose affected version
+  was observed later (nor can an older observation in the same batch mask the newer one). A scan
+  that merely does not see the finding (`seen=false` without an out-of-range version) is not
+  evidence, and this engine never writes FIXED from one. A candidate that re-appears after FIXED
+  moves it to **REGRESSED** (`cause = scan`), and that inverse is chronological too: a late
+  archived observation from before the remediation is history, not a regression;
 * an operator's FALSE_POSITIVE/ACCEPTED_RISK is not reopened automatically: a re-run of the matcher
   would otherwise fight the operator every time;
 * every transition writes one `finding_transition` row and one `finding.changed.v2` outbox event in
@@ -472,12 +476,19 @@ class FindingsEngine:
             )
         # A run that already exists is not new evidence; only a scan this finding has not seen yet
         # can close it (or reopen it, when it saw the vulnerable version again).
-        known = {
-            str(row["scan_id"])
-            for row in self._conn.execute(
-                "SELECT scan_id FROM finding_run WHERE finding_id = %s", (finding_id,)
-            ).fetchall()
-        }
+        run_rows = self._conn.execute(
+            "SELECT scan_id, seen, observed_at FROM finding_run WHERE finding_id = %s",
+            (finding_id,),
+        ).fetchall()
+        known = {str(row["scan_id"]) for row in run_rows}
+        # The lifecycle is chronological: new evidence must be observed after what it would change.
+        # `last_seen` is the latest affected observation the finding has recorded; a plan from this
+        # same batch may be newer still, so it counts too (otherwise a batch that carries both an
+        # old out-of-range scan and a new affected one would close on the older one).
+        affected_times = [row["observed_at"] for row in run_rows if row["seen"]]
+        affected_times.extend(plan.scan.observed_at for plan in plans if plan.seen)
+        affected_times.append(existing["last_seen"])
+        latest_affected = max(affected_times)
         new_seen = [
             plan
             for plan in plans
@@ -486,9 +497,16 @@ class FindingsEngine:
         new_out_of_range = [
             plan for plan in plans if not plan.seen and plan.scan.scan_id not in known
         ]
-        evidenced_fixes = [plan for plan in new_out_of_range if plan.evidence_id]
-        if status in REMEDIABLE and len(evidenced_fixes) < len(new_out_of_range):
+        # Remediation evidence exists only after the latest affected observation (history before it
+        # stays a run, never a FIXED). A qualifying rescan without raw evidence cannot close it.
+        qualifying = [plan for plan in new_out_of_range if plan.scan.observed_at > latest_affected]
+        evidenced_fixes = [plan for plan in qualifying if plan.evidence_id]
+        if status in REMEDIABLE and len(evidenced_fixes) < len(qualifying):
             report.blocked_no_evidence += 1
+        # Reopening is chronological too: a late archived observation from before the remediation
+        # that closed the finding is history, not a regression.
+        fix_at = self._fix_observed_at(finding_id) if status == "FIXED" else None
+        fresh_seen = [plan for plan in new_seen if fix_at is None or plan.scan.observed_at > fix_at]
         run_status = status
         transition: tuple[str, _RunPlan] | None = None
         if status in OPERATOR_FINAL:
@@ -496,9 +514,9 @@ class FindingsEngine:
             self._write_runs(finding_id, plans, report, status=run_status)
             self._write_sources(finding_id, pair, seen_plans, report)
             return finding_id, False, False
-        if status == "FIXED" and new_seen:
+        if status == "FIXED" and fresh_seen:
             run_status = "REGRESSED"
-            transition = ("REGRESSED", new_seen[0])
+            transition = ("REGRESSED", fresh_seen[0])
         elif status in REMEDIABLE and evidenced_fixes:
             # New remediation evidence: a rescan observed the affected product at a version
             # outside the range (not merely "the scan did not mention it"), with its raw output.
@@ -534,6 +552,31 @@ class FindingsEngine:
             report=report,
         )
         return finding_id, False, True
+
+    def _fix_observed_at(self, finding_id: str) -> Any | None:
+        """When the remediation that produced the newest FIXED was *observed*.
+
+        The transition cites the rescan's evidence, so its `finding_run.observed_at` is the
+        remediation time. The transition's own `created_at` is only a fallback: a late archive can
+        arrive long after the scan it carries, and the comparison must use observation time.
+        """
+        row = self._conn.execute(
+            "SELECT fr.observed_at"
+            "  FROM finding_transition ft"
+            "  JOIN finding_run fr ON fr.finding_id = ft.finding_id"
+            "   AND fr.evidence_id = ft.evidence_id"
+            " WHERE ft.finding_id = %s AND ft.to_status = 'FIXED' AND ft.evidence_id IS NOT NULL"
+            " ORDER BY ft.seq DESC LIMIT 1",
+            (finding_id,),
+        ).fetchone()
+        if row is not None:
+            return row["observed_at"]
+        row = self._conn.execute(
+            "SELECT created_at FROM finding_transition WHERE finding_id = %s"
+            " AND to_status = 'FIXED' ORDER BY seq DESC LIMIT 1",
+            (finding_id,),
+        ).fetchone()
+        return None if row is None else row["created_at"]
 
     def _campaign_of(self, pair: _Pair) -> str:
         if pair.campaign_id is None:
