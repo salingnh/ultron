@@ -43,7 +43,7 @@ G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trườ
 
 ## G2 — MVP
 
-- [ ] G2.1 Khóa tool network/web/artifact và kiểm thử credential theo dependency dữ liệu; hoàn thiện manifest/input/parser/conformance, gồm tham số Nuclei chính thức/tùy chỉnh và xác minh credential. Chưa có schema thì chưa đăng ký tool.
+- [ ] G2.1 Khóa tool network/web/artifact và kiểm thử credential theo dependency dữ liệu; hoàn thiện manifest/input/parser/conformance, gồm tham số Nuclei chính thức/tùy chỉnh và xác minh credential. Chưa có schema thì chưa đăng ký tool. (Đã xong chuỗi artifact Trivy: PR #141, 0013, image không chạy, DB offline ghim; Syft/Grype đang làm PR 2/2.)
 - [ ] G2.2 Finding/evidence, xác minh động bằng tool có đối chứng âm, correlation theo snapshot và severity do agent có lý do/nguồn; mọi finding được đánh giá trong ngân sách campaign (hết ngân sách thì UNRATED có lý do); feed/asset thay đổi kích hoạt đánh giá lại mà không cần chờ lần quét mới; JSON report + delta. Telegram chuyển sang G3 (quyết định chủ 2026-11-28).
 - [ ] G2.3 Pause/resume/cancel, recovery, budget/error, kiểm prompt injection và sandbox; kiểm backup/restore mức MVP.
 - [ ] RoE khung giờ cho phép (allowed time windows): hoãn khỏi G1 theo quyết định chủ 2026-11-24; làm lại cùng Clock port tiêm được + test đồng hồ cố định cả trong/ngoài cửa sổ.
