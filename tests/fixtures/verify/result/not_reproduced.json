@@ -1,0 +1,69 @@
+{
+  "check_id": "cve-2021-41773-traversal",
+  "check_pack_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "errors": [],
+  "request_cap": 4,
+  "requests_sent": 4,
+  "schema_version": "2.0",
+  "targets": [
+    {
+      "address": "10.114.59.33",
+      "answered": true,
+      "port": 80,
+      "requests": [
+        {
+          "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+          "path": "/static/.%2e/.%2e/srv/canary/canary.txt",
+          "status": 403,
+          "tokens": []
+        },
+        {
+          "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+          "path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+          "status": 403,
+          "tokens": []
+        }
+      ],
+      "role": "positive"
+    },
+    {
+      "address": "10.114.59.32",
+      "answered": true,
+      "port": 80,
+      "requests": [
+        {
+          "body_sha256": "a5c402fa795aa7b38c40559c9d1e2904c1e049580e216b292466d6c0634e9ab6",
+          "path": "/static/.%2e/.%2e/srv/canary/canary.txt",
+          "status": 400,
+          "tokens": []
+        },
+        {
+          "body_sha256": "a5c402fa795aa7b38c40559c9d1e2904c1e049580e216b292466d6c0634e9ab6",
+          "path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+          "status": 400,
+          "tokens": []
+        }
+      ],
+      "role": "patched_twin"
+    },
+    {
+      "address": "10.114.59.33",
+      "answered": true,
+      "port": 80,
+      "requests": [
+        {
+          "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+          "path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+          "status": 403,
+          "tokens": []
+        }
+      ],
+      "role": "benign"
+    }
+  ],
+  "tool": {
+    "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "name": "nuclei",
+    "version": "v3.11.1"
+  }
+}

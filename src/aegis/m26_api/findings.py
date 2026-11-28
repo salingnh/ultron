@@ -41,10 +41,10 @@ from typing import Annotated, Any
 import psycopg
 from fastapi import APIRouter, Body, Depends, Header, Query, Request, Response
 from fastapi import status as http_status
-from psycopg.types.json import Jsonb
 
 from aegis import validation
 from aegis.common.finding_transitions import rule_for
+from aegis.common.finding_write import TransitionRefused, write_transition
 from aegis.m20_vuln import severity
 from aegis.m26_api.app import API_PREFIX
 from aegis.m26_api.db import ConnectionDep
@@ -59,7 +59,6 @@ from aegis.m26_api.idempotency import (
 from aegis.m26_api.operator import Principal, require_principal
 from aegis.m26_api.registry import RouterEntry, RouterRegistry
 from aegis.m26_api.tracing import TRACEPARENT_HEADER, current_trace_id, traceparent
-from aegis.m27_ingestion.ids import uuid7
 
 __all__ = [
     "FINDING_OPERATIONS",
@@ -88,6 +87,8 @@ FINDING_OPERATIONS = (
 )
 #: The operator's side of the transition table (the server-verified principal acts).
 OPERATOR = "operator"
+#: The outbox `producer` of an operator transition (the API wrote it, the operator acted).
+PRODUCER = "M26"
 #: Header of a replayed write (contract convention; same value as the campaign routes).
 IDEMPOTENT_REPLAYED = "Idempotent-Replayed"
 #: `idempotency_record.scope` of a transition; the finding is part of the scope because the same
@@ -618,58 +619,25 @@ def transition_finding(
     ):
         raise _bad_request(f"evidence {evidence_id} does not exist", "/evidence_id")
     seq = current + 1
-    changed_at = _now(db)
-    db.execute(
-        "INSERT INTO finding_transition (finding_id, seq, from_status, to_status, reason,"
-        " evidence_id, actor, cause, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (
-            finding_id,
-            seq,
-            str(finding["status"]),
-            to_status,
-            reason,
-            evidence_id,
-            Jsonb({"kind": "operator", "id": principal.id}),
-            "operator",
-            changed_at,
-        ),
-    )
-    updated = db.execute(
-        "UPDATE finding SET status = %s, transition_seq = %s WHERE finding_id = %s"
-        " AND transition_seq = %s RETURNING transition_seq",
-        (to_status, seq, finding_id, current),
-    ).fetchone()
-    if updated is None:  # pragma: no cover - the row lock above already serialised the writers
-        raise _stale_seq(current, current + 1)
-    payload: dict[str, Any] = {
-        "finding_id": finding_id,
-        "transition_seq": seq,
-        "asset_id": str(finding["asset_id"]),
-        "campaign_id": str(finding["first_campaign_id"]),
-        "old_status": str(finding["status"]),
-        "new_status": to_status,
-        "old_severity": str(finding["severity"]),
-        "new_severity": str(finding["severity"]),
-        "reason": reason,
-        "changed_by": {"kind": "operator", "id": principal.id},
-        "cause": "operator",
-        "changed_at": changed_at,
-    }
-    if evidence_id is not None:
-        payload["evidence_ref"] = evidence_id
-    _validated("events/finding.changed.v2.schema.json", payload, "a transition event")
-    db.execute(
-        "INSERT INTO outbox_event (event_id, type, producer, dedup_key, campaign_id, payload,"
-        " trace) VALUES (%s, 'finding.changed.v2', 'M26', %s, %s, %s, %s)"
-        " ON CONFLICT (type, dedup_key) DO NOTHING",
-        (
-            str(uuid7()),
-            f"{finding_id}:{seq}",
-            str(finding["first_campaign_id"]),
-            Jsonb(payload),
-            Jsonb({"trace_id": current_trace_id(request)}),
-        ),
-    )
+    try:
+        write_transition(
+            db,
+            finding_id=finding_id,
+            from_status=str(finding["status"]),
+            to_status=to_status,
+            reason=reason,
+            evidence_id=None if evidence_id is None else str(evidence_id),
+            actor={"kind": "operator", "id": principal.id},
+            cause="operator",
+            old_severity=str(finding["severity"]),
+            new_severity=str(finding["severity"]),
+            campaign_id=str(finding["first_campaign_id"]),
+            seq=seq,
+            producer=PRODUCER,
+            trace={"trace_id": current_trace_id(request)},
+        )
+    except TransitionRefused as error:
+        raise _stale_seq(current, current + 1) from error
     fresh = _finding_row(db, finding_id)
     if fresh is None:  # pragma: no cover - the row was locked and updated in this transaction
         raise _not_found(finding_id)
@@ -709,13 +677,6 @@ async def assess_finding(
     assessor = severity.SeverityAssessor(db, model=model, provider=provider, model_name=model_name)
     outcome = await assessor.assess(finding_id, trigger="operator_request")
     return _validated(SEVERITY_SCHEMA, outcome.record, "a severity assessment")
-
-
-def _now(db: psycopg.Connection[Any]) -> str:
-    row = db.execute("SELECT now() AS at").fetchone()
-    if row is None:  # pragma: no cover - PostgreSQL always answers now()
-        raise RuntimeError("SELECT now() returned no row")
-    return str(row["at"].isoformat()).replace("+00:00", "Z")
 
 
 def register(registry: RouterRegistry, *, prefix: str = API_PREFIX) -> RouterEntry:
