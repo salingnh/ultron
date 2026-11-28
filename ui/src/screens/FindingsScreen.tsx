@@ -641,7 +641,7 @@ export const FindingsScreen: React.FC = () => {
                             : undefined
                         }
                       >
-                        <td style={{ maxWidth: 270 }}>
+                        <td data-label="Finding &amp; Tài sản" className="findings-cell-primary">
                           <button
                             type="button"
                             onClick={() => handleSelectFinding(f)}
@@ -670,7 +670,7 @@ export const FindingsScreen: React.FC = () => {
                             <CopyableId value={f.finding_id} prefix="ID" />
                           </div>
                         </td>
-                        <td>
+                        <td data-label="Mức độ &amp; Trạng thái">
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 5 }}>
                             <SeverityChip severity={f.severity} />
                             <StatusChip status={f.status} kind="finding" />
@@ -681,7 +681,7 @@ export const FindingsScreen: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td>
+                        <td data-label="CVE &amp; Nguồn">
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             {f.vulnerability_ids && f.vulnerability_ids.length > 0 ? (
                               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -701,7 +701,7 @@ export const FindingsScreen: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td>
+                        <td data-label="Bằng chứng &amp; Lần cuối">
                           <div className="tabular" style={{ fontSize: 'var(--text-xs)' }}>
                             <strong>{f.evidence.length}</strong> bằng chứng
                           </div>
@@ -712,7 +712,7 @@ export const FindingsScreen: React.FC = () => {
                             {new Date(f.last_seen).toLocaleString('vi-VN')}
                           </div>
                         </td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <td data-label="Thao tác" className="findings-cell-actions">
                           <button
                             type="button"
                             className={`btn btn-sm ${isSelected ? 'btn-primary' : ''}`}

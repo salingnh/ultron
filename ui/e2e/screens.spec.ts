@@ -371,6 +371,11 @@ test.describe('Ultron Operations UI - 390px Responsive Verification', () => {
       const mobileEmptyFindings = page.getByText('Chưa có finding nào được ghi nhận');
       await expect(mobileFindingsTable.or(mobileEmptyFindings)).toBeVisible();
       if ((await mobileFindingsTable.locator('tbody tr').count()) > 0) {
+        const mobileTableOverflow = await mobileFindingsTable.locator('..').evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }));
+        expect(mobileTableOverflow.scrollWidth).toBeLessThanOrEqual(mobileTableOverflow.clientWidth + 2);
         await mobileFindingsTable.locator('tbody tr').first().getByRole('button').first().click();
         await expect(page.getByLabel('Bảng chi tiết Finding')).toBeVisible();
       }
