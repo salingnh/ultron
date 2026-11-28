@@ -1,0 +1,5 @@
+{
+  "to": "FALSE_POSITIVE",
+  "reason": "Banner 2.4.49 lấy từ trang lỗi của một reverse proxy, không phải httpd thật trên cổng này",
+  "expected_seq": 1
+}

@@ -1,10 +1,12 @@
 # Bảng chuyển trạng thái finding hợp lệ (đề xuất S1). M20/M21/M24 và API transitions kiểm theo bảng này.
 # requires: điều kiện bắt buộc khi chuyển. evidence = phải kèm evidence_id có sha256 (cổng G3).
+# CORROBORATED không bao giờ từ một khớp version/CPE đơn lẻ: hai matcher đọc cùng một banner không
+# phải hai nguồn độc lập (quyết định chủ 2026-11-28, OD-C).
 apiVersion: aegis.io/v2
 kind: FindingTransitions
 transitions:
   - {from: null,           to: CANDIDATE,      by: [M20],              requires: [evidence]}
-  - {from: CANDIDATE,      to: CORROBORATED,   by: [M20, M21],         requires: [evidence], note: "Từ 2 provider độc lập trở lên hoặc khớp phiên bản"}
+  - {from: CANDIDATE,      to: CORROBORATED,   by: [M20, M21],         requires: [evidence], note: "Chỉ khi có nguồn bằng chứng độc lập thứ hai (provider/bản quét khác nguồn, không phải hai matcher trên cùng một banner) hoặc gói distro đã xác nhận phiên bản bị ảnh hưởng; khớp version/CPE một nguồn chỉ đạt CANDIDATE"}
   - {from: CANDIDATE,      to: VERIFIED,       by: [M21],              requires: [evidence]}
   - {from: CORROBORATED,   to: VERIFIED,       by: [M21],              requires: [evidence]}
   - {from: [CANDIDATE, CORROBORATED, VERIFIED, REGRESSED], to: FALSE_POSITIVE, by: [M21, operator], requires: [reason]}

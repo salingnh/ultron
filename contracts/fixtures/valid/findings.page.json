@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "finding_id": "01934f6a-0000-7000-8000-0000000f0001",
+      "fingerprint": "3f1c0a3b6f0d9e4c2b8a7d5e1f0c9b8a7d6e5f4c3b2a1908f7e6d5c4b3a29180",
+      "asset_id": "01934f6a-0000-7000-8000-0000000a0001",
+      "asset_key": "service:10.114.53.10:80/tcp",
+      "rule_id": "cve:CVE-2021-41773",
+      "category": "vulnerability",
+      "title": "CVE-2021-41773 affects apache:http_server 2.4.49 on service:10.114.53.10:80/tcp",
+      "vulnerability_ids": [
+        "CVE-2021-41773"
+      ],
+      "location": {},
+      "status": "CANDIDATE",
+      "severity": "UNRATED",
+      "match_method": "cpe_range",
+      "confidence": 0.7,
+      "providers": [
+        "fingerprintx"
+      ],
+      "first_seen": "2026-11-24T10:00:00Z",
+      "last_seen": "2026-11-24T10:00:00Z",
+      "evidence": [
+        {
+          "evidence_id": "01934f6a-0000-7000-8000-0000000e0001",
+          "sha256": "9c1f4d2e7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d",
+          "source_tool": "fingerprintx",
+          "media_type": "application/json"
+        }
+      ]
+    }
+  ],
+  "next_cursor": "ZmluZGluZ3wxNzYzOTgxMjAwMDAwfDAxOTM0ZjZhLTAwMDAtNzAwMC04MDAwLTAwMDAwMDBmMDAwMQ"
+}

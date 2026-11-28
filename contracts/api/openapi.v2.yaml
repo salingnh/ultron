@@ -921,6 +921,8 @@ paths:
       - findings
       operationId: listFindings
       summary: Lọc và xuất findings
+      security:
+      - operatorToken: []
       parameters:
       - name: campaign_id
         in: query
@@ -988,6 +990,10 @@ paths:
                       $ref: ../finding/finding.v2.schema.json
                   next_cursor:
                     type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
   /findings/{finding_id}:
     parameters:
     - $ref: '#/components/parameters/FindingId'
@@ -996,6 +1002,8 @@ paths:
       - findings
       operationId: getFinding
       summary: Chi tiết finding kèm bằng chứng (signed URL)
+      security:
+      - operatorToken: []
       responses:
         '200':
           description: OK
@@ -1003,6 +1011,8 @@ paths:
             application/json:
               schema:
                 $ref: ../finding/finding.v2.schema.json
+        '401':
+          $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
   /findings/{finding_id}/transitions:
@@ -1013,6 +1023,8 @@ paths:
       - findings
       operationId: transitionFinding
       summary: Đổi trạng thái finding kèm lý do (kiểm theo finding/transitions.v2.yaml)
+      security:
+      - operatorToken: []
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1030,12 +1042,47 @@ paths:
                 $ref: ../finding/finding.v2.schema.json
         '400':
           $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
         '409':
           description: Chuyển trạng thái không hợp lệ hoặc expected_seq lệch
           content:
             application/json:
               schema:
                 $ref: ../common/error.v2.schema.json
+  /findings/{finding_id}/assessment:
+    parameters:
+    - $ref: '#/components/parameters/FindingId'
+    post:
+      tags:
+      - findings
+      operationId: assessFinding
+      summary: Đánh giá mức nghiêm trọng do agent (C07) cho một finding
+      description: 'Gọi M04 với output schema của severity-assessment.v2 và lưu một
+        dòng severity_assessment mới; mã gán assessed_by/inputs/trigger/dedup_key.
+        Cùng finding và cùng input_revision trả bản ghi đã có, không gọi model lần
+        nữa. Model lỗi/không cấu hình thì ghi bản ghi UNRATED có failure (kind=rule)
+        và trả 200: không có mức nghiêm trọng giả, lịch sử giữ nguyên. M20 cũng đánh giá tự
+        động khi một finding được tạo hoặc đầu vào của nó đổi (mọi finding, không chỉ KEV/EPSS),
+        giới hạn bởi ngân sách LLM của campaign; hết ngân sách thì finding giữ UNRATED kèm lý do.
+        Endpoint này là lần đánh giá theo yêu cầu (trigger=operator_request) trên cùng runtime.'
+      security:
+      - operatorToken: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../finding/severity-assessment.v2.schema.json
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /findings/{finding_id}/history:
     parameters:
     - $ref: '#/components/parameters/FindingId'
@@ -1045,6 +1092,8 @@ paths:
       operationId: getFindingHistory
       summary: Trạng thái và mức nghiêm trọng theo từng lần chạy (FindingRun) cùng
         các lần chuyển trạng thái
+      security:
+      - operatorToken: []
       responses:
         '200':
           description: OK
@@ -1118,6 +1167,10 @@ paths:
                     type: array
                     items:
                       $ref: ../finding/severity-assessment.v2.schema.json
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /reports/delta:
     get:
       tags:
