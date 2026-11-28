@@ -29,6 +29,7 @@ Both files use the same shape (see `deploy/lab/runner-profile.json`)::
           "env": {"HOME": "/tmp"},         # literal env (never a secret)
           "envFromHost": ["NAME"],         # forward NAME's *value* from the runner's env
           "hosts": {"crt.sh": "10.114.53.80"},
+          "connectTimeoutMs": 1000,       # the tool's own connect budget (see below)
           "mounts": [
             {"source": ".run/tls/ca.crt", "target": "/lab-tls/ca.crt"},
             {"sourceEnv": "AEGIS_SUBFINDER_PROVIDER_CONFIG", "target": "/tmp/.config/..."}
@@ -40,6 +41,13 @@ Both files use the same shape (see `deploy/lab/runner-profile.json`)::
 `mounts[].source` is resolved against the profile file's directory, so a checkout can carry it;
 `mounts[].sourceEnv` names a host environment variable holding an absolute path (unset = the mount
 is skipped, which is how the provider-config file is optional).
+
+`connectTimeoutMs` is the tool's own connect timeout, declared next to the argv that sets it
+(e.g. Naabu's `-timeout 1s`). The broker paces connections for the RoE caps and records how long
+each one waited; the runner compares that wait with this budget, so a connection the broker only
+admitted after the tool had already given up becomes an `EGRESS_PACED` coverage limitation instead
+of a silently missing port (G1.6 Decision A, item 83 trial). Omit it when the tool's timeout is
+unknown: a broker refusal after its bounded wait is still reported as incomplete coverage.
 
 The profile is off unless its file is named, so a production runner never joins the lab network by
 accident and a lab runner never opens a broker uplink by accident (`tests/test_m06_profiles.py`).
@@ -120,6 +128,8 @@ class JobProfile:
     env: Mapping[str, str] = field(default_factory=dict)
     env_from_host: tuple[str, ...] = ()
     hosts: Mapping[str, str] = field(default_factory=dict)
+    #: The tool's own connect timeout, when the deployment knows it (see the module docstring).
+    connect_timeout_ms: int | None = None
     mounts: tuple[JobMount, ...] = ()
 
     def argv(self) -> list[str]:
@@ -249,11 +259,20 @@ def _job_from_entry(entry: Any, *, base_dir: Path | None, where: str) -> JobProf
         if not isinstance(source_env, str) or not ENV_NAME.fullmatch(source_env):
             raise ProfileError(f"sourceEnv of a mount of {digest} must be a variable name")
         mounts.append(JobMount(target=target, source_env=source_env))
+    timeout = entry.get("connectTimeoutMs")
+    if timeout is not None and (
+        not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0
+    ):
+        raise ProfileError(
+            f"connectTimeoutMs of {digest} must be a positive integer (milliseconds), "
+            f"got {timeout!r}"
+        )
     return JobProfile(
         image_digest=digest,
         args=tuple(args),
         env=dict(env),
         env_from_host=tuple(names),
         hosts=dict(hosts),
+        connect_timeout_ms=timeout,
         mounts=tuple(mounts),
     )

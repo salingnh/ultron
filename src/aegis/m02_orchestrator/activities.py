@@ -10,6 +10,7 @@ entry point (`python -m aegis.m02_orchestrator.worker`), or read from `AEGIS_PG_
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -18,14 +19,16 @@ import psycopg
 from temporalio import activity
 
 from . import db
+from .finalize import finalize
 from .scheduler import PostgresScheduler
-from .types import CampaignSnapshot, CancelOutcome, DispatchPlan
+from .types import CampaignSnapshot, CancelOutcome, DispatchPlan, FinalCampaign
 
 __all__ = [
     "ACTIVITIES",
     "cancel_jobs",
     "configure",
     "dispatch_ready",
+    "finalize_campaign",
     "finish_campaign",
     "load_campaign",
 ]
@@ -82,11 +85,41 @@ async def finish_campaign(campaign_id: str, action: str, reason: str) -> bool:
     return _scheduler().finish(campaign_id, action, reason, trace_id=trace_id)
 
 
+@activity.defn(name="finalize_campaign")
+async def finalize_campaign(campaign_id: str, proposed: str) -> FinalCampaign:
+    """The chain's last step: match the campaign's products, then verify its coverage.
+
+    Runs on one M20 connection (`dict_row`, autocommit, `search_path`), which is what the matcher
+    needs; a matching failure is returned, not raised, so the campaign still finishes - with
+    `matching_failed` instead of a false `objective_met`.
+    """
+    from aegis.m20_vuln.matching import connect as matcher_connect
+
+    connection = matcher_connect(_dsn_or_env())
+    try:
+        return finalize(connection, campaign_id, proposed)
+    finally:
+        connection.close()
+
+
+def _dsn_or_env() -> str:
+    """The DSN this worker was configured with, else `AEGIS_PG_DSN` (the worker's own rule)."""
+    if _dsn:
+        return _dsn
+    value = os.environ.get("AEGIS_PG_DSN", "")
+    if not value:
+        raise RuntimeError(
+            "the finalize activity needs AEGIS_PG_DSN (or configure(dsn=...)) to run the matcher"
+        )
+    return value
+
+
 #: The activities the orchestrator worker registers (G1.2c adds the session activity to the
 #: `aegis-agent` queue, not to this list).
 ACTIVITIES: list[Callable[..., Any]] = [
     load_campaign,
     dispatch_ready,
     cancel_jobs,
+    finalize_campaign,
     finish_campaign,
 ]

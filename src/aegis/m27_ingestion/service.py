@@ -149,6 +149,20 @@ def _dump(model: object) -> dict[str, Any]:
     return cast(dict[str, Any], dumped(mode="json", by_alias=True, exclude_none=True))
 
 
+def _coverage_document(envelope: ResultEnvelope) -> dict[str, Any]:
+    """The envelope's `coverage` as the column stores it, with `complete` always answered.
+
+    `result-envelope.v2` makes `complete` optional and M06 always sets it, but the column's
+    consumer (M02 finalising a campaign, the API) must not have to guess: an absent `complete`
+    with limitations is incomplete by the contract's own rule, and an absent `complete` without
+    them can only mean the run finished. `subjects` and `limitations` stay byte-identical to the
+    accepted envelope.
+    """
+    document = _dump(envelope.coverage)
+    document.setdefault("complete", not document.get("limitations"))
+    return document
+
+
 @dataclass(frozen=True, slots=True)
 class _Conflict:
     existing_payload_hash: str
@@ -356,7 +370,7 @@ class IngestionService(Ingestion):
         event_id = _text(envelope.event_id)
         inserted = connection.execute(
             "INSERT INTO ingestion_inbox (event_id, dedup_key, job_id, payload_hash, hash_version,"
-            " status) VALUES (%s, %s, %s, %s, %s, 'received')"
+            " coverage, status) VALUES (%s, %s, %s, %s, %s, %s, 'received')"
             " ON CONFLICT DO NOTHING RETURNING event_id",
             (
                 event_id,
@@ -364,6 +378,7 @@ class IngestionService(Ingestion):
                 _text(envelope.job_id),
                 payload_hash,
                 canonical.HASH_VERSION,
+                Jsonb(_coverage_document(envelope)),
             ),
         ).fetchone()
         if inserted is not None:

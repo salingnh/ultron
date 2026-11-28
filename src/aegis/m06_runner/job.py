@@ -18,6 +18,7 @@ The order is the contract's (interfaces/README.md §3):
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import time
@@ -758,6 +759,19 @@ class JobRunner:
             return "partial", []
         return "succeeded", []
 
+    def _connect_budget_ms(self, plan: JobPlan) -> int | None:
+        """The tool's own connect timeout from this deployment's profile entry, if it declares one.
+
+        Deployment data, like the argv that sets the tool's timeout; a job whose profile says
+        nothing gets no paced check (a broker refusal after its bounded wait is still reported).
+        """
+        if plan.manifest.spec.permissions.networkAccess != "egress":
+            return None
+        entry = self.runner.profile_entry(
+            str(plan.task.network_profile), text(plan.task.image_digest)
+        )
+        return None if entry is None else entry.connect_timeout_ms
+
     def _build_and_submit(
         self, plan: JobPlan, layout: JobLayout, outcome: JobOutcome, started_at: str
     ) -> None:
@@ -781,7 +795,9 @@ class JobRunner:
                 finished_at=envelopes.now_timestamp(),
                 exit_code=outcome.run.exit_code if outcome.run is not None else None,
                 errors=outcome.errors,
-                limitations=_egress_limitations(self.runner.audit_records(plan.job_id)),
+                limitations=_egress_limitations(
+                    self.runner.audit_records(plan.job_id), self._connect_budget_ms(plan)
+                ),
             )
         except (envelopes.EnvelopeError, ValueError) as error:
             outcome.status = "failed"
@@ -854,14 +870,24 @@ class _CancelSignal:
 CAPPED_REASONS = frozenset({"RATE_LIMITED", "CONCURRENCY_LIMITED"})
 
 
-def _egress_limitations(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Coverage limitations from the broker audit: any deny or cap timeout makes the run partial."""
+def _egress_limitations(
+    records: Sequence[Mapping[str, Any]], connect_budget_ms: int | None = None
+) -> list[dict[str, Any]]:
+    """Coverage limitations from the broker audit: a deny, or a wait the tool could not sit through.
+
+    Two different silent false negatives exist, and both are reported here:
+
+    * a refusal (policy or a cap timeout) means the destination was never reached;
+    * a *paced* connection (G1.6 Decision A, item 83 trial) is one the broker admitted only after
+      queuing it for the RoE caps. The broker allowed it, so no deny exists, but a tool whose own
+      connect timeout is shorter than that wait had already given up: the port is unprobed, not
+      closed. The wait comes from the audit (`waited_ms`) and the budget from the job's deployment
+      profile (`connectTimeoutMs`); without the budget the broker cannot judge it and says nothing.
+    """
     denied = [record for record in records if record.get("decision") == "deny"]
-    if not denied:
-        return []
+    limitations: list[dict[str, Any]] = []
     capped = [record for record in denied if record.get("reason") in CAPPED_REASONS]
     other = [record for record in denied if record.get("reason") not in CAPPED_REASONS]
-    limitations: list[dict[str, Any]] = []
     if capped:
         limitations.append(
             {
@@ -882,7 +908,59 @@ def _egress_limitations(records: Sequence[Mapping[str, Any]]) -> list[dict[str, 
                 ),
             }
         )
+    limitations.extend(_paced_limitations(records, connect_budget_ms))
     return limitations
+
+
+def _paced_limitations(
+    records: Sequence[Mapping[str, Any]], connect_budget_ms: int | None
+) -> list[dict[str, Any]]:
+    """One `EGRESS_PACED` limitation per address whose probes waited past the tool's budget."""
+    if not connect_budget_ms:
+        return []
+    paced: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if record.get("decision") != "allow":
+            continue
+        waited = record.get("waited_ms")
+        if not isinstance(waited, int) or waited <= connect_budget_ms:
+            continue
+        port = record.get("port")
+        if not isinstance(port, int):
+            continue
+        host = str(record.get("pinned") or record.get("host") or "")
+        requested = str(record.get("host") or host)
+        subject = _address_subject(host)
+        label = host if requested == host else f"{requested} ({host})"
+        key = subject or host
+        entry = paced.setdefault(key, {"ports": set(), "subject": subject, "label": label})
+        entry["ports"].add(port)
+    limitations: list[dict[str, Any]] = []
+    for key in sorted(paced):
+        entry = paced[key]
+        ports = sorted(entry["ports"])
+        shown = ", ".join(str(port) for port in ports[:20])
+        more = "" if len(ports) <= 20 else f" and {len(ports) - 20} more"
+        limitation: dict[str, Any] = {
+            "code": "EGRESS_PACED",
+            "message": (
+                f"{len(ports)} port probe(s) on {entry['label']} waited longer than the tool's "
+                f"{connect_budget_ms} ms connect budget for an RoE slot and the tool had already "
+                f"given up; they are unprobed, not closed (ports {shown}{more})"
+            )[:1000],
+        }
+        if entry["subject"]:
+            limitation["subjects"] = [entry["subject"]]
+        limitations.append(limitation)
+    return limitations
+
+
+def _address_subject(value: str) -> str | None:
+    """The `ip:` canonical key of a literal address, or None for a name (no asset invented)."""
+    try:
+        return f"ip:{ipaddress.ip_address(value)}"
+    except ValueError:
+        return None
 
 
 def _task_body(plan: JobPlan) -> Mapping[str, Any]:

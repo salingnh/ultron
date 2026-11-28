@@ -72,7 +72,7 @@ def dsn() -> Iterator[str]:
 @asynccontextmanager
 async def running(client: Client, dsn: str, stop: asyncio.Event) -> AsyncIterator[None]:
     """Worker (both queues) and the dispatchers, exactly as the process entry points run them."""
-    configure(connect=lambda: db.connect(dsn))
+    configure(dsn=dsn, connect=lambda: db.connect(dsn))
     signals = TemporalSignals(client)
     outbox = OutboxDispatcher(lambda: db.connect(dsn), signals)
     watcher = CampaignStateWatcher(lambda: db.connect(dsn), signals)
