@@ -1,0 +1,66 @@
+{
+  "captures": {
+    "nuclei/catchall.jsonl": "432af42400866c3e9e9a9a19bdf3f62212783bcf256b0244a2f7889b1f4b26f5",
+    "nuclei/pair.jsonl": "721602aff84bdda68ea5bb78d33cb58e143c433bde2169c8999b98fb3a1e2d88",
+    "nuclei/stock.jsonl": "7137cced373d9715bc8cb8cd7160d7ce6f3e5bd5b33a886310d137e9e523c4bd"
+  },
+  "results": {
+    "result/benign_matched.json": "7818a579b29aef7dd9e968e5bc6d368b44f032b43cdb4f1278bca5833e1f19e3",
+    "result/catch_all.json": "e0eeb07444484314d0c8554740f57e4c45e822ffde9ed1ee497b0895af21253a",
+    "result/foreign_canary.json": "3ee82fc907079e05e32d8abdc195343f8613f856104260d0a1b42a996023edd4",
+    "result/not_reproduced.json": "5f369acbe5306ada7a731c190622666dcd6d0572b2faf6a65f5ef04667732287",
+    "result/twin_reproduced.json": "afb593e643c79ed28e8b2d2a3afa5218eb1556989e857ca9368da6faa751e784",
+    "result/verified.json": "ba41c8fa129f401879a4e1fffd17e16867a0ff4c3042806da88f2b1186e96394"
+  },
+  "task": {
+    "result/benign_matched.json": {
+      "benign_path": "/static/.%2e/.%2e/srv/canary/canary.txt",
+      "captures": [
+        "nuclei/pair.jsonl"
+      ],
+      "positive": "service:10.114.59.31:80/tcp",
+      "twin": "service:10.114.59.32:80/tcp"
+    },
+    "result/catch_all.json": {
+      "benign_path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+      "captures": [
+        "nuclei/catchall.jsonl"
+      ],
+      "positive": "service:10.114.59.90:8090/tcp",
+      "twin": "service:10.114.59.90:8090/tcp"
+    },
+    "result/foreign_canary.json": {
+      "benign_path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+      "captures": [
+        "nuclei/catchall.jsonl"
+      ],
+      "positive": "service:10.114.59.90:8091/tcp",
+      "twin": "service:10.114.59.90:8090/tcp"
+    },
+    "result/not_reproduced.json": {
+      "benign_path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+      "captures": [
+        "nuclei/stock.jsonl",
+        "nuclei/pair.jsonl"
+      ],
+      "positive": "service:10.114.59.33:80/tcp",
+      "twin": "service:10.114.59.32:80/tcp"
+    },
+    "result/twin_reproduced.json": {
+      "benign_path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+      "captures": [
+        "nuclei/pair.jsonl"
+      ],
+      "positive": "service:10.114.59.32:80/tcp",
+      "twin": "service:10.114.59.31:80/tcp"
+    },
+    "result/verified.json": {
+      "benign_path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+      "captures": [
+        "nuclei/pair.jsonl"
+      ],
+      "positive": "service:10.114.59.31:80/tcp",
+      "twin": "service:10.114.59.32:80/tcp"
+    }
+  }
+}

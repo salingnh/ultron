@@ -52,13 +52,11 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
-from uuid import uuid4
 
 import psycopg
 from psycopg.types.json import Jsonb
 
-from aegis import validation
-from aegis.common.finding_transitions import rule_for
+from aegis.common.finding_write import EVENT_TYPE, write_transition
 from aegis.common.ports import ModelClient
 from aegis.m20_vuln import severity, visibility
 from aegis.m20_vuln.configurations import (
@@ -72,6 +70,8 @@ from aegis.m20_vuln.cpe import Cpe
 from aegis.m20_vuln.matching import TARGET_PREDICATES, inspect_product_observation
 from aegis.m27_ingestion.ids import uuid7
 
+EVENT_SCHEMA = "events/finding.changed.v2.schema.json"
+
 __all__ = [
     "EVENT_TYPE",
     "FindingsEngine",
@@ -82,8 +82,6 @@ __all__ = [
 ]
 
 PRODUCER = "M20"
-EVENT_TYPE = "finding.changed.v2"
-EVENT_SCHEMA = "events/finding.changed.v2.schema.json"
 SEVERITY_SCHEMA = severity.SEVERITY_SCHEMA
 #: Open statuses whose intel withdrawal is noted but never closed without remediation evidence.
 RETRACTABLE = ("CANDIDATE", "CORROBORATED", "VERIFIED", "REGRESSED")
@@ -239,112 +237,23 @@ class FindingWriter:
         seq: int,
         report: TransitionCounters,
     ) -> None:
-        if rule_for(from_status, to_status, PRODUCER) is None:
-            raise ValueError(
-                f"transitions.v2.yaml refuses {from_status} -> {to_status} by {PRODUCER}"
-            )
-        changed_at = _now(self._conn)
-        if seq > 1:
-            updated = self._conn.execute(
-                "UPDATE finding SET status = %s, transition_seq = %s"
-                " WHERE finding_id = %s AND transition_seq = %s RETURNING transition_seq",
-                (to_status, seq, finding_id, seq - 1),
-            ).fetchone()
-            if updated is None:
-                raise ValueError(
-                    f"finding {finding_id} is not at transition_seq {seq - 1}: "
-                    "a concurrent writer changed it"
-                )
-        self._conn.execute(
-            "INSERT INTO finding_transition (finding_id, seq, from_status, to_status, reason,"
-            " evidence_id, actor, cause, created_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                finding_id,
-                seq,
-                from_status,
-                to_status,
-                reason,
-                evidence_id,
-                Jsonb({"kind": "module", "id": PRODUCER}),
-                cause,
-                changed_at,
-            ),
-        )
-        report.transitions += 1
-        self._emit(
+        written = write_transition(
+            self._conn,
             finding_id=finding_id,
-            seq=seq,
             from_status=from_status,
             to_status=to_status,
             reason=reason,
             evidence_id=evidence_id,
+            actor={"kind": "module", "id": PRODUCER},
             cause=cause,
             old_severity=old_severity,
             new_severity=new_severity,
             campaign_id=campaign_id,
-            changed_at=changed_at,
-            report=report,
+            seq=seq,
+            producer=PRODUCER,
         )
-
-    def _emit(
-        self,
-        *,
-        finding_id: str,
-        seq: int,
-        from_status: str | None,
-        to_status: str,
-        reason: str,
-        evidence_id: str | None,
-        cause: str,
-        old_severity: str | None,
-        new_severity: str | None,
-        campaign_id: str,
-        changed_at: str,
-        report: TransitionCounters,
-    ) -> None:
-        row = self._conn.execute(
-            "SELECT asset_id FROM finding WHERE finding_id = %s", (finding_id,)
-        ).fetchone()
-        if row is None:
-            raise ValueError(f"finding {finding_id} disappeared while emitting its event")
-        payload: dict[str, Any] = {
-            "finding_id": finding_id,
-            "transition_seq": seq,
-            "asset_id": str(row["asset_id"]),
-            "campaign_id": campaign_id,
-            "old_status": from_status,
-            "new_status": to_status,
-            "old_severity": old_severity,
-            "new_severity": new_severity,
-            "reason": reason,
-            "changed_by": {"kind": "module", "id": PRODUCER},
-            "cause": cause,
-            "changed_at": changed_at,
-        }
-        if evidence_id is not None:
-            payload["evidence_ref"] = evidence_id
-        problems = validation.problems(EVENT_SCHEMA, payload)
-        if problems:
-            pointer, message = problems[0]
-            raise ValueError(
-                f"finding.changed.v2 payload violates the contract at {pointer or '/'}: {message}"
-            )
-        inserted = self._conn.execute(
-            "INSERT INTO outbox_event (event_id, type, producer, dedup_key, campaign_id, payload,"
-            " trace) VALUES (%s, %s, %s, %s, %s, %s, %s)"
-            " ON CONFLICT (type, dedup_key) DO NOTHING RETURNING event_id",
-            (
-                str(uuid7()),
-                EVENT_TYPE,
-                PRODUCER,
-                f"{finding_id}:{seq}",
-                campaign_id,
-                Jsonb(payload),
-                Jsonb({"trace_id": uuid4().hex}),
-            ),
-        ).fetchone()
-        if inserted is not None:
+        report.transitions += 1
+        if written.event_written:
             report.events += 1
 
     def _assess(
@@ -922,10 +831,3 @@ def _title(pair: _Pair, product: Sequence[Cpe]) -> str:
     else:
         title = f"{pair.vulnerability_id} affects {pair.canonical_key}"
     return title[:500]
-
-
-def _now(connection: psycopg.Connection[Any]) -> str:
-    row = connection.execute("SELECT now() AS at").fetchone()
-    if row is None:  # pragma: no cover - PostgreSQL always answers now()
-        raise RuntimeError("SELECT now() returned no row")
-    return str(row["at"].isoformat()).replace("+00:00", "Z")

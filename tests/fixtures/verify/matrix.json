@@ -1,0 +1,601 @@
+{
+ "canary": {
+  "token": "AEGIS-CANARY-785a1a04cb0431695f06d905821eb00c",
+  "sha256": "93d0b487ca2b72157b7b8ef025556a20a0ecfe0ffe70329c42075f748b412530"
+ },
+ "httpd": {
+  "case": "L1 CVE-2021-41773 httpd 2.4.49 + Alias reads a per-run canary",
+  "tool": "nuclei v3.11.1 template cve-2021-41773-traversal.yaml",
+  "lab_pair": {
+   "10.114.59.32:80": {
+    "target": "10.114.59.32:80",
+    "responses": {
+     "/static/.%2e/.%2e/srv/canary/canary.txt": {
+      "status": "HTTP/1.1 400 Bad Request",
+      "status_code": 400,
+      "body_sha256": "a5c402fa795aa7b38c40559c9d1e2904c1e049580e216b292466d6c0634e9ab6",
+      "tokens": []
+     },
+     "/static/.%2e/.%2e/srv/canary/absent.txt": {
+      "status": "HTTP/1.1 400 Bad Request",
+      "status_code": 400,
+      "body_sha256": "a5c402fa795aa7b38c40559c9d1e2904c1e049580e216b292466d6c0634e9ab6",
+      "tokens": []
+     }
+    }
+   },
+   "10.114.59.31:80": {
+    "target": "10.114.59.31:80",
+    "responses": {
+     "/static/.%2e/.%2e/srv/canary/canary.txt": {
+      "status": "HTTP/1.1 200 OK",
+      "status_code": 200,
+      "body_sha256": "93d0b487ca2b72157b7b8ef025556a20a0ecfe0ffe70329c42075f748b412530",
+      "tokens": [
+       "AEGIS-CANARY-785a1a04cb0431695f06d905821eb00c"
+      ]
+     },
+     "/static/.%2e/.%2e/srv/canary/absent.txt": {
+      "status": "HTTP/1.1 404 Not Found",
+      "status_code": 404,
+      "body_sha256": "80c3fe2ae1062abf56456f52518bd670f9ec3917b7f85e152b347ac6b6faf880",
+      "tokens": []
+     }
+    }
+   }
+  },
+  "stock_version_matched": {
+   "10.114.59.33:80": {
+    "target": "10.114.59.33:80",
+    "responses": {
+     "/static/.%2e/.%2e/srv/canary/canary.txt": {
+      "status": "HTTP/1.1 403 Forbidden",
+      "status_code": 403,
+      "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+      "tokens": []
+     },
+     "/static/.%2e/.%2e/srv/canary/absent.txt": {
+      "status": "HTTP/1.1 403 Forbidden",
+      "status_code": 403,
+      "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+      "tokens": []
+     }
+    }
+   }
+  },
+  "catchall": {
+   "10.114.59.90:8090": {
+    "target": "10.114.59.90:8090",
+    "responses": {
+     "/static/.%2e/.%2e/srv/canary/canary.txt": {
+      "status": "HTTP/1.0 200 OK",
+      "status_code": 200,
+      "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+      "tokens": []
+     },
+     "/static/.%2e/.%2e/srv/canary/absent.txt": {
+      "status": "HTTP/1.0 200 OK",
+      "status_code": 200,
+      "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+      "tokens": []
+     }
+    }
+   },
+   "10.114.59.90:8091": {
+    "target": "10.114.59.90:8091",
+    "responses": {
+     "/static/.%2e/.%2e/srv/canary/canary.txt": {
+      "status": "HTTP/1.0 200 OK",
+      "status_code": 200,
+      "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+      "tokens": [
+       "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+      ]
+     },
+     "/static/.%2e/.%2e/srv/canary/absent.txt": {
+      "status": "HTTP/1.0 200 OK",
+      "status_code": 200,
+      "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+      "tokens": [
+       "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+      ]
+     }
+    }
+   }
+  },
+  "decision": {
+   "outcome": "verified",
+   "reason": "positive read; patched twin and absent path did not",
+   "positive": {
+    "status": "HTTP/1.1 200 OK",
+    "status_code": 200,
+    "body_sha256": "93d0b487ca2b72157b7b8ef025556a20a0ecfe0ffe70329c42075f748b412530",
+    "tokens": [
+     "AEGIS-CANARY-785a1a04cb0431695f06d905821eb00c"
+    ]
+   },
+   "control_a": {
+    "status": "HTTP/1.1 400 Bad Request",
+    "status_code": 400,
+    "body_sha256": "a5c402fa795aa7b38c40559c9d1e2904c1e049580e216b292466d6c0634e9ab6",
+    "tokens": []
+   },
+   "control_b": {
+    "status": "HTTP/1.1 404 Not Found",
+    "status_code": 404,
+    "body_sha256": "80c3fe2ae1062abf56456f52518bd670f9ec3917b7f85e152b347ac6b6faf880",
+    "tokens": []
+   },
+   "twin_absent": {
+    "status": "HTTP/1.1 400 Bad Request",
+    "status_code": 400,
+    "body_sha256": "a5c402fa795aa7b38c40559c9d1e2904c1e049580e216b292466d6c0634e9ab6",
+    "tokens": []
+   }
+  },
+  "stock_decision": {
+   "outcome": "not_reproduced",
+   "reason": "target answered but did not read the canary",
+   "positive": {
+    "status": "HTTP/1.1 403 Forbidden",
+    "status_code": 403,
+    "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+    "tokens": []
+   },
+   "control_a": {
+    "status": "HTTP/1.1 403 Forbidden",
+    "status_code": 403,
+    "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+    "tokens": []
+   },
+   "control_b": {
+    "status": "HTTP/1.1 403 Forbidden",
+    "status_code": 403,
+    "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+    "tokens": []
+   },
+   "twin_absent": {
+    "status": "HTTP/1.1 403 Forbidden",
+    "status_code": 403,
+    "body_sha256": "5b13fb5957b84ef7bb9d0b6cd509c947ff6a37d67efdac2b896ddd3b908aad10",
+    "tokens": []
+   }
+  },
+  "catchall_decision": {
+   "plain": {
+    "outcome": "inconclusive",
+    "reason": "a real path and a nonexistent path answered with the same 200 body (catch-all)",
+    "positive": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+     "tokens": []
+    },
+    "control_a": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+     "tokens": []
+    },
+    "control_b": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+     "tokens": []
+    },
+    "twin_absent": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "dc51b8c96c2d745df3bd5590d990230a482fd247123599548e0632fdbf97fc22",
+     "tokens": []
+    }
+   },
+   "evil": {
+    "outcome": "inconclusive",
+    "reason": "a real path and a nonexistent path answered with the same 200 body (catch-all)",
+    "positive": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+     "tokens": [
+      "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+     ]
+    },
+    "control_a": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+     "tokens": [
+      "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+     ]
+    },
+    "control_b": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+     "tokens": [
+      "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+     ]
+    },
+    "twin_absent": {
+     "status": "HTTP/1.0 200 OK",
+     "status_code": 200,
+     "body_sha256": "9152cfa8b7e5a564f9f440387cfd585127ffcc70a958b31f45ce434d78272c03",
+     "tokens": [
+      "AEGIS-CANARY-0123456789abcdef0123456789abcdef"
+     ]
+    }
+   }
+  }
+ },
+ "jetty_34429": {
+  "case": "L1 candidate CVE-2021-34429 Jetty 9.4.40 %u002e WEB-INF read",
+  "tool": "raw HTTP client only (Nuclei v3.11.1 cannot express the payload)",
+  "evidence": "runs/jetty-34429-raw-client.json",
+  "decision": "dropped from G2: oracle reproduces with a raw client, tool cannot send it"
+ },
+ "config": {
+  "cert-expired": {
+   "positive": {
+    "matched": true,
+    "error": null,
+    "status": null,
+    "value": {
+     "negotiated_version": "TLSv1.3",
+     "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+     "subject": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "issuer": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "not_before": "Jan  1 00:00:00 2024 GMT",
+     "not_after": "Jan  1 00:00:00 2025 GMT",
+     "not_after_epoch": 1735689600.0,
+     "expired": true,
+     "self_signed": true,
+     "sha256": "9707575a00f53beb0fb075c64ca68633eb9c9764f4d0c7155a996534a6635253"
+    }
+   },
+   "control_a": {
+    "matched": false,
+    "error": null,
+    "status": null,
+    "value": {
+     "negotiated_version": "TLSv1.3",
+     "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+     "subject": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "issuer": [
+      [
+       [
+        "commonName",
+        "Aegis G2-B Lab CA"
+       ]
+      ]
+     ],
+     "not_before": "Nov 28 05:57:54 2026 GMT",
+     "not_after": "Dec 28 05:57:54 2026 GMT",
+     "not_after_epoch": 1798437474.0,
+     "expired": false,
+     "self_signed": false,
+     "sha256": "f6afa40a19e8473e9974a84156ddd8fde3d3be71d4c400af185b62856f75252f"
+    }
+   },
+   "control_b": {
+    "matched": false,
+    "error": null,
+    "status": null,
+    "value": {
+     "negotiated_version": "TLSv1.3",
+     "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+     "subject": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "issuer": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "not_before": "Nov 28 05:57:54 2026 GMT",
+     "not_after": "Dec 28 05:57:54 2026 GMT",
+     "not_after_epoch": 1798437474.0,
+     "expired": false,
+     "self_signed": true,
+     "sha256": "4069e8c61b6533019ecd596a2f3a3e23be93af12e6a50ba91e857123ef4a9a99"
+    }
+   },
+   "catchall": null,
+   "decision": {
+    "outcome": "verified",
+    "reason": "observation matched; both controls did not"
+   }
+  },
+  "cert-self-signed": {
+   "positive": {
+    "matched": true,
+    "error": null,
+    "status": null,
+    "value": {
+     "negotiated_version": "TLSv1.3",
+     "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+     "subject": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "issuer": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "not_before": "Nov 28 05:57:54 2026 GMT",
+     "not_after": "Dec 28 05:57:54 2026 GMT",
+     "not_after_epoch": 1798437474.0,
+     "expired": false,
+     "self_signed": true,
+     "sha256": "4069e8c61b6533019ecd596a2f3a3e23be93af12e6a50ba91e857123ef4a9a99"
+    }
+   },
+   "control_a": {
+    "matched": false,
+    "error": null,
+    "status": null,
+    "value": {
+     "negotiated_version": "TLSv1.3",
+     "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+     "subject": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "issuer": [
+      [
+       [
+        "commonName",
+        "Aegis G2-B Lab CA"
+       ]
+      ]
+     ],
+     "not_before": "Nov 28 05:57:54 2026 GMT",
+     "not_after": "Dec 28 05:57:54 2026 GMT",
+     "not_after_epoch": 1798437474.0,
+     "expired": false,
+     "self_signed": false,
+     "sha256": "f6afa40a19e8473e9974a84156ddd8fde3d3be71d4c400af185b62856f75252f"
+    }
+   },
+   "control_b": {
+    "matched": false,
+    "error": null,
+    "status": null,
+    "value": {
+     "negotiated_version": "TLSv1.3",
+     "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
+     "subject": [
+      [
+       [
+        "commonName",
+        "web.lab.aegis.test"
+       ]
+      ]
+     ],
+     "issuer": [
+      [
+       [
+        "commonName",
+        "Aegis G2-B Lab CA"
+       ]
+      ]
+     ],
+     "not_before": "Jan  1 00:00:00 2024 GMT",
+     "not_after": "Jan  1 00:00:00 2025 GMT",
+     "not_after_epoch": 1735689600.0,
+     "expired": true,
+     "self_signed": false,
+     "sha256": "3e63fb5b053991180c9c36f80ad93c1fa598ddc87948256b88aeca62c798cb44"
+    }
+   },
+   "catchall": null,
+   "decision": {
+    "outcome": "verified",
+    "reason": "observation matched; both controls did not"
+   }
+  },
+  "tls-deprecated": {
+   "positive": {
+    "matched": true,
+    "error": null,
+    "status": null,
+    "value": {
+     "accepted": [
+      "TLSv1"
+     ],
+     "attempts": {
+      "TLSv1": "accepted",
+      "TLSv1.1": "refused: SSLError",
+      "TLSv1.2": "refused: SSLError",
+      "TLSv1.3": "refused: SSLError"
+     },
+     "deprecated_accepted": true
+    }
+   },
+   "control_a": {
+    "matched": false,
+    "error": null,
+    "status": null,
+    "value": {
+     "accepted": [
+      "TLSv1.3"
+     ],
+     "attempts": {
+      "TLSv1": "refused: SSLError",
+      "TLSv1.1": "refused: SSLError",
+      "TLSv1.2": "refused: SSLError",
+      "TLSv1.3": "accepted"
+     },
+     "deprecated_accepted": false
+    }
+   },
+   "control_b": {
+    "matched": false,
+    "error": null,
+    "status": null,
+    "value": {
+     "accepted": [
+      "TLSv1.2"
+     ],
+     "attempts": {
+      "TLSv1": "refused: SSLError",
+      "TLSv1.1": "refused: SSLError",
+      "TLSv1.2": "accepted",
+      "TLSv1.3": "refused: SSLError"
+     },
+     "deprecated_accepted": false
+    }
+   },
+   "catchall": null,
+   "decision": {
+    "outcome": "verified",
+    "reason": "observation matched; both controls did not"
+   }
+  },
+  "version-header": {
+   "positive": {
+    "matched": true,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "server": "nginx/1.18.0",
+     "x_powered_by": null,
+     "product": "nginx",
+     "version": "1.18.0"
+    }
+   },
+   "control_a": {
+    "matched": false,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "server": "nginx",
+     "x_powered_by": null,
+     "product": "nginx",
+     "version": null
+    }
+   },
+   "control_b": {
+    "matched": false,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "server": "nginx/1.29.4",
+     "x_powered_by": null,
+     "product": "nginx",
+     "version": "1.29.4"
+    }
+   },
+   "catchall": {
+    "matched": true,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "server": "nginx/1.18.0",
+     "x_powered_by": null,
+     "product": "nginx",
+     "version": "1.18.0"
+    }
+   },
+   "decision": {
+    "outcome": "verified",
+    "reason": "observation matched; both controls did not"
+   }
+  },
+  "directory-listing": {
+   "positive": {
+    "matched": true,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "listing": true,
+     "files": [
+      "aegis-canary-785a1a04cb0431695f06d905821eb00c.txt"
+     ]
+    }
+   },
+   "control_a": {
+    "matched": false,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "listing": false,
+     "files": []
+    }
+   },
+   "control_b": {
+    "matched": false,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "listing": true,
+     "files": []
+    }
+   },
+   "catchall": {
+    "matched": false,
+    "error": null,
+    "status": 200,
+    "value": {
+     "status": 200,
+     "listing": true,
+     "files": [
+      "aegis-canary-0123456789abcdef0123456789abcdef.txt"
+     ]
+    }
+   },
+   "decision": {
+    "outcome": "verified",
+    "reason": "observation matched; both controls did not"
+   }
+  }
+ }
+}

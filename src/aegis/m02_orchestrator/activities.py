@@ -10,6 +10,7 @@ entry point (`python -m aegis.m02_orchestrator.worker`), or read from `AEGIS_PG_
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from collections.abc import Callable
@@ -37,6 +38,8 @@ __all__ = [
 _dsn: str | None = None
 _connect: Callable[[], psycopg.Connection[Any]] | None = None
 _scheduler_factory: Callable[[], PostgresScheduler] | None = None
+_evidence_reader: Callable[[], Any] | None = None
+logger = logging.getLogger("aegis.m02.activities")
 
 
 def configure(
@@ -44,12 +47,18 @@ def configure(
     dsn: str | None = None,
     connect: Callable[[], psycopg.Connection[Any]] | None = None,
     scheduler: Callable[[], PostgresScheduler] | None = None,
+    evidence: Callable[[], Any] | None = None,
 ) -> None:
-    """Point the activities at a database (DSN, a connect factory, or a scheduler factory)."""
-    global _dsn, _connect, _scheduler_factory
+    """Point the activities at a database (DSN, a connect factory, or a scheduler factory).
+
+    `evidence` builds the M21 evidence reader (the object store); tests and the demo inject an
+    in-memory reader, production reads `AEGIS_S3_ENDPOINT`/`AEGIS_S3_BUCKET`.
+    """
+    global _dsn, _connect, _scheduler_factory, _evidence_reader
     _dsn = dsn
     _connect = connect
     _scheduler_factory = scheduler
+    _evidence_reader = evidence
 
 
 def _scheduler() -> PostgresScheduler:
@@ -68,8 +77,17 @@ async def load_campaign(campaign_id: str) -> CampaignSnapshot:
 
 @activity.defn(name="dispatch_ready")
 async def dispatch_ready(campaign_id: str) -> DispatchPlan:
-    """One scheduler tick: write wait reasons and claim the jobs that may start now."""
-    return _scheduler().dispatch(campaign_id)
+    """One scheduler tick: write wait reasons, claim what may start, and decide verify runs.
+
+    The verification pass is part of this tick because a completed `verify.check` job is a
+    *decision* the campaign state depends on (a VERIFIED finding changes the plan the next session
+    reads). It is idempotent by job id and a no-op when there is nothing to decide; a decision
+    error is logged and left for the next tick, because a broken evidence object must not stop the
+    campaign's scheduling loop.
+    """
+    plan = _scheduler().dispatch(campaign_id)
+    decide_verifications(campaign_id)
+    return plan
 
 
 @activity.defn(name="cancel_jobs")
@@ -95,9 +113,43 @@ async def finalize_campaign(campaign_id: str, proposed: str) -> FinalCampaign:
     """
     from aegis.m20_vuln.matching import connect as matcher_connect
 
+    # A verify job that finished just before the campaign ends is decided first, so the final
+    # verdict sees the VERIFIED transition it wrote (and a stale request is still INCONCLUSIVE).
+    decide_verifications(campaign_id)
     connection = matcher_connect(_dsn_or_env())
     try:
         return finalize(connection, campaign_id, proposed)
+    finally:
+        connection.close()
+
+
+def decide_verifications(campaign_id: str) -> list[dict[str, Any]]:
+    """Decide the campaign's completed-but-undecided `verify.check` jobs (M21).
+
+    Returns the written run records (empty on a replay or when there is nothing to decide). Any
+    failure is logged and swallowed: the campaign keeps scheduling, the run stays undecided, and
+    the operator CLI (`python -m aegis.m21_verify decide --job`) reports the same error loudly.
+    """
+    from aegis.m20_vuln.matching import connect as matcher_connect
+    from aegis.m21_verify import writer as verification
+
+    connection = matcher_connect(_dsn_or_env())
+    try:
+        if not verification.open_runs(connection, campaign_id):
+            return []
+        reader = _evidence_reader() if _evidence_reader is not None else None
+        if reader is None:
+            from aegis.m21_verify.evidence import reader_from_env
+
+            reader = reader_from_env()
+        records = verification.decide_campaign(connection, campaign_id, reader=reader)
+        return [record.as_dict() for record in records]
+    except Exception as error:  # noqa: BLE001 - never take the campaign down for a verify run
+        logger.warning(
+            "verification decision left for the next tick",
+            extra={"campaign_id": campaign_id, "error": f"{type(error).__name__}: {error}"},
+        )
+        return []
     finally:
         connection.close()
 

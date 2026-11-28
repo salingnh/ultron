@@ -1,0 +1,22 @@
+{
+  "canary": {
+    "content_sha256": "d7b7fef9f716589832de7b75fcef05156d77d96f6e441f93f463ae608a65933b",
+    "name_sha256": "535d6c59412d1a90d182cb119fefcfb6c805de3d7c16460171335873dad47d1e"
+  },
+  "checks": {
+    "cve-2021-41773-traversal": {
+      "canaryPath": "/static/.%2e/.%2e/srv/canary/canary.txt",
+      "benignPath": "/static/.%2e/.%2e/srv/canary/absent.txt",
+      "targets": {
+        "patched_twin": {
+          "address": "10.114.59.32",
+          "port": 80
+        },
+        "benign": {
+          "address": "10.114.59.31",
+          "port": 80
+        }
+      }
+    }
+  }
+}
