@@ -1338,4 +1338,59 @@ describe('Ultron UI Reusable Components', () => {
       spy.mockRestore();
     }
   });
+
+  it('renders resolving citation links, newest-first assessment history, and seq loading state', async () => {
+    resetMockData();
+    const finding = await apiClient.getFinding('01934f6a-0000-7000-8000-00000000f101');
+    const history = await apiClient.getFindingHistory('01934f6a-0000-7000-8000-00000000f101');
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <FindingDetailPanel
+          finding={finding}
+          history={null}
+          historyLoading={true}
+          historyError={null}
+          provenance={null}
+          provenanceLoading={false}
+          provenanceError={null}
+          onRetryHistory={() => {}}
+          onRefreshFinding={() => {}}
+          onTransitionSuccess={() => {}}
+          onClose={() => {}}
+        />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Đang nạp seq...')).toBeInTheDocument();
+    expect(screen.queryByText(/seq hiện tại: #0/)).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <FindingDetailPanel
+          finding={finding}
+          history={history}
+          historyLoading={false}
+          historyError={null}
+          provenance={null}
+          provenanceLoading={false}
+          provenanceError={null}
+          onRetryHistory={() => {}}
+          onRefreshFinding={() => {}}
+          onTransitionSuccess={() => {}}
+          onClose={() => {}}
+        />
+      </MemoryRouter>
+    );
+
+    const nvdCitation = screen.getByRole('link', { name: 'nvd:CVE-2021-41773' });
+    expect(nvdCitation).toHaveAttribute('href', 'https://nvd.nist.gov/vuln/detail/CVE-2021-41773');
+    const evCitation = screen.getByRole('link', { name: '01934f6a-0000-7000-8000-00000000e004' });
+    expect(evCitation).toHaveAttribute('href', '#finding-evidence-01934f6a-0000-7000-8000-00000000e004');
+
+    expect(screen.getByText(/Lịch sử đánh giá mức nghiêm trọng \(2\)/)).toBeInTheDocument();
+    const rev2 = screen.getByText('severity:01934f6a-0000-7000-8000-00000000f101:2');
+    const rev1 = screen.getByText('severity:01934f6a-0000-7000-8000-00000000f101:1');
+    expect(rev2.compareDocumentPosition(rev1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
