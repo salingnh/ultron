@@ -44,7 +44,7 @@ G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trườ
 ## G2 — MVP
 
 - [ ] G2.1 Khóa tool network/web/artifact và kiểm thử credential theo dependency dữ liệu; hoàn thiện manifest/input/parser/conformance, gồm tham số Nuclei chính thức/tùy chỉnh và xác minh credential. Chưa có schema thì chưa đăng ký tool.
-- [ ] G2.2 Finding/evidence, xác minh động bằng tool có đối chứng âm, correlation theo snapshot và severity do agent có lý do/nguồn; feed/asset thay đổi kích hoạt đánh giá lại và Telegram mà không cần chờ lần quét mới; JSON report.
+- [ ] G2.2 Finding/evidence, xác minh động bằng tool có đối chứng âm, correlation theo snapshot và severity do agent có lý do/nguồn; mọi finding được đánh giá trong ngân sách campaign (hết ngân sách thì UNRATED có lý do); feed/asset thay đổi kích hoạt đánh giá lại mà không cần chờ lần quét mới; JSON report + delta. Telegram chuyển sang G3 (quyết định chủ 2026-11-28).
 - [ ] G2.3 Pause/resume/cancel, recovery, budget/error, kiểm prompt injection và sandbox; kiểm backup/restore mức MVP.
 - [ ] RoE khung giờ cho phép (allowed time windows): hoãn khỏi G1 theo quyết định chủ 2026-11-24; làm lại cùng Clock port tiêm được + test đồng hồ cố định cả trong/ngoài cửa sổ.
 - [ ] G2.4 Đóng băng workload rồi soak 7 ngày/10.000 bước; chứng minh không trùng job/mất provenance, dependency đúng, UI báo lỗi/kết quả trung thực.
@@ -54,6 +54,7 @@ G0 đã gộp đủ contract (#26), kết luận spike (#13/#9/#7), môi trườ
 - [ ] G3.1 Giao source/secret, cloud/cluster, JS/binary theo tool đã chọn; khóa schema/reference cho repo, tài khoản cloud, cluster và artifact; mỗi tool có parser/conformance, raw/provenance và coverage limitations. So sánh ba provider secret trên fixture độc lập.
 - [ ] G3.2 Enricher theo domain/email/keyword, SpiderFoot-ng thụ động, tìm mã công khai và tra cứu rò rỉ domain tổ chức bằng API key người vận hành; quét lại chọn lọc theo delta/freshness, giữ lịch sử/source chain và đo số job tiết kiệm.
 - [ ] G3.3 Metadata tham chiếu PoC M19 có nguồn/thời điểm và trạng thái review, không tải/chạy mã.
+- [ ] G3.4 Email/keyword tới finding (chuyển từ cổng G2, quyết định chủ 2026-11-28) và cảnh báo Telegram cho thay đổi finding/feed của M24.
 
 ## G4 — vận hành quy mô
 

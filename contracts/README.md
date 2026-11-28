@@ -53,7 +53,7 @@ Một schema chỉ được coi là đã phát hành khi biết ai phát và ai 
 | [events/observation.changed.v2](events/observation.changed.v2.schema.json) | M27 | M23, M26 | |
 | [events/knowledge.delta.v2](events/knowledge.delta.v2.schema.json) | M23 | M02 (context bundle), M03 | |
 | [events/intel.revision.v2](events/intel.revision.v2.schema.json) | M18 | M20, M21 (đánh giá lại) | |
-| [events/finding.changed.v2](events/finding.changed.v2.schema.json) | M20\|M21\|M24 | M25 (alert), M26 (UI) | |
+| [events/finding.changed.v2](events/finding.changed.v2.schema.json) | M20\|M21\|M24\|M26 (chuyển trạng thái của operator) | M25 (alert), M26 (UI) | |
 | [events/artifact.ready.v2](events/artifact.ready.v2.schema.json) | M28 | M17 (chuỗi phân tích), M24 | |
 
 Quy tắc khi thêm schema: khai bên phát và bên nhận trong `description` và trong bảng này cùng PR. Schema chưa có bên nhận không được dùng làm căn cứ viết code. Đổi bên nhận của một event là thay đổi contract: consumer mới phải chịu được event cũ (delivery ít nhất một lần, thứ tự theo C04) và không được bỏ một version còn caller chưa chuyển.
