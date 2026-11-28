@@ -31,6 +31,16 @@ REPO = Path(__file__).resolve().parents[2]
 STATE_DIR = REPO / ".local"
 RUN_ENV = STATE_DIR / "run-local.env"
 RUNNERS = ("api", "mcp", "m02-worker", "m02-dispatcher", "m23", "m06")
+#: The module each local stack process runs, read back from /proc: a pid file outlives its process,
+#: and the pid number can be reused, so "the pid answers" alone is not "the component is running".
+RUNNER_MODULES = {
+    "api": "aegis.m26_api",
+    "mcp": "aegis.m05_registry.mcp",
+    "m02-worker": "aegis.m02_orchestrator.worker",
+    "m02-dispatcher": "aegis.m02_orchestrator.dispatcher",
+    "m23": "aegis.m23_graph",
+    "m06": "aegis.m06_runner",
+}
 LAB_ZONE = "lab.aegis.test"
 LAB_NETWORK = "aegis-lab-lab"
 ENUMERATE = "dns.enumerate_subdomains"
@@ -455,6 +465,51 @@ def rss_kb(pid: int) -> int:
     except OSError, ValueError, IndexError:
         return 0
     return 0
+
+
+@dataclass(frozen=True, slots=True)
+class ComponentState:
+    """One local stack process the soak must see alive, with or without a valid pid file."""
+
+    name: str
+    pid: int | None
+    command: str
+    #: Why this component is not the running stack process; None means it is one.
+    problem: str | None = None
+
+    @property
+    def alive(self) -> bool:
+        return self.problem is None
+
+
+def components() -> list[ComponentState]:
+    """Every `RUNNERS` entry, including the ones whose pid file is missing or stale.
+
+    `processes()` answers what the pid files claim; this answers what the soak needs to fail on: a
+    component that is not running, a pid file that a different process now owns, or one that was
+    never started (`WORKERS=0`) is reported as a problem instead of disappearing from the list.
+    """
+    found = {item.name: item for item in processes()}
+    states: list[ComponentState] = []
+    for name in RUNNERS:
+        item = found.get(name)
+        expected = RUNNER_MODULES[name]
+        if item is None:
+            states.append(ComponentState(name, None, "", "no pid file (was it started?)"))
+        elif not item.alive:
+            states.append(ComponentState(name, item.pid, item.command, f"pid {item.pid} is gone"))
+        elif expected not in item.command:
+            states.append(
+                ComponentState(
+                    name,
+                    item.pid,
+                    item.command,
+                    f"pid {item.pid} is not {expected} (stale pid file?)",
+                )
+            )
+        else:
+            states.append(ComponentState(name, item.pid, item.command))
+    return states
 
 
 def start_runner() -> int:

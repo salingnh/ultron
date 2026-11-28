@@ -107,6 +107,35 @@ record_dev_stack_identity() {
 
 container_exists() { podman container exists "$1" 2>/dev/null; }
 
+# --- host disk space (the evidence store stops accepting writes on a full filesystem) ---------
+# SeaweedFS marks every volume unwritable when the filesystem holding it has less free space than
+# `-minFreeSpace` (1%) and refuses to grow a volume; the S3 gateway then answers every PUT with
+# HTTP 500 InternalError and the job ends EVIDENCE_INCOMPLETE (g2-p0: 34 jobs, 34 campaigns
+# cancelled, host at 0.5-1.0% free). The stack's containers, volumes and logs live on the host, so
+# refuse to start on a filesystem that cannot hold them. A host that needs a smaller margin sets
+# AEGIS_DEV_MIN_FREE_PERCENT (.env or environment).
+MIN_FREE_PERCENT_DEFAULT=2
+
+podman_storage_root() {
+  podman info --format '{{.Store.GraphRoot}}' 2>/dev/null || true
+}
+
+disk_free_percent() {
+  # Free percent of the filesystem holding $1; empty when it cannot be measured.
+  df -Pk "$1" 2>/dev/null | awk 'NR == 2 && $2 > 0 { printf "%.2f", 100 * $4 / $2 }'
+}
+
+require_disk_space() {
+  local path=$1 measured need
+  need=${AEGIS_DEV_MIN_FREE_PERCENT:-$MIN_FREE_PERCENT_DEFAULT}
+  measured=$(disk_free_percent "$path")
+  [ -n "$measured" ] || die "cannot measure free space on $path (df failed)"
+  # awk exits 0 exactly when the filesystem is below the requirement.
+  if awk -v free="$measured" -v need="$need" 'BEGIN { if (free + 0 < need + 0) exit 0; exit 1 }'; then
+    die "only ${measured}% free on $path, below the ${need}% this stack needs: SeaweedFS answers every evidence write with HTTP 500 below 1% free (minFreeSpace), and a full disk also fails PostgreSQL, Neo4j and the logs. Free space first, or set AEGIS_DEV_MIN_FREE_PERCENT if ${need}% is the wrong margin for this host."
+  fi
+}
+
 # Runs a script of deploy/dev/temporal/ in a one-shot admin-tools container on the dev network.
 # It is piped in (no bind mount); the password travels in the environment, never in argv.
 temporal_admin() {
