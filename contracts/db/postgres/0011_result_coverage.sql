@@ -1,4 +1,4 @@
--- 0009_result_coverage.sql
+-- 0011_result_coverage.sql
 --
 -- G1.6 Decision A follow-up (item 83 trial): a scan that could not conclude a port must say so,
 -- and the campaign must not report `objective_met` as if the surface had been fully scanned.

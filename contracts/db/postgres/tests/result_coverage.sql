@@ -1,4 +1,4 @@
--- 0009_result_coverage.sql: the accepted envelope's coverage is stored with the result, and its
+-- 0011_result_coverage.sql: the accepted envelope's coverage is stored with the result, and its
 -- shape is enforced by the column itself.
 --
 -- The column is what M02 reads to decide whether a completed campaign may claim `objective_met`:
