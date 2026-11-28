@@ -1,0 +1,56 @@
+{
+  "verification_id": "01934f6a-0000-7000-8000-0000000007c1",
+  "finding_id": "01934f6a-0000-7000-8000-0000000007c2",
+  "campaign_id": "01934f6a-0000-7000-8000-0000000007c3",
+  "job_id": "01934f6a-0000-7000-8000-0000000007c4",
+  "check_id": "config.http.directory-listing",
+  "check_class": "E1",
+  "network_profile": "lab",
+  "check_pack_sha256": "ce06b8b25491ae6263ef1246d1fbe1f8f6f37ed011d2371e30d56d6dfc032687",
+  "target": {
+    "asset_id": "01934f6a-0000-7000-8000-0000000007c5",
+    "canonical_key": "app:http://10.114.59.20:8000",
+    "address": "10.114.59.20",
+    "port": 8000
+  },
+  "controls": [
+    {
+      "role": "patched_twin",
+      "address": "10.114.59.20",
+      "port": 8001,
+      "asset_id": null
+    },
+    {
+      "role": "benign",
+      "address": "10.114.59.20",
+      "port": 8002,
+      "asset_id": null
+    }
+  ],
+  "outcome": "OBSERVED",
+  "matched": {
+    "positive": true,
+    "control_a": false,
+    "control_b": false,
+    "discriminating": false,
+    "reason": "không được phép: OBSERVED chỉ dành cho E1 trên internet"
+  },
+  "requests_sent": 3,
+  "request_cap": 3,
+  "evidence": {
+    "positive": "01934f6a-0000-7000-8000-0000000007b1",
+    "control_a": "01934f6a-0000-7000-8000-0000000007b2",
+    "control_b": "01934f6a-0000-7000-8000-0000000007b3"
+  },
+  "transition_seq": null,
+  "requested_by": {
+    "kind": "operator",
+    "id": "opaque-principal-7f3c"
+  },
+  "decided_by": {
+    "kind": "module",
+    "id": "M21"
+  },
+  "started_at": "2026-11-28T09:05:00Z",
+  "finished_at": "2026-11-28T09:05:02Z"
+}

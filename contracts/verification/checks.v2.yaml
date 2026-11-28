@@ -1,0 +1,77 @@
+# Pack check xác minh động đã duyệt (G2-B). Đây là nguồn duy nhất của danh sách check: id là enum
+# của verification-request.v2, và `scripts/verification_pack.py` sinh hai pack triển khai từ tệp này
+# (`deploy/lab/verify` đủ check + template; `deploy/internet/verify` chỉ E1, không có template).
+#
+# Không có đầu vào tự do: người vận hành chỉ gửi check_id (enum dưới đây) và expected_seq. Target là
+# asset của finding do server phân giải; đối chứng và canary là dữ liệu triển khai; giá trị kỳ vọng
+# nằm ở M21, không nằm trong request hay template. Thêm check = sửa tệp này + enum + template (nếu
+# L1/C1) trong cùng PR đã review; không có đường nào để người vận hành tự khai template/URL/payload.
+#
+# class: E1 = cấu hình (chạy được lab và internet; internet chỉ OBSERVED vì không có twin),
+#        L1 = hành vi (chỉ lab, cần patched twin + benign), C1 = credential (V7, chỉ lab).
+# labOnly = class != E1. M05 chỉ ký check labOnly khi network_profile đã ký của campaign là `lab`;
+# M06 kiểm lại cùng điều kiện trước khi tạo container (fail closed, không chạy gì).
+#
+# Đối chứng âm là bắt buộc với mọi check: mỗi lần chạy lab có đúng một positive, một patched twin
+# (control A) và một benign (control B). Với check L1, benign là đường dẫn không tồn tại trên chính
+# positive (template gửi cả hai path tới từng địa chỉ), nên `requests.cap` của L1 là 2 path × 2 địa
+# chỉ = 4. Với check E1, benign là một endpoint riêng, nên cap là perTarget × 3 địa chỉ.
+#
+# requests.perTarget = số request mỗi địa chỉ nhận; requests.cap = trần cứng của cả lần chạy (mọi
+# địa chỉ), M21 từ chối lần chạy vượt trần. Internet E1 không có đối chứng nên chỉ gửi 1 request,
+# vẫn dưới trần lab.
+#
+# template/templateSha256 chỉ có ở check L1/C1: tệp nằm trong `deploy/lab/verify/templates/`, băm
+# ghim đúng byte đã review; M06 so lại từng tệp và băm cả pack trước khi chạy. Check E1 dùng
+# `config-verify` (code đã review trong image pin), không có template.
+apiVersion: aegis.io/v2
+kind: VerificationCheckPack
+checks:
+  - id: cve-2021-41773-traversal
+    title: httpd 2.4.49 mod_alias đọc canary ngoài document root (CVE-2021-41773)
+    class: L1
+    labOnly: true
+    provider: nuclei-verify
+    appliesTo: {findingRule: "cve:CVE-2021-41773"}
+    template: cve-2021-41773-traversal.yaml
+    templateSha256: 84dc1a80d0842076eb4782610e4c304adfd2db1b6f2d3785872b617854109dea
+    targets: {positive: 1, controlPatchedTwin: 1, controlBenign: 1}
+    requests: {perTarget: 2, cap: 4}
+    oracle: canary-extract
+  - id: config.tls.certificate
+    title: Chứng chỉ TLS hết hạn hoặc tự ký
+    class: E1
+    labOnly: false
+    provider: config-verify
+    appliesTo: {findingRule: "config:tls.certificate"}
+    expected: {kind: certificate}
+    targets: {positive: 1, controlPatchedTwin: 1, controlBenign: 1}
+    requests: {perTarget: 1, cap: 3}
+    oracle: certificate-property
+  - id: config.tls.protocol
+    title: Chấp nhận giao thức TLS lỗi thời (TLS 1.0/1.1)
+    class: E1
+    labOnly: false
+    provider: config-verify
+    appliesTo: {findingRule: "config:tls.deprecated-protocol"}
+    targets: {positive: 1, controlPatchedTwin: 1, controlBenign: 1}
+    requests: {perTarget: 4, cap: 12}
+    oracle: tls-version-list
+  - id: config.http.version-header
+    title: Lộ phiên bản sản phẩm qua header HTTP
+    class: E1
+    labOnly: false
+    provider: config-verify
+    appliesTo: {findingRule: "config:http.version-disclosure"}
+    targets: {positive: 1, controlPatchedTwin: 1, controlBenign: 1}
+    requests: {perTarget: 1, cap: 3}
+    oracle: product-version
+  - id: config.http.directory-listing
+    title: Liệt kê thư mục HTTP lộ tên tệp
+    class: E1
+    labOnly: false
+    provider: config-verify
+    appliesTo: {findingRule: "config:http.directory-listing"}
+    targets: {positive: 1, controlPatchedTwin: 1, controlBenign: 1}
+    requests: {perTarget: 1, cap: 3}
+    oracle: listing-name

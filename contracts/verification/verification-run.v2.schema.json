@@ -1,0 +1,383 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/verification/verification-run.v2.schema.json",
+  "title": "Lần xác minh động v2 (đọc)",
+  "description": "Response của GET /api/v2/findings/{id}/verifications: read model của bảng append-only aegis.verification_run. Mỗi hàng ứng với một job verify.check đã COMPLETED và envelope được nhận (một job FAILED/CANCELLED không có hàng; trạng thái của nó là job). outcome là quyết định của M21, không phải trạng thái job: VERIFIED chỉ ở lab với positive và cả hai đối chứng âm (patched twin + benign) trả lời và không khớp; OBSERVED là E1 trên internet (một target, không twin, không đổi trạng thái finding); NOT_REPRODUCED không phải FIXED và không phải FALSE_POSITIVE. Không có nội dung response thô hay giá trị canary ở đây: chỉ băm và tham chiếu evidence.",
+  "type": "object",
+  "required": [
+    "verification_id",
+    "finding_id",
+    "campaign_id",
+    "job_id",
+    "check_id",
+    "check_class",
+    "network_profile",
+    "check_pack_sha256",
+    "target",
+    "controls",
+    "outcome",
+    "matched",
+    "requests_sent",
+    "request_cap",
+    "evidence",
+    "transition_seq",
+    "requested_by",
+    "decided_by",
+    "started_at",
+    "finished_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "verification_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "finding_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "campaign_id": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "job_id": {
+      "description": "Job verify.check đã sinh ra hàng này; duy nhất, nên replay theo job_id trả lại hàng cũ.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+    },
+    "check_id": {
+      "description": "ID check đã chạy, lấy từ registry contracts/verification/checks.v2.yaml (cùng enum với verification-request.v2).",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "check_class": {
+      "description": "E1 = cấu hình, L1 = hành vi, C1 = credential (V7). Chỉ E1 chạy được trên internet.",
+      "type": "string",
+      "enum": [
+        "E1",
+        "L1",
+        "C1"
+      ]
+    },
+    "network_profile": {
+      "description": "network_profile đã ký của campaign lúc chạy. L1/C1 chỉ có thể ở lab; E1 ở lab có đối chứng, ở internet chỉ OBSERVED.",
+      "type": "string",
+      "enum": [
+        "lab",
+        "internet"
+      ]
+    },
+    "check_pack_sha256": {
+      "description": "Băm nội dung của pack đã mount (registry + template, thứ tự đường dẫn đã sắp); khớp profile và ApprovedTask đã ký.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+    },
+    "target": {
+      "description": "Asset của finding, do server phân giải từ finding/asset_id; không có target nào đến từ request body.",
+      "$ref": "#/$defs/RunTarget"
+    },
+    "controls": {
+      "description": "Đối chứng âm đã cấu hình cho lần chạy (lab: patched twin + benign; internet E1: rỗng). Cờ khớp của từng đối chứng nằm ở matched.",
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/Control"
+      }
+    },
+    "canary": {
+      "description": "Băm của canary dùng cho lần chạy; không bao giờ có giá trị canary ở read model. Vắng khi check không cần canary (E1 certificate/protocol/header).",
+      "$ref": "#/$defs/Canary"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "NOT_REPRODUCED",
+        "INCONCLUSIVE",
+        "OBSERVED"
+      ]
+    },
+    "matched": {
+      "description": "Tóm tắt đầu vào của bảng quyết định M21, không có body: positive/control_a/control_b là kết quả khớp của từng vai; discriminating = lần chạy có đủ đối chứng để phân biệt.",
+      "$ref": "#/$defs/Matched"
+    },
+    "requests_sent": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "request_cap": {
+      "description": "Trần cứng của check trong registry. M21 từ chối một lần chạy vượt trần (INCONCLUSIVE).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "evidence": {
+      "$ref": "#/$defs/EvidenceRefs"
+    },
+    "transition_seq": {
+      "description": "transition_seq của finding sau lần chạy khi VERIFIED; null khi không chuyển trạng thái (OBSERVED/NOT_REPRODUCED/INCONCLUSIVE).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "requested_by": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/RequestedBy"
+    },
+    "decided_by": {
+      "description": "Bên quyết định; hiện chỉ M21 ghi hàng verification_run.",
+      "$ref": "../common/ids.v2.schema.json#/$defs/Actor"
+    },
+    "started_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    },
+    "finished_at": {
+      "$ref": "../common/ids.v2.schema.json#/$defs/Timestamp"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "check_class": {
+            "not": {
+              "const": "E1"
+            }
+          }
+        },
+        "required": [
+          "check_class"
+        ]
+      },
+      "then": {
+        "properties": {
+          "network_profile": {
+            "const": "lab"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "VERIFIED"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "network_profile": {
+            "const": "lab"
+          },
+          "transition_seq": {
+            "type": "integer"
+          },
+          "matched": {
+            "properties": {
+              "control_a": {
+                "const": false
+              },
+              "control_b": {
+                "const": false
+              },
+              "discriminating": {
+                "const": true
+              }
+            }
+          },
+          "evidence": {
+            "properties": {
+              "control_a": {
+                "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+              },
+              "control_b": {
+                "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "not": {
+              "const": "VERIFIED"
+            }
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "transition_seq": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "OBSERVED"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "network_profile": {
+            "const": "internet"
+          },
+          "matched": {
+            "properties": {
+              "discriminating": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "NullableId": {
+      "anyOf": [
+        {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "RunTarget": {
+      "type": "object",
+      "required": [
+        "asset_id",
+        "canonical_key",
+        "address",
+        "port"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "canonical_key": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/CanonicalKey"
+        },
+        "address": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/IPAddress"
+        },
+        "port": {
+          "$ref": "#/$defs/Port"
+        }
+      }
+    },
+    "Control": {
+      "type": "object",
+      "required": [
+        "role",
+        "address",
+        "port"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "patched_twin",
+            "benign"
+          ]
+        },
+        "address": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/IPAddress"
+        },
+        "port": {
+          "$ref": "#/$defs/Port"
+        },
+        "asset_id": {
+          "description": "Asset của đối chứng khi nó đã có trong graph; null khi đối chứng là endpoint lab chưa thành asset.",
+          "$ref": "#/$defs/NullableId"
+        }
+      }
+    },
+    "Canary": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "sha256": {
+          "description": "Băm nội dung canary (L1 đọc ra, E1 listing đối chiếu tên).",
+          "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+        },
+        "name_sha256": {
+          "description": "Băm tên tệp canary cho oracle liệt kê thư mục.",
+          "$ref": "../common/ids.v2.schema.json#/$defs/Sha256"
+        }
+      }
+    },
+    "Matched": {
+      "type": "object",
+      "required": [
+        "positive",
+        "control_a",
+        "control_b",
+        "discriminating",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "positive": {
+          "type": "boolean"
+        },
+        "control_a": {
+          "type": "boolean"
+        },
+        "control_b": {
+          "type": "boolean"
+        },
+        "discriminating": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "EvidenceRefs": {
+      "type": "object",
+      "required": [
+        "positive",
+        "control_a",
+        "control_b"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "positive": {
+          "$ref": "../common/ids.v2.schema.json#/$defs/Id"
+        },
+        "control_a": {
+          "$ref": "#/$defs/NullableId"
+        },
+        "control_b": {
+          "$ref": "#/$defs/NullableId"
+        }
+      }
+    }
+  }
+}

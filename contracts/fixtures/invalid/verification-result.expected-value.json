@@ -1,0 +1,25 @@
+{
+  "schema_version": "2.0",
+  "check_id": "cve-2021-41773-traversal",
+  "check_pack_sha256": "ce06b8b25491ae6263ef1246d1fbe1f8f6f37ed011d2371e30d56d6dfc032687",
+  "tool": {
+    "name": "nuclei",
+    "version": "v3.11.1",
+    "image_digest": "sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb"
+  },
+  "targets": [
+    {
+      "role": "positive",
+      "address": "10.114.59.31",
+      "port": 80,
+      "answered": true,
+      "requests": []
+    }
+  ],
+  "requests_sent": 0,
+  "request_cap": 4,
+  "errors": [],
+  "expected": {
+    "sha256": "93d0b487ca2b72157b7b8ef025556a20a0ecfe0ffe70329c42075f748b412530"
+  }
+}

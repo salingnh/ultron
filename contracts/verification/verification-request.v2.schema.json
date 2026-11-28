@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/verification/verification-request.v2.schema.json",
+  "title": "Yêu cầu xác minh động v2",
+  "description": "Body của POST /api/v2/findings/{id}/verifications, bắt buộc kèm Idempotency-Key (cùng bảng idempotency_record và ngữ nghĩa replay như POST /api/v2/findings/{id}/transitions). Chỉ có check_id (enum của contracts/verification/checks.v2.yaml) và expected_seq: không có target, URL, port, payload, template hay tham số brute-force nào, nên không đầu vào tự do nào của người gọi tới được template, URL hay argv. Target là asset của finding do server phân giải; đối chứng và canary là dữ liệu triển khai; giá trị kỳ vọng nằm ở M21. check_id ngoài enum → 400 INPUT_INVALID; expected_seq khác transition_seq hiện tại của finding → 409 INPUT_INVALID với field=/expected_seq; check không được duyệt hoặc labOnly trên campaign internet → 403 POLICY_DENIED.",
+  "type": "object",
+  "required": [
+    "check_id",
+    "expected_seq"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "check_id": {
+      "description": "ID check đã duyệt trong pack. Đây là enum của hợp đồng: thêm check là sửa pack + enum trong cùng PR đã review, không phải tham số người vận hành; người gọi không chọn template, target hay payload.",
+      "type": "string",
+      "enum": [
+        "cve-2021-41773-traversal",
+        "config.tls.certificate",
+        "config.tls.protocol",
+        "config.http.version-header",
+        "config.http.directory-listing"
+      ]
+    },
+    "expected_seq": {
+      "description": "transition_seq hiện tại của finding mà người gọi đã thấy; lệch là 409 INPUT_INVALID (field=/expected_seq), không ghi gì.",
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
