@@ -20,6 +20,11 @@ import type {
   CreateCampaignResponse,
   UpdateCampaignPolicyRequest,
   UpdateCampaignPolicyResponse,
+  Finding,
+  FindingListResponse,
+  ListFindingsParams,
+  FindingHistoryResponse,
+  TransitionFindingRequest,
 } from './types';
 import { mockHandlers } from '../mock/handlers';
 import {
@@ -428,6 +433,48 @@ export const apiClient = {
     if (this.isMock) return mockHandlers.listCapabilities(campaignId);
     const query = campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : '';
     return request<CapabilitiesResponse>(`/capabilities${query}`);
+  },
+
+  async listFindings(params?: ListFindingsParams): Promise<FindingListResponse> {
+    if (this.isMock) return mockHandlers.listFindings(params);
+    const query = new URLSearchParams();
+    if (params?.campaign_id) query.set('campaign_id', params.campaign_id);
+    if (params?.asset_id) query.set('asset_id', params.asset_id);
+    if (params?.status && params.status.length > 0) query.set('status', params.status.join(','));
+    if (params?.severity && params.severity.length > 0) query.set('severity', params.severity.join(','));
+    if (params?.category) query.set('category', params.category);
+    if (params?.vulnerability_id) query.set('vulnerability_id', params.vulnerability_id);
+    if (params?.kev !== undefined) query.set('kev', String(params.kev));
+    if (params?.changed_since) query.set('changed_since', params.changed_since);
+    if (params?.format) query.set('format', params.format);
+    if (params?.cursor) query.set('cursor', params.cursor);
+    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return request<FindingListResponse>(`/findings${qs}`);
+  },
+
+  async getFinding(findingId: string): Promise<Finding> {
+    if (this.isMock) return mockHandlers.getFinding(findingId);
+    return request<Finding>(`/findings/${encodeURIComponent(findingId)}`);
+  },
+
+  async getFindingHistory(findingId: string): Promise<FindingHistoryResponse> {
+    if (this.isMock) return mockHandlers.getFindingHistory(findingId);
+    return request<FindingHistoryResponse>(`/findings/${encodeURIComponent(findingId)}/history`);
+  },
+
+  async transitionFinding(
+    findingId: string,
+    payload: TransitionFindingRequest,
+    options?: { idempotencyKey?: string }
+  ): Promise<Finding> {
+    const key = options?.idempotencyKey || generateIdempotencyKey();
+    if (this.isMock) return mockHandlers.transitionFinding(findingId, payload, key);
+    return request<Finding>(`/findings/${encodeURIComponent(findingId)}/transitions`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify(payload),
+    });
   },
 
   async getProvenance(

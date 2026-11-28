@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { StatusChip } from '../components/StatusChip';
 import { CopyableId } from '../components/CopyableId';
@@ -16,6 +16,8 @@ import { CampaignCreateScreen } from '../screens/CampaignCreateScreen';
 import { CampaignDetailScreen } from '../screens/CampaignDetailScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
 import { JobTableFlowScreen } from '../screens/JobTableFlowScreen';
+import { FindingsScreen } from '../screens/FindingsScreen';
+import { FindingDetailPanel } from '../components/FindingDetailPanel';
 import { ApiError, apiClient, getOperatorToken, setOperatorToken } from '../api/client';
 import type { SSEOptions } from '../api/sse';
 import type { Campaign } from '../api/types';
@@ -1199,5 +1201,94 @@ describe('Ultron UI Reusable Components', () => {
     expect(idxZero).toBeGreaterThan(-1);
     expect(idxNull).toBeGreaterThan(idxZero);
     unmount();
+  });
+
+  it('renders FindingsScreen with filters, finding detail, UNRATED fallback, SHA-256 download, and no-longer-seen timeline', async () => {
+    resetMockData();
+    render(
+      <MemoryRouter initialEntries={['/findings']}>
+        <Routes>
+          <Route path="/findings" element={<FindingsScreen />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Apache HTTP Server 2.4.49 Path Traversal (CVE-2021-41773)')).toBeInTheDocument();
+
+    // Open detail of first finding (CRITICAL + CVE-2021-41773 + seen=false run)
+    const detailButtons = screen.getAllByRole('button', { name: /Chi tiết/ });
+    fireEvent.click(detailButtons[0]);
+
+    const detailPanel = await screen.findByLabelText('Bảng chi tiết Finding');
+    expect(detailPanel).toBeInTheDocument();
+    expect(await screen.findByText('Không còn thấy (no longer seen)')).toBeInTheDocument();
+    expect(detailPanel).toHaveTextContent('e00400000000000000000000000000000000000000000000000000000000e004');
+    expect(screen.getByRole('link', { name: /Tải bằng chứng/ })).toHaveAttribute('href', expect.stringContaining('https://s3.lab.local/'));
+    expect(detailPanel).toHaveTextContent('seq hiện tại: #1');
+
+    // Filter by severity=UNRATED and inspect UNRATED fallback finding
+    const severitySelect = screen.getByLabelText('Lọc theo mức nghiêm trọng');
+    fireEvent.change(severitySelect, { target: { value: 'UNRATED' } });
+    const findingsTable = await screen.findByRole('table', { name: 'Bảng danh sách findings' });
+    expect(await within(findingsTable).findByText(/Nginx 1\.18\.0/)).toBeInTheDocument();
+    expect(within(findingsTable).queryByText(/Apache HTTP Server 2\.4\.49/)).not.toBeInTheDocument();
+
+    const unratedDetailBtn = within(findingsTable).getAllByRole('button', { name: /Chi tiết/ })[0];
+    fireEvent.click(unratedDetailBtn);
+    expect(await screen.findByText(/UNRATED — Fallback do đánh giá tự động thất bại/)).toBeInTheDocument();
+    expect(screen.getByText('RATE_LIMITED')).toBeInTheDocument();
+    expect(screen.getByText(/Tín hiệu thô đối chiếu/)).toBeInTheDocument();
+  });
+
+  it('submits operator transition with reason and handles 409 stale expected_seq cleanly', async () => {
+    resetMockData();
+    const finding = await apiClient.getFinding('01934f6a-0000-7000-8000-00000000f101');
+    const history = await apiClient.getFindingHistory('01934f6a-0000-7000-8000-00000000f101');
+    const onRefreshFinding = vi.fn();
+    const onTransitionSuccess = vi.fn();
+
+    // Simulate concurrent transition on backend while UI still holds seq=1
+    await apiClient.transitionFinding(
+      finding.finding_id,
+      { to: 'ACCEPTED_RISK', reason: 'Concurrent update', expected_seq: 1 },
+      { idempotencyKey: 'concurrent-key-1' }
+    );
+
+    render(
+      <MemoryRouter>
+        <FindingDetailPanel
+          finding={finding}
+          history={history}
+          historyLoading={false}
+          historyError={null}
+          provenance={null}
+          provenanceLoading={false}
+          provenanceError={null}
+          onRetryHistory={() => {}}
+          onRefreshFinding={onRefreshFinding}
+          onTransitionSuccess={onTransitionSuccess}
+          onClose={() => {}}
+        />
+      </MemoryRouter>
+    );
+
+    // Validation error on short reason
+    const reasonInput = screen.getByLabelText(/Lý do chuyển trạng thái/);
+    fireEvent.change(reasonInput, { target: { value: 'ab' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chuyển trạng thái' }));
+    expect(
+      await screen.findByText('Lý do chuyển trạng thái là bắt buộc (tối thiểu 3 ký tự).')
+    ).toBeInTheDocument();
+
+    // Valid reason triggers 409 conflict because UI still has stale expected_seq=1
+    fireEvent.change(reasonInput, { target: { value: 'Da kiem tra va xac nhan bao nham' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chuyển trạng thái' }));
+    expect(
+      await screen.findByText(/Xung đột phiên bản trạng thái \(HTTP 409 — expected_seq đã cũ\)/)
+    ).toBeInTheDocument();
+    // Preserves operator's typed reason and offers reload button
+    expect((reasonInput as HTMLTextAreaElement).value).toBe('Da kiem tra va xac nhan bao nham');
+    fireEvent.click(screen.getByRole('button', { name: /Tải lại trạng thái & seq mới nhất/ }));
+    expect(onRefreshFinding).toHaveBeenCalledTimes(1);
   });
 });

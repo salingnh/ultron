@@ -445,4 +445,104 @@ describe('ApiClient (Mock & Contract Operations)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('lists findings with status/severity/campaign/kev filters and cursor pagination', async () => {
+    const page1 = await apiClient.listFindings({ limit: 2 });
+    expect(page1.items).toHaveLength(2);
+    expect(page1.next_cursor).toBeTruthy();
+
+    const page2 = await apiClient.listFindings({ cursor: page1.next_cursor, limit: 10 });
+    expect(page2.items.length).toBeGreaterThanOrEqual(4);
+    expect(page2.items.some((f) => f.finding_id === page1.items[0].finding_id)).toBe(false);
+
+    const byStatus = await apiClient.listFindings({ status: ['CANDIDATE'], severity: ['UNRATED'] });
+    expect(byStatus.items.length).toBeGreaterThan(0);
+    expect(byStatus.items.every((f) => f.status === 'CANDIDATE' && f.severity === 'UNRATED')).toBe(true);
+
+    const byCampaignKev = await apiClient.listFindings({
+      campaign_id: '01934f6a-0000-7000-8000-000000000001',
+      kev: true,
+    });
+    expect(byCampaignKev.items).toHaveLength(1);
+    expect(byCampaignKev.items[0].vulnerability_ids).toContain('CVE-2021-41773');
+  });
+
+  it('serializes OpenAPI form explode=false array params and sends Idempotency-Key on transitionFinding in real mode', async () => {
+    setOperatorToken('op-real-token-findings');
+    apiClient.setMock(false);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            finding_id: '01934f6a-0000-7000-8000-00000000f101',
+            fingerprint: 'a'.repeat(64),
+            asset_id: '01934f6a-0000-7000-8000-0000000000f6',
+            asset_key: 'service:203.0.113.10:80/tcp',
+            rule_id: 'r1',
+            title: 'Test finding',
+            status: 'FALSE_POSITIVE',
+            severity: 'CRITICAL',
+            first_seen: '2026-11-20T08:00:00Z',
+            last_seen: '2026-11-20T09:00:00Z',
+            evidence: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+    try {
+      await apiClient.listFindings({
+        campaign_id: '01934f6a-0000-7000-8000-000000000001',
+        status: ['CANDIDATE', 'CORROBORATED'],
+        severity: ['CRITICAL', 'HIGH'],
+      });
+      const [listUrl] = fetchSpy.mock.calls[0];
+      expect(String(listUrl)).toContain('status=CANDIDATE%2CCORROBORATED');
+      expect(String(listUrl)).toContain('severity=CRITICAL%2CHIGH');
+
+      await apiClient.transitionFinding(
+        '01934f6a-0000-7000-8000-00000000f101',
+        { to: 'FALSE_POSITIVE', reason: 'Verified safe', expected_seq: 1 },
+        { idempotencyKey: 'finding-trans-key-1' }
+      );
+      const [postUrl, init] = fetchSpy.mock.calls[1];
+      expect(String(postUrl)).toContain('/findings/01934f6a-0000-7000-8000-00000000f101/transitions');
+      const headers = init?.headers as Headers;
+      expect(headers.get('Idempotency-Key')).toBe('finding-trans-key-1');
+      expect(headers.get('Authorization')).toBe('Bearer op-real-token-findings');
+    } finally {
+      fetchSpy.mockRestore();
+      apiClient.setMock(null);
+    }
+  });
+
+  it('retrieves finding history with no-longer-seen run and enforces expected_seq on transitionFinding', async () => {
+    const findingId = '01934f6a-0000-7000-8000-00000000f101';
+    const history = await apiClient.getFindingHistory(findingId);
+    expect(history.runs.some((r) => r.seen === false)).toBe(true);
+    expect(history.transitions[0].seq).toBe(1);
+
+    const updated = await apiClient.transitionFinding(
+      findingId,
+      { to: 'ACCEPTED_RISK', reason: 'Lab isolation accepted', expected_seq: 1 },
+      { idempotencyKey: 'finding-idemp-seq-1' }
+    );
+    expect(updated.status).toBe('ACCEPTED_RISK');
+
+    // Stale expected_seq=1 after transition incremented seq to 2 -> 409
+    await expect(
+      apiClient.transitionFinding(
+        findingId,
+        { to: 'CANDIDATE', reason: 'Reopen with stale seq', expected_seq: 1 },
+        { idempotencyKey: 'finding-idemp-seq-2' }
+      )
+    ).rejects.toMatchObject({ status: 409 });
+  });
 });

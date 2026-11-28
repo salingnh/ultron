@@ -8,6 +8,7 @@ import { JobTableFlowScreen } from './screens/JobTableFlowScreen';
 import { AssetGraphScreen } from './screens/AssetGraphScreen';
 import { ToolCatalogueScreen } from './screens/ToolCatalogueScreen';
 import { ActivityScreen } from './screens/ActivityScreen';
+import { FindingsScreen } from './screens/FindingsScreen';
 
 export const App: React.FC = () => {
   return (
@@ -20,6 +21,8 @@ export const App: React.FC = () => {
         <Route path="jobs" element={<JobTableFlowScreen />} />
         <Route path="activity" element={<ActivityScreen />} />
         <Route path="assets" element={<AssetGraphScreen />} />
+        <Route path="findings" element={<FindingsScreen />} />
+        <Route path="findings/:findingId" element={<FindingsScreen />} />
         <Route path="tools" element={<ToolCatalogueScreen />} />
         <Route path="*" element={<Navigate to="/campaigns" replace />} />
       </Route>

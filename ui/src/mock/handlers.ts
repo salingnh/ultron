@@ -10,6 +10,9 @@ import {
   mockCapabilities,
   mockCampaignActivity,
   mockProvenanceMap,
+  mockFindings,
+  mockFindingCampaignMap,
+  mockFindingHistoryMap,
 } from './fixtures';
 import type {
   Campaign,
@@ -29,6 +32,12 @@ import type {
   UpdateCampaignPolicyRequest,
   UpdateCampaignPolicyResponse,
   AppError,
+  Finding,
+  FindingListResponse,
+  ListFindingsParams,
+  FindingHistoryResponse,
+  TransitionFindingRequest,
+  FindingStatus,
 } from '../api/types';
 import { ApiError } from '../api/client';
 import { buildBudgetFromPolicy } from '../utils/campaignStats';
@@ -37,6 +46,10 @@ import { buildBudgetFromPolicy } from '../utils/campaignStats';
 let campaigns: Campaign[] = JSON.parse(JSON.stringify(mockCampaigns));
 let jobs: ScanJob[] = JSON.parse(JSON.stringify(mockJobs));
 const flow: CampaignFlow = JSON.parse(JSON.stringify(mockCampaignFlow));
+let findings: Finding[] = JSON.parse(JSON.stringify(mockFindings));
+let findingHistoryMap: Record<string, FindingHistoryResponse> = JSON.parse(
+  JSON.stringify(mockFindingHistoryMap)
+);
 let policySeq = 10;
 let campaignSeq = 10;
 const idempotencyStore = new Map<string, { fingerprint: string; response: unknown }>();
@@ -74,10 +87,22 @@ function makeError(
 export function resetMockData() {
   campaigns = JSON.parse(JSON.stringify(mockCampaigns));
   jobs = JSON.parse(JSON.stringify(mockJobs));
+  findings = JSON.parse(JSON.stringify(mockFindings));
+  findingHistoryMap = JSON.parse(JSON.stringify(mockFindingHistoryMap));
   policySeq = 10;
   campaignSeq = 10;
   idempotencyStore.clear();
 }
+
+const ALLOWED_OPERATOR_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
+  CANDIDATE: ['FALSE_POSITIVE', 'ACCEPTED_RISK'],
+  CORROBORATED: ['FALSE_POSITIVE', 'ACCEPTED_RISK'],
+  VERIFIED: ['FALSE_POSITIVE', 'ACCEPTED_RISK'],
+  REGRESSED: ['FALSE_POSITIVE', 'ACCEPTED_RISK'],
+  FALSE_POSITIVE: ['CANDIDATE'],
+  ACCEPTED_RISK: ['CANDIDATE'],
+  FIXED: [],
+};
 
 export const mockHandlers = {
   async listCampaigns(params?: { cursor?: string; limit?: number; status?: CampaignStatus }) {
@@ -412,5 +437,157 @@ export const mockHandlers = {
 
   async getProvenance(targetId: string): Promise<ProvenanceDetail | null> {
     return mockProvenanceMap[targetId] || null;
+  },
+
+  async listFindings(params?: ListFindingsParams): Promise<FindingListResponse> {
+    let result = [...findings];
+    if (params?.campaign_id) {
+      result = result.filter((f) => mockFindingCampaignMap[f.finding_id] === params.campaign_id);
+    }
+    if (params?.asset_id) {
+      result = result.filter((f) => f.asset_id === params.asset_id);
+    }
+    if (params?.status && params.status.length > 0) {
+      const allowed = new Set(params.status);
+      result = result.filter((f) => allowed.has(f.status));
+    }
+    if (params?.severity && params.severity.length > 0) {
+      const allowed = new Set(params.severity);
+      result = result.filter((f) => allowed.has(f.severity));
+    }
+    if (params?.category) {
+      const cat = params.category.trim().toLowerCase();
+      result = result.filter((f) => (f.category || '').toLowerCase() === cat);
+    }
+    if (params?.vulnerability_id) {
+      const needle = params.vulnerability_id.trim().toLowerCase();
+      result = result.filter(
+        (f) =>
+          f.vulnerability_ids?.some((v) => v.toLowerCase().includes(needle)) ||
+          f.title.toLowerCase().includes(needle) ||
+          f.rule_id.toLowerCase().includes(needle)
+      );
+    }
+    if (params?.kev !== undefined) {
+      result = result.filter(
+        (f) => Boolean(f.severity_assessment?.inputs?.kev?.listed) === params.kev
+      );
+    }
+    if (params?.changed_since) {
+      const sinceMs = Date.parse(params.changed_since);
+      if (Number.isFinite(sinceMs)) {
+        result = result.filter((f) => Date.parse(f.last_seen) >= sinceMs);
+      }
+    }
+
+    const offset = params?.cursor ? Math.max(0, Number(params.cursor) || 0) : 0;
+    const limit = params?.limit ?? 20;
+    const pageItems = result.slice(offset, offset + limit);
+    const hasMore = offset + limit < result.length;
+
+    return {
+      items: JSON.parse(JSON.stringify(pageItems)) as Finding[],
+      ...(hasMore ? { next_cursor: String(offset + limit) } : {}),
+    };
+  },
+
+  async getFinding(findingId: string): Promise<Finding> {
+    const found = findings.find((f) => f.finding_id === findingId);
+    if (!found) {
+      throw makeError(404, 'INPUT_INVALID', `finding ${findingId} does not exist`, 'FIX_INPUT');
+    }
+    return JSON.parse(JSON.stringify(found)) as Finding;
+  },
+
+  async getFindingHistory(findingId: string): Promise<FindingHistoryResponse> {
+    const found = findings.find((f) => f.finding_id === findingId);
+    if (!found) {
+      throw makeError(404, 'INPUT_INVALID', `finding ${findingId} does not exist`, 'FIX_INPUT');
+    }
+    const history = findingHistoryMap[findingId];
+    if (!history) {
+      return { runs: [], transitions: [], assessments: [] };
+    }
+    return JSON.parse(JSON.stringify(history)) as FindingHistoryResponse;
+  },
+
+  async transitionFinding(
+    findingId: string,
+    payload: TransitionFindingRequest,
+    idempotencyKey?: string
+  ): Promise<Finding> {
+    const found = findings.find((f) => f.finding_id === findingId);
+    if (!found) {
+      throw makeError(404, 'INPUT_INVALID', `finding ${findingId} does not exist`, 'FIX_INPUT');
+    }
+    if (!payload.reason || payload.reason.trim().length < 3) {
+      throw makeError(
+        400,
+        'INPUT_INVALID',
+        'body.reason is required and must be at least 3 characters',
+        'FIX_INPUT',
+        '/reason'
+      );
+    }
+
+    const key = idempotencyKey || `mock-transition-${Date.now()}`;
+    const storeKey = `POST /findings/${findingId}/transitions|${key}`;
+    const fingerprint = stableStringify(payload);
+    const existing = idempotencyStore.get(storeKey);
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) {
+        throw makeError(
+          409,
+          'IDEMPOTENCY_CONFLICT',
+          `Idempotency-Key was already used with a different body (POST /findings/${findingId}/transitions)`,
+          'NONE'
+        );
+      }
+      return existing.response as Finding;
+    }
+
+    const history = findingHistoryMap[findingId] || { runs: [], transitions: [], assessments: [] };
+    findingHistoryMap[findingId] = history;
+    const currentSeq = history.transitions.reduce((max, t) => Math.max(max, t.seq), 0);
+    if (payload.expected_seq !== currentSeq) {
+      throw makeError(
+        409,
+        'INPUT_INVALID',
+        `expected_seq ${payload.expected_seq} is stale; current transition seq is ${currentSeq}`,
+        'RETRY',
+        '/expected_seq'
+      );
+    }
+
+    const allowedTargets = ALLOWED_OPERATOR_TRANSITIONS[found.status] || [];
+    if (!allowedTargets.includes(payload.to)) {
+      throw makeError(
+        409,
+        'INPUT_INVALID',
+        `transition from ${found.status} to ${payload.to} is not permitted for operator`,
+        'FIX_INPUT',
+        '/to'
+      );
+    }
+
+    const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const nextSeq = currentSeq + 1;
+    const fromStatus = found.status;
+    found.status = payload.to;
+    found.last_seen = now;
+    history.transitions.push({
+      seq: nextSeq,
+      from_status: fromStatus,
+      to_status: payload.to,
+      reason: payload.reason.trim(),
+      ...(payload.evidence_id ? { evidence_id: payload.evidence_id } : {}),
+      actor: { kind: 'operator', id: 'current-operator' },
+      cause: 'operator',
+      created_at: now,
+    });
+
+    const cloned = JSON.parse(JSON.stringify(found)) as Finding;
+    idempotencyStore.set(storeKey, { fingerprint, response: cloned });
+    return JSON.parse(JSON.stringify(cloned)) as Finding;
   },
 };
