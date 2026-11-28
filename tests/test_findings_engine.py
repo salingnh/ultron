@@ -7,10 +7,12 @@ tests pin:
 * every current candidate raises exactly one finding per (asset, CVE), stable fingerprint, status
   CANDIDATE, with a `finding_run` (seen=true) and a `finding_source` for the covering scan, one
   initial transition and one `finding.changed.v2` event;
-* a second run adds runs, not findings; a scan that observes the same product outside the affected
-  range writes `seen=false` and must not close the finding;
-* a retracted candidate (0008) moves the finding to FIXED with `cause=intel_revision`, and a
-  candidate that matches again moves FIXED to REGRESSED - never a stale CANDIDATE, never a delete;
+* a second run adds runs, not findings; a **rescan** that observes the same product outside the
+  affected range is new remediation evidence and closes the finding (FIXED, `cause=scan`);
+* a candidate retracted by an intel revision alone (0008) does **not** close the finding: an
+  advisory change is not a remediation, so the status stays and the withdrawal remains in the match
+  decision and its `vulnerability.matched.v2` event;
+* a candidate that matches again moves FIXED to REGRESSED - never a stale CANDIDATE, never a delete;
 * an operator decision (FALSE_POSITIVE) is not reopened by a re-run of the matcher.
 """
 
@@ -35,13 +37,12 @@ from tests.m23_support import CAMPAIGN_ID, connect, ingest, pipeline_database
 pytestmark = requires_postgres
 
 FINDING_EVENT = "finding.changed.v2"
-INTEL = Path(__file__).resolve().parent / "fixtures" / "intel"
 LATER = "2026-11-25T09:00:00Z"
 
 
 @pytest.fixture()
 def database() -> Iterator[tuple[str, list[str]]]:
-    with pipeline_database(jobs=2) as (dsn, jobs):
+    with pipeline_database(jobs=3) as (dsn, jobs):
         _ingest(dsn, jobs[0])
         with connect(dsn) as connection:
             fixtures.seed_intel(dsn)
@@ -81,6 +82,15 @@ def _patched_httpd() -> list[dict[str, Any]]:
                 "cpe": "cpe:2.3:a:apache:http_server:2.4.51:*:*:*:*:*:*:*",
             }
             item["observed_at"] = LATER
+    return values
+
+
+def _vulnerable_again() -> list[dict[str, Any]]:
+    """A third scan that reports httpd 2.4.49 again, after the patched rescan."""
+    values = list(fixtures.service_observations())
+    for item in values:
+        if item["predicate"] == "service.product" and "httpd" in json.dumps(item["value"]):
+            item["observed_at"] = "2026-11-26T09:00:00Z"
     return values
 
 
@@ -126,15 +136,6 @@ def _events(connection: Any) -> list[dict[str, Any]]:
             "SELECT * FROM outbox_event WHERE type = %s ORDER BY seq", (FINDING_EVENT,)
         ).fetchall()
     ]
-
-
-def _fresh_nvd() -> bytes:
-    """The pinned slice with one CVE's `lastModified` moved: a new, non-withdrawn revision."""
-    document = json.loads((INTEL / "nvd-slice.json").read_text(encoding="utf-8"))
-    for entry in document["vulnerabilities"]:
-        if entry["cve"]["id"] == "CVE-2021-41773":
-            entry["cve"]["lastModified"] = "2026-11-27T00:00:00.000"
-    return json.dumps(document).encode("utf-8")
 
 
 def test_every_candidate_becomes_a_candidate_finding(database: tuple[str, list[str]]) -> None:
@@ -214,7 +215,7 @@ def test_a_second_run_adds_runs_not_findings(database: tuple[str, list[str]]) ->
     assert runs == 3
 
 
-def test_a_new_scan_is_a_new_run_and_out_of_range_is_seen_false(
+def test_a_rescan_outside_the_range_fixes_the_finding(
     database: tuple[str, list[str]],
 ) -> None:
     dsn, jobs = database
@@ -226,6 +227,7 @@ def test_a_new_scan_is_a_new_run_and_out_of_range_is_seen_false(
         report = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
         httpd_after = _by_cve(_findings(connection))["CVE-2021-41773"]
         runs = _runs(connection, str(httpd["finding_id"]))
+        transitions = _transitions(connection, str(httpd["finding_id"]))
         events = _events(connection)
         sources = [
             dict(row)
@@ -239,22 +241,44 @@ def test_a_new_scan_is_a_new_run_and_out_of_range_is_seen_false(
     # outside the CVE's range, so that one run is `seen = false` and no source is written for it.
     assert report.runs == 3
     assert report.sources == 2
-    assert report.transitions == 0 and report.events == 0
-    assert str(httpd_after["status"]) == "CANDIDATE"
-    assert int(httpd_after["transition_seq"]) == 1
+    assert report.fixed_by_rescan == 1
+    assert report.transitions == 1 and report.events == 1
+    assert str(httpd_after["status"]) == "FIXED"
+    assert int(httpd_after["transition_seq"]) == 2
     # `last_seen` is when the finding was last *seen*: an out-of-range scan does not move it.
     assert httpd_after["last_seen"] == datetime(2026, 11, 24, 10, 0, tzinfo=UTC)
     assert len(runs) == 2
     by_scan = {str(row["scan_id"]): row for row in runs}
     assert by_scan[jobs[0]]["seen"] is True
     assert by_scan[jobs[1]]["seen"] is False
-    assert by_scan[jobs[1]]["severity_reason"] == "product observed outside the affected range"
+    assert "outside the affected range" in str(by_scan[jobs[1]]["severity_reason"])
+    assert "2.4.51" in str(by_scan[jobs[1]]["severity_reason"])
+    assert by_scan[jobs[1]]["evidence_id"] is not None
+    # The transition exists only because the rescan is new evidence; it names the version.
+    assert [row["to_status"] for row in transitions] == ["CANDIDATE", "FIXED"]
+    assert transitions[1]["cause"] == "scan"
+    assert transitions[1]["evidence_id"] is not None
+    assert "2.4.51" in str(transitions[1]["reason"])
     # A `seen = false` run is coverage, not a provider report: the finding keeps its source.
     assert {str(row["scan_id"]) for row in sources} == {jobs[0]}
-    assert len(events) == 3
+    assert len(events) == 4
+    # A re-run with no new scan is not new evidence: nothing else changes.
+    with connect(dsn) as connection:
+        again = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        after_again = _by_cve(_findings(connection))["CVE-2021-41773"]
+    assert again.transitions == 0 and again.fixed_by_rescan == 0
+    assert int(after_again["transition_seq"]) == 2
 
 
-def test_a_retracted_candidate_fixes_the_finding(database: tuple[str, list[str]]) -> None:
+def test_an_intel_withdrawal_alone_does_not_fix_the_finding(
+    database: tuple[str, list[str]],
+) -> None:
+    """An advisory that is withdrawn is not a remediation; FIXED needs new scan evidence.
+
+    The withdrawal must not be lost either: it stays in the newest `package_vuln_match` decision
+    (`matched = false`, `retraction_reason`, new `vuln_rev_id`) and in that decision's
+    `vulnerability.matched.v2` event, both written by the matcher.
+    """
     dsn, _ = database
     with connect(dsn) as connection:
         FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
@@ -271,56 +295,53 @@ def test_a_retracted_candidate_fixes_the_finding(database: tuple[str, list[str]]
         report = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
         after = _by_cve(_findings(connection))["CVE-2021-41773"]
         transitions = _transitions(connection, str(httpd["finding_id"]))
-        events = [
-            dict(row)
-            for row in connection.execute(
-                "SELECT payload FROM outbox_event WHERE type = %s AND payload->>'finding_id' = %s"
-                " ORDER BY seq",
-                (FINDING_EVENT, str(httpd["finding_id"])),
-            ).fetchall()
-        ]
+        finding_events = connection.execute(
+            "SELECT count(*) AS n FROM outbox_event WHERE type = %s"
+            " AND payload->>'finding_id' = %s",
+            (FINDING_EVENT, str(httpd["finding_id"])),
+        ).fetchone()
+        decision = connection.execute(
+            "SELECT matched, retraction_reason, vuln_rev_id, match_id"
+            " FROM package_vuln_match WHERE package_asset_id = %s"
+            " AND vulnerability_id = 'CVE-2021-41773'"
+            " ORDER BY created_at DESC, match_id DESC LIMIT 1",
+            (str(httpd["asset_id"]),),
+        ).fetchone()
+        assert decision is not None
+        decision_event = connection.execute(
+            "SELECT count(*) AS n FROM outbox_event WHERE type = 'vulnerability.matched.v2'"
+            " AND dedup_key = %s",
+            (str(decision["match_id"]),),
+        ).fetchone()
     assert matcher.retracted == 1
-    assert report.retracted == 1 and report.blocked_no_evidence == 0
-    assert after["status"] == "FIXED"
-    assert int(after["transition_seq"]) == 2
-    assert len(transitions) == 2
-    assert transitions[1]["to_status"] == "FIXED"
-    assert transitions[1]["cause"] == "intel_revision"
-    assert "WITHDRAWN" in transitions[1]["reason"]
-    assert transitions[1]["evidence_id"] is not None
-    assert len(events) == 2
-    assert events[1]["payload"]["new_status"] == "FIXED"
-    assert events[1]["payload"]["cause"] == "intel_revision"
-    assert events[1]["payload"]["old_status"] == "CANDIDATE"
+    assert report.withdrawals_kept_open == 1 and report.fixed_by_rescan == 0
+    assert report.transitions == 0 and report.events == 0
+    assert len(report.withdrawals) == 1
+    assert report.withdrawals[0]["reason"] == "WITHDRAWN"
+    assert after["status"] == "CANDIDATE"
+    assert int(after["transition_seq"]) == 1
+    assert [row["to_status"] for row in transitions] == ["CANDIDATE"]
+    assert finding_events is not None and int(finding_events["n"]) == 1
+    assert decision is not None
+    assert decision["matched"] is False
+    assert decision["retraction_reason"] == "WITHDRAWN"
+    assert decision_event is not None and int(decision_event["n"]) == 1
 
 
 def test_a_rematched_candidate_regresses_the_fixed_finding(
     database: tuple[str, list[str]],
 ) -> None:
-    dsn, _ = database
+    dsn, jobs = database
     with connect(dsn) as connection:
         FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
         httpd = _by_cve(_findings(connection))["CVE-2021-41773"]
-    sync = FeedSync(fixtures.connector(dsn), fixtures.MemoryStore())
-    sync.sync(
-        "nvd",
-        "2026-11-26",
-        fixtures.nvd_with_rejected_cve(),
-        source_uri="nvd-slice.json",
-        snapshot_at=datetime(2026, 11, 26, 6, 0, tzinfo=UTC),
-    )
+    _ingest(dsn, jobs[1], _patched_httpd(), assets=[])
     with connect(dsn) as connection:
-        Matcher(connection).run()
-        FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
-    sync.sync(
-        "nvd",
-        "2026-11-27",
-        _fresh_nvd(),
-        source_uri="nvd-slice.json",
-        snapshot_at=datetime(2026, 11, 27, 6, 0, tzinfo=UTC),
-    )
+        fixed = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
+        assert _by_cve(_findings(connection))["CVE-2021-41773"]["status"] == "FIXED"
+    assert fixed.fixed_by_rescan == 1
+    _ingest(dsn, jobs[2], _vulnerable_again(), assets=[])
     with connect(dsn) as connection:
-        Matcher(connection).run()
         report = FindingsEngine(connection).run(campaign_id=CAMPAIGN_ID, assess=False)
         after = _by_cve(_findings(connection))["CVE-2021-41773"]
         transitions = _transitions(connection, str(httpd["finding_id"]))
@@ -357,7 +378,7 @@ def test_an_operator_decision_is_not_reopened(database: tuple[str, list[str]]) -
         after = _by_cve(_findings(connection))["CVE-2021-41773"]
         transitions = _transitions(connection, finding_id)
     assert report.suppressed == 1
-    assert report.retracted == 0 and report.reappeared == 0
+    assert report.withdrawals_kept_open == 0 and report.reappeared == 0
     assert after["status"] == "FALSE_POSITIVE"
     assert int(after["transition_seq"]) == 2
     assert [row["to_status"] for row in transitions] == ["CANDIDATE", "FALSE_POSITIVE"]

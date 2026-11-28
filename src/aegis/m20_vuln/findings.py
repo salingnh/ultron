@@ -19,11 +19,18 @@ product's finding record - the thing the operator sees in the Findings screen:
   `seen = false`, never "the scan did not mention it";
 * `finding_source` is written per `(scan, provider)` for the scans that saw the finding, with the
   provider's evidence ids and the candidate document the decision was made on;
-* a retracted candidate (0008, `matched = false` at a newer intel revision) moves its finding from
-  CANDIDATE/CORROBORATED/VERIFIED/REGRESSED to **FIXED** with `cause = intel_revision` - never
-  deleted, never left as a stale CANDIDATE, and never deleted just because a scan missed it. A
-  candidate that re-appears after FIXED moves it to **REGRESSED** (`cause = scan`).
-  An operator's FALSE_POSITIVE/ACCEPTED_RISK is not reopened automatically: a re-run of the matcher
+* a retracted candidate (0008, `matched = false` at a newer intel revision) is **not** a reason to
+  close a finding: `transitions.v2.yaml` lets M20 write FIXED only with evidence, and an intel
+  withdrawal is not remediation evidence. The finding keeps its status and the withdrawal stays in
+  the records that already exist - the newest `package_vuln_match` decision (`matched = false`,
+  `retraction_reason`, new `vuln_rev_id`) and its `vulnerability.matched.v2` event, both written by
+  the matcher in the same transaction;
+* **FIXED needs a rescan that observed the affected product at a version outside the affected
+  range** - new remediation evidence with the scan's raw output. A scan that merely does not see
+  the finding (`seen=false` without an out-of-range version) is not evidence, and this engine never
+  writes FIXED from one. A candidate that re-appears after FIXED moves it to **REGRESSED**
+  (`cause = scan`);
+* an operator's FALSE_POSITIVE/ACCEPTED_RISK is not reopened automatically: a re-run of the matcher
   would otherwise fight the operator every time;
 * every transition writes one `finding_transition` row and one `finding.changed.v2` outbox event in
   the same transaction, so M23 projects the change from the same commit;
@@ -74,8 +81,10 @@ PRODUCER = "M20"
 EVENT_TYPE = "finding.changed.v2"
 EVENT_SCHEMA = "events/finding.changed.v2.schema.json"
 SEVERITY_SCHEMA = severity.SEVERITY_SCHEMA
-#: Statuses whose finding a retraction must not leave behind.
+#: Open statuses whose intel withdrawal is noted but never closed without remediation evidence.
 RETRACTABLE = ("CANDIDATE", "CORROBORATED", "VERIFIED", "REGRESSED")
+#: Statuses the transition table lets M20 move to FIXED (with evidence).
+REMEDIABLE = ("CANDIDATE", "CORROBORATED", "VERIFIED", "REGRESSED")
 #: Operator decisions that a re-run of the matcher does not override.
 OPERATOR_FINAL = ("FALSE_POSITIVE", "ACCEPTED_RISK")
 #: A finding is assessed while it describes an open issue.
@@ -137,6 +146,8 @@ class _RunPlan:
     scan: _ScanObservation
     seen: bool
     evidence_id: str | None
+    #: For `seen=false`: the product/version the scan observed outside the affected range.
+    detail: str = ""
 
 
 @dataclass
@@ -150,7 +161,10 @@ class FindingsReport:
     sources: int = 0
     transitions: int = 0
     events: int = 0
-    retracted: int = 0
+    #: Intel withdrawals seen with no remediation evidence; the finding keeps its status.
+    withdrawals_kept_open: int = 0
+    #: Findings closed by a rescan that observed a version outside the affected range.
+    fixed_by_rescan: int = 0
     reappeared: int = 0
     suppressed: int = 0
     blocked_no_evidence: int = 0
@@ -159,12 +173,12 @@ class FindingsReport:
     unrated: int = 0
     dry_run: bool = False
     findings: list[dict[str, Any]] = field(default_factory=list)
-    retractions: list[dict[str, Any]] = field(default_factory=list)
+    withdrawals: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         document = dict(self.__dict__)
         document.pop("findings")
-        document.pop("retractions")
+        document.pop("withdrawals")
         return document
 
 
@@ -217,7 +231,7 @@ class FindingsEngine:
                 )
         for pair in retracted:
             if dry_run:
-                report.retractions.append(
+                report.withdrawals.append(
                     {
                         "asset_id": pair.asset_id,
                         "canonical_key": pair.canonical_key,
@@ -376,11 +390,17 @@ class FindingsEngine:
                     )
                 )
             elif affected:
+                observed = ", ".join(
+                    f"{cpe.vendor}:{cpe.product} {cpe.version}"
+                    for cpe in affected
+                    if cpe.version and cpe.version not in {"*", "-"}
+                )
                 plans.append(
                     _RunPlan(
                         scan=scan,
                         seen=False,
                         evidence_id=scan.evidence_ids[0] if scan.evidence_ids else None,
+                        detail=observed or "product observed",
                     )
                 )
         if not any(plan.seen for plan in plans) and scans:
@@ -421,7 +441,7 @@ class FindingsEngine:
                 return "", False, False
             finding_id = self._create(pair, rule_id, location, fingerprint, product, seen_plans[0])
             report.findings_created += 1
-            self._write_runs(finding_id, pair, plans, report, status="CANDIDATE")
+            self._write_runs(finding_id, plans, report, status="CANDIDATE")
             self._write_sources(finding_id, pair, seen_plans, report)
             self._transition(
                 finding_id=finding_id,
@@ -450,34 +470,70 @@ class FindingsEngine:
                 "UPDATE finding SET last_seen = GREATEST(last_seen, %s) WHERE finding_id = %s",
                 (newest_seen, finding_id),
             )
+        # A run that already exists is not new evidence; only a scan this finding has not seen yet
+        # can close it (or reopen it, when it saw the vulnerable version again).
+        known = {
+            str(row["scan_id"])
+            for row in self._conn.execute(
+                "SELECT scan_id FROM finding_run WHERE finding_id = %s", (finding_id,)
+            ).fetchall()
+        }
+        new_seen = [
+            plan
+            for plan in plans
+            if plan.seen and plan.evidence_id and plan.scan.scan_id not in known
+        ]
+        new_out_of_range = [
+            plan for plan in plans if not plan.seen and plan.scan.scan_id not in known
+        ]
+        evidenced_fixes = [plan for plan in new_out_of_range if plan.evidence_id]
+        if status in REMEDIABLE and len(evidenced_fixes) < len(new_out_of_range):
+            report.blocked_no_evidence += 1
         run_status = status
+        transition: tuple[str, _RunPlan] | None = None
         if status in OPERATOR_FINAL:
             report.suppressed += 1
-            self._write_runs(finding_id, pair, plans, report, status=run_status)
+            self._write_runs(finding_id, plans, report, status=run_status)
             self._write_sources(finding_id, pair, seen_plans, report)
             return finding_id, False, False
-        if status == "FIXED" and seen_plans:
+        if status == "FIXED" and new_seen:
             run_status = "REGRESSED"
-            self._transition(
-                finding_id=finding_id,
-                from_status="FIXED",
-                to_status="REGRESSED",
-                reason=(
-                    f"candidate re-matched at intel revision {pair.vuln_rev_id} "
-                    f"({pair.match_method})"
-                ),
-                evidence_id=seen_plans[0].evidence_id,
-                cause="scan",
-                old_severity=str(existing["severity"]),
-                new_severity=str(existing["severity"]),
-                campaign_id=self._campaign_of(pair),
-                seq=int(existing["transition_seq"]) + 1,
-                report=report,
+            transition = ("REGRESSED", new_seen[0])
+        elif status in REMEDIABLE and evidenced_fixes:
+            # New remediation evidence: a rescan observed the affected product at a version
+            # outside the range (not merely "the scan did not mention it"), with its raw output.
+            run_status = "FIXED"
+            transition = ("FIXED", evidenced_fixes[0])
+        self._write_runs(finding_id, plans, report, status=run_status)
+        self._write_sources(finding_id, pair, seen_plans, report)
+        if transition is None:
+            return finding_id, False, False
+        to_status, plan = transition
+        if to_status == "REGRESSED":
+            reason = (
+                f"candidate re-matched at intel revision {pair.vuln_rev_id} ({pair.match_method})"
             )
             report.reappeared += 1
-        self._write_runs(finding_id, pair, plans, report, status=run_status)
-        self._write_sources(finding_id, pair, seen_plans, report)
-        return finding_id, False, status == "FIXED" and run_status == "REGRESSED"
+        else:
+            reason = (
+                f"rescan {plan.scan.scan_id} observed {plan.detail} outside the affected range "
+                f"of {pair.vulnerability_id}"
+            )
+            report.fixed_by_rescan += 1
+        self._transition(
+            finding_id=finding_id,
+            from_status=status,
+            to_status=to_status,
+            reason=reason,
+            evidence_id=plan.evidence_id,
+            cause="scan",
+            old_severity=str(existing["severity"]),
+            new_severity=str(existing["severity"]),
+            campaign_id=self._campaign_of(pair),
+            seq=int(existing["transition_seq"]) + 1,
+            report=report,
+        )
+        return finding_id, False, True
 
     def _campaign_of(self, pair: _Pair) -> str:
         if pair.campaign_id is None:
@@ -527,14 +583,15 @@ class FindingsEngine:
     def _write_runs(
         self,
         finding_id: str,
-        pair: _Pair,
         plans: Sequence[_RunPlan],
         report: FindingsReport,
         *,
         status: str,
-    ) -> None:
+    ) -> list[_RunPlan]:
+        """One running row per covering scan; returns the plans this call actually inserted."""
+        inserted_plans: list[_RunPlan] = []
         if not finding_id:
-            return
+            return inserted_plans
         for plan in plans:
             if plan.seen and plan.evidence_id is None:
                 continue
@@ -548,13 +605,15 @@ class FindingsEngine:
                     plan.scan.scan_id,
                     plan.seen,
                     status,
-                    None if plan.seen else "product observed outside the affected range",
+                    None if plan.seen else f"observed {plan.detail} outside the affected range",
                     plan.evidence_id,
                     plan.scan.observed_at,
                 ),
             ).fetchone()
             if inserted is not None:
                 report.runs += 1
+                inserted_plans.append(plan)
+        return inserted_plans
 
     def _write_sources(
         self,
@@ -596,6 +655,17 @@ class FindingsEngine:
                 report.sources += 1
 
     def _retract(self, pair: _Pair, report: FindingsReport) -> None:
+        """Note an intel withdrawal without closing the finding.
+
+        A feed revision that takes a candidate back says the advisory changed, not that the asset
+        was remediated: `transitions.v2.yaml` allows FIXED only with evidence, and the finding's
+        prior scan output is not evidence of a fix. So the status and `transition_seq` stay, no
+        transition and no `finding.changed.v2` are written, and the withdrawal remains in the
+        records that already hold it: the newest `package_vuln_match` decision (`matched = false`
+        with `retraction_reason` and the new `vuln_rev_id`) and that decision's
+        `vulnerability.matched.v2` event. A rescan that observes the product outside the affected
+        range is the evidence that closes it (`_raise`).
+        """
         rule_id = f"cve:{pair.vulnerability_id}"
         fingerprint = finding_fingerprint(pair.asset_id, rule_id, {})
         existing = self._finding_by_fingerprint(fingerprint)
@@ -604,42 +674,17 @@ class FindingsEngine:
         status = str(existing["status"])
         if status not in RETRACTABLE:
             return
-        finding_id = str(existing["finding_id"])
-        evidence_id = self._newest_evidence(finding_id)
-        if evidence_id is None:
-            report.blocked_no_evidence += 1
-            return
-        reason = pair.retraction_reason or "NO_LONGER_MATCHES"
-        self._transition(
-            finding_id=finding_id,
-            from_status=status,
-            to_status="FIXED",
-            reason=(f"candidate retracted by intel revision {pair.vuln_rev_id}: {reason}"),
-            evidence_id=evidence_id,
-            cause="intel_revision",
-            old_severity=str(existing["severity"]),
-            new_severity=str(existing["severity"]),
-            campaign_id=self._campaign_of(pair),
-            seq=int(existing["transition_seq"]) + 1,
-            report=report,
-        )
-        report.retracted += 1
-        report.retractions.append(
+        report.withdrawals_kept_open += 1
+        report.withdrawals.append(
             {
-                "finding_id": finding_id,
+                "finding_id": str(existing["finding_id"]),
                 "vulnerability_id": pair.vulnerability_id,
                 "canonical_key": pair.canonical_key,
-                "reason": reason,
+                "status": status,
+                "reason": pair.retraction_reason or "NO_LONGER_MATCHES",
+                "vuln_rev_id": pair.vuln_rev_id,
             }
         )
-
-    def _newest_evidence(self, finding_id: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT evidence_id FROM finding_run WHERE finding_id = %s AND evidence_id IS NOT NULL"
-            " ORDER BY observed_at DESC LIMIT 1",
-            (finding_id,),
-        ).fetchone()
-        return None if row is None else str(row["evidence_id"])
 
     def _transition(
         self,

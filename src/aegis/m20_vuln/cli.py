@@ -64,7 +64,7 @@ def _run(argv: argparse.Namespace) -> int:
         document["findings"] = {
             **findings.as_dict(),
             "created": findings.findings,
-            "retracted_findings": findings.retractions,
+            "withdrawals": findings.withdrawals,
         }
     print(json.dumps(document, indent=2))
     return 0

@@ -1047,7 +1047,8 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
         '409':
-          description: Chuyển trạng thái không hợp lệ hoặc expected_seq lệch
+          description: Chuyển trạng thái không hợp lệ (field=/to), expected_seq lệch
+            (field=/expected_seq), hoặc cùng Idempotency-Key với body khác (IDEMPOTENCY_CONFLICT)
           content:
             application/json:
               schema:

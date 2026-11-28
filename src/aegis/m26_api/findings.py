@@ -18,8 +18,12 @@ was this finding last observed" instant.
 `transitionFinding` is the operator's lifecycle action. The table `finding/transitions.v2.yaml` is
 the rule (`aegis.common.finding_transitions`), the actor is the server-verified principal (the body
 `transition-request.v2` carries no actor at all, C05), and `expected_seq` is an optimistic
-lock: a stale value answers 409, never overwrites a concurrent change. The transition row and the
-`finding.changed.v2` event are written in the same transaction.
+lock: a stale value answers 409 with `field=/expected_seq`, never overwrites a concurrent change.
+The write is idempotent on the contract's `Idempotency-Key` (the same `idempotency_record` table the
+campaign routes use, scoped by the operation and the finding): the same key with the same body
+replays the stored response (header `Idempotent-Replayed: true`) and writes nothing, while the same
+key with a different body is `IDEMPOTENCY_CONFLICT`. The transition row, the `finding.changed.v2`
+event and the idempotency record are written in one transaction.
 
 `assessFinding` runs the C07 severity assessment (M20's runtime) on demand. It is idempotent per
 input revision: a retry of the same finding at the same knowledge revision returns the stored
@@ -35,7 +39,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import psycopg
-from fastapi import APIRouter, Body, Depends, Query, Request, Response
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, Response
 from fastapi import status as http_status
 from psycopg.types.json import Jsonb
 
@@ -45,6 +49,13 @@ from aegis.m20_vuln import severity
 from aegis.m26_api.app import API_PREFIX
 from aegis.m26_api.db import ConnectionDep
 from aegis.m26_api.errors import INPUT_INVALID, ApiError
+from aegis.m26_api.idempotency import (
+    IdempotencyConflict,
+    lock_key,
+    replay,
+    request_hash,
+    store,
+)
 from aegis.m26_api.operator import Principal, require_principal
 from aegis.m26_api.registry import RouterEntry, RouterRegistry
 from aegis.m26_api.tracing import TRACEPARENT_HEADER, current_trace_id, traceparent
@@ -77,6 +88,18 @@ FINDING_OPERATIONS = (
 )
 #: The operator's side of the transition table (the server-verified principal acts).
 OPERATOR = "operator"
+#: Header of a replayed write (contract convention; same value as the campaign routes).
+IDEMPOTENT_REPLAYED = "Idempotent-Replayed"
+#: `idempotency_record.scope` of a transition; the finding is part of the scope because the same
+#: key on two findings is two different writes (the body alone cannot tell them apart).
+TRANSITION_SCOPE = "POST /findings/{finding_id}/transitions"
+IDEMPOTENCY_HEADER = Header(
+    ...,
+    alias="Idempotency-Key",
+    min_length=8,
+    max_length=256,
+    description="Idempotency-Key của contract: cùng khóa cùng body trả lại kết quả cũ.",
+)
 
 _ERROR_400 = {"description": "Lỗi chuẩn (error.v2): tham số/body sai"}
 _ERROR_401 = {"description": "Lỗi chuẩn (error.v2): thiếu hoặc sai operator token"}
@@ -160,13 +183,40 @@ def _not_found(finding_id: str) -> ApiError:
     )
 
 
-def _conflict(message: str) -> ApiError:
+def _stale_seq(expected: int, current: int) -> ApiError:
+    """A stale `expected_seq`: a 409 whose stable discriminator is the field, not a generic code.
+
+    `error.v2` has no conflict code of its own; the repository's state-conflict convention
+    (`campaigns._state_conflict`) is `INPUT_INVALID` with 409. `field` points at the input that
+    lost the race, so an API client can tell it apart from a reused `Idempotency-Key`
+    (`IDEMPOTENCY_CONFLICT`, no field) without parsing the message.
+    """
+    return ApiError(
+        http_status.HTTP_409_CONFLICT,
+        INPUT_INVALID,
+        f"expected_seq {expected} does not match the current transition_seq {current}",
+        next_action="RETRY",
+        field="/expected_seq",
+        headers={"Retry-After": "0"},
+    )
+
+
+def _not_allowed(from_status: str, to_status: str) -> ApiError:
+    return ApiError(
+        http_status.HTTP_409_CONFLICT,
+        INPUT_INVALID,
+        f"transitions.v2.yaml does not allow {from_status} -> {to_status} by the operator",
+        next_action="FIX_INPUT",
+        field="/to",
+    )
+
+
+def _idempotency_conflict(error: IdempotencyConflict) -> ApiError:
     return ApiError(
         http_status.HTTP_409_CONFLICT,
         "IDEMPOTENCY_CONFLICT",
-        message,
-        next_action="RETRY",
-        headers={"Retry-After": "0"},
+        f"Idempotency-Key was already used with a different body ({error.scope})",
+        next_action="NONE",
     )
 
 
@@ -514,6 +564,7 @@ def transition_finding(
     principal: Annotated[Principal, Depends(require_principal)],
     db: ConnectionDep,
     body: Annotated[dict[str, Any], Body(...)],
+    idempotency_key: Annotated[str, IDEMPOTENCY_HEADER],
 ) -> dict[str, Any]:
     _trace(request, response)
     if not _is_id(finding_id):
@@ -526,6 +577,18 @@ def transition_finding(
         raise _bad_request(f"{pointer or '/'}: {message}", pointer or "/")
     # The body carries no actor (transition-request.v2): the server assigns the verified
     # principal, so a client cannot name another operator in the history.
+    scope = TRANSITION_SCOPE.format(finding_id=finding_id)
+    digest = request_hash(body)
+    lock_key(db, scope=scope, key=idempotency_key)
+    try:
+        previous = replay(db, scope=scope, key=idempotency_key, digest=digest)
+    except IdempotencyConflict as error:
+        raise _idempotency_conflict(error) from error
+    if previous is not None:
+        # The response of the first call, even if the finding has changed since: that is what
+        # "same key + same body returns the original response" means, and it writes nothing.
+        response.headers[IDEMPOTENT_REPLAYED] = "true"
+        return previous
     row = db.execute(
         "SELECT * FROM finding WHERE finding_id = %s FOR UPDATE", (finding_id,)
     ).fetchone()
@@ -535,16 +598,12 @@ def transition_finding(
     expected = int(body["expected_seq"])
     current = int(finding["transition_seq"])
     if expected != current:
-        raise _conflict(
-            f"expected_seq {expected} does not match the current transition_seq {current}"
-        )
+        raise _stale_seq(expected, current)
     to_status = str(body["to"])
     reason = str(body["reason"])
     rule = rule_for(str(finding["status"]), to_status, OPERATOR)
     if rule is None:
-        raise _conflict(
-            f"transitions.v2.yaml does not allow {finding['status']} -> {to_status} by the operator"
-        )
+        raise _not_allowed(str(finding["status"]), to_status)
     evidence_id = body.get("evidence_id")
     if "reason" in rule.requires and not reason:
         raise _bad_request("this transition requires a reason", "/reason")
@@ -580,8 +639,8 @@ def transition_finding(
         " AND transition_seq = %s RETURNING transition_seq",
         (to_status, seq, finding_id, current),
     ).fetchone()
-    if updated is None:
-        raise _conflict("the finding changed while this request was being applied")
+    if updated is None:  # pragma: no cover - the row lock above already serialised the writers
+        raise _stale_seq(current, current + 1)
     payload: dict[str, Any] = {
         "finding_id": finding_id,
         "transition_seq": seq,
@@ -614,7 +673,16 @@ def transition_finding(
     fresh = _finding_row(db, finding_id)
     if fresh is None:  # pragma: no cover - the row was locked and updated in this transaction
         raise _not_found(finding_id)
-    return _validated(FINDING_SCHEMA, _document(db, fresh), "a finding")
+    document = _validated(FINDING_SCHEMA, _document(db, fresh), "a finding")
+    store(
+        db,
+        scope=scope,
+        key=idempotency_key,
+        digest=digest,
+        status_code=http_status.HTTP_200_OK,
+        response=document,
+    )
+    return document
 
 
 @router.post(

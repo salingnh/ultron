@@ -45,6 +45,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -586,33 +587,42 @@ def _principal_id(token: str) -> str:
 
 
 def _api_status(
-    method: str, path: str, payload: dict[str, Any], token: str
-) -> tuple[int, dict[str, Any]]:
-    """One write that may be refused: the status and body, never raised (a 409 is evidence)."""
+    method: str,
+    path: str,
+    payload: dict[str, Any],
+    token: str,
+    *,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, dict[str, Any], dict[str, str]]:
+    """One write that may be refused: status, body and headers, never raised (a 409 is evidence)."""
     base = os.environ.get("AEGIS_API_URL", "http://127.0.0.1:8000").rstrip("/")
+    request_headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    request_headers.update(headers or {})
     request = urllib.request.Request(
         f"{base}{path}",
         data=json.dumps(payload).encode("utf-8"),
         method=method,
-        headers={
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
+        headers=request_headers,
     )
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(request, timeout=60) as response:
             body = response.read()
             status = response.status
+            answer_headers = {key.lower(): value for key, value in response.headers.items()}
     except urllib.error.HTTPError as error:
         body = error.read()
         status = error.code
+        answer_headers = {key.lower(): value for key, value in error.headers.items()}
     try:
         document = json.loads(body or b"{}")
     except json.JSONDecodeError:
         document = {"raw": body.decode("utf-8", "replace")}
-    return status, document
+    return status, document, answer_headers
 
 
 def _assess_one(token: str, finding_id: str) -> dict[str, Any]:
@@ -631,14 +641,16 @@ def _assess_one(token: str, finding_id: str) -> dict[str, Any]:
 
 
 def _transition_one(token: str, principal_id: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """CANDIDATE -> FALSE_POSITIVE with the operator principal and an optimistic expected_seq.
+    """CANDIDATE -> FALSE_POSITIVE, its Idempotency-Key replay and the stale-seq refusal.
 
     A re-run of the demo finds the finding the previous run transitioned: the operator decision is
-    not reopened (M20 suppresses it), so the same two properties are checked - the history names
+    not reopened (M20 suppresses it), so the same properties are checked on it - the history names
     the verified principal, and a request with a stale `expected_seq` is a 409, not a silent
-    overwrite.
+    overwrite (a fresh key, because the same key would replay the original answer).
     """
     target = next((row for row in rows if row["status"] == "CANDIDATE"), None)
+    replayed: bool | None = None
+    replayed_body: dict[str, Any] | None = None
     if target is not None:
         finding_id = str(target["finding_id"])
         expected = int(target["transition_seq"])
@@ -649,14 +661,35 @@ def _transition_one(token: str, principal_id: str, rows: list[dict[str, Any]]) -
             ),
             "expected_seq": expected,
         }
-        status, document = _api_status(
-            "POST", f"/api/v2/findings/{finding_id}/transitions", body, token
+        key = f"demo-g16c-transition-{uuid.uuid4()}"
+        status, document, _ = _api_status(
+            "POST",
+            f"/api/v2/findings/{finding_id}/transitions",
+            body,
+            token,
+            headers={"Idempotency-Key": key},
         )
         support.require(status == 200, f"transitionFinding answered {status}: {document}")
         support.require(
             document.get("status") == "FALSE_POSITIVE",
             f"the transition answered status {document.get('status')!r}",
         )
+        # The same key and body answer the original response with the replay header, and they do
+        # not write a second transition.
+        replay_status, replayed_body, replay_headers = _api_status(
+            "POST",
+            f"/api/v2/findings/{finding_id}/transitions",
+            body,
+            token,
+            headers={"Idempotency-Key": key},
+        )
+        support.require(
+            replay_status == 200
+            and replay_headers.get("idempotent-replayed") == "true"
+            and replayed_body == document,
+            f"the Idempotency-Key replay answered {replay_status}: {replayed_body}",
+        )
+        replayed = True
     else:
         finding = next((row for row in rows if row["status"] == "FALSE_POSITIVE"), None)
         support.require(
@@ -670,10 +703,16 @@ def _transition_one(token: str, principal_id: str, rows: list[dict[str, Any]]) -
             "reason": "demo-g16c: re-run of an already decided finding",
             "expected_seq": 1,
         }
-    stale, refusal = _api_status("POST", f"/api/v2/findings/{finding_id}/transitions", body, token)
+    stale, refusal, _ = _api_status(
+        "POST",
+        f"/api/v2/findings/{finding_id}/transitions",
+        body,
+        token,
+        headers={"Idempotency-Key": f"demo-g16c-stale-{uuid.uuid4()}"},
+    )
     support.require(
-        refusal.get("code") == "IDEMPOTENCY_CONFLICT",
-        f"the stale transition answered {stale} with {refusal.get('code')}",
+        refusal.get("code") == "INPUT_INVALID" and refusal.get("field") == "/expected_seq",
+        f"the stale transition answered {stale} with {refusal.get('code')}/{refusal.get('field')}",
     )
     history = support.api("GET", f"/api/v2/findings/{finding_id}/history", token=token)
     operator = [
@@ -689,12 +728,23 @@ def _transition_one(token: str, principal_id: str, rows: list[dict[str, Any]]) -
         last.get("to_status") == "FALSE_POSITIVE",
         f"the operator transition went to {last.get('to_status')!r}",
     )
-    support.line("transition", finding_id, "FALSE_POSITIVE", f"seq={last['seq']}", f"stale={stale}")
+    support.line(
+        "transition",
+        finding_id,
+        "FALSE_POSITIVE",
+        f"seq={last['seq']}",
+        f"stale={stale}",
+        f"replayed={replayed}",
+    )
     return {
         "finding_id": finding_id,
         "status": "FALSE_POSITIVE",
         "transition_seq": int(last["seq"]),
         "stale": stale,
+        "stale_code": refusal.get("code"),
+        "stale_field": refusal.get("field"),
+        "replayed": replayed,
+        "replayed_body": replayed_body,
     }
 
 
@@ -874,8 +924,15 @@ def _check(evidence: dict[str, Any], assets: dict[str, str]) -> None:
         "the operator transition did not move a finding to FALSE_POSITIVE",
     )
     support.require(
-        transition["stale"] == 409,
-        f"a retry with the stale expected_seq answered {transition['stale']}, not 409",
+        transition["stale"] == 409
+        and transition["stale_code"] == "INPUT_INVALID"
+        and transition["stale_field"] == "/expected_seq",
+        "a retry with the stale expected_seq did not answer 409 INPUT_INVALID /expected_seq "
+        f"({transition['stale']}/{transition['stale_code']}/{transition['stale_field']})",
+    )
+    support.require(
+        transition["replayed"] in {True, None},
+        "the first transition's Idempotency-Key did not replay its response",
     )
     graph_findings = findings["graph"]
     support.require(

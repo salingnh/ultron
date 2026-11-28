@@ -196,6 +196,38 @@ def test_get_finding_and_history(database: tuple[str, list[str]]) -> None:
     assert _get(client, f"/findings/{uuid7()}/history").status_code == 404
 
 
+def _transition(
+    client: TestClient,
+    path: str,
+    body: dict[str, Any],
+    *,
+    key: str | None,
+    principal: str = "op-soc-1",
+) -> Any:
+    headers = dict(support.auth(principal))
+    if key is not None:
+        headers["Idempotency-Key"] = key
+    return client.post(path, json=body, headers=headers)
+
+
+def _transition_counts(dsn: str, finding_id: str) -> tuple[int, int, int]:
+    with connect(dsn) as connection:
+        transitions = connection.execute(
+            "SELECT count(*) AS n FROM finding_transition WHERE finding_id = %s", (finding_id,)
+        ).fetchone()
+        events = connection.execute(
+            "SELECT count(*) AS n FROM outbox_event WHERE type = 'finding.changed.v2'"
+            " AND payload->>'finding_id' = %s",
+            (finding_id,),
+        ).fetchone()
+        records = connection.execute(
+            "SELECT count(*) AS n FROM idempotency_record WHERE scope = %s",
+            (f"POST /findings/{finding_id}/transitions",),
+        ).fetchone()
+    assert transitions is not None and events is not None and records is not None
+    return int(transitions["n"]), int(events["n"]), int(records["n"])
+
+
 def test_operator_transition_records_the_principal_and_the_optimistic_seq(
     database: tuple[str, list[str]],
 ) -> None:
@@ -205,33 +237,42 @@ def test_operator_transition_records_the_principal_and_the_optimistic_seq(
     finding_id = str(finding["finding_id"])
     path = f"{API_PREFIX}/findings/{finding_id}/transitions"
 
-    stale = client.post(
+    # A stale expected_seq is its own case: 409 with the field as the stable discriminator, not
+    # the Idempotency-Key conflict code.
+    stale = _transition(
+        client,
         path,
-        json={"to": "FALSE_POSITIVE", "reason": "not the current seq", "expected_seq": 0},
-        headers=support.auth(),
+        {"to": "FALSE_POSITIVE", "reason": "not the current seq", "expected_seq": 0},
+        key="stale-seq-key-1",
     )
     assert stale.status_code == 409, stale.text
-    assert stale.json()["code"] == "IDEMPOTENCY_CONFLICT"
+    assert stale.json()["code"] == "INPUT_INVALID"
+    assert stale.json()["field"] == "/expected_seq"
 
-    refused = client.post(
+    refused = _transition(
+        client,
         path,
-        json={"to": "VERIFIED", "reason": "the operator cannot verify", "expected_seq": 1},
-        headers=support.auth(),
+        {"to": "VERIFIED", "reason": "the operator cannot verify", "expected_seq": 1},
+        key="invalid-transition-key-1",
     )
     assert refused.status_code == 409, refused.text
+    assert refused.json()["code"] == "INPUT_INVALID"
+    assert refused.json()["field"] == "/to"
 
     body = {
         "to": "FALSE_POSITIVE",
         "reason": "the banner came from a proxy, not httpd on this port",
         "expected_seq": 1,
     }
-    response = client.post(path, json=body, headers=support.auth("op-soc-1"))
+    key = "operator-transition-key-1"
+    response = _transition(client, path, body, key=key)
     assert response.status_code == 200, response.text
     updated = response.json()
     assert validation.problems("finding/finding.v2.schema.json", updated) == []
     assert updated["status"] == "FALSE_POSITIVE"
     assert updated["severity"] == "UNRATED"
     assert updated["first_seen"] == finding["first_seen"].isoformat().replace("+00:00", "Z")
+    assert "Idempotent-Replayed" not in response.headers
 
     history = _get(client, f"/findings/{finding_id}/history").json()
     assert [item["to_status"] for item in history["transitions"]] == [
@@ -272,9 +313,144 @@ def test_operator_transition_records_the_principal_and_the_optimistic_seq(
     assert payload["new_status"] == "FALSE_POSITIVE"
     assert current["status"] == "FALSE_POSITIVE" and int(current["transition_seq"]) == 2
 
-    # The stale retry of the same request is a 409, not a second transition.
-    again = client.post(path, json=body, headers=support.auth("op-soc-1"))
-    assert again.status_code == 409, again.text
+    # The contract's idempotency: same key + same body replays the stored response (header set)
+    # and writes no second transition or event.
+    replay = _transition(client, path, body, key=key)
+    assert replay.status_code == 200, replay.text
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert replay.json() == updated
+    assert _transition_counts(dsn, finding_id) == (2, 2, 1)
+
+    # A new key with the (now) stale seq is still the stale case, not a replay.
+    stale_again = _transition(client, path, body, key="operator-transition-key-2")
+    assert stale_again.status_code == 409, stale_again.text
+    assert stale_again.json()["code"] == "INPUT_INVALID"
+    assert stale_again.json()["field"] == "/expected_seq"
+
+
+def test_transition_replay_survives_an_intervening_change(
+    database: tuple[str, list[str]],
+) -> None:
+    """The stored response is returned even after another transition moved the finding on."""
+    dsn, _ = database
+    client = _client(dsn)
+    finding_id = str(_by_cve(dsn)["CVE-2021-41773"]["finding_id"])
+    path = f"{API_PREFIX}/findings/{finding_id}/transitions"
+    first_body = {
+        "to": "FALSE_POSITIVE",
+        "reason": "first decision, before the operator changed their mind",
+        "expected_seq": 1,
+    }
+    first = _transition(client, path, first_body, key="intervening-key-1")
+    assert first.status_code == 200, first.text
+    reopen = {
+        "to": "CANDIDATE",
+        "reason": "a second look found the banner was real after all",
+        "expected_seq": 2,
+    }
+    second = _transition(client, path, reopen, key="intervening-key-2")
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "CANDIDATE"
+    assert _transition_counts(dsn, finding_id) == (3, 3, 2)
+
+    replay = _transition(client, path, first_body, key="intervening-key-1")
+    assert replay.status_code == 200, replay.text
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    # The original response, not the finding's current state.
+    assert replay.json() == first.json()
+    assert replay.json()["status"] == "FALSE_POSITIVE"
+    current = _get(client, f"/findings/{finding_id}").json()["status"]
+    assert current == "CANDIDATE"
+    # Nothing new was written by the replay.
+    assert _transition_counts(dsn, finding_id) == (3, 3, 2)
+
+
+def test_transition_same_key_with_a_different_body_is_a_conflict(
+    database: tuple[str, list[str]],
+) -> None:
+    dsn, _ = database
+    client = _client(dsn)
+    rows = _by_cve(dsn)
+    finding_id = str(rows["CVE-2021-41773"]["finding_id"])
+    path = f"{API_PREFIX}/findings/{finding_id}/transitions"
+    body = {
+        "to": "FALSE_POSITIVE",
+        "reason": "the first body of this key",
+        "expected_seq": 1,
+    }
+    assert _transition(client, path, body, key="conflict-key-1").status_code == 200
+    changed = {**body, "reason": "a different body under the same key"}
+    conflict = _transition(client, path, changed, key="conflict-key-1")
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["code"] == "IDEMPOTENCY_CONFLICT"
+    assert _transition_counts(dsn, finding_id) == (2, 2, 1)
+    assert _get(client, f"/findings/{finding_id}").json()["status"] == "FALSE_POSITIVE"
+
+    # The key is scoped by the finding: the same body on another finding is another write.
+    other_id = str(rows["CVE-2021-23017"]["finding_id"])
+    other_path = f"{API_PREFIX}/findings/{other_id}/transitions"
+    other = _transition(client, other_path, body, key="conflict-key-1")
+    assert other.status_code == 200, other.text
+    assert other.json()["finding_id"] == other_id
+
+
+def test_transition_requires_a_valid_idempotency_key(
+    database: tuple[str, list[str]],
+) -> None:
+    dsn, _ = database
+    client = _client(dsn)
+    finding_id = str(_by_cve(dsn)["CVE-2021-41773"]["finding_id"])
+    path = f"{API_PREFIX}/findings/{finding_id}/transitions"
+    body = {"to": "FALSE_POSITIVE", "reason": "a valid reason", "expected_seq": 1}
+    missing = _transition(client, path, body, key=None)
+    assert missing.status_code == 400, missing.text
+    assert missing.json()["code"] == "INPUT_INVALID"
+    assert _transition(client, path, body, key="short").status_code == 400
+    assert _transition(client, path, body, key="k" * 257).status_code == 400
+    assert _transition_counts(dsn, finding_id) == (1, 1, 0)
+    assert _get(client, f"/findings/{finding_id}").json()["status"] == "CANDIDATE"
+
+
+def test_a_failed_transition_leaves_no_idempotency_record(
+    database: tuple[str, list[str]],
+) -> None:
+    """The record and the effect commit together: a refused call leaves the key unused."""
+    dsn, _ = database
+    client = _client(dsn)
+    finding_id = str(_by_cve(dsn)["CVE-2021-41773"]["finding_id"])
+    path = f"{API_PREFIX}/findings/{finding_id}/transitions"
+    key = "failed-then-corrected-key"
+    stale = _transition(
+        client,
+        path,
+        {"to": "FALSE_POSITIVE", "reason": "a stale attempt", "expected_seq": 0},
+        key=key,
+    )
+    assert stale.status_code == 409, stale.text
+    with connect(dsn) as connection:
+        record = connection.execute(
+            "SELECT * FROM idempotency_record WHERE scope = %s AND key = %s",
+            (f"POST /findings/{finding_id}/transitions", key),
+        ).fetchone()
+    assert record is None
+    assert _transition_counts(dsn, finding_id) == (1, 1, 0)
+
+    corrected = _transition(
+        client,
+        path,
+        {"to": "FALSE_POSITIVE", "reason": "the corrected attempt", "expected_seq": 1},
+        key=key,
+    )
+    assert corrected.status_code == 200, corrected.text
+    with connect(dsn) as connection:
+        record = connection.execute(
+            "SELECT status_code, response FROM idempotency_record WHERE scope = %s AND key = %s",
+            (f"POST /findings/{finding_id}/transitions", key),
+        ).fetchone()
+    assert record is not None
+    assert int(record["status_code"]) == 200
+    assert dict(record["response"])["status"] == "FALSE_POSITIVE"
+    assert _transition_counts(dsn, finding_id) == (2, 2, 1)
 
 
 def test_transition_body_is_validated_against_the_contract(
@@ -285,32 +461,38 @@ def test_transition_body_is_validated_against_the_contract(
     finding_id = str(_by_cve(dsn)["CVE-2021-41773"]["finding_id"])
     path = f"{API_PREFIX}/findings/{finding_id}/transitions"
     assert (
-        client.post(
-            path, json={"to": "FALSE_POSITIVE", "expected_seq": 1}, headers=support.auth()
+        _transition(
+            client,
+            path,
+            {"to": "FALSE_POSITIVE", "expected_seq": 1},
+            key="contract-body-key-1",
         ).status_code
         == 400
     )
     assert (
-        client.post(
+        _transition(
+            client,
             path,
-            json={"to": "FALSE_POSITIVE", "reason": "x", "expected_seq": 1},
-            headers=support.auth(),
+            {"to": "FALSE_POSITIVE", "reason": "x", "expected_seq": 1},
+            key="contract-body-key-2",
         ).status_code
         == 400
     )
     assert (
-        client.post(
+        _transition(
+            client,
             path,
-            json={
+            {
                 "to": "FALSE_POSITIVE",
                 "reason": "long enough",
                 "expected_seq": 1,
                 "actor": {"kind": "operator", "id": "op-soc-2"},
             },
-            headers=support.auth("op-soc-1"),
+            key="contract-body-key-3",
         ).status_code
         == 400
     )
+    assert _transition_counts(dsn, finding_id) == (1, 1, 0)
 
 
 def test_assessment_without_a_model_stores_unrated_with_the_reason(

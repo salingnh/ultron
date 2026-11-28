@@ -2,6 +2,9 @@
 # requires: điều kiện bắt buộc khi chuyển. evidence = phải kèm evidence_id có sha256 (cổng G3).
 # CORROBORATED không bao giờ từ một khớp version/CPE đơn lẻ: hai matcher đọc cùng một banner không
 # phải hai nguồn độc lập (quyết định chủ 2026-11-28, OD-C).
+# Một ứng viên bị feed rút (0008, matched=false) KHÔNG phải FIXED: rút advisory không phải bằng chứng
+# khắc phục. Chỉ rescan thấy đúng sản phẩm ở phiên bản ngoài dải ảnh hưởng mới đóng finding; lần rút
+# do intel giữ nguyên trạng thái và nằm ở package_vuln_match + vulnerability.matched.v2.
 apiVersion: aegis.io/v2
 kind: FindingTransitions
 transitions:
