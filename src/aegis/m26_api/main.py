@@ -33,6 +33,7 @@ from aegis.m26_api import (
     events,
     findings,
     flow,
+    intel,
     jobs,
     vulnerabilities,
 )
@@ -66,7 +67,8 @@ NEO4J_PASSWORD_ENV = graph.NEO4J_PASSWORD_ENV
 def build_registry() -> RouterRegistry:
     """Every router this service mounts: campaigns (G1.1b), jobs (G1.1c), flow/events/capabilities
     (G1.5a), the activity timeline (G1.6), assets (G1.4b), candidate vulnerabilities (G1.6 slice C),
-    findings and their lifecycle (G2 slice A) and the ingestion endpoint M27 owns (G1.4a/G1.5c)."""
+    findings and their lifecycle (G2 slice A), the intel status read model (item 80) and the
+    ingestion endpoint M27 owns (G1.4a/G1.5c)."""
     registry = RouterRegistry()
     register(registry)
     jobs.register(registry)
@@ -77,6 +79,7 @@ def build_registry() -> RouterRegistry:
     assets.register(registry)
     vulnerabilities.register(registry)
     findings.register(registry)
+    intel.register(registry)
     register_ingestion(registry)
     return registry
 

@@ -50,6 +50,8 @@ tags:
   description: M20/M21/M24
 - name: reports
   description: M24
+- name: intel
+  description: M18 (độ tươi và lần đồng bộ intel)
 paths:
   /campaigns:
     post:
@@ -1171,6 +1173,124 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
         '404':
+          $ref: '#/components/responses/Error'
+  /intel/status:
+    get:
+      tags:
+      - intel
+      operationId: getIntelStatus
+      summary: Độ tươi của intel và lần đồng bộ gần nhất (NVD/EPSS/KEV)
+      description: 'Mỗi feed mà `sync-intel` làm mới có mặt trong `feeds`: snapshot mới nhất theo
+        `fetched_at`, tuổi tính bằng giây, và `stale` khi tuổi vượt ngưỡng của feed. Feed chưa có
+        snapshot vẫn xuất hiện với `snapshot: null` và `stale: true`, nên một lịch hỏng hiện ra bằng
+        tuổi tăng dần chứ không phải bằng dòng bị thiếu. `last_run` là lần chạy gần nhất trong
+        `intel_sync_run` (kể cả RUNNING), với `legs` từng feed và lỗi của feed hỏng.
+
+        Đây là read model: không kích hoạt sync, không ghi gì. Cần operator token.
+
+        '
+      security:
+      - operatorToken: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - generated_at
+                - stale_feeds
+                - feeds
+                - last_run
+                properties:
+                  generated_at:
+                    type: string
+                    format: date-time
+                  stale_feeds:
+                    type: array
+                    items:
+                      type: string
+                  feeds:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - feed
+                      - stale
+                      - age_seconds
+                      - snapshot
+                      properties:
+                        feed:
+                          type: string
+                        stale:
+                          type: boolean
+                        age_seconds:
+                          type:
+                          - integer
+                          - 'null'
+                          minimum: 0
+                        snapshot:
+                          type:
+                          - object
+                          - 'null'
+                          required:
+                          - version
+                          - snapshot_at
+                          - fetched_at
+                          - record_count
+                          properties:
+                            version:
+                              type: string
+                            snapshot_at:
+                              type: string
+                              format: date-time
+                            fetched_at:
+                              type: string
+                              format: date-time
+                            record_count:
+                              type: integer
+                              minimum: 0
+                  last_run:
+                    type:
+                    - object
+                    - 'null'
+                    required:
+                    - run_id
+                    - trigger
+                    - status
+                    - started_at
+                    - finished_at
+                    - legs
+                    - error
+                    properties:
+                      run_id:
+                        $ref: ../common/ids.v2.schema.json#/$defs/Id
+                      trigger:
+                        enum:
+                        - schedule
+                        - manual
+                      status:
+                        enum:
+                        - RUNNING
+                        - SUCCEEDED
+                        - FAILED
+                      started_at:
+                        type: string
+                        format: date-time
+                      finished_at:
+                        type:
+                        - string
+                        - 'null'
+                        format: date-time
+                      legs:
+                        type: object
+                        additionalProperties: true
+                      error:
+                        type:
+                        - string
+                        - 'null'
+        '401':
           $ref: '#/components/responses/Error'
   /reports/delta:
     get:

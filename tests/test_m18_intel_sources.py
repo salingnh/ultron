@@ -325,10 +325,11 @@ def test_sync_intel_reports_a_skipped_epss_leg_and_skips_what_was_asked(
     # A developer's shell may configure a real EPSS source; the test must not reach it.
     monkeypatch.delenv("AEGIS_EPSS_SOURCE", raising=False)
     monkeypatch.delenv("AEGIS_EPSS_VERSION", raising=False)
-    code = cli.main(["sync-intel", "--skip-nvd", "--skip-kev"])
+    code = cli.main(["sync-intel", "--skip-nvd", "--skip-kev", "--skip-distro"])
     body = json.loads(capsys.readouterr().out)
     assert code == 0 and body["ok"] is True
     assert body["legs"]["nvd"] == {"status": "skipped"}
+    assert body["legs"]["distro"] == {"status": "skipped"}
     assert body["legs"]["kev"] == {"status": "skipped"}
     assert body["legs"]["epss"]["status"] == "skipped"
     assert "AEGIS_EPSS_SOURCE" in body["legs"]["epss"]["reason"]
