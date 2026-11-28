@@ -14,7 +14,7 @@ SHELL := /bin/bash
 	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test intel-kev intel-sync \
 	deps lint test codegen codegen-check migrate ci-python \
 	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-recovery soak-start soak-stop \
-	run-local stop-local seed-demo llm-smoke broker-image internet-smoke \
+	run-local stop-local seed-demo llm-smoke broker-image internet-smoke intel-schedule \
 	llm-gateway-up llm-gateway-down llm-gateway-status llm-gateway-reload llm-gateway-test
 
 # The help text is data, not shell: one entry per .PHONY target, printed with `$(info)` so an
@@ -93,6 +93,8 @@ make intel-kev       refresh the configured CISA KEV mirror: cisagov/kev-data de
                      with its commit; no fallback source
 make intel-sync      the scheduled/incremental intel refresh: NVD (auto), EPSS when
                      AEGIS_EPSS_SOURCE is set, then KEV; exits non-zero if any leg is stale
+make intel-schedule  install/update the daily Temporal schedule (IntelSyncWorkflow on the
+                     M02 orchestrator queue, 03:00 UTC) that runs intel-sync
 make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate
 make broker-image    build the internet-profile egress broker image (stdlib-only)
 make internet-smoke  passive Subfinder on an authorized domain over the internet profile;
@@ -213,6 +215,12 @@ intel-kev:
 intel-sync:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
 		uv run --frozen python -m aegis.m18_intel sync-intel
+
+# The single mechanism that makes the refresh daily (item 80): a Temporal schedule, not a host
+# timer. `install` is idempotent (updates the existing schedule); the worker must be running.
+intel-schedule:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python -m aegis.m02_orchestrator.intel install
 
 contracts-gate:
 	@scripts/ci/contracts-gate.sh

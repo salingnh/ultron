@@ -451,6 +451,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intel/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Độ tươi của intel và lần đồng bộ gần nhất (NVD/EPSS/KEV)
+         * @description Mỗi feed mà `sync-intel` làm mới có mặt trong `feeds`: snapshot mới nhất theo `fetched_at`, tuổi tính bằng giây, và `stale` khi tuổi vượt ngưỡng của feed. Feed chưa có snapshot vẫn xuất hiện với `snapshot: null` và `stale: true`, nên một lịch hỏng hiện ra bằng tuổi tăng dần chứ không phải bằng dòng bị thiếu. `last_run` là lần chạy gần nhất trong `intel_sync_run` (kể cả RUNNING), với `legs` từng feed và lỗi của feed hỏng.
+         *     Đây là read model: không kích hoạt sync, không ghi gì. Cần operator token.
+         */
+        get: operations["getIntelStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/reports/delta": {
         parameters: {
             query?: never;
@@ -2673,6 +2694,59 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    getIntelStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        generated_at: string;
+                        stale_feeds: string[];
+                        feeds: {
+                            feed: string;
+                            stale: boolean;
+                            age_seconds: number | null;
+                            snapshot: {
+                                version: string;
+                                /** Format: date-time */
+                                snapshot_at: string;
+                                /** Format: date-time */
+                                fetched_at: string;
+                                record_count: number;
+                            } | null;
+                        }[];
+                        last_run: {
+                            run_id: components["schemas"]["Id"];
+                            /** @enum {unknown} */
+                            trigger: "schedule" | "manual";
+                            /** @enum {unknown} */
+                            status: "RUNNING" | "SUCCEEDED" | "FAILED";
+                            /** Format: date-time */
+                            started_at: string;
+                            /** Format: date-time */
+                            finished_at: string | null;
+                            legs: {
+                                [key: string]: unknown;
+                            };
+                            error: string | null;
+                        } | null;
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
         };
     };
     getDeltaReport: {

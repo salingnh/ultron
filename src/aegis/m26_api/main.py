@@ -31,6 +31,7 @@ from aegis.m26_api import (
     capabilities,
     events,
     flow,
+    intel,
     jobs,
     vulnerabilities,
 )
@@ -74,6 +75,7 @@ def build_registry() -> RouterRegistry:
     capabilities.register(registry)
     assets.register(registry)
     vulnerabilities.register(registry)
+    intel.register(registry)
     register_ingestion(registry)
     return registry
 

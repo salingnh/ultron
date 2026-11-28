@@ -24,6 +24,7 @@ from temporalio.worker import Worker
 
 from .activities import ACTIVITIES, configure
 from .db import dsn_from_env
+from .intel import IntelSyncWorkflow, run_intel_sync
 from .types import AGENT_QUEUE, ORCHESTRATOR_QUEUE
 from .workflow import CampaignWorkflow
 
@@ -80,8 +81,8 @@ async def run_worker(
     orchestrator = Worker(
         client,
         task_queue=ORCHESTRATOR_QUEUE,
-        workflows=[CampaignWorkflow],
-        activities=list(ACTIVITIES),
+        workflows=[CampaignWorkflow, IntelSyncWorkflow],
+        activities=[*ACTIVITIES, run_intel_sync],
     )
     workers = [orchestrator.run()]
     if session_modules:
