@@ -53,6 +53,41 @@ WAIT_POLL_SECONDS = 0.05
 AUDIT_MAX_BYTES = 16 * 1024 * 1024
 
 
+def _milliseconds(seconds: float) -> int:
+    """A measured duration as whole milliseconds, never negative (the audit's unit for a wait)."""
+    return max(0, int(round(seconds * 1000)))
+
+
+@dataclass(frozen=True, slots=True)
+class Wait:
+    """One trip through the RoE caps: the denial (None = admitted) and how long it took.
+
+    `waited_seconds` is measured from the moment the connection asked for a slot, so it is the
+    delay the tool itself sees added to its own connect timeout. The broker writes it to the audit
+    as `waited_ms`; `aegis.m06_runner.job` turns a wait past the tool's declared budget into an
+    `EGRESS_PACED` coverage limitation instead of a silently missing port.
+    """
+
+    reason: str | None
+    waited_seconds: float
+
+    @property
+    def admitted(self) -> bool:
+        return self.reason is None
+
+
+@dataclass(frozen=True, slots=True)
+class Admission:
+    """A decided connection that passed the caps, with the wait the tool paid for it."""
+
+    decision: netpolicy.Decision
+    waited_seconds: float
+
+    @property
+    def admitted(self) -> bool:
+        return self.decision.allowed
+
+
 class HostLimiter:
     """Per-host safety caps of the internet profile (RoE `rate_limits`), enforced before dialling.
 
@@ -84,8 +119,15 @@ class HostLimiter:
     def capacity(self) -> float:
         return max(1.0, float(self.rate or 0.0))
 
-    def admit(self, host: str) -> str | None:
-        """None when the connection may open, else the deny reason after the bounded wait."""
+    def admit(self, host: str) -> Wait:
+        """The decision after the bounded queue: the deny reason, if any, and how long it waited.
+
+        The wait is returned to the caller because it is evidence, not just queue accounting: a
+        tool whose own connect timeout is shorter than this wait has already given up on a
+        connection the broker will still allow (G1.6 Decision A, item 83 trial). The broker cannot
+        know that timeout, so it records the wait and the runner compares it with the profile's
+        declared budget; without that line the timeout is silent.
+        """
         key = denyset.host_key(host)
         # The bounded wait is wall-clock time (a fake clock is only for the rate arithmetic): a
         # policy that never frees a slot must not hang the broker.
@@ -112,16 +154,17 @@ class HostLimiter:
                     else:
                         self._tokens[key] = tokens - 1.0
                         self._filled_at[key] = now
+                waited = max(0.0, now - waiting_since)
                 if blocked is None:
                     if self.max_connections is not None:
                         self._live[key] = self._live.get(key, 0) + 1
-                    self.waited_seconds += max(0.0, now - waiting_since)
-                    return None
+                    self.waited_seconds += waited
+                    return Wait(reason=None, waited_seconds=waited)
                 remaining = deadline - time.monotonic()
                 if remaining <= 0.0:
                     # The bounded wait is over: this is the only real refusal (a timeout).
-                    self.waited_seconds += max(0.0, self._now() - waiting_since)
-                    return blocked
+                    self.waited_seconds += waited
+                    return Wait(reason=blocked, waited_seconds=waited)
                 self._changed.wait(min(remaining, WAIT_POLL_SECONDS))
 
     def release(self, host: str) -> None:
@@ -166,8 +209,9 @@ class AuditLog:
         self._pending: dict[str, Any] | None = None
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    def write(self, decision: netpolicy.Decision) -> None:
-        self._append(decision.as_audit())
+    def write(self, decision: netpolicy.Decision, **fields: object) -> None:
+        """One decision line; `fields` carries the timings the broker measured for it."""
+        self._append({**decision.as_audit(), **fields})
 
     def write_dns(self, record: dict[str, Any]) -> None:
         """One line per DNS query (G1.6 item 4): same file, `kind: dns`, same job context."""
@@ -375,17 +419,36 @@ class EgressBroker:
             max_connections=policy.per_host_max_connections,
         )
 
-    def admit(self, host: str, port: int) -> netpolicy.Decision:
-        """Decide one connection, apply the host caps and write exactly one audit line."""
+    def admit(self, host: str, port: int) -> Admission:
+        """Decide one connection and apply the host caps.
+
+        A denial is final and audited here. An admitted connection is audited by `opened()`
+        instead, once the broker knows how long the dial took: the tool waits for the whole
+        handshake, so both halves of that delay belong in the one line that records it.
+        """
         decision = netpolicy.decide(self.policy, host, port)
+        waited = 0.0
         if decision.allowed:
-            refused = self.limiter.admit(self._cap_key(decision))
-            if refused is not None:
+            wait = self.limiter.admit(self._cap_key(decision))
+            waited = wait.waited_seconds
+            if wait.reason is not None:
                 decision = replace(
-                    decision, allowed=False, reason=netpolicy.Reason(refused), pinned=None
+                    decision, allowed=False, reason=netpolicy.Reason(wait.reason), pinned=None
                 )
-        self.audit.write(decision)
-        return decision
+        if not decision.allowed:
+            self.audit.write(decision, waited_ms=_milliseconds(waited))
+        return Admission(decision=decision, waited_seconds=waited)
+
+    def opened(
+        self, decision: netpolicy.Decision, admission: Admission, *, dial_seconds: float, open: bool
+    ) -> None:
+        """Audit an admitted connection: the wait for a slot, the dial, and whether it opened."""
+        self.audit.write(
+            decision,
+            waited_ms=_milliseconds(admission.waited_seconds),
+            dial_ms=_milliseconds(dial_seconds),
+            upstream="open" if open else "failed",
+        )
 
     def release(self, decision: netpolicy.Decision) -> None:
         if decision.allowed:
@@ -533,11 +596,18 @@ def _http(conn: socket.socket, broker: EgressBroker) -> None:
         conn.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
         return
 
-    decision = broker.admit(parsed.host, parsed.port)
-    if not decision.allowed:
-        conn.sendall(_deny_response(decision))
+    admission = broker.admit(parsed.host, parsed.port)
+    if not admission.admitted:
+        conn.sendall(_deny_response(admission.decision))
         return
-    upstream = broker.dial(decision)
+    started = time.monotonic()
+    upstream = broker.dial(admission.decision)
+    broker.opened(
+        admission.decision,
+        admission,
+        dial_seconds=time.monotonic() - started,
+        open=upstream is not None,
+    )
     try:
         if upstream is None:
             conn.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
@@ -564,7 +634,7 @@ def _http(conn: socket.socket, broker: EgressBroker) -> None:
             upstream.settimeout(None)
             _relay(conn, upstream)
     finally:
-        broker.release(decision)
+        broker.release(admission.decision)
 
 
 def _socks5(conn: socket.socket, broker: EgressBroker) -> None:
@@ -590,11 +660,18 @@ def _socks5(conn: socket.socket, broker: EgressBroker) -> None:
     if len(port_bytes) != 2:
         return
     port = int.from_bytes(port_bytes, "big")
-    decision = broker.admit(host, port)
-    if not decision.allowed:
+    admission = broker.admit(host, port)
+    if not admission.admitted:
         conn.sendall(b"\x05\x02\x00\x01\x00\x00\x00\x00\x00\x00")
         return
-    upstream = broker.dial(decision)
+    started = time.monotonic()
+    upstream = broker.dial(admission.decision)
+    broker.opened(
+        admission.decision,
+        admission,
+        dial_seconds=time.monotonic() - started,
+        open=upstream is not None,
+    )
     try:
         if upstream is None:
             conn.sendall(b"\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00")
@@ -608,7 +685,7 @@ def _socks5(conn: socket.socket, broker: EgressBroker) -> None:
             upstream.settimeout(None)
             _relay(conn, upstream)
     finally:
-        broker.release(decision)
+        broker.release(admission.decision)
 
 
 def _read_socks_address(conn: socket.socket, address_type: int) -> str | None:

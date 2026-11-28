@@ -30,6 +30,7 @@ with workflow.unsafe.imports_passed_through():
     from aegis.m02_orchestrator.activities import (
         cancel_jobs,
         dispatch_ready,
+        finalize_campaign,
         finish_campaign,
         load_campaign,
     )
@@ -44,6 +45,7 @@ with workflow.unsafe.imports_passed_through():
         CampaignStatusView,
         CancelOutcome,
         DispatchPlan,
+        FinalCampaign,
         SessionOutcome,
         SessionRequest,
     )
@@ -52,6 +54,9 @@ __all__ = ["CampaignWorkflow", "SessionRefusal", "session_refusal"]
 
 ACTIVITY_TIMEOUT = timedelta(seconds=30)
 SESSION_TIMEOUT = timedelta(minutes=30)
+#: The matcher reads the campaign's CVEs and writes candidates: minutes, not seconds, on a large
+#: catalogue; it is idempotent, so a retry after a worker crash is safe.
+FINALIZE_TIMEOUT = timedelta(minutes=10)
 HEARTBEAT_TIMEOUT = timedelta(seconds=3)
 RETRY = RetryPolicy(maximum_attempts=5)
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
@@ -229,10 +234,7 @@ class CampaignWorkflow:
             if outcome is None:  # cancelled mid-session; the loop top handles the cancel
                 continue
             if outcome.stop_reason is not None:
-                self._stop_reason = outcome.stop_reason
-                await self._finish(inp.campaign_id, "complete", outcome.stop_reason)
-                self._state = "COMPLETED"
-                return self._outcome(inp.campaign_id, "COMPLETED", outcome.stop_reason)
+                return await self._complete(inp, outcome.stop_reason)
             self._cursor = outcome.cursor
             self._cycle += 1
             self._idle_cycles = self._idle_cycles + 1 if outcome.idle else 0
@@ -244,9 +246,7 @@ class CampaignWorkflow:
                 self._state = "PAUSED"
                 continue
             if self._cycle >= inp.max_cycles:
-                await self._finish(inp.campaign_id, "complete", "max_cycles")
-                self._state = "COMPLETED"
-                return self._outcome(inp.campaign_id, "COMPLETED", "max_cycles")
+                return await self._complete(inp, "max_cycles")
 
     # --- steps ---------------------------------------------------------------------------
     async def _run_session(self, inp: CampaignRunInput) -> SessionOutcome | None:
@@ -357,6 +357,27 @@ class CampaignWorkflow:
         self._state = plan.status
         self._stop_reason = plan.stop or f"campaign_{plan.status.lower()}"
         return self._outcome(inp.campaign_id, plan.status, self._stop_reason)
+
+    async def _complete(self, inp: CampaignRunInput, proposed: str) -> CampaignOutcome:
+        """End a campaign that the campaign itself decided to stop.
+
+        The discovery chain's last step runs here: `finalize_campaign` matches the campaign's
+        observed products against the current intel and verifies the coverage of its current job
+        results. Its reason is what the campaign records, so a scan that could not conclude its
+        surface ends `coverage_incomplete` - never `objective_met` - and a matcher failure ends
+        `matching_failed` instead of leaving a silent empty candidate list.
+        """
+        final: FinalCampaign = await workflow.execute_activity(
+            finalize_campaign,
+            args=[inp.campaign_id, proposed],
+            start_to_close_timeout=FINALIZE_TIMEOUT,
+            retry_policy=RETRY,
+            result_type=FinalCampaign,
+        )
+        self._stop_reason = final.reason
+        await self._finish(inp.campaign_id, "complete", final.reason)
+        self._state = "COMPLETED"
+        return self._outcome(inp.campaign_id, "COMPLETED", final.reason)
 
     async def _finish(self, campaign_id: str, action: str, reason: str) -> None:
         await workflow.execute_activity(

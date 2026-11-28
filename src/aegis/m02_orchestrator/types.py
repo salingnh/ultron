@@ -22,6 +22,7 @@ __all__ = [
     "CampaignStatusView",
     "CancelOutcome",
     "DispatchPlan",
+    "FinalCampaign",
     "SESSION_REFUSED_ERROR",
     "SessionOutcome",
     "SessionRequest",
@@ -150,6 +151,26 @@ class CancelOutcome:
 
     canceled_job_ids: tuple[str, ...] = ()
     cancel_requested_job_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class FinalCampaign:
+    """The verified reason a completed campaign ends with (`finalize_campaign`).
+
+    `reason` is what `finish_campaign` records on the campaign row (`status_reason`), so it is the
+    operator-facing answer to "did this campaign actually cover the surface?". It is the session's
+    proposed stop reason only when matching ran and every job's coverage was complete.
+    """
+
+    reason: str
+    #: Campaign jobs whose current result reports `coverage.complete = false`, with their codes.
+    incomplete_jobs: tuple[str, ...] = ()
+    #: `EGRESS_PACED`, `EGRESS_CAPPED`, ... that made those jobs incomplete.
+    limitation_codes: tuple[str, ...] = ()
+    #: Candidates the matcher produced or retracted for this campaign, and why it failed.
+    matches: int = 0
+    retractions: int = 0
+    matching_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

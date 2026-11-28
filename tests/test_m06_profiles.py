@@ -183,6 +183,14 @@ def test_the_internet_profile_forwards_names_and_an_optional_config_file(
             "network": "aegis-lab-lab",
             "jobs": [{"imageDigest": SUBFINDER, "envFromHost": ["lower-case"]}],
         },
+        {
+            "network": "aegis-lab-lab",
+            "jobs": [{"imageDigest": SUBFINDER, "connectTimeoutMs": "1s"}],
+        },
+        {
+            "network": "aegis-lab-lab",
+            "jobs": [{"imageDigest": SUBFINDER, "connectTimeoutMs": 0}],
+        },
     ],
 )
 def test_a_broken_profile_fails_before_any_container(
@@ -197,12 +205,71 @@ def test_a_missing_file_says_which_one_and_which_profile(tmp_path: Path) -> None
         DeploymentProfile.from_file(tmp_path / "missing.json", kind="internet")
 
 
+def test_a_job_declares_the_connect_budget_its_argv_implements(tmp_path: Path) -> None:
+    """`connectTimeoutMs` is the tool's own timeout, next to the argv that sets it.
+
+    The broker records how long a paced connection waited; without this budget the runner cannot
+    tell a wait the tool sat through from one it had already abandoned (item 83 trial).
+    """
+    from aegis.common.repo import repository_root
+
+    document = _internet_document()
+    document["jobs"] = [
+        {
+            "imageDigest": SUBFINDER,
+            "args": ["-timeout", "1s"],
+            "connectTimeoutMs": 1000,
+        }
+    ]
+    profile = DeploymentProfile.from_document(document, kind="internet")
+    assert profile.for_image(SUBFINDER) is not None
+    assert profile.for_image(SUBFINDER).connect_timeout_ms == 1000  # type: ignore[union-attr]
+    # A profile that does not know its tool's timeout says nothing rather than guessing.
+    assert (
+        DeploymentProfile.from_document(_internet_document(), kind="internet")
+        .jobs[SUBFINDER]
+        .connect_timeout_ms
+        is None
+    )
+    # The shipped internet profile declares Naabu's 1 s timeout next to `-timeout 1s`.
+    shipped = DeploymentProfile.from_file(
+        repository_root() / "deploy/internet/runner-profile.json", kind="internet"
+    )
+    assert any(job.connect_timeout_ms == 1000 for job in shipped.jobs.values())
+
+
 def test_the_runner_without_a_profile_starts_no_endpoint_data(tmp_path: Path) -> None:
     runner = PodmanRunner(base_dir=tmp_path)
     assert runner.lab is None
     assert runner.internet is None
     assert runner.profile_entry("lab", SUBFINDER) is None
     assert runner.profile_entry("internet", SUBFINDER) is None
+
+
+def test_the_internet_profile_budget_is_the_timeout_its_manifest_sets() -> None:
+    """`connectTimeoutMs` must be the tool's own timeout, or the paced check would lie.
+
+    Too small makes an in-time connection "incomplete"; too large turns the silent timeout the
+    item 83 trial found back into a silent one. The manifest owns the argv, the profile owns the
+    budget, so the two pinned files are checked against each other.
+    """
+    import yaml
+
+    from aegis.common.repo import repository_root
+
+    root = repository_root()
+    manifest = yaml.safe_load(
+        (root / "adapters/m09/naabu/manifest.yaml").read_text(encoding="utf-8")
+    )
+    digest = manifest["spec"]["runtime"]["imageDigest"]
+    args = manifest["spec"]["runtime"]["argsTemplate"]
+    seconds = float(str(args[args.index("-timeout") + 1]).rstrip("s"))
+    profile = DeploymentProfile.from_file(
+        root / "deploy/internet/runner-profile.json", kind="internet"
+    )
+    entry = profile.for_image(digest)
+    assert entry is not None
+    assert entry.connect_timeout_ms == int(seconds * 1000)
 
 
 def test_the_runner_only_profiles_the_named_images_and_kind(tmp_path: Path) -> None:
