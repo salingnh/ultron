@@ -30,13 +30,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from aegis.m18_intel import feeds
 from aegis.m18_intel.nvd_api import DEFAULT_RESULTS_PER_PAGE, NvdApiSync, NvdPageProgress
+from aegis.m18_intel.refresh import RefreshOptions, kev_report
+from aegis.m18_intel.runs import recorded_refresh
 from aegis.m18_intel.sync import FeedSync, FeedSyncError, read_source
 
 
@@ -107,60 +108,10 @@ def _sync(argv: argparse.Namespace) -> int:
     return 0
 
 
-def _last_kev_version() -> str | None:
-    """The newest KEV `catalogVersion` already stored (the monotonic floor of a refresh)."""
-    from aegis.m18_intel.sources import latest_catalog_version
-    from aegis.m18_intel.sync import connect_from_env
-
-    connection = connect_from_env()
-    try:
-        rows = connection.execute(
-            "SELECT version FROM intel_snapshot WHERE feed = 'kev'"
-        ).fetchall()
-    finally:
-        connection.close()
-    return latest_catalog_version(str(row["version"]) for row in rows)
-
-
-def _kev_report(fixture: str | None, source_file: str | None) -> dict[str, Any]:
-    """Refresh (or, with `fixture`, load) the configured KEV export and write it.
-
-    Raises on any failure (API, download, validation, sync); the caller turns that into exit 1.
-    """
-    from aegis.m18_intel.sources import KevSourceError, load_fixture, load_kev_source, refresh_kev
-
-    source = load_kev_source(source_file)
-    last_version = _last_kev_version()
-    try:
-        document = (
-            load_fixture(source, fixture, last_version=last_version)
-            if fixture is not None
-            else refresh_kev(source, last_version=last_version)
-        )
-    except KevSourceError as error:
-        raise FeedSyncError(f"kev: {error}") from error
-    report = FeedSync.from_env().sync(
-        "kev",
-        document.catalog_version,
-        document.data,
-        source_uri=document.source,
-        snapshot_at=document.released_at,
-    )
-    return {
-        **report.as_dict(),
-        "source_uri": document.source,
-        "commit": document.commit or None,
-        "branch": document.branch or None,
-        "size_bytes": document.size_bytes,
-        "catalog_version": document.catalog_version,
-        "count": document.count,
-    }
-
-
 def _sync_kev(argv: argparse.Namespace) -> int:
     """Refresh the configured KEV source and write the validated export."""
     try:
-        report = _kev_report(argv.fixture, argv.source_file)
+        report = kev_report(argv.fixture, argv.source_file)
     except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
         print(f"kev sync refused: {error}", file=sys.stderr)
         return 1
@@ -168,53 +119,27 @@ def _sync_kev(argv: argparse.Namespace) -> int:
     return 0
 
 
-def _epss_refresh(argv: argparse.Namespace) -> dict[str, Any]:
-    source = (argv.epss_source or os.environ.get("AEGIS_EPSS_SOURCE", "")).strip()
-    if not source:
-        return {"status": "skipped", "reason": "no --epss-source or AEGIS_EPSS_SOURCE"}
-    version = (
-        argv.epss_version
-        or os.environ.get("AEGIS_EPSS_VERSION", "").strip()
-        or date.today().isoformat()
-    )
-    data = read_source(source)
-    report = FeedSync.from_env().sync(
-        "epss", version, data, source_uri=source, snapshot_at=_moment(argv.snapshot_at)
-    )
-    return report.as_dict()
-
-
 def _sync_intel(argv: argparse.Namespace) -> int:
     """The scheduled refresh: NVD, EPSS (when configured), KEV; exit 1 if any leg failed."""
-    legs: dict[str, Any] = {}
-    failed = False
-    if not argv.skip_nvd:
-        try:
-            report = NvdApiSync.from_env(api_url=argv.api_url).sync(
-                mode=argv.nvd_mode,
-                results_per_page=argv.results_per_page,
-            )
-            legs["nvd"] = report.as_dict()
-        except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
-            legs["nvd"] = {"error": str(error)}
-            failed = True
-    else:
-        legs["nvd"] = {"status": "skipped"}
+    options = RefreshOptions(
+        nvd_mode=argv.nvd_mode,
+        api_url=argv.api_url,
+        results_per_page=argv.results_per_page,
+        skip_nvd=argv.skip_nvd,
+        skip_kev=argv.skip_kev,
+        epss_source=argv.epss_source,
+        epss_version=argv.epss_version,
+        snapshot_at=argv.snapshot_at,
+        source_file=argv.source_file,
+        kev_fixture=argv.kev_fixture,
+    )
     try:
-        legs["epss"] = _epss_refresh(argv)
+        document = recorded_refresh("manual", options, require_database=False)
     except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
-        legs["epss"] = {"error": str(error)}
-        failed = True
-    if not argv.skip_kev:
-        try:
-            legs["kev"] = _kev_report(argv.kev_fixture, argv.source_file)
-        except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
-            legs["kev"] = {"error": str(error)}
-            failed = True
-    else:
-        legs["kev"] = {"status": "skipped"}
-    print(json.dumps({"ok": not failed, "legs": legs}, indent=2, default=str))
-    if failed:
+        print(f"intel refresh failed: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(document, indent=2, default=str))
+    if not document["ok"]:
         print(
             "intel refresh failed: a feed is stale; fix the leg named above and re-run "
             "(nothing is silently skipped)",
