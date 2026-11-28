@@ -68,6 +68,12 @@ def coverage() -> list[str]:
     return [SERVICE_KEY, NGINX_SERVICE_KEY, APP_KEY]
 
 
+#: Every real adapter attaches the raw output it observed to each observation
+#: (`evidence_refs: [{local_ref: raw}]`, the fingerprintx result-envelope fixture);
+#: the fixture used to omit it, which made a candidate impossible to raise to a finding (G3).
+RAW_REF = [{"local_ref": "raw"}]
+
+
 def service_observations() -> list[dict[str, Any]]:
     from tests.support_ingestion import observation
 
@@ -76,13 +82,15 @@ def service_observations() -> list[dict[str, Any]]:
             SERVICE_KEY,
             "service.product",
             {"product": "Apache httpd", "version": "2.4.49", "cpe": APACHE_CPE},
+            evidence_refs=RAW_REF,
         ),
         observation(
             NGINX_SERVICE_KEY,
             "service.product",
             {"product": "nginx", "version": "1.18.0", "cpe": NGINX_CPE},
+            evidence_refs=RAW_REF,
         ),
-        observation(APP_KEY, "http.technology", [SPRING_CPE, "Spring Boot"]),
+        observation(APP_KEY, "http.technology", [SPRING_CPE, "Spring Boot"], evidence_refs=RAW_REF),
     ]
 
 

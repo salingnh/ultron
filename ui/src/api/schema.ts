@@ -2646,7 +2646,7 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
-            /** @description Chuyển trạng thái không hợp lệ hoặc expected_seq lệch */
+            /** @description Chuyển trạng thái không hợp lệ (field=/to), expected_seq lệch (field=/expected_seq), hoặc cùng Idempotency-Key với body khác (IDEMPOTENCY_CONFLICT) */
             409: {
                 headers: {
                     [name: string]: unknown;

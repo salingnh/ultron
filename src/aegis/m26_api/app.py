@@ -75,6 +75,7 @@ def create_app(
     database_dsn: str | None = None,
     cors_origins: Sequence[str] | None = None,
     graph_driver: Any | None = None,
+    severity_client: tuple[Any, str, str] | None = None,
 ) -> FastAPI:
     """Build the API app from `registry` (empty by default until a card registers routers).
 
@@ -84,7 +85,9 @@ def create_app(
     fail-closed: without it every operator call is refused. The error handlers of
     `error.v2` are installed here so no route can answer with FastAPI's `detail` shape.
     `graph_driver` is the Neo4j driver the graph read routes (G1.4b) use; the graph route
-    fails loudly on a missing one, like the database dependency does.
+    fails loudly on a missing one, like the database dependency does. `severity_client` is the
+    `(ModelClient, provider, model)` tuple of the live C07 runtime; None means the deployment has
+    no model and every severity assessment stores an honest UNRATED record.
     """
     routers = registry if registry is not None else RouterRegistry()
     app = FastAPI(
@@ -98,6 +101,7 @@ def create_app(
     app.state.operator_authenticator = operator_authenticator
     app.state.database_dsn = database_dsn
     app.state.graph_driver = graph_driver
+    app.state.severity_client = severity_client
     install_error_handlers(app)
     _drop_default_422(app)
     # Added before CORSMiddleware so Starlette wraps UnhandledErrorMiddleware inside CORS: an

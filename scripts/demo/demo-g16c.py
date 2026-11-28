@@ -16,7 +16,14 @@ What it does, in the order an operator would:
 5. `GET /assets/{asset_id}/vulnerabilities` returns the same candidates to the operator, validated
    against the contract. The service table carries CVE-2021-41773 (httpd 2.4.49) and CVE-2020-1938
    (Tomcat 9.0.30, read from its error page body); the AJP port 8009 stays product-less.
-6. Every claim is checked against PostgreSQL and Neo4j and written to `.local/demo/`.
+6. The G2 finding producer (`aegis.m20_vuln.findings`) raises one finding per (asset, CVE) at
+   status CANDIDATE with its `finding_run`/`finding_source` rows and `finding.changed.v2` event;
+   `GET /findings` returns the same rows, the operator transition endpoint moves one to
+   FALSE_POSITIVE with actor+reason+`expected_seq` (a retry with the stale seq answers 409), and
+   the C07 assessment endpoint stores one severity record for one finding (the scripted stack has
+   no model, so that record is UNRATED with its failure reason). The demo does not auto-assess all
+   findings: a live deployment would make one paid call per finding.
+7. Every claim is checked against PostgreSQL and Neo4j and written to `.local/demo/`.
 
 The product/version/CPE row is the dedicated fingerprinter's (slice B): the port scan reports a
 service by address and transport and deliberately does not guess what runs behind it (see the
@@ -30,11 +37,15 @@ ran but the CVE stage has no product observation to match (BLOCKED), or the stac
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -167,7 +178,31 @@ def main(argv: list[str] | None = None) -> int:
         support.section("6. API: GET /assets/{asset_id}/vulnerabilities")
         api_items = _api_items(targetable)
 
-        support.section("7. evidence")
+        support.section("7. findings: candidate -> finding (M20), list/transition/assessment")
+        from aegis.m20_vuln.findings import FindingsEngine
+
+        findings_report = FindingsEngine(connection).run(campaign_id=campaign_id, assess=False)
+        support.line("counters", json.dumps(findings_report.as_dict(), sort_keys=True))
+        finding_rows = _findings(connection, campaign_id)
+        for item in finding_rows:
+            support.line(
+                "finding",
+                item["canonical_key"],
+                item["rule_id"],
+                item["status"],
+                item["severity"],
+                f"seq={item['transition_seq']}",
+                f"evidence={','.join(item['sha256'] or [])[:24]}",
+            )
+        support.require(finding_rows, "the finding producer raised no finding")
+        api_findings = _api_findings(campaign_id)
+        token = support.operator_token()
+        principal_id = _principal_id(token)
+        assessed = _assess_one(token, finding_rows[0]["finding_id"])
+        transition = _transition_one(token, principal_id, finding_rows)
+        projected_findings = _wait_for_findings([item["finding_id"] for item in finding_rows])
+
+        support.section("8. evidence")
         evidence = {
             "campaign_id": campaign_id,
             "jobs": jobs,
@@ -177,6 +212,14 @@ def main(argv: list[str] | None = None) -> int:
             "candidates": candidates,
             "graph": projected,
             "api": api_items,
+            "findings": {
+                "producer": findings_report.as_dict(),
+                "rows": finding_rows,
+                "api": api_findings,
+                "transition": transition,
+                "assessment": assessed,
+                "graph": projected_findings,
+            },
             "activity": activity,
             "verdict": "PASS",
         }
@@ -187,7 +230,10 @@ def main(argv: list[str] | None = None) -> int:
     support.section("evidence file")
     support.line(str(support.write_artifact(f"g16c-{_stamp()}.json", evidence)))
     support.section("result")
-    support.line("PASS - service -> CVE candidate with KEV/EPSS, in PostgreSQL and Neo4j")
+    support.line(
+        "PASS - service -> CVE candidate with KEV/EPSS and a finding with evidence, "
+        "in PostgreSQL, Neo4j and the API"
+    )
     return 0
 
 
@@ -480,6 +526,260 @@ def _api_items(assets: dict[str, str]) -> list[dict[str, Any]]:
     return items
 
 
+def _findings(connection: Any, campaign_id: str) -> list[dict[str, Any]]:
+    """The campaign's finding rows with the evidence hash and providers of each one."""
+    return support.rows(
+        connection,
+        """
+        SELECT f.finding_id::text AS finding_id, a.canonical_key, f.rule_id, f.title,
+               f.vulnerability_ids, f.status, f.severity, f.transition_seq, f.confidence,
+               (SELECT array_agg(DISTINCT fs.provider) FROM finding_source fs
+                 WHERE fs.finding_id = f.finding_id) AS providers,
+               (SELECT array_agg(DISTINCT e.sha256) FROM finding_run fr
+                  JOIN evidence e ON e.evidence_id = fr.evidence_id
+                 WHERE fr.finding_id = f.finding_id AND fr.evidence_id IS NOT NULL) AS sha256
+          FROM finding f
+          JOIN asset a ON a.asset_id = f.asset_id
+          JOIN asset_campaign ac ON ac.asset_id = a.asset_id AND ac.campaign_id = %s
+         ORDER BY a.canonical_key, f.vulnerability_ids[1]
+        """,
+        (campaign_id,),
+    )
+
+
+def _api_findings(campaign_id: str) -> list[dict[str, Any]]:
+    """Every page of `GET /findings?campaign_id=` (the endpoint pages at 50 by default)."""
+    token = support.operator_token()
+    items: list[dict[str, Any]] = []
+    cursor: str | None = None
+    pages = 0
+    while True:
+        path = f"/api/v2/findings?campaign_id={campaign_id}&limit=200"
+        if cursor is not None:
+            path += "&cursor=" + urllib.parse.quote(cursor)
+        body = support.api("GET", path, token=token)
+        items.extend(body.get("items", []))
+        pages += 1
+        if "next_cursor" not in body:
+            break
+        cursor = str(body["next_cursor"])
+        support.require(pages < 50, "the finding list did not terminate")
+    support.line("api", "findings", len(items), f"| {pages} page(s)")
+    return items
+
+
+def _principal_id(token: str) -> str:
+    """The opaque operator principal of the demo token (the server never echoes it)."""
+    path = os.environ.get("AEGIS_OPERATOR_TOKENS_FILE", "")
+    support.require(path, "AEGIS_OPERATOR_TOKENS_FILE is not set: run `make run-local`")
+    document = json.loads(open(path, encoding="utf-8").read())
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    matches = [
+        entry["principal_id"]
+        for entry in document.get("operators", [])
+        if entry.get("token_sha256") == digest
+    ]
+    support.require(
+        len(matches) == 1,
+        "the demo token is not exactly one principal of AEGIS_OPERATOR_TOKENS_FILE",
+    )
+    return str(matches[0])
+
+
+def _api_status(
+    method: str,
+    path: str,
+    payload: dict[str, Any],
+    token: str,
+    *,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, dict[str, Any], dict[str, str]]:
+    """One write that may be refused: status, body and headers, never raised (a 409 is evidence)."""
+    base = os.environ.get("AEGIS_API_URL", "http://127.0.0.1:8000").rstrip("/")
+    request_headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    request_headers.update(headers or {})
+    request = urllib.request.Request(
+        f"{base}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        method=method,
+        headers=request_headers,
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=60) as response:
+            body = response.read()
+            status = response.status
+            answer_headers = {key.lower(): value for key, value in response.headers.items()}
+    except urllib.error.HTTPError as error:
+        body = error.read()
+        status = error.code
+        answer_headers = {key.lower(): value for key, value in error.headers.items()}
+    try:
+        document = json.loads(body or b"{}")
+    except json.JSONDecodeError:
+        document = {"raw": body.decode("utf-8", "replace")}
+    return status, document, answer_headers
+
+
+def _assess_one(token: str, finding_id: str) -> dict[str, Any]:
+    """The C07 endpoint on one finding: one stored assessment record (no model => UNRATED)."""
+    record = support.api(
+        "POST", f"/api/v2/findings/{finding_id}/assessment", token=token, payload={}
+    )
+    support.require(isinstance(record, dict), "POST /findings/{id}/assessment answered no object")
+    support.line(
+        "assessment",
+        finding_id,
+        record.get("severity"),
+        (record.get("failure") or {}).get("code", "-"),
+    )
+    return dict(record)
+
+
+def _transition_one(token: str, principal_id: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """CANDIDATE -> FALSE_POSITIVE, its Idempotency-Key replay and the stale-seq refusal.
+
+    A re-run of the demo finds the finding the previous run transitioned: the operator decision is
+    not reopened (M20 suppresses it), so the same properties are checked on it - the history names
+    the verified principal, and a request with a stale `expected_seq` is a 409, not a silent
+    overwrite (a fresh key, because the same key would replay the original answer).
+    """
+    target = next((row for row in rows if row["status"] == "CANDIDATE"), None)
+    replayed: bool | None = None
+    replayed_body: dict[str, Any] | None = None
+    if target is not None:
+        finding_id = str(target["finding_id"])
+        expected = int(target["transition_seq"])
+        body = {
+            "to": "FALSE_POSITIVE",
+            "reason": (
+                "demo-g16c: the operator checked the banner by hand and marked it a false positive"
+            ),
+            "expected_seq": expected,
+        }
+        key = f"demo-g16c-transition-{uuid.uuid4()}"
+        status, document, _ = _api_status(
+            "POST",
+            f"/api/v2/findings/{finding_id}/transitions",
+            body,
+            token,
+            headers={"Idempotency-Key": key},
+        )
+        support.require(status == 200, f"transitionFinding answered {status}: {document}")
+        support.require(
+            document.get("status") == "FALSE_POSITIVE",
+            f"the transition answered status {document.get('status')!r}",
+        )
+        # The same key and body answer the original response with the replay header, and they do
+        # not write a second transition.
+        replay_status, replayed_body, replay_headers = _api_status(
+            "POST",
+            f"/api/v2/findings/{finding_id}/transitions",
+            body,
+            token,
+            headers={"Idempotency-Key": key},
+        )
+        support.require(
+            replay_status == 200
+            and replay_headers.get("idempotent-replayed") == "true"
+            and replayed_body == document,
+            f"the Idempotency-Key replay answered {replay_status}: {replayed_body}",
+        )
+        replayed = True
+    else:
+        finding = next((row for row in rows if row["status"] == "FALSE_POSITIVE"), None)
+        support.require(
+            finding is not None,
+            "no CANDIDATE finding to transition and no earlier operator transition to check",
+        )
+        assert finding is not None
+        finding_id = str(finding["finding_id"])
+        body = {
+            "to": "FALSE_POSITIVE",
+            "reason": "demo-g16c: re-run of an already decided finding",
+            "expected_seq": 1,
+        }
+    stale, refusal, _ = _api_status(
+        "POST",
+        f"/api/v2/findings/{finding_id}/transitions",
+        body,
+        token,
+        headers={"Idempotency-Key": f"demo-g16c-stale-{uuid.uuid4()}"},
+    )
+    support.require(
+        refusal.get("code") == "INPUT_INVALID" and refusal.get("field") == "/expected_seq",
+        f"the stale transition answered {stale} with {refusal.get('code')}/{refusal.get('field')}",
+    )
+    history = support.api("GET", f"/api/v2/findings/{finding_id}/history", token=token)
+    operator = [
+        item for item in history.get("transitions") or [] if item.get("cause") == "operator"
+    ]
+    support.require(len(operator) == 1, "the finding has no single operator transition")
+    last = operator[0]
+    support.require(
+        last.get("actor") == {"kind": "operator", "id": principal_id},
+        f"the transition actor is {last.get('actor')!r}, not the verified principal",
+    )
+    support.require(
+        last.get("to_status") == "FALSE_POSITIVE",
+        f"the operator transition went to {last.get('to_status')!r}",
+    )
+    support.line(
+        "transition",
+        finding_id,
+        "FALSE_POSITIVE",
+        f"seq={last['seq']}",
+        f"stale={stale}",
+        f"replayed={replayed}",
+    )
+    return {
+        "finding_id": finding_id,
+        "status": "FALSE_POSITIVE",
+        "transition_seq": int(last["seq"]),
+        "stale": stale,
+        "stale_code": refusal.get("code"),
+        "stale_field": refusal.get("field"),
+        "replayed": replayed,
+        "replayed_body": replayed_body,
+    }
+
+
+def _wait_for_findings(finding_ids: list[str]) -> list[dict[str, Any]]:
+    """Wait until the projector drew every finding, its evidence and the operator transition."""
+    timeout = float(os.environ.get(PROJECTION_TIMEOUT_ENV) or DEFAULT_PROJECTION_TIMEOUT)
+    driver = _neo4j_driver()
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            records, _, _ = driver.execute_query(
+                "MATCH (a:Asset)-[:HAS_FINDING]->(f:Finding)"
+                " WHERE f.finding_id IN $ids"
+                " OPTIONAL MATCH (f)-[:SUPPORTED_BY]->(e:Evidence)"
+                " RETURN f.finding_id AS finding_id, f.status AS status,"
+                "        f.transition_seq AS transition_seq, count(DISTINCT e) AS evidence"
+                " ORDER BY f.finding_id",
+                ids=finding_ids,
+            )
+            projected = [dict(record) for record in records]
+            complete = len(projected) == len(finding_ids) and any(
+                item["status"] == "FALSE_POSITIVE" for item in projected
+            )
+            if complete:
+                return projected
+            if time.monotonic() >= deadline:
+                support.fail(
+                    f"the graph has {len(projected)}/{len(finding_ids)} findings after "
+                    f"{timeout:.0f}s (or no operator transition); the projector must be running"
+                )
+            time.sleep(0.5)
+    finally:
+        driver.close()
+
+
 def _check(evidence: dict[str, Any], assets: dict[str, str]) -> None:
     support.require(
         all(report["records"] > 0 for report in evidence["intel"].values()),
@@ -554,6 +854,103 @@ def _check(evidence: dict[str, Any], assets: dict[str, str]) -> None:
     finally:
         connection.close()
     support.line("services matched", len({item["canonical_key"] for item in candidates}))
+
+    findings = evidence["findings"]
+    rows = findings["rows"]
+    support.require(
+        len(rows) == len(candidates),
+        f"the finding producer raised {len(rows)} findings for {len(candidates)} candidates "
+        f"({findings['producer'].get('blocked_no_evidence')} blocked without evidence)",
+    )
+    support.require(
+        all(item["status"] in {"CANDIDATE", "FALSE_POSITIVE"} for item in rows),
+        "a finding is neither the raised CANDIDATE nor the operator's FALSE_POSITIVE",
+    )
+    support.require(
+        all(item["severity"] == "UNRATED" for item in rows),
+        "a finding carries a severity the scripted stack did not assess",
+    )
+    support.require(
+        all(item["rule_id"].startswith("cve:") for item in rows),
+        "a finding rule_id is not the contract's cve:<id> form",
+    )
+    support.require(all(item["sha256"] for item in rows), "a finding has no evidence sha256")
+    support.require(
+        {(item["canonical_key"], item["rule_id"]) for item in rows}
+        == {(item["canonical_key"], f"cve:{item['vulnerability_id']}") for item in candidates},
+        "the findings and the candidates describe different (asset, CVE) pairs",
+    )
+    api_findings = findings["api"]
+    support.require(
+        {item["finding_id"] for item in api_findings} == {item["finding_id"] for item in rows},
+        "GET /findings and the finding rows disagree",
+    )
+    support.require(
+        all(
+            item["status"] in {"CANDIDATE", "FALSE_POSITIVE"} and item["vulnerability_ids"]
+            for item in api_findings
+        ),
+        "an API finding lost its status or its vulnerability ids",
+    )
+    support.require(
+        all(len(item["fingerprint"]) == 64 for item in api_findings),
+        "an API finding has no sha256 fingerprint",
+    )
+    assessed = findings["assessment"]
+    support.require(
+        assessed["severity"]
+        in {
+            "CRITICAL",
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+            "INFO",
+            "UNRATED",
+        },
+        f"the assessment answered severity {assessed['severity']!r}",
+    )
+    if assessed["severity"] == "UNRATED":
+        support.require(
+            isinstance(assessed.get("failure"), dict) and assessed["failure"].get("code"),
+            "an UNRATED assessment carries no failure reason",
+        )
+    support.require(
+        assessed["dedup_key"].endswith(f":{assessed['input_revision']}"),
+        "the assessment dedup_key does not name its input revision",
+    )
+    transition = findings["transition"]
+    support.require(
+        transition["status"] == "FALSE_POSITIVE" and transition["transition_seq"] >= 2,
+        "the operator transition did not move a finding to FALSE_POSITIVE",
+    )
+    support.require(
+        transition["stale"] == 409
+        and transition["stale_code"] == "INPUT_INVALID"
+        and transition["stale_field"] == "/expected_seq",
+        "a retry with the stale expected_seq did not answer 409 INPUT_INVALID /expected_seq "
+        f"({transition['stale']}/{transition['stale_code']}/{transition['stale_field']})",
+    )
+    support.require(
+        transition["replayed"] in {True, None},
+        "the first transition's Idempotency-Key did not replay its response",
+    )
+    graph_findings = findings["graph"]
+    support.require(
+        {item["finding_id"] for item in graph_findings} == {item["finding_id"] for item in rows},
+        "a finding is missing from the graph (HAS_FINDING)",
+    )
+    transitioned = next(
+        item for item in graph_findings if item["finding_id"] == transition["finding_id"]
+    )
+    support.require(
+        transitioned["status"] == "FALSE_POSITIVE" and transitioned["transition_seq"] == 2,
+        "the graph did not project the operator transition",
+    )
+    support.require(
+        all(item["evidence"] >= 1 for item in graph_findings),
+        "a graph finding has no SUPPORTED_BY evidence",
+    )
+    support.line("findings", len(rows), "| api", len(api_findings), "| graph", len(graph_findings))
 
 
 def _stamp() -> str:
