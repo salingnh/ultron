@@ -1,4 +1,5 @@
 import type {
+  Finding,
   FindingHistoryResponse,
   FindingSeverity,
   FindingStatus,
@@ -107,4 +108,59 @@ const TRIGGER_LABELS: Record<string, string> = {
 
 export function formatAssessmentTrigger(trigger: string): string {
   return TRIGGER_LABELS[trigger] || trigger;
+}
+
+export interface ResolvedSourceRefLink {
+  type: 'external' | 'anchor';
+  href: string;
+}
+
+export function resolveSourceRefLink(
+  sourceRef: { kind: string; ref: string },
+  finding: Pick<Finding, 'evidence'>
+): ResolvedSourceRefLink | null {
+  const value = sourceRef.ref.trim();
+  if (!value) return null;
+
+  if (sourceRef.kind === 'evidence') {
+    const matched = finding.evidence.find((ev) => ev.evidence_id === value);
+    if (matched) {
+      return { type: 'anchor', href: `#finding-evidence-${matched.evidence_id}` };
+    }
+    return isSafeHttpUrl(value) ? { type: 'external', href: value } : null;
+  }
+
+  if (sourceRef.kind === 'intel') {
+    const lower = value.toLowerCase();
+    const cveMatch = value.match(/(CVE-\d{4}-\d+)/i);
+    if (lower.startsWith('kev:')) {
+      return {
+        type: 'external',
+        href: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog',
+      };
+    }
+    if (lower.startsWith('epss:') && cveMatch) {
+      return {
+        type: 'external',
+        href: `https://api.first.org/data/v1/epss?cve=${encodeURIComponent(cveMatch[1].toUpperCase())}`,
+      };
+    }
+    if (cveMatch) {
+      return {
+        type: 'external',
+        href: `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cveMatch[1].toUpperCase())}`,
+      };
+    }
+    return isSafeHttpUrl(value) ? { type: 'external', href: value } : null;
+  }
+
+  if (sourceRef.kind === 'finding_run') {
+    return { type: 'anchor', href: `#finding-run-${value}` };
+  }
+
+  if (sourceRef.kind === 'observation') {
+    return { type: 'anchor', href: '#finding-provenance' };
+  }
+
+  return null;
 }

@@ -1702,6 +1702,31 @@ export const mockFindingHistoryMap: Record<string, FindingHistoryResponse> = {
           model: 'gpt-4o-mini',
           prompt_version: 'severity-v2.1',
         },
+        trigger: 'intel_revision',
+        input_revision: 2,
+        dedup_key: 'severity:01934f6a-0000-7000-8000-00000000f101:2',
+      },
+      {
+        severity: 'HIGH',
+        reasons: [
+          'Dịch vụ Apache HTTP Server 2.4.49 khớp phiên bản qua fingerprintx trước khi có bản cập nhật KEV.',
+        ],
+        source_refs: [
+          { kind: 'evidence', ref: '01934f6a-0000-7000-8000-00000000e004' },
+        ],
+        uncertainty: ['Chưa đối chiếu danh mục KEV tại thời điểm quét ban đầu.'],
+        recommended_actions: ['Theo dõi cập nhật tri thức CVE.'],
+        inputs: {
+          cvss: { version: '3.1', base_score: 7.5 },
+          exposure: 'internal',
+          criticality: 'medium',
+        },
+        assessed_by: {
+          kind: 'agent',
+          session_id: '01934f6a-0000-7000-8000-00000000a001',
+          model: 'gpt-4o-mini',
+          prompt_version: 'severity-v2.0',
+        },
         trigger: 'scan',
         input_revision: 1,
         dedup_key: 'severity:01934f6a-0000-7000-8000-00000000f101:1',

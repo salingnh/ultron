@@ -32,6 +32,7 @@ import {
   getAllowedOperatorTransitions,
   getLatestTransitionSeq,
   isSafeHttpUrl,
+  resolveSourceRefLink,
 } from '../utils/findings';
 import { CopyableId } from './CopyableId';
 import { ErrorDisplay, InlineFieldError } from './ErrorDisplay';
@@ -128,7 +129,10 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
 
   if (!finding) return null;
 
-  const assessment = finding.severity_assessment;
+  const sortedAssessments = history?.assessments
+    ? [...history.assessments].sort((a, b) => b.input_revision - a.input_revision)
+    : [];
+  const assessment = finding.severity_assessment ?? sortedAssessments[0];
   const locationEntries = finding.location ? Object.entries(finding.location) : [];
   const sortedRuns = history
     ? [...history.runs].sort((a, b) => Date.parse(b.observed_at) - Date.parse(a.observed_at))
@@ -385,23 +389,61 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
                   Nguồn trích dẫn (source_refs):
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {assessment.source_refs.map((ref, idx) => (
-                    <div
-                      key={`${ref.kind}-${ref.ref}-${idx}`}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        flexWrap: 'wrap',
-                        fontSize: 'var(--text-xs)',
-                      }}
-                    >
-                      <span className="brand-badge">{ref.kind}</span>
-                      <span className="mono" style={{ wordBreak: 'break-all', color: 'var(--ink)' }}>
-                        {ref.ref}
-                      </span>
-                    </div>
-                  ))}
+                  {assessment.source_refs.map((ref, idx) => {
+                    const resolved = resolveSourceRefLink(ref, finding);
+                    return (
+                      <div
+                        key={`${ref.kind}-${ref.ref}-${idx}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                          fontSize: 'var(--text-xs)',
+                        }}
+                      >
+                        <span className="brand-badge">{ref.kind}</span>
+                        {resolved ? (
+                          resolved.type === 'external' ? (
+                            <a
+                              href={resolved.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mono"
+                              style={{
+                                wordBreak: 'break-all',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <span>{ref.ref}</span>
+                              <ExternalLink size={11} />
+                            </a>
+                          ) : (
+                            <a
+                              href={resolved.href}
+                              className="mono"
+                              style={{ wordBreak: 'break-all' }}
+                              onClick={(e) => {
+                                const target = document.getElementById(resolved.href.slice(1));
+                                if (target) {
+                                  e.preventDefault();
+                                  target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                }
+                              }}
+                            >
+                              {ref.ref}
+                            </a>
+                          )
+                        ) : (
+                          <span className="mono" style={{ wordBreak: 'break-all', color: 'var(--ink)' }}>
+                            {ref.ref}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -628,6 +670,7 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
             {finding.evidence.map((ev) => (
               <div
                 key={ev.evidence_id}
+                id={`finding-evidence-${ev.evidence_id}`}
                 style={{
                   padding: '8px 10px',
                   borderRadius: 'var(--radius-md)',
@@ -678,7 +721,7 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
       </section>
 
       {/* Provenance */}
-      <section className="detail-section" aria-label="Nguồn gốc tài sản">
+      <section id="finding-provenance" className="detail-section" aria-label="Nguồn gốc tài sản">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <span className="provenance-label" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <ShieldCheck size={13} style={{ color: 'var(--accent)' }} />
@@ -789,6 +832,7 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
                   {sortedRuns.map((run, idx) => (
                     <div
                       key={`${run.scan_id}-${run.observed_at}-${idx}`}
+                      id={`finding-run-${run.scan_id}`}
                       className={`timeline-item ${run.seen ? '' : 'timeline-item-unseen'}`}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
@@ -872,6 +916,65 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
                 </div>
               )}
             </div>
+            {/* Assessment History (newest first) */}
+            <div>
+              <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
+                Lịch sử đánh giá mức nghiêm trọng ({sortedAssessments.length})
+              </div>
+              {sortedAssessments.length === 0 ? (
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
+                  Chưa có bản ghi lịch sử đánh giá.
+                </div>
+              ) : (
+                <div className="timeline-list">
+                  {sortedAssessments.map((item) => (
+                    <div key={item.dedup_key} className="timeline-item">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <SeverityChip severity={item.severity} />
+                        <span className="brand-badge">{formatAssessmentTrigger(item.trigger)}</span>
+                        <span className="brand-badge">rev #{item.input_revision}</span>
+                      </div>
+
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', marginTop: 4 }}>
+                        {renderAssessmentActor(item)}
+                      </div>
+
+                      {item.failure && (
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--warning)', marginTop: 4, wordBreak: 'break-word' }}>
+                          Fallback {item.failure.code}: {item.failure.message}
+                        </div>
+                      )}
+
+                      {item.reasons.length > 0 && (
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--ink)', marginTop: 4, wordBreak: 'break-word' }}>
+                          {item.reasons[0]}
+                        </div>
+                      )}
+
+                      {(item.inputs.cvss?.base_score !== undefined ||
+                        item.inputs.epss?.score !== undefined ||
+                        item.inputs.kev) && (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: '11px', color: 'var(--muted)', marginTop: 4 }}>
+                          {item.inputs.cvss?.base_score !== undefined && (
+                            <span className="mono">CVSS {item.inputs.cvss.base_score.toFixed(1)}</span>
+                          )}
+                          {item.inputs.epss?.score !== undefined && (
+                            <span className="mono">EPSS {(item.inputs.epss.score * 100).toFixed(2)}%</span>
+                          )}
+                          {item.inputs.kev && (
+                            <span>{item.inputs.kev.listed ? 'KEV: Có' : 'KEV: Không'}</span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="mono" style={{ fontSize: '11px', color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>
+                        {item.dedup_key}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -880,9 +983,17 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
       <section className="detail-section" aria-label="Thao tác chuyển trạng thái Finding">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
           <span className="provenance-label">Chuyển trạng thái (Operator)</span>
-          <span className="brand-badge">
-            <Clock size={11} style={{ marginRight: 3 }} /> seq hiện tại: #{currentSeq}
-          </span>
+          {historyLoading ? (
+            <span className="brand-badge" aria-live="polite">
+              <Clock size={11} style={{ marginRight: 3 }} /> Đang nạp seq...
+            </span>
+          ) : historyError && !history ? (
+            <span className="brand-badge">Chưa rõ seq</span>
+          ) : (
+            <span className="brand-badge">
+              <Clock size={11} style={{ marginRight: 3 }} /> seq hiện tại: #{currentSeq}
+            </span>
+          )}
         </div>
 
         {submitSuccess && (
