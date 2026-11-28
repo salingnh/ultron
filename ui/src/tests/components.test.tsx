@@ -1291,4 +1291,51 @@ describe('Ultron UI Reusable Components', () => {
     fireEvent.click(screen.getByRole('button', { name: /Tải lại trạng thái & seq mới nhất/ }));
     expect(onRefreshFinding).toHaveBeenCalledTimes(1);
   });
+
+  it('shows stale-seq recovery banner when real backend returns 409 IDEMPOTENCY_CONFLICT with expected_seq message', async () => {
+    resetMockData();
+    const finding = await apiClient.getFinding('01934f6a-0000-7000-8000-00000000f101');
+    const history = await apiClient.getFindingHistory('01934f6a-0000-7000-8000-00000000f101');
+    const spy = vi.spyOn(apiClient, 'transitionFinding').mockRejectedValueOnce(
+      new ApiError(
+        409,
+        {
+          code: 'IDEMPOTENCY_CONFLICT',
+          message: 'expected_seq 1 does not match the current transition_seq 2',
+          next_action: 'RETRY',
+        },
+        'expected_seq 1 does not match the current transition_seq 2'
+      )
+    );
+
+    try {
+      render(
+        <MemoryRouter>
+          <FindingDetailPanel
+            finding={finding}
+            history={history}
+            historyLoading={false}
+            historyError={null}
+            provenance={null}
+            provenanceLoading={false}
+            provenanceError={null}
+            onRetryHistory={() => {}}
+            onRefreshFinding={() => {}}
+            onTransitionSuccess={() => {}}
+            onClose={() => {}}
+          />
+        </MemoryRouter>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Lý do chuyển trạng thái/), {
+        target: { value: 'Kiem tra xung dot seq tu backend that' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chuyển trạng thái' }));
+      expect(
+        await screen.findByText(/Xung đột phiên bản trạng thái \(HTTP 409 — expected_seq đã cũ\)/)
+      ).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

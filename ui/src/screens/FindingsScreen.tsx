@@ -90,7 +90,7 @@ export const FindingsScreen: React.FC = () => {
     }
   }, [routeFindingId]);
 
-  useEffect(() => {
+  const loadCampaigns = useCallback(() => {
     apiClient
       .listCampaigns()
       .then((res) => {
@@ -100,6 +100,10 @@ export const FindingsScreen: React.FC = () => {
         // Optional dropdown filter options
       });
   }, []);
+
+  useEffect(() => {
+    loadCampaigns();
+  }, [loadCampaigns]);
 
   const buildQueryParams = useCallback(
     (cursor?: string): ListFindingsParams => {
@@ -172,13 +176,14 @@ export const FindingsScreen: React.FC = () => {
 
   useEffect(() => {
     const handleTokenChanged = () => {
+      loadCampaigns();
       void loadFindings(true);
     };
     window.addEventListener('ultron-token-changed', handleTokenChanged);
     return () => {
       window.removeEventListener('ultron-token-changed', handleTokenChanged);
     };
-  }, [loadFindings]);
+  }, [loadCampaigns, loadFindings]);
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;

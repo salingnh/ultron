@@ -182,7 +182,13 @@ export const FindingDetailPanel: React.FC<FindingDetailPanelProps> = ({
       const uiErr = toUiError(err, `/findings/${finding.finding_id}/transitions`);
       setSubmitError(uiErr);
       if (err instanceof ApiError) {
-        if (err.status === 409 && err.code !== 'IDEMPOTENCY_CONFLICT') {
+        const isStaleOrStateConflict =
+          err.status === 409 &&
+          (err.code !== 'IDEMPOTENCY_CONFLICT' ||
+            /expected_seq|transition_seq|stale|changed while|transitions\.v2\.yaml/i.test(
+              err.message
+            ));
+        if (isStaleOrStateConflict) {
           setConflictStaleSeq(true);
         }
         if (err.appError?.field === '/reason') {
