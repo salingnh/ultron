@@ -64,6 +64,7 @@ EXTENSIONS: Mapping[str, tuple[str, str]] = {
     feeds.NVD: ("json", "application/json"),
     feeds.KEV: ("json", "application/json"),
     feeds.EPSS: ("csv", "text/csv"),
+    feeds.DISTRO: ("bin", "application/octet-stream"),
 }
 
 #: The event schema bounds `impacted_ids` at 100000; a larger delta is truncated (documented).
@@ -215,8 +216,10 @@ class FeedSync:
         | None = None,
     ) -> SyncReport:
         """Store raw feed bytes and load pre-parsed records in one atomic snapshot transaction."""
-        if feed not in feeds.FEEDS:
-            raise FeedSyncError(f"unknown feed {feed!r}; expected one of {', '.join(feeds.FEEDS)}")
+        if feed not in feeds.FEEDS and feed != feeds.DISTRO:
+            raise FeedSyncError(
+                f"unknown feed {feed!r}; expected one of {', '.join((*feeds.FEEDS, feeds.DISTRO))}"
+            )
         sha256 = hashlib.sha256(data).hexdigest()
         extension, media_type = EXTENSIONS[feed]
         key = object_key(feed, version, sha256, extension)

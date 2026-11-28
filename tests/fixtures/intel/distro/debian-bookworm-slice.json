@@ -1,0 +1,46 @@
+{
+  "openssh": {
+    "CVE-2024-6387": {
+      "description": "A security regression (CVE-2006-5051) was discovered in OpenSSH's server (sshd).",
+      "scope": "local",
+      "releases": {
+        "bookworm": {
+          "status": "resolved",
+          "repositories": {
+            "bookworm": "1:9.2p1-2+deb12u10",
+            "bookworm-security": "1:9.2p1-2+deb12u9"
+          },
+          "fixed_version": "1:9.2p1-2+deb12u3",
+          "urgency": "not yet assigned"
+        }
+      }
+    },
+    "CVE-2016-20012": {
+      "description": "OpenSSH user enumeration.",
+      "scope": "local",
+      "releases": {
+        "bookworm": {
+          "status": "open",
+          "repositories": {},
+          "urgency": "unimportant"
+        }
+      }
+    }
+  },
+  "apache2": {
+    "CVE-2021-41773": {
+      "description": "Path traversal in Apache HTTP Server 2.4.49.",
+      "scope": "local",
+      "releases": {
+        "bookworm": {
+          "status": "resolved",
+          "repositories": {
+            "bookworm": "2.4.62-1~deb12u2"
+          },
+          "fixed_version": "2.4.62-1~deb12u2",
+          "urgency": "not yet assigned"
+        }
+      }
+    }
+  }
+}

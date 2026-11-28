@@ -39,7 +39,8 @@
       ],
       "env": {
         "HOME": "/tmp"
-      }
+      },
+      "connectTimeoutMs": 1000
     }
   ]
 }

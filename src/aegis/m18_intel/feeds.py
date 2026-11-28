@@ -55,7 +55,10 @@ __all__ = [
 NVD = "nvd"
 KEV = "kev"
 EPSS = "epss"
-#: The three feeds this slice syncs; `intel_snapshot.feed` allows osv/ghsa too, not here.
+#: Distro fix data (Ubuntu OVAL / Debian tracker). It is not in `FEEDS`: those are single exports
+#: parsed from bytes alone, while a distro export is parsed for one release at a time.
+DISTRO = "distro"
+#: The three feeds `sync --feed` accepts; `intel_snapshot.feed` allows osv/ghsa/distro too.
 FEEDS = (NVD, KEV, EPSS)
 
 #: Bound on the reference list stored per CVE: enough for a human, not the whole NVD export.

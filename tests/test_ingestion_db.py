@@ -264,6 +264,47 @@ def test_first_submission_ingests_the_whole_graph_and_emits_events() -> None:
 
 
 @requires_postgres
+def test_the_accepted_envelope_coverage_is_stored_verbatim() -> None:
+    """0009: the accepted result keeps its own coverage, so a reader can tell a complete run.
+
+    The campaign's final reason is computed from this column (M02 `finalize_campaign`): a job that
+    reports `complete = false` may not end its campaign as `objective_met`.
+    """
+    with throwaway_database() as dsn:
+        _migrate(dsn)
+        with _connect(dsn) as connection:
+            seed_campaign(connection)
+            job_id = seed_job(connection, "g14a:coverage")
+            seed_evidence(connection, job_id, sha256=EVIDENCE_SHA, size_bytes=len(RAW_EVIDENCE))
+        service = IngestionService.from_dsn(dsn)
+        envelope = _baseline_envelope(job_id)
+        envelope["coverage"] = {
+            "subjects": ["dns:www.internal.example"],
+            "complete": False,
+            "limitations": [
+                {
+                    "code": "EGRESS_PACED",
+                    "message": "1 port probe waited past the tool's connect budget",
+                    "subjects": ["ip:192.0.2.10"],
+                }
+            ],
+        }
+        receipt = service.submit_payload(envelope)
+        assert receipt.accepted is True
+
+        with _connect(dsn) as connection:
+            stored = _one(connection, "SELECT coverage FROM ingestion_inbox")
+        assert stored[0] == envelope["coverage"]
+
+        # A replay never rewrites the stored coverage: the row is append-only.
+        replay = service.submit_payload(
+            {**_baseline_envelope(job_id, event_id=str(uuid7())), "coverage": envelope["coverage"]}
+        )
+        assert replay.duplicate is True
+        with _connect(dsn) as connection:
+            assert _one(connection, "SELECT coverage FROM ingestion_inbox")[0] == stored[0]
+
+
 def test_replay_returns_the_first_receipt_and_a_conflict_changes_nothing() -> None:
     with throwaway_database() as dsn:
         _migrate(dsn)
