@@ -259,12 +259,14 @@ def test_three_providers_make_one_finding_with_three_sources() -> None:
             failure = cast(dict[str, Any], assessment[2]).get("failure") or {}
             assert failure.get("code") == "DEPENDENCY_MISSING"
 
-            # A re-run of the same evidence buys nothing: no row, no event, no model call.
+            # A re-run of the same evidence buys nothing: no row, no event, no assessment.
             with _dict(dsn) as engine:
                 again = CandidateFindingsEngine(engine).run(campaign_id=CAMPAIGN_ID)
             assert (again.findings_created, again.runs, again.sources) == (0, 0, 0)
             assert (again.transitions, again.events) == (0, 0)
-            assert (again.assessments, again.assessments_created) == (1, 0)
+            # The queue is `severity.assess_pending` (G2-C): nothing is pending at the same input
+            # revision, so a retry does not assess again.
+            assert (again.assessments, again.assessments_created) == (0, 0)
             assert _count(connection, "SELECT count(*) FROM finding") == 1
 
             # Re-submitting a stored envelope (same dedup key) is a duplicate receipt, not data.
