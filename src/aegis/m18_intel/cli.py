@@ -126,11 +126,13 @@ def _sync_intel(argv: argparse.Namespace) -> int:
         api_url=argv.api_url,
         results_per_page=argv.results_per_page,
         skip_nvd=argv.skip_nvd,
+        skip_distro=argv.skip_distro,
         skip_kev=argv.skip_kev,
         epss_source=argv.epss_source,
         epss_version=argv.epss_version,
         snapshot_at=argv.snapshot_at,
         source_file=argv.source_file,
+        distro_source_file=argv.distro_source_file,
         kev_fixture=argv.kev_fixture,
     )
     try:
@@ -223,7 +225,16 @@ def main(argv: list[str] | None = None) -> int:
         "--results-per-page", type=int, default=DEFAULT_RESULTS_PER_PAGE, help="NVD page size"
     )
     sync_intel.add_argument("--skip-nvd", action="store_true", help="do not touch NVD")
+    sync_intel.add_argument(
+        "--skip-distro", action="store_true", help="do not touch the distro fix feed"
+    )
     sync_intel.add_argument("--skip-kev", action="store_true", help="do not touch KEV")
+    sync_intel.add_argument(
+        "--distro-source-file",
+        default=None,
+        help="distro release config (default AEGIS_DISTRO_SOURCE_FILE or "
+        "deploy/intel/distro-sources.json)",
+    )
     sync_intel.add_argument(
         "--epss-source",
         default=None,

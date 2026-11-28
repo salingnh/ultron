@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A tiny slice of com.ubuntu.jammy.cve.oval.xml (real shape, 2026-11-27): one definition per CVE,
+  a criterion pointing at a dpkginfo_test, the test pointing at the source-package object and the
+  evr state that carries the fixed version. CVE-2024-6387's fix is 1:8.9p1-3ubuntu0.10.
+-->
+<oval_definitions
+    xmlns="http://oval.mitre.org/XMLSchema/oval-definitions-5"
+    xmlns:linux-def="http://oval.mitre.org/XMLSchema/oval-definitions-5#linux">
+  <generator>
+    <product_name>cve.ubuntu.com</product_name>
+    <schema_version>5.11.2</schema_version>
+  </generator>
+  <definitions>
+    <definition id="oval:com.ubuntu.jammy:def:63870000000" class="vulnerability" version="1">
+      <metadata>
+        <title>CVE-2024-6387 on Ubuntu 22.04 LTS (jammy) - high</title>
+        <reference source="CVE" ref_id="CVE-2024-6387" ref_url="https://www.cve.org/CVERecord?id=CVE-2024-6387"/>
+        <reference source="USN" ref_id="USN-6859-1" ref_url="https://ubuntu.com/security/notices/USN-6859-1"/>
+      </metadata>
+      <criteria>
+        <extend_definition applicability_check="true" definition_ref="oval:com.ubuntu.jammy:def:100"/>
+        <criterion test_ref="oval:com.ubuntu.jammy:tst:63870000000" comment="openssh source package in jammy, is affected and has been fixed (note: '1:8.9p1-3ubuntu0.10')."/>
+      </criteria>
+    </definition>
+    <definition id="oval:com.ubuntu.jammy:def:20012000000" class="vulnerability" version="1">
+      <metadata>
+        <title>CVE-2016-20012 on Ubuntu 22.04 LTS (jammy) - low</title>
+        <reference source="CVE" ref_id="CVE-2016-20012" ref_url="https://www.cve.org/CVERecord?id=CVE-2016-20012"/>
+      </metadata>
+      <criteria>
+        <criterion test_ref="oval:com.ubuntu.jammy:tst:20012000000" comment="openssh source package in jammy, is affected and has been fixed (note: '1:8.9p1-3ubuntu0.1')."/>
+      </criteria>
+    </definition>
+  </definitions>
+  <tests>
+    <linux-def:dpkginfo_test id="oval:com.ubuntu.jammy:tst:63870000000" version="1" comment="Does the 'openssh' package exist?">
+      <linux-def:object object_ref="oval:com.ubuntu.jammy:obj:2016200120000000"/>
+      <linux-def:state state_ref="oval:com.ubuntu.jammy:ste:63870000000"/>
+    </linux-def:dpkginfo_test>
+    <linux-def:dpkginfo_test id="oval:com.ubuntu.jammy:tst:20012000000" version="1" comment="Does the 'openssh' package exist?">
+      <linux-def:object object_ref="oval:com.ubuntu.jammy:obj:2016200120000000"/>
+      <linux-def:state state_ref="oval:com.ubuntu.jammy:ste:20012000000"/>
+    </linux-def:dpkginfo_test>
+  </tests>
+  <objects>
+    <linux-def:dpkginfo_object id="oval:com.ubuntu.jammy:obj:2016200120000000" version="1">
+      <linux-def:name>openssh</linux-def:name>
+    </linux-def:dpkginfo_object>
+  </objects>
+  <states>
+    <linux-def:dpkginfo_state id="oval:com.ubuntu.jammy:ste:63870000000" version="1">
+      <linux-def:evr datatype="evr_string" operation="less than">0:1:8.9p1-3ubuntu0.10</linux-def:evr>
+    </linux-def:dpkginfo_state>
+    <linux-def:dpkginfo_state id="oval:com.ubuntu.jammy:ste:20012000000" version="1">
+      <linux-def:evr datatype="evr_string" operation="less than">0:1:8.9p1-3ubuntu0.1</linux-def:evr>
+    </linux-def:dpkginfo_state>
+  </states>
+</oval_definitions>

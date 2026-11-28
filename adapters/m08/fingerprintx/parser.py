@@ -82,6 +82,9 @@ CPE_PRODUCTS: dict[str, tuple[str, str]] = {
     "redis": ("redis", "redis"),
 }
 _VERSION = re.compile(r"^[vV]?(?P<version>[0-9][0-9A-Za-z._~-]*)")
+#: A distro package revision in a banner: `SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.18`.
+_UBUNTU_REVISION = re.compile(r"Ubuntu[-/ ](?P<revision>\d[^\s),]*)")
+_DEBIAN_REVISION = re.compile(r"Debian[-/ ](?P<revision>\d[^\s),]*)")
 _CPE_PART = re.compile(r"^[A-Za-z0-9._~-]+$")
 
 
@@ -223,7 +226,9 @@ def _product(record: dict[str, Any]) -> dict[str, Any] | None:
         fields = _cpe_fields(cpe)
         if fields is not None:
             product, cpe_version = fields
-            return {"product": product, "version": cpe_version, "cpe": cpe.strip()}
+            return _with_distro(
+                {"product": product, "version": cpe_version, "cpe": cpe.strip()}, banner
+            )
     if token and version:
         mapped = CPE_PRODUCTS.get(token, (token, token))[1]
         for cpe in cpes:
@@ -235,7 +240,7 @@ def _product(record: dict[str, Any]) -> dict[str, Any] | None:
                 continue
             built = _cpe_23(vendor, product, version)
             if built is not None:
-                return {"product": product, "version": version, "cpe": built}
+                return _with_distro({"product": product, "version": version, "cpe": built}, banner)
     if token is None:
         return None
     vendor, product = CPE_PRODUCTS.get(token, (token, token))
@@ -245,6 +250,39 @@ def _product(record: dict[str, Any]) -> dict[str, Any] | None:
         built = _cpe_23(vendor, product, version)
         if built is not None:
             value["cpe"] = built
+    return _with_distro(value, banner)
+
+
+def _with_distro(value: dict[str, Any], banner: str | None) -> dict[str, Any]:
+    """Add the distro package the banner names, without guessing one it does not.
+
+    `Ubuntu-3ubuntu0.18` is a distro revision on top of the upstream version the CPE carries; the
+    release is not in an SSH banner, so it stays `null` (M20 resolves it from the fix data's
+    upstream line). Debian's `Debian-2+deb12u3` names the release (`12`). No marker, no field.
+    """
+    product = value.get("product")
+    version = value.get("version")
+    if not isinstance(product, str) or not isinstance(version, str) or not banner:
+        return value
+    match = _UBUNTU_REVISION.search(banner)
+    if match is not None:
+        value["distro"] = {
+            "id": "ubuntu",
+            "release": None,
+            "package": product,
+            "version": version if "-" in version else f"{version}-{match.group('revision')}",
+        }
+        return value
+    match = _DEBIAN_REVISION.search(banner)
+    if match is not None:
+        revision = match.group("revision")
+        release = re.search(r"deb(\d+)", revision)
+        value["distro"] = {
+            "id": "debian",
+            "release": release.group(1) if release is not None else None,
+            "package": product,
+            "version": version if "-" in version else f"{version}-{revision}",
+        }
     return value
 
 

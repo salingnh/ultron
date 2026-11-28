@@ -91,8 +91,9 @@ make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS
 make intel-kev       refresh the configured CISA KEV mirror: cisagov/kev-data default-branch
                      HEAD via the GitHub API, validated (shape, bounds, version) and recorded
                      with its commit; no fallback source
-make intel-sync      the scheduled/incremental intel refresh: NVD (auto), EPSS when
-                     AEGIS_EPSS_SOURCE is set, then KEV; exits non-zero if any leg is stale
+make intel-sync      the scheduled/incremental intel refresh: NVD (auto), Ubuntu/Debian
+                     distro fix data, EPSS when AEGIS_EPSS_SOURCE is set, then KEV; exits
+                     non-zero if any leg is stale
 make intel-schedule  install/update the daily Temporal schedule (IntelSyncWorkflow on the
                      M02 orchestrator queue, 03:00 UTC) that runs intel-sync
 make demo-recovery   SIGKILL the runner mid-job and show it resumes with no duplicate

@@ -101,7 +101,7 @@ def test_staleness_uses_the_newest_fetched_snapshot_and_reports_missing_feeds(
     document = runs.feed_status(connection, now=NOW)
 
     assert document["generated_at"] == "2026-12-01T12:00:00Z"
-    assert document["stale_feeds"] == ["epss"]
+    assert document["stale_feeds"] == ["distro", "epss"]
     nvd = _feed(document, "nvd")
     assert nvd["stale"] is False and nvd["age_seconds"] == 3600
     assert nvd["snapshot"]["version"] == "2026-12-01"
@@ -116,8 +116,8 @@ def test_a_feed_with_no_snapshot_is_stale_and_not_omitted(
     connection: psycopg.Connection[Any],
 ) -> None:
     document = runs.feed_status(connection, now=NOW)
-    assert [item["feed"] for item in document["feeds"]] == ["nvd", "epss", "kev"]
-    assert document["stale_feeds"] == ["nvd", "epss", "kev"]
+    assert [item["feed"] for item in document["feeds"]] == ["nvd", "distro", "epss", "kev"]
+    assert document["stale_feeds"] == ["nvd", "distro", "epss", "kev"]
     assert all(
         item["snapshot"] is None and item["age_seconds"] is None for item in document["feeds"]
     )
