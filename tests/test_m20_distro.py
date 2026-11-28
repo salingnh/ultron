@@ -38,6 +38,7 @@ UNPATCHED = "service:203.0.113.11:22/tcp"
 DEBIAN_PATCHED = "service:203.0.113.12:22/tcp"
 UNKNOWN_PACKAGE = "service:203.0.113.13:80/tcp"
 APACHE = "service:203.0.113.14:80/tcp"
+TOMCAT = "service:203.0.113.15:8080/tcp"
 
 
 def _openssh(version: str, distro: dict[str, Any]) -> dict[str, Any]:
@@ -56,6 +57,7 @@ def _services() -> list[dict[str, Any]]:
         asset(DEBIAN_PATCHED, "service"),
         asset(UNKNOWN_PACKAGE, "service"),
         asset(APACHE, "service"),
+        asset(TOMCAT, "service"),
     ]
 
 
@@ -107,6 +109,15 @@ def _observations() -> list[dict[str, Any]]:
                 "product": "http_server",
                 "version": "2.4.49",
                 "cpe": "cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*",
+            },
+        ),
+        observation(
+            TOMCAT,
+            "service.product",
+            {
+                "product": "tomcat",
+                "version": "9.0.30",
+                "cpe": "cpe:2.3:a:apache:tomcat:9.0.30:*:*:*:*:*:*:*",
             },
         ),
         observation(
@@ -171,7 +182,7 @@ def _dataset(*, with_distro: bool = True, jobs: int = 2) -> Iterator[tuple[str, 
             job_ids[0],
             assets=_services(),
             observations=_observations(),
-            coverage=[PATCHED, UNPATCHED, DEBIAN_PATCHED, UNKNOWN_PACKAGE, APACHE],
+            coverage=[PATCHED, UNPATCHED, DEBIAN_PATCHED, UNKNOWN_PACKAGE, APACHE, TOMCAT],
         )
         yield dsn, job_ids
 
@@ -185,7 +196,7 @@ def dataset() -> Iterator[tuple[str, list[str]]]:
 def _asset_ids(connection: psycopg.Connection[Any]) -> dict[str, str]:
     rows = connection.execute(
         "SELECT canonical_key, asset_id FROM asset WHERE canonical_key = ANY(%s)",
-        ([PATCHED, UNPATCHED, DEBIAN_PATCHED, UNKNOWN_PACKAGE, APACHE],),
+        ([PATCHED, UNPATCHED, DEBIAN_PATCHED, UNKNOWN_PACKAGE, APACHE, TOMCAT],),
     ).fetchall()
     return {str(row["canonical_key"]): str(row["asset_id"]) for row in rows}
 
@@ -200,13 +211,15 @@ def test_a_patched_distro_build_is_not_a_candidate(dataset: tuple[str, list[str]
     assert report.distro_fixed == 2
     assert report.distro_vulnerable == 1
     assert report.distro_unresolved == 1
-    assert report.new_matches == 3
+    assert report.new_matches == 4
     assert {(row["canonical_key"], row["vulnerability_id"]) for row in listed} == {
         (UNPATCHED, "CVE-2024-6387"),
         (UNKNOWN_PACKAGE, "CVE-2021-23017"),
-        # The vulnlab expectation (Apache 2.4.49 -> CVE-2021-41773) is untouched: it carries no
-        # distro marker, so the distro feed never gets to suppress it.
+        # The vulnlab expectations (Apache 2.4.49 -> CVE-2021-41773, Tomcat 9.0.30 ->
+        # CVE-2020-1938) are untouched: they carry no distro marker, so the distro feed never gets
+        # to suppress them.
         (APACHE, "CVE-2021-41773"),
+        (TOMCAT, "CVE-2020-1938"),
     }
     assert report.coverage["distro"]["fixed"] == ["CVE-2024-6387"]
 
@@ -216,7 +229,7 @@ def test_an_existing_candidate_is_retracted_when_the_distro_fix_arrives() -> Non
         with connect(dsn) as connection:
             # First run without the distro feed: the upstream range reports every build.
             first = Matcher(connection).run()
-            assert first.new_matches == 5
+            assert first.new_matches == 6
             _seed_distro(dsn)
             second = Matcher(connection).run()
             rows = connection.execute(
