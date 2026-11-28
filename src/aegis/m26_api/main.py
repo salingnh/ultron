@@ -24,12 +24,14 @@ from typing import Any
 from fastapi import FastAPI
 from neo4j import Driver
 
+from aegis.m20_vuln import severity
 from aegis.m23_graph import graph
 from aegis.m26_api import (
     activity,
     assets,
     capabilities,
     events,
+    findings,
     flow,
     jobs,
     vulnerabilities,
@@ -63,8 +65,8 @@ NEO4J_PASSWORD_ENV = graph.NEO4J_PASSWORD_ENV
 
 def build_registry() -> RouterRegistry:
     """Every router this service mounts: campaigns (G1.1b), jobs (G1.1c), flow/events/capabilities
-    (G1.5a), the activity timeline (G1.6), assets (G1.4b), candidate vulnerabilities (G1.6 slice C)
-    and the ingestion endpoint M27 owns (G1.4a/G1.5c)."""
+    (G1.5a), the activity timeline (G1.6), assets (G1.4b), candidate vulnerabilities (G1.6 slice C),
+    findings and their lifecycle (G2 slice A) and the ingestion endpoint M27 owns (G1.4a/G1.5c)."""
     registry = RouterRegistry()
     register(registry)
     jobs.register(registry)
@@ -74,6 +76,7 @@ def build_registry() -> RouterRegistry:
     capabilities.register(registry)
     assets.register(registry)
     vulnerabilities.register(registry)
+    findings.register(registry)
     register_ingestion(registry)
     return registry
 
@@ -93,6 +96,9 @@ def create_production_app() -> FastAPI:
         raise RuntimeError(f"{OPERATOR_TOKENS_FILE} is required to verify operator tokens")
     tokens = OperatorTokens.from_file(tokens_path)
     driver = _graph_driver_from_env()
+    # The severity runtime reads the same model switch as the agent worker: scripted means no
+    # model (every finding stays UNRATED with a stored reason), live means the validated provider.
+    severity_client = severity.model_from_env(dsn)
     try:
         app = create_app(
             build_registry(),
@@ -100,6 +106,7 @@ def create_production_app() -> FastAPI:
             database_dsn=dsn,
             cors_origins=cors_origins_from_env() or None,
             graph_driver=driver,
+            severity_client=severity_client,
         )
         # M05 needs its own configured objects (manifest registry, signing ring); a manifest or key
         # problem aborts start-up instead of surfacing as an "unknown capability" on the first job.

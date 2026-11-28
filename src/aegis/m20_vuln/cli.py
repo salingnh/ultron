@@ -6,6 +6,9 @@
   new revision, with the reason in `retractions`). `--campaign` narrows the targets,
   `--changed-since` narrows the catalogue to the CVE ids of the `intel.revision.v2` events after
   that outbox cursor (the delta run), `--dry-run` prints the decisions without writing.
+* the same `run` then raises/refreshes the **findings** of those candidates
+  (`aegis.m20_vuln.findings`) and assesses their severity (C07) when a live model is configured;
+  `--no-findings` keeps the run at the candidate level (the G1.6 behaviour).
 * `status` - candidate counts per asset (the operator's view of what matching produced: the
   newest decision of every pair, so a retraction removes the pair from the count).
 
@@ -16,10 +19,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
-from aegis.m20_vuln import visibility
+from aegis.m20_vuln import severity, visibility
+from aegis.m20_vuln.findings import FindingsEngine
 from aegis.m20_vuln.matching import Matcher, changed_vulnerabilities, connect_from_env
 
 
@@ -36,14 +41,32 @@ def _run(argv: argparse.Namespace) -> int:
             dry_run=argv.dry_run,
             cursor=cursor,
         )
+        findings = None
+        if not argv.no_findings:
+            client = severity.model_from_env(os.environ["AEGIS_PG_DSN"])
+            model, provider, model_name = (None, None, None) if client is None else client
+            findings = FindingsEngine(connection).run(
+                campaign_id=argv.campaign,
+                only_vulnerabilities=only,
+                dry_run=argv.dry_run,
+                model=model,
+                provider=provider,
+                model_name=model_name,
+            )
     finally:
         connection.close()
-    print(
-        json.dumps(
-            {**report.as_dict(), "matches": report.matches, "retractions": report.retractions},
-            indent=2,
-        )
-    )
+    document: dict[str, Any] = {
+        **report.as_dict(),
+        "matches": report.matches,
+        "retractions": report.retractions,
+    }
+    if findings is not None:
+        document["findings"] = {
+            **findings.as_dict(),
+            "created": findings.findings,
+            "retracted_findings": findings.retractions,
+        }
+    print(json.dumps(document, indent=2))
     return 0
 
 
@@ -95,6 +118,11 @@ def main(argv: list[str] | None = None) -> int:
         help="only re-check the CVEs of intel.revision.v2 events after this outbox seq",
     )
     run.add_argument("--dry-run", action="store_true", help="print candidates, write nothing")
+    run.add_argument(
+        "--no-findings",
+        action="store_true",
+        help="stop at candidates: do not raise/refresh finding rows (G1.6 behaviour)",
+    )
     sub.add_parser("status", help="candidate counts per asset")
     parsed = parser.parse_args(argv)
     if parsed.command == "status":
