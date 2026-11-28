@@ -34,6 +34,11 @@ class Targets1(BaseModel):
     urls: list[Url] | None = Field(None, max_length=10000)
     emails: list[Email] | None = Field(None, max_length=10000)
     keywords: list[Keyword] | None = Field(None, max_length=1000)
+    images: list[ids_v2_schema.ImageDigest] | None = Field(
+        None,
+        description="Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull).",
+        max_length=64,
+    )
 
 
 class Targets2(BaseModel):
@@ -47,6 +52,11 @@ class Targets2(BaseModel):
     urls: list[Url] | None = Field(None, max_length=10000)
     emails: list[Email] | None = Field(None, max_length=10000)
     keywords: list[Keyword] | None = Field(None, max_length=1000)
+    images: list[ids_v2_schema.ImageDigest] | None = Field(
+        None,
+        description="Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull).",
+        max_length=64,
+    )
 
 
 class Targets3(BaseModel):
@@ -60,6 +70,11 @@ class Targets3(BaseModel):
     urls: list[Url] = Field(..., max_length=10000, min_length=1)
     emails: list[Email] | None = Field(None, max_length=10000)
     keywords: list[Keyword] | None = Field(None, max_length=1000)
+    images: list[ids_v2_schema.ImageDigest] | None = Field(
+        None,
+        description="Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull).",
+        max_length=64,
+    )
 
 
 class Targets4(BaseModel):
@@ -73,6 +88,11 @@ class Targets4(BaseModel):
     urls: list[Url] | None = Field(None, max_length=10000)
     emails: list[Email] = Field(..., max_length=10000, min_length=1)
     keywords: list[Keyword] | None = Field(None, max_length=1000)
+    images: list[ids_v2_schema.ImageDigest] | None = Field(
+        None,
+        description="Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull).",
+        max_length=64,
+    )
 
 
 class Targets5(BaseModel):
@@ -86,12 +106,38 @@ class Targets5(BaseModel):
     urls: list[Url] | None = Field(None, max_length=10000)
     emails: list[Email] | None = Field(None, max_length=10000)
     keywords: list[Keyword] = Field(..., max_length=1000, min_length=1)
+    images: list[ids_v2_schema.ImageDigest] | None = Field(
+        None,
+        description="Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull).",
+        max_length=64,
+    )
 
 
-class Targets(RootModel[Targets1 | Targets2 | Targets3 | Targets4 | Targets5]):
-    root: Targets1 | Targets2 | Targets3 | Targets4 | Targets5 = Field(
+class Targets6(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    domains: list[Domain] | None = Field(None, max_length=10000)
+    ips: list[ids_v2_schema.IPOrCIDR] | None = Field(
+        None, description="IP hoặc CIDR.", max_length=10000
+    )
+    urls: list[Url] | None = Field(None, max_length=10000)
+    emails: list[Email] | None = Field(None, max_length=10000)
+    keywords: list[Keyword] | None = Field(None, max_length=1000)
+    images: list[ids_v2_schema.ImageDigest] = Field(
         ...,
-        description="Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng.",
+        description="Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull).",
+        max_length=64,
+        min_length=1,
+    )
+
+
+class Targets(
+    RootModel[Targets1 | Targets2 | Targets3 | Targets4 | Targets5 | Targets6]
+):
+    root: Targets1 | Targets2 | Targets3 | Targets4 | Targets5 | Targets6 = Field(
+        ...,
+        description="Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. `images` (G2-D) là digest do người vận hành cung cấp cho một campaign phân tích artifact: không crawl registry, không suy ra tag/repository từ digest.",
     )
 
 

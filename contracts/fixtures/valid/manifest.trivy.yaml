@@ -1,0 +1,84 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: trivy
+  version: 1.0.0
+  module: M13
+  license: Apache-2.0
+  upstream: https://github.com/aquasecurity/trivy
+  licenseNotes: >-
+    Apache-2.0. Image pin v0.76.2 (release 2026-11-05, 23 days before the adapter was written) is
+    Aqua's upstream image, unmodified; `adapters/m13/trivy/sbom.cdx.json` records the packages of
+    that digest and README.md the attribution. The vulnerability database is a deployment
+    dependency, not part of the image: the offline `trivy-db`/`trivy-java-db` snapshot is mounted
+    read-only and its digest pinned in the runner profile (G2-D). No network at scan time.
+spec:
+  capability: vuln.scan_artifact
+  providerVersion: v0.76.2
+  runtime:
+    type: container
+    image: registry.internal/aegis/trivy
+    imageDigest: sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+    argsTemplate:
+    - image
+    - --input
+    - /in/image.tar
+    - --cache-dir
+    - /cache
+    - --skip-db-update
+    - --skip-java-db-update
+    - --format
+    - json
+    - --output
+    - /out/result.json
+    - --scanners
+    - vuln
+    - --list-all-pkgs
+    - --quiet
+    outputPath: /out
+    artifactSource: oci-archive
+    scratchMb: 512
+  inputSchemaRef: schema://vuln/scan-artifact/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - oci_image
+  permissions:
+    scopeRequired: false
+    networkAccess: none
+    rawSocket: false
+  budget:
+    timeoutSeconds: 900
+    maxConcurrency: 1
+    cpu: 2
+    memoryMb: 4096
+    maxOutputMb: 256
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m13.trivy.parser:parse
+    outputFormat: json
+  emits:
+    assetKinds:
+    - oci_image
+    - package
+    predicates:
+    - artifact.digest
+    - artifact.sbom
+    - package.installed
+    - asset.seen
+    relationships:
+    - CONTAINS_PACKAGE
+    findings: true
+  compatibilityTests:
+  - schema
+  - policy
+  - cancellation
+  - idempotency
+  - fixture-replay
+  - network-isolation

@@ -1,0 +1,24 @@
+{
+  "raw": {
+    "file": "result.json",
+    "sha256": "6d43765142285ea82f772ee631c7df897d773efd06566c5de378863b0ea480c9",
+    "size_bytes": 286267
+  },
+  "input": {
+    "targets": [
+      "oci:sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+    ]
+  },
+  "expected": "expected.json",
+  "cross_check": {
+    "file": "tests/fixtures/artifact/python-3.12-alpine.json",
+    "kind": "packages"
+  },
+  "tool": {
+    "provider": "trivy",
+    "version": "v0.76.2",
+    "image": "docker.io/library/python:3.12-alpine@sha256:a61cbd76a882645de7f91423329fe43a67eed60d7da24f9e5331414bb3618b20"
+  },
+  "command": "trivy image --input /in/image.tar --cache-dir /cache --skip-db-update --skip-java-db-update --format json --output /out/result.json --scanners vuln --list-all-pkgs --quiet (no network, image never run)",
+  "rule_set": "trivy-db@2026-11-28T01:04:49Z + trivy-java-db@2026-11-28T07:57Z (deployment pin)"
+}

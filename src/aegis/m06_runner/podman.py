@@ -56,6 +56,17 @@ class RunnerError(RuntimeError):
     """The sandbox runtime could not do what the contract requires (fail loudly)."""
 
 
+class ImageUnavailable(RunnerError):
+    """The job's target image is not in the runner's local store (nothing was pulled).
+
+    A contract error code travels with it so M06 terminalizes the job as a deployment problem
+    (`DEPENDENCY_MISSING`, `CHECK_PROVIDER`) instead of a generic internal failure: the campaign
+    authorized a digest this host cannot serve, and no container ever started.
+    """
+
+    code = "DEPENDENCY_MISSING"
+
+
 def _ci_job_label_args() -> list[str]:
     job = os.environ.get("AEGIS_CI_JOB", "").strip()
     return ["--label", f"aegis.ci-job={job}"] if job else []
@@ -78,6 +89,14 @@ def _remove_container(name: str) -> None:
                 for volume in names:
                     handle.write(f"{volume}\n")
     _podman("rm", "-f", "-v", name, check=False)
+
+
+#: Name of the file M06 writes into `/in` for a manifest with `runtime.artifactSource`.
+#: The path is a platform convention (like `targets.txt`), not deployment data: an adapter's argv
+#: points at it and the runner never reads an image reference from the tool or the task.
+ARTIFACT_ARCHIVE = "image.tar"
+#: Seconds `podman save` may take for one image; an image copy is a local disk read, not a scan.
+STAGE_TIMEOUT_SECONDS = 600
 
 
 def _podman(*args: str, check: bool = True, timeout: int = 600) -> subprocess.CompletedProcess[str]:
@@ -197,6 +216,7 @@ class PodmanRunner(ContainerRunner):
     l3_hook: Path | None = None
     _subnets: dict[str, str] = field(default_factory=dict, init=False)
     _images: dict[str, str] = field(default_factory=dict, init=False)
+    _repo_references: dict[str, str] = field(default_factory=dict, init=False)
 
     @property
     def lab(self) -> DeploymentProfile | None:
@@ -258,16 +278,23 @@ class PodmanRunner(ContainerRunner):
             network = profile.network
         elif spec.network == "exec":
             network = self._ensure_network(spec.job_id)
-        if spec.network != "exec":
-            # No egress means no network at all; the profile contributes no endpoint data.
-            entry = None
+        if spec.network != "exec" and spec.artifact_digest is not None:
+            self._stage_image(spec.artifact_digest, layout.input / ARTIFACT_ARCHIVE)
+            layout.ensure_input_permissions()
         # The L3 route hook is the internet deployment's way of giving a job its only route (to
         # the gateway). A lab-profile job already has its route: the internal lab network it joins.
         needs_l3_hook = (
             spec.egress_mode == "l3" and spec.network_profile != "lab" and spec.network == "exec"
         )
         hooks_dir = self._write_l3_hook(spec) if needs_l3_hook else None
-        argv = self._run_argv(spec, layout, network, entry=entry, hooks_dir=hooks_dir)
+        argv = self._run_argv(
+            spec,
+            layout,
+            network,
+            entry=entry,
+            hooks_dir=hooks_dir,
+            profile_network=spec.network == "exec",
+        )
         try:
             started = _podman(*argv, timeout=120)
         except subprocess.CalledProcessError as failure:
@@ -285,10 +312,85 @@ class PodmanRunner(ContainerRunner):
             "network_profile": spec.network_profile,
             "spec": _spec_document(spec),
         }
-        if spec.network_profile == "lab" and entry is not None and self.lab is not None:
+        if (
+            spec.network == "exec"
+            and spec.network_profile == "lab"
+            and entry is not None
+            and self.lab is not None
+        ):
+            # Only a job that actually joins the lab network records it: a no-egress artifact job
+            # keeps `network: none` and must not look attached to the lab in its own evidence.
             markers["lab"] = {"network": self.lab.network, "args": list(entry.args)}
         self._write_markers(spec.job_id, markers)
         return RunHandle(job_id=spec.job_id, container_id=container_id)
+
+    def _stage_image(self, image_digest: str, path: Path) -> None:
+        """Write the job's target image into its input directory, from local storage only.
+
+        The task/policy already say *which* bytes (the campaign seed and the manifest pin); this
+        writes exactly that digest as a `docker-archive`, which is what Trivy's `--input` reads. The
+        image is never run, never pulled and never mounted as a container: the job sees one regular
+        file in `/in` next to `targets.txt`.
+        """
+        if path.is_file() and path.stat().st_size > 0:
+            # A resumed job keeps the archive it already staged: re-exporting would be the same
+            # bytes, and the digest is checked again by the save below on a fresh attempt.
+            return
+        reference = self._repo_reference(image_digest)
+        if reference is None:
+            raise ImageUnavailable(
+                f"image {image_digest} is not in this runner's local image store; the deployment "
+                "must provide it (M06 never pulls a registry)"
+            )
+        partial = path.with_suffix(".tar.part")
+        try:
+            _podman(
+                "save",
+                "--format",
+                "docker-archive",
+                "-o",
+                str(partial),
+                reference,
+                timeout=STAGE_TIMEOUT_SECONDS,
+            )
+        except subprocess.CalledProcessError as failure:
+            partial.unlink(missing_ok=True)
+            raise RunnerError(
+                f"podman could not export image {image_digest}: "
+                f"{(failure.stderr or '').strip()[:2000]}"
+            ) from failure
+        if not partial.is_file() or partial.stat().st_size == 0:
+            partial.unlink(missing_ok=True)
+            raise RunnerError(f"podman save produced no archive for {image_digest}")
+        partial.replace(path)
+        path.chmod(0o644)
+
+    def _repo_reference(self, image_digest: str) -> str | None:
+        """`repo@sha256:...` of a locally stored image whose repo digest is exactly this digest.
+
+        Only a repo digest counts: an image *id* is a config digest, not the OCI manifest the
+        operator authorized, so matching it would scan bytes under a different identity.
+        """
+        cached = self._repo_references.get(image_digest, "")
+        if cached:
+            return cached
+        listed = _podman("images", "--format", "json", check=False)
+        try:
+            images = json.loads(listed.stdout or "[]")
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(images, list):
+            return None
+        wanted = f"@{image_digest}"
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            for repo_digest in image.get("RepoDigests") or ():
+                text_value = str(repo_digest)
+                if text_value.endswith(wanted):
+                    self._repo_references[image_digest] = text_value
+                    return text_value
+        return None
 
     def image_reference(self, image_digest: str) -> str:
         """A runnable Podman reference for a contract `ImageDigest`.
@@ -645,6 +747,7 @@ class PodmanRunner(ContainerRunner):
         *,
         entry: JobProfile | None = None,
         hooks_dir: Path | None = None,
+        profile_network: bool = True,
     ) -> list[str]:
         argv = [
             "run",
@@ -683,6 +786,10 @@ class PodmanRunner(ContainerRunner):
         ]
         if spec.read_only_rootfs:
             argv += ["--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777"]
+        if spec.scratch_mb is not None:
+            # A tool that needs its own scratch (Trivy's analyzer cache) declares the size; it is a
+            # tmpfs the job can write, never a host path and never part of the read-only rootfs.
+            argv += ["--tmpfs", f"/cache:rw,size={spec.scratch_mb}m,mode=1777"]
         if spec.raw_socket:
             argv += ["--cap-add=NET_RAW"]
         # Never host network, never the Podman socket, never --privileged.
@@ -699,9 +806,10 @@ class PodmanRunner(ContainerRunner):
             # `broker_ip` of a network that was never created.
             argv += ["--dns", self.broker_ip(spec.job_id)]
         if entry is not None:
-            # The deployment profile of this job (lab endpoint data, or an internet provider
-            # config): trusted deploy config, never a job input - see aegis.m06_runner.profile.
-            argv += entry.argv()
+            # The deployment profile of this job (lab endpoint data, an internet provider config,
+            # or the local read-only inputs of a no-network job): trusted deploy config, never a job
+            # input - see aegis.m06_runner.profile.
+            argv += entry.argv(network=profile_network)
         for key, value in self._egress_env(spec).items():
             argv += ["--env", f"{key}={value}"]
         argv += ["--mount", f"type=bind,src={layout.output},dst=/out,rw,Z"]
@@ -999,6 +1107,8 @@ def _spec_document(spec: ContainerSpec) -> dict[str, object]:
         "egress_proxy": spec.egress_proxy,
         "raw_socket": spec.raw_socket,
         "seccomp_ruleset": spec.seccomp_ruleset,
+        "artifact_digest": spec.artifact_digest,
+        "scratch_mb": spec.scratch_mb,
     }
 
 
@@ -1007,7 +1117,9 @@ def _now() -> str:
 
 
 __all__ = (
+    "ARTIFACT_ARCHIVE",
     "BROKER_ROLE",
+    "ImageUnavailable",
     "BrokerHandle",
     "JOB_ROLE",
     "JobLayout",

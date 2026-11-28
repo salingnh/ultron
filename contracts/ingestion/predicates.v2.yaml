@@ -20,6 +20,7 @@ predicates:
   http.headers:          {value_type: object,   subject_kinds: [application, url]}
   web.discovered_by:     {value_type: string,   subject_kinds: [url], enum: [crawl, archive, js, sitemap, robots]}
   artifact.digest:       {value_type: string,   subject_kinds: [artifact, oci_image]}
+  artifact.sbom:         {value_type: object,   subject_kinds: [artifact, oci_image, repo_snapshot], description: "{format, schema_version, tool, tool_version, os_family, os_version, packages, vulnerabilities} - bản kiểm kê SBOM của lần chạy, không phải tài liệu SPDX/CycloneDX đầy đủ (raw nằm trong evidence)", graph: true}
   package.installed:     {value_type: object,   subject_kinds: [package], description: "{version, ecosystem, license, location}"}
   osint.mentioned_in:    {value_type: object,   subject_kinds: [domain, email], description: "{source, uri}"}
   osint.lookalike_of:    {value_type: string,   subject_kinds: [domain]}

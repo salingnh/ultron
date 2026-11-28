@@ -82,6 +82,7 @@ RESOLVE = "dns.resolve"
 DISCOVER = "network.discover_services"
 FINGERPRINT = "service.fingerprint"
 PROBE_HTTP = "web.probe_http"
+SCAN_ARTIFACT = "vuln.scan_artifact"
 ENUMERATE_RATIONALE = (
     "Enumerate the subdomains of the campaign's authorized domain seeds to find more surface "
     "before resolving them"
@@ -104,6 +105,14 @@ SERVICE_PORTS = (22, 80, 443, 2222, 6379, 8009, 8080)
 #: Packets per second for the discovery scan (`input.packets_per_second`), well inside the schema's
 #: 1..10000 and the pinned manifest's budget; one job at a time on a lab network.
 SERVICE_PACKETS_PER_SECOND = 100
+ARTIFACT_RATIONALE = (
+    "Analyse the operator-supplied image digest (SBOM, packages, CVE candidates) without running "
+    "it, so the campaign's findings hang from the package assets inside that exact image"
+)
+#: Objective text that asks for the artifact-chain step (G2-D). The live model reads the objective;
+#: the scripted stand-in matches the same words, so a campaign that does not ask for it stays a
+#: pure discovery campaign.
+ARTIFACT_OBJECTIVE_HINTS = ("artifact", "image", "sbom", "package", "container")
 FINGERPRINT_RATIONALE = (
     "Identify the protocol, banner and product version of every service the port scan found, so "
     "the graph can link each open port to the software (and CPE) behind it"
@@ -281,13 +290,36 @@ class ScriptedLabPolicy:
         addresses = list(dict.fromkeys(address_seeds + discovered_addresses))
         objective = str(plain(bundle.objective.text)).lower()
         wants_services = any(hint in objective for hint in SERVICE_OBJECTIVE_HINTS)
-
         if pending:
             return self._decision(
                 request,
                 "wait",
                 f"{len(pending)} job(s) still in flight; their results arrive in a later session",
             )
+        # G2-D: an image seed is scanned by the artifact provider, never executed; a campaign that
+        # asks for it (objective names image/SBOM/package/artifact/container) is one job per image.
+        image_seeds = _refs(bundle, seed=True, prefix="oci:")
+        artifact_jobs = [job for job in jobs if job[0] == SCAN_ARTIFACT]
+        wants_artifact = any(hint in objective for hint in ARTIFACT_OBJECTIVE_HINTS)
+        if image_seeds and wants_artifact and not artifact_jobs:
+            return self._tool_call(
+                request,
+                SCAN_ARTIFACT,
+                ["artifact-scan"],
+                {
+                    "input": {"targets": image_seeds[:8]},
+                    "rationale": ARTIFACT_RATIONALE,
+                    "expected_signal": "packages, SBOM and CVE candidates for the image digest",
+                    "priority": 90,
+                },
+            )
+        if image_seeds and artifact_jobs:
+            return self._decision(
+                request,
+                "stop",
+                "the artifact scan of every image seed is proposed; the campaign objective is met",
+            )
+
         domain_campaign = bool(seeds)
         if not domain_campaign and not address_seeds:
             return self._decision(

@@ -193,6 +193,7 @@ def build_envelope(
     exit_code: int | None = None,
     errors: Sequence[Mapping[str, Any]] = (),
     limitations: Sequence[Mapping[str, Any]] = (),
+    rule_set: str | None = None,
 ) -> ResultEnvelope:
     """Assemble and validate the envelope of one finished job.
 
@@ -218,6 +219,14 @@ def build_envelope(
         "subjects": sorted({str(subject) for subject in subjects}),
         "complete": complete and not limitations,
     }
+    # The rule set names the DB/template bytes a verdict was made with: the deployment's verified
+    # pin (G2-D offline DB) when it declares one, else whatever the parser read from the tool.
+    declared_rule_set = results.get("rule_set")
+    if declared_rule_set is None and isinstance(declared_complete, Mapping):
+        declared_rule_set = declared_complete.get("rule_set")
+    label = rule_set or (declared_rule_set if isinstance(declared_rule_set, str) else None)
+    if label:
+        coverage["rule_set"] = label
     if limitations:
         coverage["limitations"] = [dict(item) for item in limitations]
     if manifest.spec.runtime.outputPath is None:  # pragma: no cover - schema default is "/out"

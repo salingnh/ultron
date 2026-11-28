@@ -248,6 +248,42 @@ def _assert_lab_cross_check(adapter: Adapter, run: dict[str, Any], parsed: dict[
                 )
         assert set(by_key) == {entry["key"] for entry in expected["applications"]}
         return
+    if cross_check["kind"] == "packages":
+        # G2-D: the image inventory is an independent, hand-written record of one real run (the
+        # package count, the purl of the packages the run must find and the CVEs of each). The
+        # parser's own golden (`expected.json`) cannot prove the run was read correctly, only that
+        # it is stable; this list can.
+        by_key = {asset["canonical_key"]: asset for asset in parsed["assets"]}
+        candidates = {finding["subject"]: finding for finding in parsed["findings"]}
+        assert len(by_key) == expected["package_count"], (
+            f"{adapter.provider}: {len(by_key)} packages, the run inventory has "
+            f"{cross_check['package_count']}"
+        )
+        assert len(parsed["findings"]) == expected["finding_count"], (
+            f"{adapter.provider}: {len(parsed['findings'])} findings, the run inventory has "
+            f"{cross_check['finding_count']}"
+        )
+        for entry in expected["must_include"]:
+            key = "purl:" + entry["purl"]
+            assert key in by_key, f"{adapter.provider}: {key} is not an asset"
+            rules = {
+                finding["rule_id"] for finding in parsed["findings"] if finding["subject"] == key
+            }
+            for cve in entry["cves"]:
+                assert f"cve:{cve}" in rules, (
+                    f"{adapter.provider}: {cve} is not a candidate of {key} ({sorted(rules)})"
+                )
+        for key in expected["must_not_include"]:
+            assert key not in by_key, f"{adapter.provider}: invented package {key}"
+        edges = {(edge["from"], edge["to"]) for edge in parsed["relationships"]}
+        image_key = "oci:" + expected["image"]
+        assert all((image_key, key) in edges for key in by_key), (
+            f"{adapter.provider}: a package asset has no CONTAINS_PACKAGE edge from {image_key}"
+        )
+        assert candidates or not expected["finding_count"], (
+            f"{adapter.provider}: findings were expected"
+        )
+        return
     if cross_check["kind"] == "domains":
         assert keys == {f"dns:{str(host).lower().rstrip('.')}" for host in expected["hosts"]}
         return

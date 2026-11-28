@@ -13,9 +13,10 @@ SHELL := /bin/bash
 	lab-fingerprintx lab-httpx lab-httpx-proxy lab-build-fingerprintx demo-g16b \
 	vulnlab-up vulnlab-down vulnlab-status vulnlab-check vulnlab-test intel-kev intel-sync \
 	deps lint test codegen codegen-check migrate ci-python \
-	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-recovery soak-start soak-stop \
+	temporal-live demo-g15a demo-g1 demo-discovery demo-g16c demo-g2d demo-recovery soak-start soak-stop \
 	run-local stop-local seed-demo llm-smoke broker-image internet-smoke intel-schedule \
-	llm-gateway-up llm-gateway-down llm-gateway-status llm-gateway-reload llm-gateway-test
+	llm-gateway-up llm-gateway-down llm-gateway-status llm-gateway-reload llm-gateway-test \
+	lab-artifact-db
 
 # The help text is data, not shell: one entry per .PHONY target, printed with `$(info)` so an
 # apostrophe or any other shell metacharacter in a description cannot break the recipe. It was a
@@ -88,6 +89,11 @@ make demo-g16b       G1.6b gate: Naabu port -> fingerprintx service/CPE -> httpx
                      application, checked in PostgreSQL, Neo4j and the flow read model
 make demo-g16c       CVE/CTI gate (G1.6c): fingerprinted service -> NVD/KEV/EPSS intel ->
                      candidate AFFECTED_BY in PostgreSQL and Neo4j + the candidate read API
+make demo-g2d        G2-D gate: an operator-supplied image digest -> Trivy SBOM/packages/CVE
+                     candidates with no network and without running the image, then M20
+                     findings with their provider list, checked in PostgreSQL, Neo4j and the API
+make lab-artifact-db download the offline Trivy vulnerability DBs once and pin their bytes in
+                     deploy/lab/runner-profile.json (the scan itself never uses the network)
 make intel-kev       refresh the configured CISA KEV mirror: cisagov/kev-data default-branch
                      HEAD via the GitHub API, validated (shape, bounds, version) and recorded
                      with its commit; no fallback source
@@ -286,6 +292,13 @@ demo-g16b:
 demo-g16c:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
 		uv run --frozen python scripts/demo/demo-g16c.py
+
+demo-g2d:
+	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \
+		uv run --frozen python scripts/demo/demo-g2d.py
+
+lab-artifact-db:
+	@scripts/artifact/trivy-db.sh
 
 demo-recovery:
 	@set -a; [ -f .local/run-local.env ] && . .local/run-local.env; set +a; \

@@ -28,6 +28,7 @@ from aegis.m03_agent.fake_policy import (
     FINGERPRINT,
     PROBE_HTTP,
     RESOLVE,
+    SCAN_ARTIFACT,
     ScriptedLabPolicy,
     job_lines,
 )
@@ -457,3 +458,48 @@ def test_a_dns_only_objective_stops_before_the_port_scan() -> None:
     third = demo.session(2)
     assert third.outcome.stop_reason == "objective_met"
     assert DISCOVER not in [job["capability"] for job in _job_rows(demo.job_service)]
+
+
+@dataclass
+class ArtifactDemo(Demo):
+    """G2-D: the same policy on an image seed, whose only step is the artifact scanner."""
+
+    digest: str = "sha256:" + "9a" * 32
+    objective: str = "Analyse the container image artifact: SBOM, packages and CVE candidates"
+
+    def context(self) -> Any:
+        context = super().context()
+        context.targets = (
+            {
+                "target_id": "01934f6a-0000-7000-8000-0000000000e2",
+                "kind": "oci_image",
+                "raw_value": self.digest,
+                "canonical_key": "oci:" + self.digest,
+            },
+        )
+        return context
+
+
+def test_an_image_campaign_proposes_the_artifact_scan_then_stops() -> None:
+    demo = ArtifactDemo()
+
+    first = demo.session(0)
+    assert len(first.outcome.job_ids) == 1
+    call = _call(demo.policy.responses[-1])
+    assert call["name"] == SCAN_ARTIFACT
+    assert call["arguments"]["input"]["targets"] == ["oci:" + demo.digest]
+    assert [job["capability"] for job in _job_rows(demo.job_service)] == [SCAN_ARTIFACT]
+
+    _complete(demo, first.outcome.job_ids[0], "SUCCEEDED")
+    second = demo.session(1)
+    assert second.outcome.job_ids == ()
+    assert second.outcome.stop_reason == "objective_met"
+    assert second.result is not None and second.result["decision"] == "stop"
+
+
+def test_an_image_campaign_without_an_artifact_objective_runs_nothing() -> None:
+    """The artifact step is gated on the objective, like the port scan: no invented scope."""
+    demo = ArtifactDemo(objective="Discover the lab domain's subdomains and resolve them")
+    result = demo.session(0)
+    assert result.outcome.job_ids == ()
+    assert result.result is not None and result.result["decision"] == "wait"

@@ -168,6 +168,11 @@ class ContainerSpec:
     pids_limit: int = 512
     max_output_files: int = 50000
     seccomp_ruleset: str = "default"
+    #: The `oci:` target of an artifact job: M06 stages exactly this image (from the runner's
+    #: local image store) into `/in/image.tar`; the container never runs it and never pulls it.
+    artifact_digest: str | None = None
+    #: Writable tmpfs at `/cache` in MiB (manifest `runtime.scratchMb`), None = no `/cache`.
+    scratch_mb: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -83,7 +83,8 @@ UNKNOWN_ENDPOINT = "unknown_relationship_endpoint"
 SELF_RELATIONSHIP = "self_relationship"
 DETAIL_CONFLICT = "canonical_detail_conflict"
 EVIDENCE_NOT_STORED = "evidence_reference_not_stored"
-FINDINGS_DEFERRED = "finding_candidates_deferred_to_m20"
+#: G3 owns secret scanning/verification; a secret candidate is kept in quarantine, never dropped.
+SECRET_CANDIDATES_DEFERRED = "finding_secret_candidates_deferred_to_g3"
 
 
 # --------------------------------------------------------------------------- value helpers
@@ -535,7 +536,7 @@ class IngestionService(Ingestion):
         self._write_observations(connection, envelope, entries, quarantined, revision)
         self._write_relationships(connection, envelope, entries, quarantined)
         self._check_coverage(connection, envelope, entries, quarantined)
-        self._quarantine_findings(connection, envelope, quarantined)
+        self._write_findings(connection, envelope, entries, quarantined, revision)
         return quarantined
 
     def _identities(
@@ -1215,23 +1216,113 @@ class IngestionService(Ingestion):
                     quarantined,
                 )
 
-    def _quarantine_findings(
+    def _write_findings(
         self,
         connection: Connection,
         envelope: ResultEnvelope,
+        entries: Mapping[str, _AssetEntry],
         quarantined: list[QuarantinedItem],
+        revision: int,
     ) -> None:
-        # Findings are M20's (G2.2); keeping the candidate in quarantine preserves it for re-ingest
-        # instead of inventing a finding row the contract has no producer for at G1.
+        """Keep every validated scanner finding as a `finding_candidate` (M20 decides findings).
+
+        M27 does not invent a `finding` row: the fingerprint, provider merge, status and severity
+        are M20's (`aegis.m20_vuln.candidates`). What it does enforce here is the same evidence
+        contract as for an observation - a candidate is stored only when its subject is an asset
+        this campaign knows and every evidence ref resolves to stored bytes - so a finding can
+        never cite output nobody kept.
+        """
+        event_id = _text(envelope.event_id)
+        campaign_id = _text(envelope.campaign_id)
+        job_id = _text(envelope.job_id)
+        provider = envelope.provider.name
+        provider_version = str(envelope.provider.version)
         for index, finding in enumerate(envelope.results.findings):
-            self._quarantine(
-                connection,
-                _text(envelope.event_id),
-                GATE_SCHEMA,
-                f"/results/findings/{index}",
-                _dump(finding),
-                FINDINGS_DEFERRED,
-                quarantined,
+            pointer = f"/results/findings/{index}"
+            if finding.category is not None and finding.category.value == "secret":
+                # G2-D covers SBOM/vulnerability analysis; secret scanning and its fingerprint
+                # policy are G3's. Quarantine keeps the candidate for that slice (no data loss).
+                self._quarantine(
+                    connection,
+                    event_id,
+                    GATE_SCHEMA,
+                    pointer,
+                    _dump(finding),
+                    SECRET_CANDIDATES_DEFERRED,
+                    quarantined,
+                )
+                continue
+            try:
+                normalized = normalize.validate_key(_text(finding.subject))
+            except (normalize.NormalizationError, normalize.KeyRejection) as error:
+                self._quarantine(
+                    connection,
+                    event_id,
+                    GATE_IDENTITY,
+                    pointer,
+                    _dump(finding),
+                    error.reason,
+                    quarantined,
+                )
+                continue
+            subject_id = self._asset_id(connection, entries, normalized.canonical_key)
+            if subject_id is None:
+                self._quarantine(
+                    connection,
+                    event_id,
+                    GATE_SOURCE,
+                    pointer,
+                    _dump(finding),
+                    UNKNOWN_SUBJECT,
+                    quarantined,
+                )
+                continue
+            evidence_ids, verified = self._evidence_ids(connection, envelope, finding.evidence_refs)
+            if not verified or not evidence_ids:
+                self._quarantine(
+                    connection,
+                    event_id,
+                    GATE_EVIDENCE,
+                    pointer,
+                    _dump(finding),
+                    EVIDENCE_NOT_STORED,
+                    quarantined,
+                )
+                continue
+            location = {} if finding.location is None else finding.location.model_dump(mode="json")
+            observed_at = _moment(envelope.provenance.finished_at)
+            connection.execute(
+                "INSERT INTO finding_candidate (candidate_id, campaign_id, scan_id,"
+                " envelope_event_id, revision, subject_asset_id, provider, provider_version,"
+                " rule_id, category, title, description, location, location_hash,"
+                " vulnerability_ids, cwe_ids, scanner_severity, fingerprint_context, confidence,"
+                " evidence_ids, observed_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
+                "         %s, %s, %s, %s)"
+                " ON CONFLICT DO NOTHING",
+                (
+                    str(uuid7()),
+                    campaign_id,
+                    job_id,
+                    event_id,
+                    revision,
+                    subject_id,
+                    provider,
+                    provider_version,
+                    _text(finding.rule_id),
+                    "vulnerability" if finding.category is None else finding.category.value,
+                    _text(finding.title),
+                    None if finding.description is None else _text(finding.description),
+                    Jsonb(location),
+                    canonical.sha256_hex(location),
+                    [_text(item) for item in finding.vulnerability_ids or ()],
+                    [_text(item) for item in finding.cwe_ids or ()],
+                    None if finding.scanner_severity is None else finding.scanner_severity.value,
+                    Jsonb(dict(finding.fingerprint_context)),
+                    None if finding.confidence is None else _value(finding.confidence),
+                    evidence_ids,
+                    observed_at,
+                ),
             )
 
     # -- evidence (G3) --------------------------------------------------------

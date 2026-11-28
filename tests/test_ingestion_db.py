@@ -414,7 +414,7 @@ def test_each_gate_quarantines_only_its_record() -> None:
                 ),
                 relationship("ALIAS_OF", "dns:www.internal.example", "dns:www.internal.example"),
             ],
-            findings=[finding("dns:www.internal.example", evidence_refs=[{"local_ref": "raw"}])],
+            findings=[finding("dns:ghost.internal.example", evidence_refs=[{"local_ref": "raw"}])],
             coverage=["dns:ghost.internal.example", "dns:www.internal.example"],
         )
 
@@ -430,7 +430,7 @@ def test_each_gate_quarantines_only_its_record() -> None:
             ("G3", "evidence_reference_not_stored", "/results/observations/4"),
             ("G5", "unknown_relationship_endpoint", "/results/relationships/0"),
             ("G4", "self_relationship", "/results/relationships/1"),
-            ("G4", "finding_candidates_deferred_to_m20", "/results/findings/0"),
+            ("G5", "unknown_subject_asset", "/results/findings/0"),
             ("G5", "unknown_subject_asset", "/coverage/subjects/0"),
         }
         assert reasons == expected
@@ -667,3 +667,141 @@ def test_support_fixture_ids_are_uuidv7() -> None:
     assert IMAGE_DIGEST.startswith("sha256:")
     assert FINISHED_AT.endswith("Z")
     assert POLICY_VERSION.startswith("roe-") and PROVIDER_VERSION.startswith("v")
+
+
+PKG_KEY = "purl:pkg:apk/alpine/krb5-libs@1.22.2-r1"
+
+
+@requires_postgres
+def test_a_validated_finding_candidate_is_kept_for_m20() -> None:
+    """G2-D: a scanner finding is stored as a candidate, not as a finding and not in quarantine.
+
+    M27 checks the same things it checks for an observation (the subject is a known asset, the
+    evidence resolves to stored bytes) and writes one append-only `finding_candidate` row. The
+    finding itself is M20's decision, so this transaction must create none.
+    """
+    with throwaway_database() as dsn:
+        _migrate(dsn)
+        with _connect(dsn) as connection:
+            seed_campaign(connection)
+            job_id = seed_job(
+                connection,
+                "g2d:candidate",
+                capability="vuln.scan_artifact",
+                provider="trivy",
+                provider_version="v0.76.2",
+            )
+            secret_job = seed_job(
+                connection,
+                "g2d:secret",
+                capability="vuln.scan_artifact",
+                provider="trivy",
+                provider_version="v0.76.2",
+            )
+            seed_evidence(connection, job_id, sha256=EVIDENCE_SHA, size_bytes=len(RAW_EVIDENCE))
+            seed_evidence(connection, secret_job, sha256=EVIDENCE_SHA, size_bytes=len(RAW_EVIDENCE))
+        service = IngestionService.from_dsn(dsn)
+        envelope = build_envelope(
+            job_id,
+            assets=[asset(PKG_KEY, "package", discovered_from=[SEED_ASSET_KEY])],
+            observations=[
+                observation(
+                    PKG_KEY,
+                    "package.installed",
+                    {"version": "1.22.2-r1", "ecosystem": "apk"},
+                    evidence_refs=[{"local_ref": "raw"}],
+                )
+            ],
+            findings=[
+                {
+                    "subject": PKG_KEY,
+                    "rule_id": "cve:CVE-2026-107364",
+                    "category": "vulnerability",
+                    "title": "krb5 DoS",
+                    "location": {
+                        "package_purl": "pkg:apk/alpine/krb5-libs@1.22.2-r1",
+                        "installed_version": "1.22.2-r1",
+                        "fixed_version": "1.22.3-r0",
+                    },
+                    "vulnerability_ids": ["CVE-2026-107364"],
+                    "cwe_ids": ["CWE-125"],
+                    "scanner_severity": "high",
+                    "fingerprint_context": {"package": "pkg:apk/alpine/krb5-libs"},
+                    "confidence": 0.9,
+                    "evidence_refs": [{"local_ref": "raw"}],
+                }
+            ],
+            coverage=[PKG_KEY],
+            evidence=[_evidence_entry(job_id)],
+            provider_name="trivy",
+            provider_version="v0.76.2",
+            capability="vuln.scan_artifact",
+        )
+        receipt = service.submit_payload(envelope)
+        assert receipt.quarantined == []
+
+        secret = build_envelope(
+            secret_job,
+            assets=[asset(PKG_KEY, "package", discovered_from=[SEED_ASSET_KEY])],
+            findings=[
+                {
+                    "subject": PKG_KEY,
+                    "rule_id": "trivy-secret:aws-access-key-id",
+                    "category": "secret",
+                    "title": "AWS Access Key ID",
+                    "secret": {
+                        "value": "AKIAIOSFODNN7EXAMPLE",
+                        "fingerprint": "7" * 64,
+                    },
+                    "fingerprint_context": {"path": "/app/.env"},
+                    "evidence_refs": [{"local_ref": "raw"}],
+                }
+            ],
+            coverage=[PKG_KEY],
+            evidence=[_evidence_entry(secret_job)],
+            provider_name="trivy",
+            provider_version="v0.76.2",
+            capability="vuln.scan_artifact",
+        )
+        secret_receipt = service.submit_payload(secret)
+        assert [
+            (item.gate.value, item.reason, item.pointer) for item in secret_receipt.quarantined
+        ] == [("G4", "finding_secret_candidates_deferred_to_g3", "/results/findings/0")]
+
+        with _connect(dsn) as connection:
+            stored = connection.execute(
+                "SELECT provider, provider_version, rule_id, category, title, location,"
+                " location_hash, vulnerability_ids, cwe_ids, scanner_severity, confidence,"
+                " evidence_ids, observed_at FROM finding_candidate"
+            ).fetchall()
+            assert len(stored) == 1
+            (
+                provider,
+                provider_version,
+                rule_id,
+                category,
+                title,
+                location,
+                location_hash,
+                vulnerability_ids,
+                cwe_ids,
+                scanner_severity,
+                confidence,
+                evidence_ids,
+                observed_at,
+            ) = stored[0]
+            assert (provider, provider_version) == ("trivy", "v0.76.2")
+            assert rule_id == "cve:CVE-2026-107364"
+            assert category == "vulnerability"
+            assert title == "krb5 DoS"
+            location_row = cast(dict[str, Any], location)
+            assert location_row["installed_version"] == "1.22.2-r1"
+            assert location_row["fixed_version"] == "1.22.3-r0"
+            assert len(str(location_hash)) == 64
+            assert vulnerability_ids == ["CVE-2026-107364"]
+            assert cwe_ids == ["CWE-125"]
+            assert scanner_severity == "high"
+            assert float(cast(float, confidence)) == 0.9
+            assert len(cast(list[Any], evidence_ids)) == 1
+            assert observed_at is not None
+            assert _count(connection, "SELECT count(*) FROM finding") == 0

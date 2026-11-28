@@ -59,7 +59,9 @@ SCHEMA_REF = re.compile(
     r"^schema://(?P<group>[a-z0-9-]+)/(?P<name>[a-z0-9-]+)/v(?P<version>[0-9]+)$"
 )
 DOMAIN_TARGET = "aegis-domain-target"
-CANONICAL_KEY_PREFIXES = ("dns:", "ip:", "service:", "app:", "url:")
+CANONICAL_KEY_PREFIXES = ("dns:", "ip:", "service:", "app:", "url:", "oci:", "purl:")
+#: A bare OCI digest names an image the same way a bare address names an `ip:` key.
+IMAGE_DIGEST = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
 #: `runtime.targetsFormat` values: how `input.targets` becomes the tool's own value.
 TARGETS_FORMATS = ("canonical", "host_port")
 SERVICE_KEY = re.compile(
@@ -272,8 +274,10 @@ def project_target(value: str) -> str:
     candidate = value.strip()
     if candidate.lower().startswith(CANONICAL_KEY_PREFIXES):
         if checker.conforms(candidate, "aegis-canonical-key"):
-            return candidate
+            return candidate.lower() if candidate.lower().startswith("oci:") else candidate
         raise SpecError("POLICY_DENIED", f"target {value!r} is not a valid canonical key")
+    if IMAGE_DIGEST.fullmatch(candidate):
+        return "oci:" + candidate.lower()
     # A bare address is an address target, not a domain: `aegis-domain-target` accepts
     # `10.1.2.3` (it is a syntactically valid name), so the address check has to come first or a
     # port-scan task would be compared as `dns:10.1.2.3` and never match its `ip:` ref.
@@ -1102,6 +1106,7 @@ def build_spec(
             "POLICY_DENIED",
             "targetBinding=required but no task target could be resolved to an address",
         )
+    artifact_digest = artifact_target(manifest, input_values)
     return ContainerSpec(
         job_id=job_id,
         image_digest=text(runtime.imageDigest),
@@ -1118,4 +1123,35 @@ def build_spec(
             broker_proxy if egress and channel == "broker" and profile != "lab" else None
         ),
         raw_socket=bool(permissions.rawSocket),
+        artifact_digest=artifact_digest,
+        scratch_mb=None if runtime.scratchMb is None else int(runtime.scratchMb),
     )
+
+
+def artifact_target(manifest: ProviderManifest, input_values: Mapping[str, Any]) -> str | None:
+    """The image digest M06 must stage for this job, or None for a non-artifact job.
+
+    `runtime.artifactSource=oci-archive` means the capability analyses *the job's own target*: the
+    platform writes exactly that image into `/in/image.tar` before the container starts. The value
+    is the single signed input target (already re-checked against the task's refs above), so a job
+    can never analyse an image other than the one its campaign seed authorized. Two targets, a
+    non-digest value or a job that also opens egress are all refused before a container exists.
+    """
+    runtime = manifest.spec.runtime
+    if runtime.artifactSource is None:
+        return None
+    if manifest.spec.permissions.networkAccess != "none":
+        raise SpecError(
+            "POLICY_DENIED",
+            "runtime.artifactSource is only valid with permissions.networkAccess=none",
+        )
+    raw = input_values.get("targets")
+    if not isinstance(raw, list) or len(raw) != 1 or not isinstance(raw[0], str):
+        raise SpecError(
+            "POLICY_DENIED",
+            "an artifact job takes exactly one image target; the manifest stages one image",
+        )
+    projection = project_target(raw[0])
+    if not projection.startswith("oci:"):
+        raise SpecError("POLICY_DENIED", f"artifact target {raw[0]!r} is not an image digest")
+    return projection[4:]

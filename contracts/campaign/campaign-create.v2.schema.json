@@ -39,7 +39,7 @@
   },
   "$defs": {
     "Targets": {
-      "description": "Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng.",
+      "description": "Các loại seed hiện hỗ trợ; ít nhất một danh sách không rỗng. Loại input khác chỉ được thêm khi có contract tương ứng. `images` (G2-D) là digest do người vận hành cung cấp cho một campaign phân tích artifact: không crawl registry, không suy ra tag/repository từ digest.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -92,6 +92,15 @@
           },
           "maxItems": 1000,
           "uniqueItems": true
+        },
+        "images": {
+          "description": "Digest OCI của image được phép phân tích (operator cung cấp; M06 chỉ lấy image đã có trong local store, không pull).",
+          "type": "array",
+          "items": {
+            "$ref": "../common/ids.v2.schema.json#/$defs/ImageDigest"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
         }
       },
       "anyOf": [
@@ -141,6 +150,16 @@
           ],
           "properties": {
             "keywords": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "images"
+          ],
+          "properties": {
+            "images": {
               "minItems": 1
             }
           }

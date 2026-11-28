@@ -68,6 +68,7 @@ MANIFESTS = (
     "manifest.naabu.yaml",
     "manifest.fingerprintx.yaml",
     "manifest.httpx.yaml",
+    "manifest.trivy.yaml",
 )
 PROVIDERS = {
     ENUMERATE: "subfinder",
@@ -75,6 +76,7 @@ PROVIDERS = {
     DISCOVER: "naabu",
     "service.fingerprint": "fingerprintx",
     "web.probe_http": "httpx",
+    "vuln.scan_artifact": "trivy",
 }
 
 

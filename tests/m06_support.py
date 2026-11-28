@@ -545,7 +545,7 @@ def build_policy_for(
     **kwargs: Any,
 ) -> Any:
     """``spec.build_policy`` with the internet profile's mandatory inputs filled in."""
-    from aegis.m06_runner import spec as spec_module
+    import aegis.m06_runner.spec as spec_module
 
     kwargs.setdefault("platform_cidrs", ("10.88.0.0/16",))
     kwargs.setdefault("per_host_rps", 1.0)

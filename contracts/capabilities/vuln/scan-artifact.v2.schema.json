@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis.io/contracts/capabilities/vuln/scan-artifact.v2.schema.json",
+  "title": "vuln.scan_artifact v2",
+  "description": "Phân tích một image theo digest: SBOM/package và CVE mà scanner báo, cùng bằng chứng raw của lần chạy. Image không được chạy và công cụ không ra mạng (DB CVE là dependency offline đã pin). Digest do người vận hành cung cấp làm seed của campaign; M06 chỉ lấy image đã có trong local store, không pull registry. Không có tham số nào chọn template/payload/URL.",
+  "type": "object",
+  "required": [
+    "targets"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "targets": {
+      "description": "Digest của image cần phân tích; trùng với seed `oci_image` của campaign (dạng thô `sha256:...` hoặc khóa chuẩn `oci:sha256:...`).",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          {
+            "$ref": "../../common/ids.v2.schema.json#/$defs/CanonicalKey"
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true
+    }
+  }
+}

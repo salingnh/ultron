@@ -1,0 +1,54 @@
+apiVersion: aegis.io/v2
+kind: CapabilityProvider
+metadata:
+  name: trivy-egress
+  version: 1.0.0
+  module: M13
+  license: Apache-2.0
+spec:
+  capability: vuln.scan_artifact
+  providerVersion: v0.76.2
+  runtime:
+    type: container
+    image: registry.internal/aegis/trivy
+    imageDigest: sha256:6fa071ef8daa2e58b90cbf1710bedca91adbb3bf98693533226f442035b836a6
+    argsTemplate:
+    - image
+    - --input
+    - /in/image.tar
+    artifactSource: oci-archive
+  inputSchemaRef: schema://vuln/scan-artifact/v2
+  outputSchemaRef: schema://common/result-envelope/v2
+  acceptsTargetKinds:
+  - oci_image
+  permissions:
+    scopeRequired: false
+    networkAccess: egress
+    egressMode: broker
+    proxyAware: true
+    egressSources:
+    - id: registry
+      hosts:
+      - registry-1.docker.io
+      ports:
+      - 443
+      protocol: https
+    targetBinding: none
+  budget:
+    timeoutSeconds: 900
+    maxConcurrency: 1
+    cpu: 2
+    memoryMb: 4096
+  handlers:
+  - describe
+  - validate
+  - start
+  - status
+  - cancel
+  - collect
+  - health
+  parser:
+    entrypoint: adapters.m13.trivy.parser:parse
+    outputFormat: json
+  compatibilityTests:
+  - fixture-replay

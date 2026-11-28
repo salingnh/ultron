@@ -7,8 +7,10 @@
   `--changed-since` narrows the catalogue to the CVE ids of the `intel.revision.v2` events after
   that outbox cursor (the delta run), `--dry-run` prints the decisions without writing.
 * the same `run` then raises/refreshes the **findings** of those candidates
-  (`aegis.m20_vuln.findings`) and assesses their severity (C07) when a live model is configured;
-  `--no-findings` keeps the run at the candidate level (the G1.6 behaviour).
+  (`aegis.m20_vuln.findings`) and of the scanner candidates M27 stored for the artifact chain
+  (`aegis.m20_vuln.candidates`), and assesses their severity (C07) when a live model is
+  configured; `--no-findings` keeps the run at the candidate level (the G1.6 behaviour) and
+  `--no-scanner-findings` skips only the artifact-chain pass.
 * `reassess` - consume the `intel.revision.v2` events published since the consumer's checkpoint
   and re-assess the findings whose CVEs they name (`aegis.m20_vuln.intel_reassess`). It is the
   feed-driven half of C07: a KEV/EPSS/withdrawal/distro change updates the history without a scan
@@ -30,6 +32,7 @@ import sys
 from typing import Any
 
 from aegis.m20_vuln import intel_reassess, severity, visibility
+from aegis.m20_vuln.candidates import CandidateFindingsEngine
 from aegis.m20_vuln.findings import FindingsEngine
 from aegis.m20_vuln.matching import Matcher, changed_vulnerabilities, connect_from_env
 
@@ -48,6 +51,7 @@ def _run(argv: argparse.Namespace) -> int:
             cursor=cursor,
         )
         findings = None
+        scanner_findings = None
         if not argv.no_findings:
             client = severity.model_from_env(os.environ["AEGIS_PG_DSN"])
             model, provider, model_name = (None, None, None) if client is None else client
@@ -59,6 +63,14 @@ def _run(argv: argparse.Namespace) -> int:
                 provider=provider,
                 model_name=model_name,
             )
+            if not argv.no_scanner_findings:
+                scanner_findings = CandidateFindingsEngine(connection).run(
+                    campaign_id=argv.campaign,
+                    dry_run=argv.dry_run,
+                    model=model,
+                    provider=provider,
+                    model_name=model_name,
+                )
     finally:
         connection.close()
     document: dict[str, Any] = {
@@ -71,6 +83,11 @@ def _run(argv: argparse.Namespace) -> int:
             **findings.as_dict(),
             "created": findings.findings,
             "withdrawals": findings.withdrawals,
+        }
+    if scanner_findings is not None:
+        document["scanner_findings"] = {
+            **scanner_findings.as_dict(),
+            "created": scanner_findings.findings,
         }
     print(json.dumps(document, indent=2))
     return 0
@@ -147,6 +164,11 @@ def main(argv: list[str] | None = None) -> int:
         "--no-findings",
         action="store_true",
         help="stop at candidates: do not raise/refresh finding rows (G1.6 behaviour)",
+    )
+    run.add_argument(
+        "--no-scanner-findings",
+        action="store_true",
+        help="keep the CPE findings pass but skip the artifact-chain scanner candidates",
     )
     reassess = sub.add_parser(
         "reassess", help="re-assess the findings an intel.revision.v2 event names"

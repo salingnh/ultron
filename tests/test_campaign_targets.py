@@ -125,6 +125,11 @@ def test_seed_implementation_matches_the_reference_on_every_input() -> None:
         ("url", "https://user:secret@example.com/", None),
         ("domain", "10.0.0.1", None),
         ("service", "10.0.0.1:443/tcp", None),
+        # G2-D image seeds: the digest is the identity, a tag/repository is not.
+        ("oci_image", "sha256:" + "AB" * 32, "oci:sha256:" + "ab" * 32),
+        ("oci_image", "oci:sha256:" + "ab" * 32, "oci:sha256:" + "ab" * 32),
+        ("oci_image", "docker.io/library/httpd:2.4.49", None),
+        ("oci_image", "sha256:abc", None),
     ],
 )
 def test_seed_canonical_key_cases(kind: str, raw: str, expected: str | None) -> None:
