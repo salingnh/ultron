@@ -88,6 +88,7 @@ def _options() -> Any:
         epss_source=os.environ.get("AEGIS_EPSS_SOURCE"),
         epss_version=os.environ.get("AEGIS_EPSS_VERSION"),
         source_file=os.environ.get("AEGIS_KEV_SOURCE_FILE"),
+        distro_source_file=os.environ.get("AEGIS_DISTRO_SOURCE_FILE"),
     )
 
 

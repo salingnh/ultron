@@ -227,3 +227,44 @@ def test_httpx_refuses_a_result_that_names_another_input(tmp_path: Path) -> None
     record = {"input": "10.9.9.9:8080", "url": "http://10.9.9.9:8080", "status_code": 200}
     with pytest.raises(httpx.ParserInputError, match="did not target"):
         httpx.parse(_write(tmp_path, [record]), HTTPX_TASK, [])
+
+
+def test_fingerprintx_records_the_distro_package_a_banner_names(tmp_path: Path) -> None:
+    """A distro revision is part of the package version, and the release when the banner names it.
+
+    `OpenSSH_8.9p1 Ubuntu-3ubuntu0.18` is Ubuntu's backport of 8.9p1: the CPE version stays 8.9p1
+    (that is the upstream product NVD knows), while `distro` records what to judge against the
+    distro's fix data. An SSH banner does not name the Ubuntu release, so it stays null; Debian's
+    `deb12` does name one.
+    """
+    ubuntu = _record(
+        port=22,
+        protocol="ssh",
+        version="8.9p1",
+        metadata={"banner": "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.18"},
+    )
+    task = {"input": {"targets": ["service:10.1.2.3:22/tcp"], "ports": [22], "timeout_ms": 2000}}
+    parsed = fingerprintx.parse(_write(tmp_path / "ubuntu", [ubuntu]), task, [])
+    product = _observations(parsed, "service.product")[0]["value"]
+    assert product["version"] == "8.9p1"
+    assert product["distro"] == {
+        "id": "ubuntu",
+        "release": None,
+        "package": "openssh",
+        "version": "8.9p1-3ubuntu0.18",
+    }
+
+    debian = _record(
+        port=22,
+        protocol="ssh",
+        version="9.2p1",
+        metadata={"banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"},
+    )
+    parsed = fingerprintx.parse(_write(tmp_path / "debian", [debian]), task, [])
+    product = _observations(parsed, "service.product")[0]["value"]
+    assert product["distro"] == {
+        "id": "debian",
+        "release": "12",
+        "package": "openssh",
+        "version": "9.2p1-2+deb12u3",
+    }

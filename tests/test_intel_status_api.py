@@ -84,8 +84,8 @@ def test_the_status_lists_every_feed_and_the_last_failed_run(dsn: str) -> None:
     response = _get(_client(dsn))
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [item["feed"] for item in body["feeds"]] == ["nvd", "epss", "kev"]
-    assert body["stale_feeds"] == ["epss", "kev"]
+    assert [item["feed"] for item in body["feeds"]] == ["nvd", "distro", "epss", "kev"]
+    assert body["stale_feeds"] == ["distro", "epss", "kev"]
     assert body["feeds"][0]["snapshot"]["version"] == "2026-12-01"
     assert body["last_run"]["status"] == "FAILED"
     assert body["last_run"]["error"] == "kev: HTTP 503"

@@ -43,10 +43,11 @@ __all__ = [
 ]
 
 #: The feeds `sync-intel` refreshes and the status endpoint reports, in report order.
-FEEDS = (feeds.NVD, feeds.EPSS, feeds.KEV)
+FEEDS = (feeds.NVD, feeds.DISTRO, feeds.EPSS, feeds.KEV)
 #: How old the newest *fetched* snapshot may be before the feed is stale (daily schedule).
 STALE_AFTER_SECONDS: Mapping[str, int] = {
     feeds.NVD: 48 * 3600,
+    feeds.DISTRO: 48 * 3600,
     feeds.EPSS: 48 * 3600,
     feeds.KEV: 72 * 3600,
 }

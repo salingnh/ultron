@@ -1,0 +1,33 @@
+{
+  "feed": "distro",
+  "packages": {
+    "http_server": "apache2",
+    "tomcat": "tomcat9",
+    "openssh": "openssh",
+    "nginx": "nginx"
+  },
+  "sources": [
+    {
+      "id": "ubuntu",
+      "release": "jammy",
+      "codename": "22.04",
+      "kind": "ubuntu-oval",
+      "url": "fixture://ubuntu-jammy",
+      "size_min_bytes": 100,
+      "size_max_bytes": 1000000,
+      "count_min": 1,
+      "count_max": 100
+    },
+    {
+      "id": "debian",
+      "release": "bookworm",
+      "codename": "12",
+      "kind": "debian-tracker",
+      "url": "fixture://debian-bookworm",
+      "size_min_bytes": 100,
+      "size_max_bytes": 1000000,
+      "count_min": 1,
+      "count_max": 100
+    }
+  ]
+}

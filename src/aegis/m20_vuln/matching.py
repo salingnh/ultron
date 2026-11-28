@@ -67,6 +67,19 @@ from aegis.m20_vuln.cpe import (
     CpeError,
     parse_cpe,
 )
+from aegis.m20_vuln.distro import (
+    DISTRO_FIXED_METHOD,
+    DistroDecision,
+    DistroFixes,
+    DistroRef,
+    distro_from_value,
+)
+from aegis.m20_vuln.distro import (
+    FIXED as DISTRO_FIXED,
+)
+from aegis.m20_vuln.distro import (
+    VULNERABLE as DISTRO_VULNERABLE,
+)
 
 #: ids.v2 requires UUIDv7; M27 owns the generator today (one shared helper is a G1.4a proposal).
 from aegis.m27_ingestion.ids import uuid7
@@ -98,13 +111,19 @@ VERSION_UNKNOWN_MESSAGE = "version unknown, not matchable"
 NO_LONGER_MATCHES_CODE = "NO_LONGER_MATCHES"
 #: The current NVD revision is Rejected/Withdrawn: it can never be a candidate again.
 WITHDRAWN_CODE = "WITHDRAWN"
-#: Every `retraction_reason` 0008 accepts; the first two come from the configuration rules.
+#: The distro shipped a package version at or above its fix (migration 0010 accepts the reason).
+FIXED_BY_DISTRO_CODE = "FIXED_BY_DISTRO"
+#: Every `retraction_reason` the check constraint accepts; the first two are configuration rules.
 RETRACTION_CODES = (
     VERSION_UNSPECIFIED_CODE,
     PLATFORM_UNCONFIRMED_CODE,
     NO_LONGER_MATCHES_CODE,
     WITHDRAWN_CODE,
+    FIXED_BY_DISTRO_CODE,
 )
+#: A distro-fixed pair has no NVD change to point at: the decision is its own method, so it can be
+#: written at the revision the previous match used (the append-only key includes the method).
+DISTRO_METHOD = DISTRO_FIXED_METHOD
 #: Confidence of a candidate: an exact-version criterion beats a range, both stay candidates.
 CONFIDENCE_EXACT = 0.7
 CONFIDENCE_RANGE = 0.6
@@ -153,6 +172,7 @@ class Target:
     predicate: str
     cpes: tuple[Cpe, ...]
     skipped: int = 0
+    distro: DistroRef | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +199,7 @@ class Retraction:
     campaign_id: str
     reason: str
     match_method: str
+    affected_range: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +263,14 @@ class MatchReport:
     version_unspecified: int = 0
     #: Decisions rejected because the configuration ANDs a product nobody observed (a platform).
     platform_unconfirmed: int = 0
+    #: NVD candidates the distro data says are patched (suppressed, not stored).
+    distro_fixed: int = 0
+    #: NVD candidates the distro data says are still vulnerable (the candidate stands).
+    distro_vulnerable: int = 0
+    #: NVD candidates with no usable distro fix data (the candidate stands).
+    distro_unresolved: int = 0
+    #: Existing candidates the distro data retracted (`FIXED_BY_DISTRO`).
+    distro_retracted: int = 0
     #: Candidates this run took back (a `matched = false` row at the new revision).
     retracted: int = 0
     #: Retractions that cannot be written because the previous decision is still the newest
@@ -472,6 +501,7 @@ def _targets(
                 predicate=str(row["predicate"]),
                 cpes=inspection.cpes,
                 skipped=inspection.skipped,
+                distro=distro_from_value(row["value"]),
             )
         )
     by_subject: dict[str, Any] = {}
@@ -665,6 +695,13 @@ class Matcher:
             PLATFORM_UNCONFIRMED_CODE: {},
         }
         previous = self._previous_matches([target.asset_id for target in targets])
+        distro_fixes = DistroFixes(
+            self._conn,
+            [target.distro.package for target in targets if target.distro is not None],
+        )
+        distro_decisions: dict[tuple[str, str], DistroDecision] = {}
+        distro_fixed_ids: set[str] = set()
+        distro_unresolved_ids: set[str] = set()
         retracted: list[dict[str, Any]] = []
         blocked = 0
         for target in targets:
@@ -685,11 +722,29 @@ class Matcher:
                 for candidate in candidates
             ]
             report.considered += len(resolved)
+            if target.distro is not None and distro_fixes.has_rows:
+                kept: list[Candidate] = []
+                for candidate in resolved:
+                    decision = distro_fixes.decide(target.distro, candidate.vulnerability_id)
+                    distro_decisions[(target.asset_id, candidate.vulnerability_id)] = decision
+                    if decision.status == DISTRO_FIXED:
+                        report.distro_fixed += 1
+                        distro_fixed_ids.add(candidate.vulnerability_id)
+                        continue
+                    if decision.status == DISTRO_VULNERABLE:
+                        report.distro_vulnerable += 1
+                    else:
+                        report.distro_unresolved += 1
+                        distro_unresolved_ids.add(candidate.vulnerability_id)
+                    kept.append(candidate)
+                resolved = kept
             taking_back, undecidable = self._retractions(
                 target,
                 decisions,
                 previous.get(target.asset_id, ()),
                 full_run=only_vulnerabilities is None,
+                distro=target.distro,
+                distro_fixes=distro_fixes if distro_fixes.has_rows else None,
             )
             blocked += undecidable
             if dry_run:
@@ -728,8 +783,18 @@ class Matcher:
                         retracted.append(_retraction_summary(retraction, target))
         report.retractions = retracted
         report.retractions_blocked = blocked
+        report.distro_retracted = sum(
+            1 for item in retracted if item["reason"] == FIXED_BY_DISTRO_CODE
+        )
         report.version_unspecified = _undecided_count(undecided[VERSION_UNSPECIFIED_CODE])
         report.platform_unconfirmed = _undecided_count(undecided[PLATFORM_UNCONFIRMED_CODE])
+        if report.distro_unresolved or report.distro_fixed:
+            coverage["distro"] = {
+                "fixed_count": report.distro_fixed,
+                "unresolved_count": report.distro_unresolved,
+                "fixed": sorted(distro_fixed_ids)[:LIMITATION_IDS],
+                "unresolved": sorted(distro_unresolved_ids)[:LIMITATION_IDS],
+            }
         _report_undecided(coverage, undecided)
         return report
 
@@ -849,6 +914,8 @@ class Matcher:
         decisions: Decisions,
         previous: Sequence[PreviousMatch],
         full_run: bool,
+        distro: DistroRef | None = None,
+        distro_fixes: DistroFixes | None = None,
     ) -> tuple[list[Retraction], int]:
         """The decisions this run takes back, and how many it could not write.
 
@@ -865,11 +932,30 @@ class Matcher:
         planned: list[Retraction] = []
         blocked = 0
         for row in previous:
-            if row.vulnerability_id in matched:
-                continue
             revision = revisions.get(row.vulnerability_id)
             if revision is None:
                 continue  # no NVD revision for it any more: nothing to decide at
+            if distro is not None and distro_fixes is not None:
+                distro_decision = distro_fixes.decide(distro, row.vulnerability_id)
+                if distro_decision.fixed:
+                    planned.append(
+                        Retraction(
+                            asset_id=target.asset_id,
+                            vulnerability_id=row.vulnerability_id,
+                            vuln_rev_id=revision.vuln_rev_id,
+                            snapshot_id=revision.snapshot_id,
+                            campaign_id=row.campaign_id,
+                            reason=FIXED_BY_DISTRO_CODE,
+                            match_method=DISTRO_METHOD,
+                            affected_range=(
+                                f"{distro.id} {distro_decision.release} fixed "
+                                f"{distro_decision.fixed_version}"
+                            ),
+                        )
+                    )
+                    continue
+            if row.vulnerability_id in matched:
+                continue
             if revision.withdrawn:
                 reason = WITHDRAWN_CODE
             elif row.vulnerability_id in decisions.decided:
@@ -933,6 +1019,7 @@ class Matcher:
                 "vulnerability_id": retraction.vulnerability_id,
                 "vuln_rev_id": retraction.vuln_rev_id,
                 "match_method": retraction.match_method,
+                "affected_range": retraction.affected_range,
                 "snapshot_id": retraction.snapshot_id,
                 "campaign_id": retraction.campaign_id,
                 "retraction_reason": retraction.reason,
@@ -942,13 +1029,15 @@ class Matcher:
         inserted = self._conn.execute(
             "INSERT INTO package_vuln_match ("
             "  match_id, package_asset_id, vulnerability_id, vuln_rev_id, match_method,"
-            "  matched, snapshot_id, campaign_id, retraction_reason"
+            "  affected_range, matched, snapshot_id, campaign_id, retraction_reason"
             ")"
             " SELECT x.match_id, x.package_asset_id, x.vulnerability_id, x.vuln_rev_id,"
-            "        x.match_method, FALSE, x.snapshot_id, x.campaign_id, x.retraction_reason"
+            "        x.match_method, x.affected_range, FALSE, x.snapshot_id, x.campaign_id,"
+            "        x.retraction_reason"
             "   FROM jsonb_to_recordset(%s::jsonb) AS x("
             "     match_id uuid, package_asset_id uuid, vulnerability_id text, vuln_rev_id uuid,"
-            "     match_method text, snapshot_id uuid, campaign_id uuid, retraction_reason text"
+            "     match_method text, affected_range text, snapshot_id uuid, campaign_id uuid,"
+            "     retraction_reason text"
             "   )"
             " ON CONFLICT (package_asset_id, vulnerability_id, vuln_rev_id, match_method)"
             " DO NOTHING RETURNING match_id, vulnerability_id, campaign_id",
@@ -1008,7 +1097,7 @@ def _retraction_summary(retraction: Retraction, target: Target) -> dict[str, Any
 
 
 def _summary(candidate: Candidate, target: Target) -> dict[str, Any]:
-    return {
+    document = {
         "asset": target.canonical_key,
         "asset_id": candidate.asset_id,
         "vulnerability_id": candidate.vulnerability_id,
@@ -1017,3 +1106,10 @@ def _summary(candidate: Candidate, target: Target) -> dict[str, Any]:
         "match_method": candidate.match_method,
         "snapshot_id": candidate.snapshot_id,
     }
+    if target.distro is not None:
+        document["distro"] = {
+            "id": target.distro.id,
+            "release": target.distro.release,
+            "package": target.distro.package,
+        }
+    return document

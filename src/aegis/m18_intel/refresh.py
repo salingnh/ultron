@@ -32,11 +32,13 @@ class RefreshOptions:
     api_url: str | None = None
     results_per_page: int = DEFAULT_RESULTS_PER_PAGE
     skip_nvd: bool = False
+    skip_distro: bool = False
     skip_kev: bool = False
     epss_source: str | None = None
     epss_version: str | None = None
     snapshot_at: str | None = None
     source_file: str | None = None
+    distro_source_file: str | None = None
     kev_fixture: str | None = None
 
 
@@ -132,6 +134,19 @@ def refresh(options: RefreshOptions) -> dict[str, Any]:
             failed = True
     else:
         legs["nvd"] = {"status": "skipped"}
+    if not options.skip_distro:
+        try:
+            from aegis.m18_intel.distro import sync_distro
+
+            distro_report = sync_distro(source_file=options.distro_source_file)
+            legs["distro"] = distro_report
+            if not distro_report["ok"]:
+                failed = True
+        except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
+            legs["distro"] = {"error": str(error)}
+            failed = True
+    else:
+        legs["distro"] = {"status": "skipped"}
     try:
         legs["epss"] = _epss_refresh(options)
     except (FeedSyncError, feeds.FeedError, ValueError, OSError) as error:
